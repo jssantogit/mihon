@@ -574,12 +574,20 @@ import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import java.util.UUID
 import kotlin.time.Clock
 
-@Inject
-class MaterializeCanonicalTitle(
+class MaterializeCanonicalTitle internal constructor(
     private val repository: CanonicalTitleRepository,
-    private val idFactory: () -> String = { UUID.randomUUID().toString() },
-    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    private val idFactory: () -> String,
+    private val clock: () -> Long,
 ) {
+
+    @Inject
+    constructor(
+        repository: CanonicalTitleRepository,
+    ) : this(
+        repository = repository,
+        idFactory = { UUID.randomUUID().toString() },
+        clock = { Clock.System.now().toEpochMilliseconds() },
+    )
 
     suspend fun fromCatalog(
         displayTitle: String,
@@ -621,8 +629,6 @@ class MaterializeCanonicalTitle(
     }
 }
 ```
-
-If Metro rejects default constructor parameters for injection, preserve the public API above but split the injectable production constructor from a package-visible/test factory. Do not remove deterministic ID/clock injection from tests.
 
 - [ ] **Step 5: Re-run the materialization tests**
 
@@ -707,6 +713,8 @@ VALUES (
 Create `tsuzuki_external_identities.sq`:
 
 ```sql
+import kotlin.Boolean;
+
 CREATE TABLE tsuzuki_external_identities(
     canonical_title_id TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -748,6 +756,8 @@ VALUES (
 Create `tsuzuki_library_entries.sq`:
 
 ```sql
+import kotlin.Boolean;
+
 CREATE TABLE tsuzuki_library_entries(
     canonical_title_id TEXT NOT NULL PRIMARY KEY,
     status TEXT NOT NULL,
@@ -797,6 +807,8 @@ WHERE canonical_title_id = :canonicalTitleId;
 Create `tsuzuki_source_mappings.sq`:
 
 ```sql
+import kotlin.Boolean;
+
 CREATE TABLE tsuzuki_source_mappings(
     id TEXT NOT NULL PRIMARY KEY,
     canonical_title_id TEXT NOT NULL,
