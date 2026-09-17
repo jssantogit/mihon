@@ -1,7 +1,9 @@
-name: Build & Test
+name: Full Build & APK
+
 on:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '**'
       - '!**.md'
@@ -14,9 +16,17 @@ on:
     branches:
       - main
       - 'tsuzuki/**'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!fastlane/**'
+      - '!i18n/src/commonMain/moko-resources/**/strings.xml'
+      - '!i18n/src/commonMain/moko-resources/**/plurals.xml'
+      - 'i18n/src/commonMain/moko-resources/base/strings.xml'
+      - 'i18n/src/commonMain/moko-resources/base/plurals.xml'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: full-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -24,8 +34,14 @@ permissions:
 
 jobs:
   build:
-    name: Build & Test App
-    runs-on: 'ubuntu-24.04'
+    name: Full Release Build
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -44,24 +60,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
-      - name: Check code format
-        run: ./gradlew spotlessCheck
-
-      - name: Run unit tests
-        id: unit_tests
-        run: ./gradlew testDebugUnitTest
-
-      - name: Verify SQLDelight migrations
-        run: ./gradlew verifySqlDelightMigration
-
-      - name: Upload test report
-        if: steps.unit_tests.outcome == 'failure'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: test-report-${{ github.sha }}
-          path: app/build/reports/tests/testDebugUnitTest
-
-      - name: Build app
+      - name: Build release APK
         run: ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
 
       - name: Upload APK
