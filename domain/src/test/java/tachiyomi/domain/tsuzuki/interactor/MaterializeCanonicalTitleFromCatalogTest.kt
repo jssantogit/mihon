@@ -1,4 +1,4 @@
-package tachiyomi.domain.tsuzuki.catalog.interactor
+package tachiyomi.domain.tsuzuki.interactor
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
@@ -31,47 +30,19 @@ class MaterializeCanonicalTitleFromCatalogTest {
             title = "Vinland Saga",
         )
 
-        val result = interactor.await(catalogItem)
-        result.isSuccess shouldBe true
-        val title = result.getOrThrow()
+        val title = interactor.execute(catalogItem)
 
-        // Spec Invariant: CanonicalTitle.id MUST NOT be the provider ID
         title.id shouldBe "uuid-12345"
         title.id shouldNotBe catalogItem.providerId
         title.displayTitle shouldBe "Vinland Saga"
         title.identityState shouldBe CanonicalIdentityState.RESOLVED
 
-        // Spec Invariant: Kitsu ID is attached as ExternalIdentity
         repository.identities.size shouldBe 1
         val identity = repository.identities.first()
         identity.canonicalTitleId shouldBe "uuid-12345"
         identity.provider shouldBe "kitsu"
         identity.externalId shouldBe "999"
         identity.verified shouldBe true
-    }
-
-    @Test
-    fun `invoke and execute match await delegation behavior`() = runTest {
-        val repository = FakeCanonicalTitleRepository()
-        val materializeCanonicalTitle = MaterializeCanonicalTitle(
-            repository = repository,
-            idFactory = { "uuid-direct" },
-            clock = { 5000L },
-        )
-        val interactor = MaterializeCanonicalTitleFromCatalog(materializeCanonicalTitle)
-
-        val catalogItem = CatalogItem(
-            provider = "kitsu",
-            providerId = "999",
-            title = "Vinland Saga",
-        )
-
-        val invokedTitle = interactor(catalogItem)
-        invokedTitle.id shouldBe "uuid-direct"
-        invokedTitle.displayTitle shouldBe "Vinland Saga"
-
-        val executedTitle = interactor.execute(catalogItem)
-        executedTitle shouldBe invokedTitle
     }
 
     @Test
@@ -90,8 +61,8 @@ class MaterializeCanonicalTitleFromCatalogTest {
             title = "Vinland Saga",
         )
 
-        val first = interactor.await(catalogItem).getOrThrow()
-        val second = interactor.await(catalogItem).getOrThrow()
+        val first = interactor.execute(catalogItem)
+        val second = interactor.execute(catalogItem)
 
         first.id shouldBe "uuid-first"
         second.id shouldBe first.id
@@ -122,10 +93,33 @@ class MaterializeCanonicalTitleFromCatalogTest {
             title = "Vinland Saga",
         )
 
-        val result = interactor.await(catalogItem).getOrThrow()
+        val result = interactor.execute(catalogItem)
 
         result shouldBe winner
         repository.titles.keys shouldBe setOf("winner-id")
+    }
+
+    @Test
+    fun `adapter delegates canonical persistence to existing materializer`() = runTest {
+        val repository = FakeCanonicalTitleRepository()
+        val materializeCanonicalTitle = MaterializeCanonicalTitle(
+            repository = repository,
+            idFactory = { "uuid-delegated" },
+            clock = { 6000L },
+        )
+        val interactor = MaterializeCanonicalTitleFromCatalog(materializeCanonicalTitle)
+
+        val result = interactor.execute(
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "321",
+                title = "Monster",
+            ),
+        )
+
+        result.id shouldBe "uuid-delegated"
+        repository.titles.keys shouldBe setOf("uuid-delegated")
+        repository.identities.single().externalId shouldBe "321"
     }
 
     private class RacingCanonicalTitleRepository(
