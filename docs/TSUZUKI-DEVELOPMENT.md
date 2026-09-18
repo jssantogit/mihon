@@ -18,45 +18,128 @@ Local execution is lightweight by default:
 
 Java, Android SDK, and full Gradle verification are not mandatory on a constrained development device.
 
+## Three CI levels
+
+Tsuzuki separates normal acceptance, full compilation, and installable artifacts.
+
+```text
+FAST CI
+every relevant code push
+        |
+        v
+FULL VERIFY
+only when technically justified
+        |
+        v
+APK BUILD
+only when an installable artifact is useful
+```
+
+These levels are intentionally independent. A full verification does not imply that an APK must be stored.
+
 ## Fast CI
 
-Every push to `main` or `tsuzuki/**` runs `.github/workflows/ci.yml` with independent jobs for:
+Every relevant push to `main` or `tsuzuki/**` runs `.github/workflows/ci.yml` with independent jobs for:
 
 - `./gradlew spotlessCheck`;
 - `./gradlew :app:compileDebugKotlin`;
 - `./gradlew testDebugUnitTest`;
 - `./gradlew verifySqlDelightMigration`.
 
-These jobs are the normal acceptance gate between implementation tasks. Do not continue to the next task while the relevant Fast CI run is red.
+Fast CI is the normal acceptance gate between implementation tasks. Do not continue to the next task while the relevant Fast CI run is red.
 
 Because jobs are independent, formatting, Kotlin compilation, unit tests, and database migration verification can run in parallel and failures remain easy to diagnose.
 
-## Full build and APK
+Failed unit-test reports may be uploaded for diagnosis, but development artifacts use short retention.
 
-`.github/workflows/build.yml` owns expensive release builds and APK artifacts.
+## Full Verify
 
-A full release build runs when:
+`.github/workflows/build.yml` performs an expensive release compilation without storing an APK artifact.
 
-- a pull request is non-draft;
-- a push commit message contains `[full-ci]`;
+It runs when:
+
+- a commit message contains `[full-ci]`;
 - the workflow is manually dispatched;
 - code is pushed to `main`.
 
-The build command is:
+The command is:
 
 ```bash
 ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
 ```
 
-A successful build uploads the ARM64 APK and mapping artifact.
+Use Full Verify when the change has enough integration risk to justify compiling the complete release application, for example:
 
-Keep implementation pull requests in draft while actively iterating. Mark the PR ready for review only when repeated full release builds are useful.
+- the end of a meaningful architectural milestone;
+- dependency-injection or generated-code changes;
+- Gradle, manifest, build-configuration, or Android integration changes;
+- work crossing several application modules;
+- Reader/source/platform integration;
+- a pre-merge checkpoint when a reviewer requests it.
 
-To request an APK checkpoint while a PR is still draft, use a commit message such as:
+Do not run Full Verify merely because a task is complete.
+
+To request it:
 
 ```text
-chore: checkpoint canonical foundation [full-ci]
+chore: source resolver checkpoint [full-ci]
 ```
+
+A `[full-ci]` checkpoint does not upload APK or mapping artifacts.
+
+Pull requests do not automatically trigger Full Verify when opened, synchronized, or marked ready for review. Normal PR iteration remains Fast-CI-first.
+
+## APK Build
+
+`.github/workflows/apk.yml` exists only for cases where an installable application is actually useful.
+
+It runs when:
+
+- a commit message contains `[apk]`; or
+- the workflow is manually dispatched.
+
+The workflow builds the release application and uploads:
+
+- the ARM64 APK;
+- the release mapping artifact.
+
+Development APK and mapping artifacts use `retention-days: 3`.
+
+Use APK Build when there is something meaningful to validate on a physical Android device, especially:
+
+- visible UI changes;
+- navigation or interaction changes;
+- Reader/runtime behavior;
+- Android integration that cannot be validated adequately from compile/tests alone;
+- a deliberate manual device-test checkpoint.
+
+Do not request `[apk]` for domain-only, repository-only, database-only, resolver-only, or test-only changes unless there is a specific runtime reason.
+
+Example:
+
+```text
+chore: title page device test [apk]
+```
+
+An APK request is already a release build, so a separate `[full-ci]` commit is not required for the same checkpoint.
+
+## Artifact policy
+
+Build evidence and stored artifacts are different things.
+
+```text
+Evidence
+-> small and durable: commit SHA, CI result, milestone note
+
+Artifact
+-> large and temporary: APK, mapping, failed-test report
+```
+
+Normal Full Verify stores no APK. Development APKs and diagnostic test reports expire after three days.
+
+Release artifacts and any future milestone-preservation policy are separate from development CI.
+
+A future CI-housekeeping workflow may record milestone evidence and delete superseded artifacts, artifacts from deleted branches, and other disposable CI output. Do not add such cleanup logic ad hoc to feature workflows.
 
 ## Codex / AGY contract
 
@@ -72,6 +155,8 @@ For each implementation task:
 6. inspect Fast CI results and logs;
 7. fix only the demonstrated failure scope;
 8. continue only after CI acceptance.
+
+Full Verify is requested only when the task or reviewer identifies integration risk. APK Build is requested only when an installable artifact is useful.
 
 Do not substitute an agent's claim that tests "should pass" for CI evidence.
 
@@ -101,31 +186,34 @@ tsuzuki/bootstrap
         +-- tsuzuki/<milestone-or-feature>
                     |
                     +-- small commits
-                    +-- Fast CI after pushes
-                    +-- [full-ci] checkpoints when needed
-                    +-- mark PR ready near completion
+                    +-- Fast CI after relevant pushes
+                    +-- [full-ci] only for integration checkpoints
+                    +-- [apk] only for device-test checkpoints
 ```
 
 Do not implement feature work directly on `main`.
 
 ## Verification hierarchy
 
-Use this order of evidence:
+Use the smallest evidence level that proves the current claim:
 
 ```text
 Focused local check (optional)
-        ↓
+        |
+        v
 Fast CI (required task gate)
-        ↓
-Full release build (checkpoint / review gate)
-        ↓
-Install APK on a physical Android device
+        |
+        +--> Full Verify (when integration risk justifies it)
+        |
+        +--> APK Build (when physical-device validation is useful)
 ```
 
-For Tsuzuki, the physical phone is the preferred final runtime test target; an Android emulator is not required by the project workflow.
+Full Verify and APK Build are not mandatory after every task or every implementation block.
+
+For Tsuzuki, the physical phone is the preferred runtime test target when runtime testing is actually needed; an Android emulator is not required by the project workflow.
 
 ## Relationship to implementation plans
 
 Implementation plans may show exact Gradle commands for reproducibility. On a constrained device, those commands are executed by the corresponding CI job unless the plan explicitly requires a local-only check.
 
-Architecture, test expectations, task boundaries, and acceptance criteria from the plan remain mandatory. This document changes where heavy verification runs, not what must be verified.
+Architecture, test expectations, task boundaries, and acceptance criteria from the plan remain mandatory. This document changes where heavy verification runs and when artifacts are worth keeping, not what correctness means.

@@ -1,0 +1,44 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_library_entries(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    status TEXT NOT NULL,
+    favorite INTEGER AS Boolean NOT NULL,
+    added_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+getTsuzukiLibraryEntry:
+SELECT *
+FROM tsuzuki_library_entries
+WHERE canonical_title_id = :canonicalTitleId;
+
+getAllTsuzukiLibraryEntries:
+SELECT *
+FROM tsuzuki_library_entries
+ORDER BY added_at DESC;
+
+upsertTsuzukiLibraryEntry:
+INSERT INTO tsuzuki_library_entries(
+    canonical_title_id,
+    status,
+    favorite,
+    added_at,
+    updated_at
+)
+VALUES (
+    :canonicalTitleId,
+    :status,
+    :favorite,
+    :addedAt,
+    :updatedAt
+)
+ON CONFLICT(canonical_title_id) DO UPDATE SET
+    status = excluded.status,
+    favorite = excluded.favorite,
+    updated_at = excluded.updated_at;
+
+deleteTsuzukiLibraryEntry:
+DELETE FROM tsuzuki_library_entries
+WHERE canonical_title_id = :canonicalTitleId;

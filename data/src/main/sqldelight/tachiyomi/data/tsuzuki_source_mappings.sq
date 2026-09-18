@@ -1,0 +1,75 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_source_mappings(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    mihon_manga_id INTEGER,
+    source_id INTEGER NOT NULL,
+    source_url TEXT NOT NULL,
+    language TEXT NOT NULL,
+    match_confidence REAL,
+    verified_by_user INTEGER AS Boolean NOT NULL,
+    availability TEXT NOT NULL,
+    preferred_override INTEGER AS Boolean NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE,
+    UNIQUE(source_id, source_url)
+);
+
+CREATE INDEX tsuzuki_source_mapping_title_index
+ON tsuzuki_source_mappings(canonical_title_id);
+
+getTsuzukiSourceMappingsByTitle:
+SELECT *
+FROM tsuzuki_source_mappings
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY created_at ASC;
+
+getTsuzukiSourceMapping:
+SELECT *
+FROM tsuzuki_source_mappings
+WHERE source_id = :sourceId
+AND source_url = :sourceUrl
+LIMIT 1;
+
+upsertTsuzukiSourceMapping:
+INSERT INTO tsuzuki_source_mappings(
+    id,
+    canonical_title_id,
+    mihon_manga_id,
+    source_id,
+    source_url,
+    language,
+    match_confidence,
+    verified_by_user,
+    availability,
+    preferred_override,
+    created_at,
+    updated_at
+)
+VALUES (
+    :id,
+    :canonicalTitleId,
+    :mihonMangaId,
+    :sourceId,
+    :sourceUrl,
+    :language,
+    :matchConfidence,
+    :verifiedByUser,
+    :availability,
+    :preferredOverride,
+    :createdAt,
+    :updatedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    canonical_title_id = excluded.canonical_title_id,
+    mihon_manga_id = excluded.mihon_manga_id,
+    source_id = excluded.source_id,
+    source_url = excluded.source_url,
+    language = excluded.language,
+    match_confidence = excluded.match_confidence,
+    verified_by_user = excluded.verified_by_user,
+    availability = excluded.availability,
+    preferred_override = excluded.preferred_override,
+    updated_at = excluded.updated_at;
