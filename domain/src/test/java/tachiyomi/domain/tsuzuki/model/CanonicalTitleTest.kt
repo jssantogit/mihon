@@ -40,4 +40,40 @@ class CanonicalTitleTest {
         external.externalId shouldBe "123"
         external.canonicalTitleId shouldBe title.id
     }
+
+    @Test
+    fun `library entry does not require source mapping`() {
+        val entry = CanonicalLibraryEntry(
+            canonicalTitleId = "title-1",
+            status = LibraryStatus.PLANNING,
+            favorite = false,
+            addedAt = 100L,
+            updatedAt = 100L,
+        )
+
+        entry.canonicalTitleId shouldBe "title-1"
+        entry.status shouldBe LibraryStatus.PLANNING
+    }
+
+    @Test
+    fun `source mapping can exist without local mihon manga id`() {
+        val mapping = SourceTitleMapping(
+            id = "mapping-1",
+            canonicalTitleId = "title-1",
+            mihonMangaId = null,
+            sourceId = 42L,
+            sourceUrl = "/manga/berserk",
+            language = "en",
+            matchConfidence = 0.99,
+            verifiedByUser = false,
+            availability = SourceMappingAvailability.AVAILABLE,
+            preferredOverride = false,
+            createdAt = 100L,
+            updatedAt = 100L,
+        )
+
+        mapping.mihonMangaId shouldBe null
+        mapping.sourceId shouldBe 42L
+    }
 }
+
