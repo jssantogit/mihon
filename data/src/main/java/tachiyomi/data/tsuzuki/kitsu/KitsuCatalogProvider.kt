@@ -93,7 +93,7 @@ class KitsuCatalogProvider(
         }
     }
 
-    internal fun mapResourceToItem(resource: KitsuMangaResource): CatalogItem {
+    fun mapResourceToItem(resource: KitsuMangaResource): CatalogItem {
         val attr = resource.attributes
         val bestTitle = attr.canonicalTitle?.takeIf { it.isNotBlank() }
             ?: attr.titles?.en?.takeIf { it.isNotBlank() }
