@@ -78,6 +78,102 @@ class SearchCatalogTest {
     }
 
     @Test
+    fun `search filters unrelated fuzzy provider candidates for nonsense query`() = runTest {
+        val providerCandidates = listOf(
+            CatalogItem("kitsu", "1", "Nijiiro Days"),
+            CatalogItem("kitsu", "2", "Aishiteruze Baby"),
+            CatalogItem("kitsu", "3", "Saiyuuki Gaiden"),
+            CatalogItem("kitsu", "4", "14R"),
+            CatalogItem("kitsu", "5", "I'm Deleting Them From My Life"),
+            CatalogItem("kitsu", "6", "Watashi no Otto wa Reitouko ni Nemutte Iru"),
+        )
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(
+                    items = providerCandidates,
+                    hasNextPage = false,
+                    totalCount = providerCandidates.size,
+                ),
+            ),
+        )
+        val interactor = SearchCatalog(fakeProvider)
+
+        val result = interactor.await("vataku")
+
+        result.isSuccess shouldBe true
+        val page = result.getOrThrow()
+        page.items shouldBe emptyList()
+        page.hasNextPage shouldBe false
+        page.totalCount shouldBe null
+    }
+
+    @Test
+    fun `search keeps provider aliases that match the requested title`() = runTest {
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(
+                    items = listOf(
+                        CatalogItem(
+                            provider = "kitsu",
+                            providerId = "1",
+                            title = "Boku no Hero Academia",
+                            titles = mapOf("en" to "My Hero Academia"),
+                        ),
+                        CatalogItem("kitsu", "2", "Tokyo Ghoul"),
+                    ),
+                    hasNextPage = false,
+                ),
+            ),
+        )
+        val interactor = SearchCatalog(fakeProvider)
+
+        val result = interactor.await("my hero academia").getOrThrow()
+
+        result.items.map { it.providerId } shouldBe listOf("1")
+    }
+
+    @Test
+    fun `search tolerates a small title typo without keeping unrelated candidates`() = runTest {
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(
+                    items = listOf(
+                        CatalogItem("kitsu", "1", "One Piece"),
+                        CatalogItem("kitsu", "2", "Hoshi no Samidare"),
+                        CatalogItem("kitsu", "3", "Dororo"),
+                    ),
+                    hasNextPage = false,
+                ),
+            ),
+        )
+        val interactor = SearchCatalog(fakeProvider)
+
+        val result = interactor.await("one pice").getOrThrow()
+
+        result.items.map { it.title } shouldBe listOf("One Piece")
+    }
+
+    @Test
+    fun `search normalizes accents before title relevance filtering`() = runTest {
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(
+                    items = listOf(
+                        CatalogItem("kitsu", "1", "Pokémon Adventures"),
+                        CatalogItem("kitsu", "2", "Monster"),
+                    ),
+                    hasNextPage = false,
+                ),
+            ),
+        )
+        val interactor = SearchCatalog(fakeProvider)
+
+        val result = interactor.await("pokemon").getOrThrow()
+
+        result.items.map { it.title } shouldBe listOf("Pokémon Adventures")
+    }
+
+    @Test
     fun `search returns typed failure gracefully when provider fails with RateLimitExceeded`() = runTest {
         val fakeProvider = FakeCatalogProvider(
             searchResult = Result.failure(CatalogError.RateLimitExceeded(retryAfterSeconds = 30)),
