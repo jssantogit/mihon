@@ -44,7 +44,7 @@ CREATE TABLE tsuzuki_source_mappings(
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE,
-    UNIQUE(canonical_title_id, source_id, source_url)
+    UNIQUE(source_id, source_url)
 );
 
 CREATE INDEX tsuzuki_source_mapping_title_index

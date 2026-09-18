@@ -53,15 +53,13 @@ class MaterializeCanonicalTitleTest {
             clock = { 100L },
         )
 
-        val result = runCatching {
-            interactor.fromCatalog(
-                displayTitle = "Berserk",
-                provider = "kitsu",
-                externalId = "123",
-            )
-        }
+        val result = interactor.fromCatalog(
+            displayTitle = "Berserk",
+            provider = "kitsu",
+            externalId = "123",
+        )
 
-        result.getOrNull() shouldBe winner
+        result shouldBe winner
         repository.titles.keys shouldBe setOf("winner-id")
     }
 
@@ -99,12 +97,17 @@ class MaterializeCanonicalTitleTest {
             return winner
         }
 
+        override suspend fun getOrCreateByExternalIdentity(
+            title: CanonicalTitle,
+            identity: ExternalIdentity,
+        ): CanonicalTitle = winner
+
         override suspend fun insert(title: CanonicalTitle) {
             titles[title.id] = title
         }
 
         override suspend fun addExternalIdentity(identity: ExternalIdentity) {
-            throw IllegalStateException("external identity already claimed")
+            error("Catalog materialization must use the atomic repository operation")
         }
     }
 
@@ -122,6 +125,16 @@ class MaterializeCanonicalTitleTest {
                 .firstOrNull { it.provider == provider && it.externalId == externalId }
                 ?.canonicalTitleId
             return titleId?.let(titles::get)
+        }
+
+        override suspend fun getOrCreateByExternalIdentity(
+            title: CanonicalTitle,
+            identity: ExternalIdentity,
+        ): CanonicalTitle {
+            getByExternalIdentity(identity.provider, identity.externalId)?.let { return it }
+            insert(title)
+            addExternalIdentity(identity)
+            return title
         }
 
         override suspend fun insert(title: CanonicalTitle) {

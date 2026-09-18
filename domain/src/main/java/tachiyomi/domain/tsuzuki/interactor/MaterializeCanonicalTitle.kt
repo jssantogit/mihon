@@ -38,17 +38,14 @@ class MaterializeCanonicalTitle internal constructor(
             createdAt = now,
             updatedAt = now,
         )
-        repository.insert(title)
-        repository.addExternalIdentity(
-            ExternalIdentity(
-                canonicalTitleId = title.id,
-                provider = provider,
-                externalId = externalId,
-                verified = true,
-                createdAt = now,
-            ),
+        val identity = ExternalIdentity(
+            canonicalTitleId = title.id,
+            provider = provider,
+            externalId = externalId,
+            verified = true,
+            createdAt = now,
         )
-        return title
+        return repository.getOrCreateByExternalIdentity(title, identity)
     }
 
     suspend fun fromSource(displayTitle: String): CanonicalTitle {

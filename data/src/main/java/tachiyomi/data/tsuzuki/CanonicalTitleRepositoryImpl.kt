@@ -40,6 +40,49 @@ class CanonicalTitleRepositoryImpl(
         return getById(titleId)
     }
 
+    override suspend fun getOrCreateByExternalIdentity(
+        title: CanonicalTitle,
+        identity: ExternalIdentity,
+    ): CanonicalTitle {
+        require(identity.canonicalTitleId == title.id) {
+            "External identity must reference the candidate canonical title"
+        }
+
+        return try {
+            database.transactionWithResult {
+                val existingTitleId = database.tsuzuki_external_identitiesQueries
+                    .getTsuzukiTitleIdByExternalIdentity(identity.provider, identity.externalId)
+                    .awaitAsOneOrNull()
+
+                if (existingTitleId != null) {
+                    database.tsuzuki_titlesQueries
+                        .getTsuzukiTitleById(existingTitleId, ::mapTitle)
+                        .awaitAsOneOrNull()
+                        ?: error("External identity points to a missing canonical title")
+                } else {
+                    database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+                        id = title.id,
+                        displayTitle = title.displayTitle,
+                        identityState = title.identityState.name,
+                        createdAt = title.createdAt,
+                        updatedAt = title.updatedAt,
+                    )
+                    database.tsuzuki_external_identitiesQueries.insertTsuzukiExternalIdentity(
+                        canonicalTitleId = identity.canonicalTitleId,
+                        provider = identity.provider,
+                        externalId = identity.externalId,
+                        verified = identity.verified,
+                        createdAt = identity.createdAt,
+                    )
+                    title
+                }
+            }
+        } catch (e: Exception) {
+            getByExternalIdentity(identity.provider, identity.externalId)?.let { return it }
+            throw e
+        }
+    }
+
     override suspend fun insert(title: CanonicalTitle) {
         database.tsuzuki_titlesQueries.insertTsuzukiTitle(
             id = title.id,
