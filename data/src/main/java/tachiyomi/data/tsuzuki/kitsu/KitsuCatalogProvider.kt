@@ -38,9 +38,11 @@ class KitsuCatalogProvider(
         val statusParam = when (query.status) {
             CatalogItemStatus.ONGOING -> "current"
             CatalogItemStatus.COMPLETED -> "finished"
-            CatalogItemStatus.CANCELLED -> "cancelled"
-            CatalogItemStatus.ON_HIATUS -> "unapproved"
-            CatalogItemStatus.UNKNOWN, null -> null
+            CatalogItemStatus.CANCELLED,
+            CatalogItemStatus.ON_HIATUS,
+            CatalogItemStatus.UNKNOWN,
+            null,
+            -> null
         }
 
         return client.searchManga(
@@ -93,7 +95,7 @@ class KitsuCatalogProvider(
         }
     }
 
-    fun mapResourceToItem(resource: KitsuMangaResource): CatalogItem {
+    private fun mapResourceToItem(resource: KitsuMangaResource): CatalogItem {
         val attr = resource.attributes
         val bestTitle = attr.canonicalTitle?.takeIf { it.isNotBlank() }
             ?: attr.titles?.en?.takeIf { it.isNotBlank() }
