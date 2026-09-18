@@ -46,6 +46,7 @@ fun CatalogScreen(
     onSelectItem: (CatalogItem) -> Unit,
     onDismissPreview: () -> Unit,
     onRetry: () -> Unit,
+    onAddToLibrary: (CatalogItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var searchOpen by remember { mutableStateOf(state.searchQuery.isNotEmpty()) }
@@ -129,6 +130,8 @@ fun CatalogScreen(
             state.selectedItem?.let { item ->
                 CatalogItemDetailSheet(
                     item = item,
+                    libraryActionState = state.libraryActionState,
+                    onAddToLibrary = { onAddToLibrary(item) },
                     onDismissRequest = onDismissPreview,
                 )
             }

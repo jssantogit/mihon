@@ -21,6 +21,16 @@ import tachiyomi.domain.tsuzuki.catalog.interactor.GetDiscoverFeed
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchCatalog
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.DiscoverFeed
+import tachiyomi.domain.tsuzuki.library.interactor.AddCatalogItemToLibrary
+import tachiyomi.domain.tsuzuki.model.LibraryStatus
+
+@Immutable
+sealed interface LibraryActionState {
+    data object Idle : LibraryActionState
+    data object Saving : LibraryActionState
+    data class Saved(val canonicalTitleId: String) : LibraryActionState
+    data class Error(val error: Throwable) : LibraryActionState
+}
 
 @Immutable
 sealed interface DiscoverState {
@@ -45,6 +55,7 @@ sealed interface CatalogScreenState {
     val selectedItem: CatalogItem?
     val discoverState: DiscoverState
     val searchState: SearchState
+    val libraryActionState: LibraryActionState
 
     val isSearching: Boolean get() = searchQuery.isNotBlank()
 
@@ -54,6 +65,7 @@ sealed interface CatalogScreenState {
         override val selectedItem: CatalogItem? = null,
         override val discoverState: DiscoverState = DiscoverState.Loading,
         override val searchState: SearchState = SearchState.Idle,
+        override val libraryActionState: LibraryActionState = LibraryActionState.Idle,
     ) : CatalogScreenState
 
     @Immutable
@@ -62,6 +74,7 @@ sealed interface CatalogScreenState {
         override val selectedItem: CatalogItem? = null,
         override val discoverState: DiscoverState = DiscoverState.Loading,
         override val searchState: SearchState = SearchState.Idle,
+        override val libraryActionState: LibraryActionState = LibraryActionState.Idle,
         val discoverFeed: DiscoverFeed? = null,
         val searchResults: List<CatalogItem> = emptyList(),
     ) : CatalogScreenState
@@ -72,6 +85,7 @@ sealed interface CatalogScreenState {
         override val selectedItem: CatalogItem? = null,
         override val discoverState: DiscoverState = DiscoverState.Loading,
         override val searchState: SearchState = SearchState.Idle,
+        override val libraryActionState: LibraryActionState = LibraryActionState.Idle,
         val message: String? = null,
     ) : CatalogScreenState
 
@@ -81,6 +95,7 @@ sealed interface CatalogScreenState {
         override val selectedItem: CatalogItem? = null,
         override val discoverState: DiscoverState = DiscoverState.Loading,
         override val searchState: SearchState = SearchState.Idle,
+        override val libraryActionState: LibraryActionState = LibraryActionState.Idle,
         val discoverFeed: DiscoverFeed,
         val reason: String? = null,
     ) : CatalogScreenState
@@ -91,6 +106,7 @@ sealed interface CatalogScreenState {
         override val selectedItem: CatalogItem? = null,
         override val discoverState: DiscoverState = DiscoverState.Loading,
         override val searchState: SearchState = SearchState.Idle,
+        override val libraryActionState: LibraryActionState = LibraryActionState.Idle,
         val error: Throwable? = null,
         val message: String? = null,
     ) : CatalogScreenState
@@ -102,12 +118,14 @@ sealed interface CatalogScreenState {
 class CatalogScreenModel(
     private val searchCatalog: SearchCatalog,
     private val getDiscoverFeed: GetDiscoverFeed,
+    private val addCatalogItemToLibrary: AddCatalogItemToLibrary,
 ) : ViewModel() {
 
     private val searchQueryFlow = MutableStateFlow("")
     private val selectedItemFlow = MutableStateFlow<CatalogItem?>(null)
     private val discoverStateFlow = MutableStateFlow<DiscoverState>(DiscoverState.Loading)
     private val searchStateFlow = MutableStateFlow<SearchState>(SearchState.Idle)
+    private val libraryActionStateFlow = MutableStateFlow<LibraryActionState>(LibraryActionState.Idle)
 
     private var discoverJob: Job? = null
     private var searchJob: Job? = null
@@ -117,8 +135,9 @@ class CatalogScreenModel(
         selectedItemFlow,
         discoverStateFlow,
         searchStateFlow,
-    ) { query, selected, discover, search ->
-        computeState(query, selected, discover, search)
+        libraryActionStateFlow,
+    ) { query, selected, discover, search, libraryAction ->
+        computeState(query, selected, discover, search, libraryAction)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
@@ -216,10 +235,29 @@ class CatalogScreenModel(
 
     fun openPreview(item: CatalogItem) {
         selectedItemFlow.value = item
+        libraryActionStateFlow.value = LibraryActionState.Idle
     }
 
     fun dismissPreview() {
         selectedItemFlow.value = null
+        libraryActionStateFlow.value = LibraryActionState.Idle
+    }
+
+    fun addToLibrary(
+        item: CatalogItem,
+        status: LibraryStatus = LibraryStatus.PLANNING,
+    ): Job {
+        libraryActionStateFlow.value = LibraryActionState.Saving
+        return viewModelScope.launch {
+            try {
+                val result = addCatalogItemToLibrary.execute(item, status)
+                libraryActionStateFlow.value = LibraryActionState.Saved(result.title.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                libraryActionStateFlow.value = LibraryActionState.Error(e)
+            }
+        }
     }
 
     private companion object {
@@ -231,6 +269,7 @@ class CatalogScreenModel(
         selected: CatalogItem?,
         discover: DiscoverState,
         search: SearchState,
+        libraryAction: LibraryActionState,
     ): CatalogScreenState {
         return if (query.isNotBlank()) {
             when (search) {
@@ -239,12 +278,14 @@ class CatalogScreenModel(
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                 )
                 is SearchState.Success -> CatalogScreenState.Success(
                     searchQuery = query,
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                     searchResults = search.items,
                 )
                 is SearchState.Empty -> CatalogScreenState.Empty(
@@ -252,6 +293,7 @@ class CatalogScreenModel(
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                     message = "No results found for \"$query\"",
                 )
                 is SearchState.Error -> CatalogScreenState.Error(
@@ -259,6 +301,7 @@ class CatalogScreenModel(
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                     error = search.error,
                     message = search.error.message ?: "Failed to search catalog",
                 )
@@ -270,12 +313,14 @@ class CatalogScreenModel(
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                 )
                 is DiscoverState.Success -> CatalogScreenState.Success(
                     searchQuery = query,
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                     discoverFeed = discover.feed,
                 )
                 is DiscoverState.Degraded -> CatalogScreenState.Degraded(
@@ -283,6 +328,7 @@ class CatalogScreenModel(
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                     discoverFeed = discover.feed,
                     reason = "Some catalog sections could not be loaded",
                 )
@@ -291,6 +337,7 @@ class CatalogScreenModel(
                     selectedItem = selected,
                     discoverState = discover,
                     searchState = search,
+                    libraryActionState = libraryAction,
                     error = discover.error,
                     message = discover.error.message ?: "Failed to load discover feed",
                 )

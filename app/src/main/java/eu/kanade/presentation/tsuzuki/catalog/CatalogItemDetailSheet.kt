@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -22,6 +26,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AdaptiveSheet
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.tachiyomi.ui.tsuzuki.catalog.LibraryActionState
+import mihon.icons.materialsymbols.MaterialSymbols
+import mihon.icons.materialsymbols.rounded.BookmarkAdd
+import mihon.icons.materialsymbols.rounded.Check
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
@@ -30,6 +38,8 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 @Composable
 fun CatalogItemDetailSheet(
     item: CatalogItem,
+    libraryActionState: LibraryActionState = LibraryActionState.Idle,
+    onAddToLibrary: () -> Unit = {},
     onDismissRequest: () -> Unit,
 ) {
     AdaptiveSheet(
@@ -97,6 +107,63 @@ fun CatalogItemDetailSheet(
                         )
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onAddToLibrary,
+                enabled =
+                libraryActionState !is LibraryActionState.Saving && libraryActionState !is LibraryActionState.Saved,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                when (libraryActionState) {
+                    is LibraryActionState.Saving -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Adding to Library…")
+                    }
+                    is LibraryActionState.Saved -> {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "In Library")
+                    }
+                    is LibraryActionState.Error -> {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.BookmarkAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Retry Add to Library")
+                    }
+                    is LibraryActionState.Idle -> {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.BookmarkAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Add to Library")
+                    }
+                }
+            }
+
+            if (libraryActionState is LibraryActionState.Error) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = libraryActionState.error.message ?: "Failed to add to library",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
 
             if (item.genres.isNotEmpty()) {
