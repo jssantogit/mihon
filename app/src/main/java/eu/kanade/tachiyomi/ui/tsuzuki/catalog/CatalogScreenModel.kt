@@ -10,6 +10,7 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -158,9 +159,17 @@ class CatalogScreenModel(
 
     fun updateSearchQuery(query: String) {
         searchQueryFlow.value = query
+        searchJob?.cancel()
+
         if (query.isBlank()) {
-            searchJob?.cancel()
             searchStateFlow.value = SearchState.Idle
+            return
+        }
+
+        searchStateFlow.value = SearchState.Loading
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MILLIS)
+            executeSearch(query)
         }
     }
 
@@ -211,6 +220,10 @@ class CatalogScreenModel(
 
     fun dismissPreview() {
         selectedItemFlow.value = null
+    }
+
+    private companion object {
+        const val SEARCH_DEBOUNCE_MILLIS = 400L
     }
 
     private fun computeState(

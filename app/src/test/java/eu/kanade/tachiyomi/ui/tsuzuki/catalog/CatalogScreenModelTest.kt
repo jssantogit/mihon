@@ -84,6 +84,54 @@ class CatalogScreenModelTest {
         state.searchResults.first().title shouldBe "Chainsaw Man"
     }
 
+
+    @Test
+    fun `typing a query triggers debounced search without submit`() = runTest(testDispatcher) {
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(listOf(CatalogItem("fake", "10", "Chainsaw Man")), false),
+            ),
+        )
+        val screenModel = CatalogScreenModel(
+            searchCatalog = SearchCatalog(fakeProvider),
+            getDiscoverFeed = GetDiscoverFeed(fakeProvider),
+        )
+        advanceUntilIdle()
+
+        screenModel.updateSearchQuery("Chainsaw")
+
+        screenModel.state.value.shouldBeInstanceOf<CatalogScreenState.Loading>()
+        advanceUntilIdle()
+
+        val state = screenModel.state.value
+        state.shouldBeInstanceOf<CatalogScreenState.Success>()
+        state.searchResults.map { it.title } shouldBe listOf("Chainsaw Man")
+        fakeProvider.searchQueries shouldBe listOf("Chainsaw")
+    }
+
+    @Test
+    fun `typing a newer query cancels the pending debounced search`() = runTest(testDispatcher) {
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(listOf(CatalogItem("fake", "20", "One Piece")), false),
+            ),
+        )
+        val screenModel = CatalogScreenModel(
+            searchCatalog = SearchCatalog(fakeProvider),
+            getDiscoverFeed = GetDiscoverFeed(fakeProvider),
+        )
+        advanceUntilIdle()
+
+        screenModel.updateSearchQuery("Dragon")
+        screenModel.updateSearchQuery("One Piece")
+        advanceUntilIdle()
+
+        fakeProvider.searchQueries shouldBe listOf("One Piece")
+        val state = screenModel.state.value
+        state.shouldBeInstanceOf<CatalogScreenState.Success>()
+        state.searchResults.map { it.title } shouldBe listOf("One Piece")
+    }
+
     @Test
     fun `empty Search result transitions to Empty state`() = runTest(testDispatcher) {
         val fakeProvider = FakeCatalogProvider(
@@ -235,8 +283,12 @@ class CatalogScreenModelTest {
     ) : CatalogProvider {
         override val providerId: String = "fake"
         override val displayName: String = "Fake"
+        val searchQueries = mutableListOf<String?>()
 
-        override suspend fun search(query: CatalogQuery): Result<CatalogPage> = searchResult
+        override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+            searchQueries += query.query
+            return searchResult
+        }
         override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> = trendingResult
         override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> = popularResult
         override suspend fun getDetails(providerId: String): Result<CatalogItem> =
