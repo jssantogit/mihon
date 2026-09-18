@@ -71,4 +71,26 @@ class CatalogModelTest {
         query.offset shouldBe 0
         query.limit shouldBe 20
     }
+
+    @Test
+    fun `discover feed status properties evaluate correctly`() {
+        val successPage = Result.success(CatalogPage(emptyList(), false))
+        val failurePage = Result.failure<CatalogPage>(CatalogError.ProviderUnavailable("Down"))
+
+        val bothSuccess = DiscoverFeed(successPage, successPage)
+        bothSuccess.isDegraded shouldBe false
+        bothSuccess.isCompleteFailure shouldBe false
+
+        val trendingFailed = DiscoverFeed(failurePage, successPage)
+        trendingFailed.isDegraded shouldBe true
+        trendingFailed.isCompleteFailure shouldBe false
+
+        val popularFailed = DiscoverFeed(successPage, failurePage)
+        popularFailed.isDegraded shouldBe true
+        popularFailed.isCompleteFailure shouldBe false
+
+        val bothFailed = DiscoverFeed(failurePage, failurePage)
+        bothFailed.isDegraded shouldBe true
+        bothFailed.isCompleteFailure shouldBe true
+    }
 }
