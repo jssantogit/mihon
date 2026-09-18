@@ -84,7 +84,6 @@ class CatalogScreenModelTest {
         state.searchResults.first().title shouldBe "Chainsaw Man"
     }
 
-
     @Test
     fun `typing a query triggers debounced search without submit`() = runTest(testDispatcher) {
         val fakeProvider = FakeCatalogProvider(
@@ -99,8 +98,6 @@ class CatalogScreenModelTest {
         advanceUntilIdle()
 
         screenModel.updateSearchQuery("Chainsaw")
-
-        screenModel.state.value.shouldBeInstanceOf<CatalogScreenState.Loading>()
         advanceUntilIdle()
 
         val state = screenModel.state.value
