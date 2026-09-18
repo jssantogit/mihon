@@ -18,4 +18,6 @@ Core invariants:
 
 Development is CI-first. Local full Gradle verification is optional; GitHub Fast CI is the required task gate.
 
+Use `[full-ci]` only when full release compilation is technically justified. Use `[apk]` only when an installable artifact or physical-device test is useful. Do not generate APK artifacts for every task.
+
 Do not broaden the active task scope. Do not implement future plan phases early.

@@ -81,6 +81,7 @@ jobs:
           name: test-reports-${{ github.sha }}
           path: '**/build/reports/tests/testDebugUnitTest/**'
           if-no-files-found: ignore
+          retention-days: 3
 
   database:
     name: SQLDelight Migrations

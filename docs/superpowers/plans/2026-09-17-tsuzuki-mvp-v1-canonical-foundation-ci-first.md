@@ -176,7 +176,9 @@ focused local check (optional)
         ↓
 Fast CI (required task gate)
         ↓
-Full Build & APK (checkpoint gate)
+Full Verify (only when integration risk justifies it)
+        ↓
+APK Build (only when device validation is useful)
 ```
 
 ---
@@ -1510,7 +1512,7 @@ If SQLDelight-generated mapper signatures differ from the plan, adjust only argu
 
 ---
 
-### Task 6: Final canonical-foundation acceptance and APK checkpoint
+### Task 6: Final canonical-foundation acceptance and full-verify checkpoint
 
 **Files:**
 - Modify only Task 0-5 files if evidence requires a correction.
@@ -1553,9 +1555,9 @@ no Drive/tracker behavior added
 
 Do not create a new code commit merely to trigger another run if the current head already has green evidence.
 
-- [ ] **Step 3: Request one full release build checkpoint**
+- [ ] **Step 3: Request one full release verification checkpoint**
 
-If no code correction is needed, create a documentation-only checkpoint commit whose message requests full CI:
+If no code correction is needed, create an empty checkpoint commit whose message requests full verification:
 
 ```bash
 git commit --allow-empty -m "chore: canonical foundation acceptance [full-ci]"
@@ -1564,15 +1566,16 @@ git push
 
 An empty checkpoint commit is allowed here specifically because `[full-ci]` is the CI control surface.
 
-- [ ] **Step 4: Wait for `Full Build & APK`**
+- [ ] **Step 4: Wait for `Full Verify`**
 
 Required:
 
 ```text
 assembleRelease succeeds
-ARM64 APK artifact is uploaded
-mapping artifact is uploaded
+no APK artifact is required
 ```
+
+This foundation is domain/data infrastructure with no user-visible behavior, so an APK checkpoint is optional rather than an acceptance requirement.
 
 - [ ] **Step 5: Do not merge automatically**
 
@@ -1600,7 +1603,7 @@ The canonical foundation is accepted only when all are true:
 7. Existing Mihon `mangas` and `chapters` remain operational models, not canonical identities.
 8. Metro resolves the new repository implementations.
 9. Fast CI is green at final head.
-10. Full Build & APK is green at the checkpoint.
+10. Full Verify is green at the checkpoint; APK generation is not required for this non-UI foundation.
 11. No future MVP-V1 subsystem leaked into this plan.
 
 ---

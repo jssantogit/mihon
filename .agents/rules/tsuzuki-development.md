@@ -28,6 +28,10 @@ For each task:
 - Do not perform unrelated cleanup.
 - Do not claim verification without CI or an actually executed local check.
 - Do not repeatedly poll CI; use a single run wait/watch when possible.
+- Fast CI is the normal acceptance gate.
+- Request `[full-ci]` only for meaningful integration checkpoints or when the active plan/reviewer requires it.
+- Request `[apk]` only when an installable artifact or physical-device validation is useful.
+- Do not upload APK artifacts for invisible domain/data/test-only work without a concrete runtime reason.
 
 ## Evidence output
 
