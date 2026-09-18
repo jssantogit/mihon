@@ -924,6 +924,29 @@ data class KitsuSingleMangaResponse(
 
 - [ ] **Step 5: Implement the mockable `KitsuClient` boundary and `KitsuHttpClient` with OkHttp and typed error mapping**
 
+Create `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/client/KitsuClient.kt`:
+
+```kotlin
+package tachiyomi.data.tsuzuki.kitsu.client
+
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
+
+interface KitsuClient {
+    suspend fun searchManga(
+        query: String?,
+        offset: Int,
+        limit: Int,
+        sort: String?,
+        status: String?,
+    ): Result<KitsuMangaResponse>
+
+    suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse>
+
+    suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse>
+}
+```
+
 Create `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/client/KitsuHttpClient.kt`:
 
 ```kotlin
@@ -966,7 +989,7 @@ class KitsuHttpClient(
             .header("Content-Type", "application/vnd.api+json")
     }
 
-    suspend fun searchManga(
+    override suspend fun searchManga(
         query: String?,
         offset: Int,
         limit: Int,
@@ -989,7 +1012,7 @@ class KitsuHttpClient(
         return executeRequest(urlBuilder.build())
     }
 
-    suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> {
+    override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> {
         val url = baseUrl.newBuilder()
             .addPathSegment("trending")
             .addPathSegment("manga")
@@ -999,7 +1022,7 @@ class KitsuHttpClient(
         return executeRequest(url)
     }
 
-    suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse> {
+    override suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse> {
         val url = baseUrl.newBuilder()
             .addPathSegment("manga")
             .addPathSegment(id)
@@ -1317,7 +1340,7 @@ class KitsuCatalogProvider(
 - [ ] **Step 3: Commit, push, and verify Fast CI**
 
 ```bash
-git add data/src/main/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProvider.kt data/src/test
+git add data/src/main/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProvider.kt app/src/test
 git commit -m "feat(tsuzuki): implement KitsuCatalogProvider"
 git push
 ```
