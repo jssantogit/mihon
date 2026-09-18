@@ -38,6 +38,34 @@ class MaterializeCanonicalTitleTest {
     }
 
     @Test
+    fun `catalog materialization recovers when external identity is claimed concurrently`() = runTest {
+        val winner = CanonicalTitle(
+            id = "winner-id",
+            displayTitle = "Berserk",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 90L,
+            updatedAt = 90L,
+        )
+        val repository = RacingCanonicalTitleRepository(winner)
+        val interactor = MaterializeCanonicalTitle(
+            repository = repository,
+            idFactory = { "candidate-id" },
+            clock = { 100L },
+        )
+
+        val result = runCatching {
+            interactor.fromCatalog(
+                displayTitle = "Berserk",
+                provider = "kitsu",
+                externalId = "123",
+            )
+        }
+
+        result.getOrNull() shouldBe winner
+        repository.titles.keys shouldBe setOf("winner-id")
+    }
+
+    @Test
     fun `source materialization creates source-only identity without provider id`() = runTest {
         val repository = FakeCanonicalTitleRepository()
         val interactor = MaterializeCanonicalTitle(
@@ -51,6 +79,33 @@ class MaterializeCanonicalTitleTest {
         title.id shouldBe "source-id"
         title.identityState shouldBe CanonicalIdentityState.SOURCE_ONLY
         repository.identities.size shouldBe 0
+    }
+
+    private class RacingCanonicalTitleRepository(
+        private val winner: CanonicalTitle,
+    ) : CanonicalTitleRepository {
+        val titles = mutableMapOf(winner.id to winner)
+        private var firstLookup = true
+
+        override suspend fun getById(id: String): CanonicalTitle? = titles[id]
+
+        override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> = MutableStateFlow(titles[id])
+
+        override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? {
+            if (firstLookup) {
+                firstLookup = false
+                return null
+            }
+            return winner
+        }
+
+        override suspend fun insert(title: CanonicalTitle) {
+            titles[title.id] = title
+        }
+
+        override suspend fun addExternalIdentity(identity: ExternalIdentity) {
+            throw IllegalStateException("external identity already claimed")
+        }
     }
 
     private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
