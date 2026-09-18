@@ -36,8 +36,38 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
-      - name: Build release APK
+      - name: Validate persistent signing secrets
+        env:
+          TSUZUKI_KEYSTORE_BASE64: ${{ secrets.TSUZUKI_KEYSTORE_BASE64 }}
+          TSUZUKI_KEYSTORE_PASSWORD: ${{ secrets.TSUZUKI_KEYSTORE_PASSWORD }}
+          TSUZUKI_KEY_ALIAS: ${{ secrets.TSUZUKI_KEY_ALIAS }}
+          TSUZUKI_KEY_PASSWORD: ${{ secrets.TSUZUKI_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in             TSUZUKI_KEYSTORE_BASE64             TSUZUKI_KEYSTORE_PASSWORD             TSUZUKI_KEY_ALIAS             TSUZUKI_KEY_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required Actions secret: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Build signed release APK
+        env:
+          MIHON_GITHUB_RELEASE: "true"
+          storeFileBase64: ${{ secrets.TSUZUKI_KEYSTORE_BASE64 }}
+          storePassword: ${{ secrets.TSUZUKI_KEYSTORE_PASSWORD }}
+          keyAlias: ${{ secrets.TSUZUKI_KEY_ALIAS }}
+          keyPassword: ${{ secrets.TSUZUKI_KEY_PASSWORD }}
         run: ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
+
+      - name: Verify APK signature
+        run: |
+          apk="app/build/outputs/apk/release/app-arm64-v8a-release.apk"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -1349,194 +1349,91 @@ Verify Fast CI runs and all four jobs are green.
 
 ---
 
-### Task 4: Catalog-to-Canonical materialization interactor
+### Task 4: Catalog-to-Canonical materialization adapter
+
+**Goal:** Adapt an ephemeral `CatalogItem` into the already-established canonical materialization path without duplicating persistence, UUID generation, or race-handling logic.
 
 **Files:**
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalog.kt`
 - Create: `domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalogTest.kt`
 
 **Interfaces:**
-- Consumes: `CanonicalTitleRepository`, `CatalogItem`.
+- Consumes: existing `MaterializeCanonicalTitle` and `CatalogItem`.
 - Produces: `MaterializeCanonicalTitleFromCatalog.execute(catalogItem): CanonicalTitle`.
 
-- [ ] **Step 1: Write red tests for catalog-to-canonical materialization**
+**Critical invariant:**
 
-Create `domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalogTest.kt`:
+Do **not** reimplement canonical persistence here. The canonical foundation already owns:
+- Tsuzuki UUID generation;
+- `ExternalIdentity` construction;
+- atomic `getOrCreateByExternalIdentity(...)`;
+- race convergence;
+- idempotence.
 
-```kotlin
-package tachiyomi.domain.tsuzuki.interactor
+`MaterializeCanonicalTitleFromCatalog` is only a thin adapter from `CatalogItem` to `MaterializeCanonicalTitle.fromCatalog(...)`.
 
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
-import tachiyomi.domain.tsuzuki.model.CanonicalTitle
-import tachiyomi.domain.tsuzuki.model.ExternalIdentity
-import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+- [ ] **Step 1: Write the failing adapter tests**
 
-class MaterializeCanonicalTitleFromCatalogTest {
+Create `domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalogTest.kt`.
 
-    @Test
-    fun `materializing catalog item creates new canonical title with UUID and external identity`() = runTest {
-        val repository = FakeTitleRepository()
-        val interactor = MaterializeCanonicalTitleFromCatalog(
-            repository = repository,
-            idFactory = { "uuid-12345" },
-            clock = { 5000L },
-        )
+Cover at minimum:
+- provider ID is never used as `CanonicalTitle.id`;
+- provider/providerId are forwarded as external identity;
+- display title is forwarded from `CatalogItem.title`;
+- materializing the same provider identity twice returns the same canonical title;
+- concurrent/racing identity resolution still converges through the existing atomic foundation behavior.
 
-        val catalogItem = CatalogItem(
-            provider = "kitsu",
-            providerId = "999",
-            title = "Vinland Saga",
-        )
+The test should exercise the existing `MaterializeCanonicalTitle` implementation with a fake `CanonicalTitleRepository`; do not fake away the atomic materialization behavior being preserved.
 
-        val title = interactor.execute(catalogItem)
+- [ ] **Step 2: Implement the thin adapter**
 
-        // Spec Invariant: CanonicalTitle.id MUST NOT be the provider ID
-        title.id shouldBe "uuid-12345"
-        title.id shouldNotBe catalogItem.providerId
-        title.displayTitle shouldBe "Vinland Saga"
-        title.identityState shouldBe CanonicalIdentityState.RESOLVED
-
-        // Spec Invariant: Kitsu ID is attached as ExternalIdentity
-        repository.identities.size shouldBe 1
-        val identity = repository.identities.first()
-        identity.canonicalTitleId shouldBe "uuid-12345"
-        identity.provider shouldBe "kitsu"
-        identity.externalId shouldBe "999"
-        identity.verified shouldBe true
-    }
-
-    @Test
-    fun `materializing already existing catalog item is idempotent`() = runTest {
-        val repository = FakeTitleRepository()
-        val interactor = MaterializeCanonicalTitleFromCatalog(
-            repository = repository,
-            idFactory = { "uuid-first" },
-            clock = { 5000L },
-        )
-
-        val catalogItem = CatalogItem(
-            provider = "kitsu",
-            providerId = "999",
-            title = "Vinland Saga",
-        )
-
-        val first = interactor.execute(catalogItem)
-        val second = interactor.execute(catalogItem)
-
-        first.id shouldBe "uuid-first"
-        second.id shouldBe first.id
-        repository.titles.size shouldBe 1
-        repository.identities.size shouldBe 1
-    }
-
-    private class FakeTitleRepository : CanonicalTitleRepository {
-        val titles = mutableMapOf<String, CanonicalTitle>()
-        val identities = mutableListOf<ExternalIdentity>()
-        private val flow = MutableStateFlow<CanonicalTitle?>(null)
-
-        override suspend fun getById(id: String): CanonicalTitle? = titles[id]
-        override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> = flow
-        override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? {
-            val titleId = identities.firstOrNull { it.provider == provider && it.externalId == externalId }?.canonicalTitleId
-            return titleId?.let { titles[it] }
-        }
-        override suspend fun insert(title: CanonicalTitle) {
-            titles[title.id] = title
-            flow.value = title
-        }
-        override suspend fun addExternalIdentity(identity: ExternalIdentity) {
-            identities += identity
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Commit and push red test**
-
-```bash
-git add domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalogTest.kt
-git commit -m "test(tsuzuki): verify catalog to canonical materialization invariants"
-git push
-```
-
-- [ ] **Step 3: Implement `MaterializeCanonicalTitleFromCatalog`**
-
-Create `domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalog.kt`:
+Create:
 
 ```kotlin
 package tachiyomi.domain.tsuzuki.interactor
 
 import dev.zacsweers.metro.Inject
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
-import tachiyomi.domain.tsuzuki.model.ExternalIdentity
-import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
-import java.util.UUID
-import kotlin.time.Clock
 
-class MaterializeCanonicalTitleFromCatalog internal constructor(
-    private val repository: CanonicalTitleRepository,
-    private val idFactory: () -> String,
-    private val clock: () -> Long,
+@Inject
+class MaterializeCanonicalTitleFromCatalog(
+    private val materializeCanonicalTitle: MaterializeCanonicalTitle,
 ) {
-
-    @Inject
-    constructor(
-        repository: CanonicalTitleRepository,
-    ) : this(
-        repository = repository,
-        idFactory = { UUID.randomUUID().toString() },
-        clock = { Clock.System.now().toEpochMilliseconds() },
-    )
-
     suspend fun execute(catalogItem: CatalogItem): CanonicalTitle {
-        // Return existing title if already mapped to this provider identity
-        repository.getByExternalIdentity(catalogItem.provider, catalogItem.providerId)?.let {
-            return it
-        }
-
-        val now = clock()
-        val title = CanonicalTitle(
-            id = idFactory(),
+        return materializeCanonicalTitle.fromCatalog(
             displayTitle = catalogItem.title,
-            identityState = CanonicalIdentityState.RESOLVED,
-            createdAt = now,
-            updatedAt = now,
+            provider = catalogItem.provider,
+            externalId = catalogItem.providerId,
         )
-
-        repository.insert(title)
-        repository.addExternalIdentity(
-            ExternalIdentity(
-                canonicalTitleId = title.id,
-                provider = catalogItem.provider,
-                externalId = catalogItem.providerId,
-                verified = true,
-                createdAt = now,
-            ),
-        )
-
-        return title
     }
 }
 ```
 
+Do not inject `CanonicalTitleRepository` directly into this adapter. Do not call `insert` or `addExternalIdentity` here.
+
+- [ ] **Step 3: Run focused verification when available**
+
+Preferred focused command:
+
+```bash
+./gradlew testDebugUnitTest --tests "tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalogTest"
+```
+
+Local Gradle remains optional under CI-first policy. Valid delegated evidence or authoritative Fast CI evidence may satisfy acceptance according to repository governance.
+
 - [ ] **Step 4: Commit, push, and verify Fast CI**
 
 ```bash
-git add domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalog.kt
-git commit -m "feat(tsuzuki): implement MaterializeCanonicalTitleFromCatalog"
+git add domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalog.kt \
+  domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalogTest.kt
+git commit -m "feat(tsuzuki): adapt catalog items to canonical materialization"
 git push
 ```
 
-Verify Fast CI runs and all four jobs are green.
+Require Fast CI green across Format, Kotlin Compile, Unit Tests, and SQLDelight Migrations.
+
+Stop after Task 4 acceptance. Do not begin Task 5.
 
 ---
 
