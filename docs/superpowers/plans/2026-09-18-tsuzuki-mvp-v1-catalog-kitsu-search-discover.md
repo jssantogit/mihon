@@ -18,29 +18,37 @@
 
 **Development Workflow:** `docs/TSUZUKI-DEVELOPMENT.md`, `AGENTS.md`, `.agents/rules/tsuzuki-development.md`
 
-**Preceding Foundation:** `docs/superpowers/plans/2026-09-17-tsuzuki-mvp-v1-canonical-foundation-ci-first.md` (Branch: `tsuzuki/mvp-v1-canonical-foundation`)
+**Preceding Foundation:** `docs/superpowers/plans/2026-09-17-tsuzuki-mvp-v1-canonical-foundation-ci-first.md` (already merged into `tsuzuki/bootstrap` via PR #2)
 
 ---
 
 ## Current branch state
 
-Implementation branch:
+Planning/documentation currently lives on:
+
+```text
+tsuzuki/bootstrap
+```
+
+Implementation branch to create when execution begins:
 
 ```text
 tsuzuki/mvp-v1-catalog-kitsu-search-discover
 ```
 
-Base branch:
+Implementation base:
 
 ```text
-tsuzuki/mvp-v1-canonical-foundation
+tsuzuki/bootstrap
 ```
 
 Draft PR:
 
 ```text
-#3 — Tsuzuki MVP-V1: Catalog, Kitsu, Search, and Discover
-base: tsuzuki/mvp-v1-canonical-foundation
+Not created yet.
+Create it only after the implementation branch exists.
+Base it on tsuzuki/bootstrap.
+Do not assume a PR number in advance.
 ```
 
 Already present from foundation:
@@ -82,6 +90,7 @@ Do not modify existing canonical persistence or library tables unless a task exp
 5. **Unified Search & Discover interactors:** `SearchCatalog` and `GetDiscoverFeed` domain use cases supporting graceful degradation.
 6. **Metro dependency injection:** Wiring providers, clients, and interactors into `AppScope`.
 7. **Comprehensive unit and contract tests:** Mock JSON fixtures for Kitsu edge responses and resilience tests.
+8. **Minimal title-centric Search / Discover UI:** A small Compose surface that proves the catalog vertical slice on-device, including loading, success, empty, degraded, and error states plus a provider-neutral item preview.
 
 ### Explicit non-goals for this plan
 
@@ -92,7 +101,7 @@ Do **NOT** implement any of the following in this milestone:
 - **Reader / downloader / extension execution changes** (Phase 7).
 - **Collections Query AST & Query Planner** (MVP-V2).
 - **Google Drive private sync & Google Auth** (MVP-V3).
-- **Full Search/Discover UI screens:** This plan delivers the complete, verified domain and data layer; Compose presentation screens follow in the UI slice.
+- **Deep visual redesign or production-polish of Search/Discover:** this milestone includes the minimal Compose UI required to prove the title-centric Search/Discover vertical slice. Broader navigation redesign and visual maturation remain later work.
 
 ---
 
@@ -170,8 +179,10 @@ Focused local test (optional)
        ↓
 Fast CI (mandatory task gate)
        ↓
-Full Verify (milestone checkpoint)
+APK checkpoint (only for final visible UI/device validation)
 ```
+
+`Full Verify` is not a default milestone gate for this block. Use it only if a distinct release-integration risk is discovered that is not already covered by the final APK build.
 
 ---
 
@@ -271,6 +282,7 @@ data/src/main/java/tachiyomi/data/tsuzuki/kitsu/dto/
 └── KitsuLinks.kt
 
 data/src/main/java/tachiyomi/data/tsuzuki/kitsu/client/
+├── KitsuClient.kt
 └── KitsuHttpClient.kt
 
 data/src/main/java/tachiyomi/data/tsuzuki/kitsu/
@@ -283,9 +295,23 @@ app/src/main/java/mihon/app/di/tsuzuki/
 └── CatalogModule.kt
 ```
 
+### Minimal UI
+```text
+app/src/main/java/eu/kanade/presentation/tsuzuki/catalog/
+├── CatalogScreen.kt
+├── CatalogItemCard.kt
+└── CatalogItemDetailSheet.kt
+
+app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/catalog/
+├── CatalogScreen.kt
+└── CatalogScreenModel.kt
+```
+
+The UI task may make one minimal edit to an existing Voyager/navigation entry point to make this screen reachable. Do not redesign the complete main navigation in this milestone.
+
 ### Test Fixtures & Unit Tests
 ```text
-data/src/test/resources/kitsu/
+app/src/test/resources/kitsu/
 ├── kitsu_manga_search_berserk.json
 ├── kitsu_trending_manga.json
 └── kitsu_manga_details_single.json
@@ -298,10 +324,18 @@ domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/
 ├── SearchCatalogTest.kt
 └── GetDiscoverFeedTest.kt
 
-data/src/test/java/tachiyomi/data/tsuzuki/kitsu/
+app/src/test/java/tachiyomi/data/tsuzuki/kitsu/
 ├── KitsuDtoSerializationTest.kt
 └── KitsuCatalogProviderTest.kt
 ```
+
+---
+
+## Kitsu transport verification rule
+
+The architecture decision for this milestone is to use Kitsu's public Edge REST / JSON:API surface behind `KitsuClient`, not tracker-domain code. Before Task 2 hardcodes a base URL, query parameter, sort key, status value, or trending route, verify that exact contract against a current authoritative Kitsu source or a live non-mutating response. Use one verified canonical endpoint in production code; do not invent automatic host fallbacks between `kitsu.app` and `kitsu.io`.
+
+The existing Mihon tracker at `app/src/main/java/eu/kanade/tachiyomi/data/track/kitsu/KitsuApi.kt` is reference material for repository networking/serialization patterns only. It uses `https://kitsu.app/api/graphql` with Kotlinx Serialization; tracker semantics must not leak into `CatalogProvider`.
 
 ---
 
@@ -574,29 +608,26 @@ Verify Fast CI runs: `Format`, `Kotlin Compile`, `Unit Tests`, and `SQLDelight M
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/dto/KitsuMangaResource.kt`
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/dto/KitsuMangaResponse.kt`
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/dto/KitsuSingleMangaResponse.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/client/KitsuClient.kt`
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/client/KitsuHttpClient.kt`
-- Create: `data/src/test/resources/kitsu/kitsu_manga_search_berserk.json`
-- Create: `data/src/test/resources/kitsu/kitsu_trending_manga.json`
-- Create: `data/src/test/resources/kitsu/kitsu_manga_details_single.json`
-- Create: `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuDtoSerializationTest.kt`
-- Modify: `data/build.gradle.kts` (ensure `testImplementation` dependencies are declared)
+- Create: `app/src/test/resources/kitsu/kitsu_manga_search_berserk.json`
+- Create: `app/src/test/resources/kitsu/kitsu_trending_manga.json`
+- Create: `app/src/test/resources/kitsu/kitsu_manga_details_single.json`
+- Create: `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuDtoSerializationTest.kt`
+- Do not modify `data/build.gradle.kts` solely to create a new test source set for this milestone.
 
 **Interfaces:**
 - Consumes: `eu.kanade.tachiyomi.network.NetworkHelper`, `kotlinx.serialization.json.Json`.
-- Produces: `KitsuHttpClient` returning typed `Result<KitsuMangaResponse>` and `Result<KitsuSingleMangaResponse>`.
+- Produces: a small Android-free `KitsuClient` transport contract plus `KitsuHttpClient`, which implements it and returns typed `Result<KitsuMangaResponse>` / `Result<KitsuSingleMangaResponse>`.
 
-- [ ] **Step 1: Declare test dependencies in `data/build.gradle.kts` if needed**
+- [ ] **Step 1: Use the existing app test harness; do not create a new `:data` test setup**
 
-Ensure `data/build.gradle.kts` contains:
-```kotlin
-    testImplementation(libs.bundles.test)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testRuntimeOnly(libs.junit.platform.launcher)
-```
+The repository currently has no established `data/src/test` tree. Keep Kitsu DTO/provider contract tests under `app/src/test`, which already has the standard project test dependencies and depends on `:data` and `:domain`.
 
+Do not modify `data/build.gradle.kts` only to create test infrastructure. If implementation evidence later proves a data-module test is necessary, stop and justify that infrastructure change separately.
 - [ ] **Step 2: Add JSON fixtures for Kitsu edge responses**
 
-Create `data/src/test/resources/kitsu/kitsu_manga_search_berserk.json`:
+Create `app/src/test/resources/kitsu/kitsu_manga_search_berserk.json`:
 ```json
 {
   "data": [
@@ -652,7 +683,7 @@ Create `data/src/test/resources/kitsu/kitsu_manga_search_berserk.json`:
 }
 ```
 
-Create `data/src/test/resources/kitsu/kitsu_trending_manga.json`:
+Create `app/src/test/resources/kitsu/kitsu_trending_manga.json`:
 ```json
 {
   "data": [
@@ -680,7 +711,7 @@ Create `data/src/test/resources/kitsu/kitsu_trending_manga.json`:
 }
 ```
 
-Create `data/src/test/resources/kitsu/kitsu_manga_details_single.json`:
+Create `app/src/test/resources/kitsu/kitsu_manga_details_single.json`:
 ```json
 {
   "data": {
@@ -707,7 +738,7 @@ Create `data/src/test/resources/kitsu/kitsu_manga_details_single.json`:
 
 - [ ] **Step 3: Write red test for DTO serialization**
 
-Create `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuDtoSerializationTest.kt`:
+Create `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuDtoSerializationTest.kt`:
 
 ```kotlin
 package tachiyomi.data.tsuzuki.kitsu
@@ -891,7 +922,7 @@ data class KitsuSingleMangaResponse(
 )
 ```
 
-- [ ] **Step 5: Implement `KitsuHttpClient` with OkHttp and typed error mapping**
+- [ ] **Step 5: Implement the mockable `KitsuClient` boundary and `KitsuHttpClient` with OkHttp and typed error mapping**
 
 Create `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/client/KitsuHttpClient.kt`:
 
@@ -920,7 +951,7 @@ import java.io.IOException
 class KitsuHttpClient(
     private val network: NetworkHelper,
     private val json: Json,
-) {
+) : KitsuClient {
     private val baseUrl: HttpUrl = "https://kitsu.io/api/edge/".toHttpUrl()
 
     private val kitsuJson: Json = Json(json) {
@@ -1008,7 +1039,7 @@ class KitsuHttpClient(
 - [ ] **Step 6: Commit, push, and verify Fast CI**
 
 ```bash
-git add data/build.gradle.kts data/src/main/java/tachiyomi/data/tsuzuki/kitsu data/src/test
+git add data/src/main/java/tachiyomi/data/tsuzuki/kitsu app/src/test
 git commit -m "feat(tsuzuki): add Kitsu HTTP client and serialization DTOs"
 git push
 ```
@@ -1021,15 +1052,15 @@ Verify Fast CI runs and all four jobs are green.
 
 **Files:**
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProvider.kt`
-- Create: `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProviderTest.kt`
+- Create: `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProviderTest.kt`
 
 **Interfaces:**
-- Consumes: `CatalogProvider` contract from Task 1, `KitsuHttpClient` from Task 2.
+- Consumes: `CatalogProvider` contract from Task 1 and the mockable `KitsuClient` transport from Task 2.
 - Produces: `KitsuCatalogProvider` providing domain `CatalogItem` and `CatalogPage` models.
 
 - [ ] **Step 1: Write red tests for `KitsuCatalogProvider`**
 
-Create `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProviderTest.kt`:
+Create `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProviderTest.kt`:
 
 ```kotlin
 package tachiyomi.data.tsuzuki.kitsu
@@ -1039,7 +1070,7 @@ import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
-import tachiyomi.data.tsuzuki.kitsu.client.KitsuHttpClient
+import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -1057,7 +1088,7 @@ class KitsuCatalogProviderTest {
         val mockResponse = json.decodeFromString<KitsuMangaResponse>(searchJson)
 
         val provider = KitsuCatalogProvider(
-            httpClient = FakeKitsuHttpClient(searchResult = Result.success(mockResponse)),
+            httpClient = FakeKitsuClient(searchResult = Result.success(mockResponse)),
         )
 
         val result = provider.search(CatalogQuery(query = "Berserk", sort = CatalogSort.POPULARITY_DESC))
@@ -1085,7 +1116,7 @@ class KitsuCatalogProviderTest {
         val mockResponse = json.decodeFromString<KitsuSingleMangaResponse>(detailJson)
 
         val provider = KitsuCatalogProvider(
-            httpClient = FakeKitsuHttpClient(detailResult = Result.success(mockResponse)),
+            httpClient = FakeKitsuClient(detailResult = Result.success(mockResponse)),
         )
 
         val result = provider.getDetails("1234")
@@ -1096,19 +1127,27 @@ class KitsuCatalogProviderTest {
         item.title shouldBe "Berserk"
     }
 
-    private class FakeKitsuHttpClient(
+    private class FakeKitsuClient(
         private val searchResult: Result<KitsuMangaResponse> = Result.success(KitsuMangaResponse()),
         private val detailResult: Result<KitsuSingleMangaResponse>? = null,
-    ) : KitsuHttpClient(
-        network = eu.kanade.tachiyomi.network.NetworkHelper(android.content.ContextWrapper(null), eu.kanade.tachiyomi.network.NetworkPreferences(FakePreferenceStore())),
-        json = Json { ignoreUnknownKeys = true },
-    ) {
-        // In actual test, override or use mock / interface if needed
+    ) : KitsuClient {
+        override suspend fun searchManga(
+            query: String?,
+            offset: Int,
+            limit: Int,
+            sort: String?,
+            status: String?,
+        ): Result<KitsuMangaResponse> = searchResult
+
+        override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> = searchResult
+
+        override suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse> =
+            detailResult ?: Result.failure(IllegalStateException("No detail result configured"))
     }
 }
 ```
 
-*Note on test ergonomics:* To keep tests clean without mocking Android Context, implement an interface `KitsuClient` or provide a direct mapper test and open methods on `KitsuHttpClient`.
+Provider tests must fake `KitsuClient`; they must not construct Android `Context` or subclass the concrete network client.
 
 - [ ] **Step 2: Implement `KitsuCatalogProvider`**
 
@@ -1121,7 +1160,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
-import tachiyomi.data.tsuzuki.kitsu.client.KitsuHttpClient
+import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -1136,7 +1175,7 @@ import tachiyomi.domain.tsuzuki.catalog.service.CatalogProvider
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class KitsuCatalogProvider(
-    private val httpClient: KitsuHttpClient,
+    private val httpClient: KitsuClient,
 ) : CatalogProvider {
 
     override val providerId: String = "kitsu"
@@ -1752,15 +1791,15 @@ Confirm `:app:compileDebugKotlin` succeeds. Metro will validate that all declare
 ### Task 7: Comprehensive contract tests & error resilience verification
 
 **Files:**
-- Create: `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuErrorResilienceTest.kt`
-- Modify/Extend: `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProviderTest.kt`
+- Create: `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuErrorResilienceTest.kt`
+- Modify/Extend: `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuCatalogProviderTest.kt`
 
 **Interfaces:**
 - Produces: Complete proof of spec requirements (offline degradation, 429 rate limit, 500 error resilience, provider-specific scoring).
 
 - [ ] **Step 1: Add error resilience contract test**
 
-Create `data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuErrorResilienceTest.kt`:
+Create `app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuErrorResilienceTest.kt`:
 
 ```kotlin
 package tachiyomi.data.tsuzuki.kitsu
@@ -1830,7 +1869,7 @@ class KitsuErrorResilienceTest {
 - [ ] **Step 2: Commit, push, and verify Fast CI**
 
 ```bash
-git add data/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuErrorResilienceTest.kt
+git add app/src/test/java/tachiyomi/data/tsuzuki/kitsu/KitsuErrorResilienceTest.kt
 git commit -m "test(tsuzuki): verify catalog provider error resilience and graceful degradation"
 git push
 ```
@@ -1839,59 +1878,123 @@ Verify Fast CI runs and all four jobs are green.
 
 ---
 
-### Task 8: Final milestone acceptance and full-verify checkpoint
+### Task 8: Minimal title-centric Search / Discover UI
+
+**Goal:** Prove the catalog vertical slice on-device without redesigning the whole Mihon navigation model.
 
 **Files:**
-- Modify only Task 1–7 files if evidence requires a correction.
-- Do not start Canonical Library migration or Source Resolver early.
+- Create: `app/src/main/java/eu/kanade/presentation/tsuzuki/catalog/CatalogScreen.kt`
+- Create: `app/src/main/java/eu/kanade/presentation/tsuzuki/catalog/CatalogItemCard.kt`
+- Create: `app/src/main/java/eu/kanade/presentation/tsuzuki/catalog/CatalogItemDetailSheet.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/catalog/CatalogScreen.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/catalog/CatalogScreenModel.kt`
+- Modify: the smallest existing Voyager/navigation entry point required to make the screen reachable.
+- Test: focused state tests under `app/src/test/java` where logic can be exercised without instrumentation.
 
 **Interfaces:**
-- Consumes: All Task 1–7 outputs.
-- Produces: Accepted Catalog, Kitsu, Search, and Discover subsystem.
+- Consumes: `SearchCatalog`, `GetDiscoverFeed`, and provider-neutral `CatalogItem`.
+- Produces: one title-centric Search/Discover surface with ephemeral item preview.
+
+**Required UI states:**
+```text
+Loading
+Success
+Empty
+Degraded
+Error
+```
+
+**Behavioral constraints:**
+- UI must not import Kitsu DTOs or Kitsu networking classes.
+- Search and Discover render `CatalogItem`, never source-grouped manga results.
+- Opening a catalog preview must not persist a `CanonicalTitle`.
+- Do not invoke Source Resolver or search installed reading sources.
+- Keep source/extension management intact; do not replace `HomeScreen.TABS` in this milestone.
+- Use the smallest existing Voyager/navigation route needed to expose the screen temporarily.
+
+- [ ] **Step 1: Write failing screen-state tests**
+
+Cover search loading -> success, empty results, typed provider failure, partial Discover degradation, and ephemeral item selection.
+
+- [ ] **Step 2: Implement `CatalogScreenModel`**
+
+Follow existing Metro/Voyager screen-model patterns. Expose immutable state and call only `SearchCatalog` / `GetDiscoverFeed`.
+
+- [ ] **Step 3: Implement minimal Compose presentation**
+
+Render a search input, Trending and Popular sections, catalog cards, all required states, and a simple provider-neutral item preview. Reuse existing Mihon presentation components where practical; no broad visual redesign.
+
+- [ ] **Step 4: Add the smallest navigation entry point**
+
+Make the new screen reachable without replacing the complete main navigation. Keep the edit localized and document the temporary route in the PR.
+
+- [ ] **Step 5: Commit, push, and require Fast CI**
+
+```bash
+git add app/src/main/java/eu/kanade/presentation/tsuzuki/catalog \
+  app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/catalog \
+  app/src/test/java
+git commit -m "feat(tsuzuki): add minimal catalog search and discover UI"
+git push
+```
+
+Fast CI is the required acceptance gate. Do not request `[full-ci]` for this task.
+
+---
+
+### Task 9: Final milestone acceptance and APK checkpoint
+
+**Files:**
+- Modify only Task 1–8 files if concrete evidence requires a correction.
+- Do not start Canonical Library migration, Source Resolver, Canonical Chapters, or Reader integration early.
+
+**Interfaces:**
+- Consumes: all Task 1–8 outputs.
+- Produces: accepted CatalogProvider + Kitsu + Search / Discover vertical slice.
 
 - [ ] **Step 1: Inspect the milestone diff against base**
 
 ```bash
-git diff tsuzuki/mvp-v1-canonical-foundation...HEAD --stat
+git diff tsuzuki/bootstrap...HEAD --stat
 ```
 
-Verify the following invariants hold strictly:
+Verify:
 ```text
 [x] No provider ID is CanonicalTitle.id
-[x] No reading source logic was added to KitsuCatalogProvider
-[x] No Mihon Reader / downloader / extension execution files were modified
-[x] Remote CatalogItem models remain ephemeral; no database insertions on search/discover
-[x] MaterializeCanonicalTitleFromCatalog persists a UUID and stores Kitsu ID as ExternalIdentity
-[x] Scores remain provider-specific (no synthetic average score)
-[x] Error taxonomy distinguishes Network, HTTP, Rate Limit, and Serialization failures
-[x] Metro DI resolves all new bindings cleanly
+[x] No reading-source logic was added to KitsuCatalogProvider
+[x] No Mihon Reader/downloader/extension execution files were modified
+[x] Remote CatalogItem models remain ephemeral on Search/Discover
+[x] Opening catalog preview does not persist a CanonicalTitle
+[x] Materialization persists a Tsuzuki UUID and provider identity mapping
+[x] Scores remain provider-specific
+[x] Catalog failures remain isolated from local Library/Reader behavior
+[x] UI imports provider-neutral domain types rather than Kitsu DTOs
+[x] Metro DI resolves the new graph
+[x] No Source Resolver or later-phase work slipped into this milestone
 ```
 
 - [ ] **Step 2: Confirm latest Fast CI is completely green**
 
-Ensure the latest commit on `tsuzuki/mvp-v1-catalog-kitsu-search-discover` has green status across:
-- `Format (spotlessCheck)`
-- `Kotlin Compile (:app:compileDebugKotlin)`
-- `Unit Tests (testDebugUnitTest)`
-- `SQLDelight Migrations (verifySqlDelightMigration)`
+Require green Format, Kotlin Compile, Unit Tests, and SQLDelight Migrations jobs.
 
-- [ ] **Step 3: Trigger Full Verify checkpoint**
-
-Push an empty commit requesting full release verification:
+- [ ] **Step 3: Request exactly one APK/device checkpoint**
 
 ```bash
-git commit --allow-empty -m "chore: catalog, kitsu, search & discover acceptance [full-ci]"
+git commit --allow-empty -m "chore: catalog search and discover device checkpoint [apk]"
 git push
 ```
 
-Wait for GitHub Actions `Full Verify` to complete release compilation (`assembleRelease`).
+The APK workflow already performs release assembly. Do not also request `[full-ci]` for the same checkpoint.
 
-- [ ] **Step 4: Keep PR #3 in draft for human review**
+- [ ] **Step 4: Perform the human/device smoke check**
 
-Do not auto-merge. Present final diff, test logs, and CI evidence to reviewer.
+Verify the catalog screen is reachable; Discover/search render or degrade cleanly; result taps open ephemeral preview; and local Library/Reader remain usable when Kitsu is unavailable.
+
+- [ ] **Step 5: Open/keep the implementation PR in draft for human review**
+
+Create the PR only after the implementation branch exists. Base it on `tsuzuki/bootstrap`. Do not assume a PR number and do not auto-merge.
 
 ---
-
 ## Acceptance criteria for the whole plan
 
 The Catalog, Kitsu, Search, and Discover milestone is accepted only when all criteria are satisfied:
@@ -1902,8 +2005,10 @@ The Catalog, Kitsu, Search, and Discover milestone is accepted only when all cri
 4. **Ephemerality:** Browsing Search, Discover, or Trending results creates zero records in the local database.
 5. **Graceful Degradation:** A complete Kitsu outage or HTTP 429 rate limit is captured in typed `CatalogError` and degrades gracefully without breaking local Library or Reader functionality.
 6. **Provider-Specific Scores:** Scores remain associated with `"kitsu"` (0–100%) without inventing a synthetic universal score.
-7. **Fast CI Green:** `spotlessCheck`, `:app:compileDebugKotlin`, `testDebugUnitTest`, and `verifySqlDelightMigration` pass without warnings/errors.
-8. **No Scope Creep:** No Source Resolver, Canonical Chapter Engine, Collections Query AST, or Google Drive code is present.
+7. **Minimal UI Vertical Slice:** Search and basic Discover are reachable in-app, render provider-neutral `CatalogItem` data, and expose Loading/Success/Empty/Degraded/Error behavior without requiring a reading source.
+8. **Fast CI Green:** `spotlessCheck`, `:app:compileDebugKotlin`, `testDebugUnitTest`, and `verifySqlDelightMigration` pass.
+9. **APK/Device Checkpoint:** exactly one final `[apk]` release build succeeds and the visible Search/Discover flow passes the smoke check; no redundant `[full-ci]` is required for the same checkpoint.
+10. **No Scope Creep:** No Source Resolver, Canonical Chapter Engine, Collections Query AST, Google Drive code, or deep navigation redesign is present.
 
 ---
 
@@ -1919,8 +2024,10 @@ You are the AGY orchestrator for Tsuzuki. Coordinate implementation of the Catal
 <CONTEXT>
 Repository: jssantogit/mihon
 Branch: tsuzuki/mvp-v1-catalog-kitsu-search-discover
-Base: tsuzuki/mvp-v1-canonical-foundation
+Base: tsuzuki/bootstrap
 Plan: docs/superpowers/plans/2026-09-18-tsuzuki-mvp-v1-catalog-kitsu-search-discover.md
+
+If the implementation branch does not exist yet, create it from the current `tsuzuki/bootstrap` head before Task 1. Do not target the already-merged canonical-foundation feature branch.
 
 Read, in this order:
 1. AGENTS.md
@@ -1937,6 +2044,8 @@ Development is CI-first. Local Gradle checks are optional; GitHub Fast CI is the
 - Remote CatalogItem results are ephemeral; persistence requires explicit user materialization.
 - Kitsu failure must never affect local Library, Reader, or downloads.
 - Maximum two delta correction cycles per task.
+- Fast CI is the normal task gate.
+- The final visible UI checkpoint uses one `[apk]`; do not pair it with redundant `[full-ci]`.
 - Stop as BLOCKED rather than guessing after repeated failure.
 </CONSTRAINTS>
 
