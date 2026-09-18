@@ -76,4 +76,3 @@ class CanonicalTitleTest {
         mapping.sourceId shouldBe 42L
     }
 }
-
