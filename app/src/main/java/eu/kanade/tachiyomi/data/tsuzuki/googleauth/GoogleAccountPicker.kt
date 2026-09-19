@@ -23,20 +23,26 @@ internal fun resolveGoogleAccountSelection(
         return null
     }
 
-    val accountName = activityResult.data
-        ?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+    return resolveGoogleAccountSelection(
+        accountName = activityResult.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME),
+        accountType = activityResult.data?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE),
+    )
+}
+
+internal fun resolveGoogleAccountSelection(
+    accountName: String?,
+    accountType: String?,
+): GoogleAccountIdentity? {
+    val normalizedName = accountName
         ?.trim()
         ?.takeIf(String::isNotBlank)
         ?: return null
-
-    val accountType = activityResult.data
-        ?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
 
     if (accountType != null && accountType != GOOGLE_ACCOUNT_TYPE) {
         return null
     }
 
-    return GoogleAccountIdentity(accountName)
+    return GoogleAccountIdentity(normalizedName)
 }
 
 private const val GOOGLE_ACCOUNT_TYPE = "com.google"
