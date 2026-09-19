@@ -241,7 +241,10 @@ class MihonReadingSourceGatewayTest {
         override suspend fun getLibraryManga(): List<LibraryManga> = emptyList()
         override fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>> = emptyFlow()
         override fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>> = emptyFlow()
-        override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> = emptyList()
+        override suspend fun getDuplicateLibraryManga(
+            id: Long,
+            title: String,
+        ): List<MangaWithChapterCount> = emptyList()
         override suspend fun getUpcomingManga(
             statuses: Set<Long>,
             excludedCategories: List<Long>,
