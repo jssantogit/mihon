@@ -237,6 +237,42 @@ class ManageCollectionDefinitionsTest {
         reordered.origin shouldBe CollectionOrigin.SYSTEM
     }
 
+    @Test
+    fun `system collection structure must be duplicated before adding user content`() = runTest {
+        val store = FakeStore()
+        val manager = manager(store)
+        manager.ensureSystemDefinitions()
+
+        val collectionId = ManageCollectionDefinitions.SystemDefinitions.COLLECTION_ID
+        val folderId = ManageCollectionDefinitions.SystemDefinitions.KITSU_FOLDER_ID
+
+        shouldThrow<IllegalArgumentException> {
+            manager.createUserFolder(
+                collectionId = collectionId,
+                title = "User folder",
+                sortOrder = 10,
+            )
+        }
+
+        shouldThrow<IllegalArgumentException> {
+            manager.createUserList(
+                collectionId = collectionId,
+                folderId = folderId,
+                title = "User list",
+                providerId = "kitsu",
+                query = null,
+                sort = CatalogSort.POPULARITY_DESC,
+                sortOrder = 10,
+            )
+        }
+
+        store.getFolders(collectionId).map { it.id } shouldContainExactly listOf(folderId)
+        store.getLists(folderId).map { it.id } shouldContainExactly listOf(
+            ManageCollectionDefinitions.SystemDefinitions.KITSU_POPULAR_LIST_ID,
+            ManageCollectionDefinitions.SystemDefinitions.KITSU_RATED_LIST_ID,
+        )
+    }
+
     private fun manager(
         store: FakeStore,
         ids: ArrayDeque<String> = ArrayDeque(),

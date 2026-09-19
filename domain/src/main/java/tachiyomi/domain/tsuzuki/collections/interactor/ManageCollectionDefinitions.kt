@@ -104,6 +104,9 @@ class ManageCollectionDefinitions internal constructor(
         require(collection.deletedAt == null) {
             "Cannot add folders to a deleted Collection"
         }
+        require(collection.origin == CollectionOrigin.USER) {
+            "System Collections must be duplicated before adding folders"
+        }
 
         if (parentFolderId != null) {
             val parent = requireNotNull(store.getFolder(parentFolderId)) {
@@ -111,6 +114,9 @@ class ManageCollectionDefinitions internal constructor(
             }
             require(parent.deletedAt == null && parent.collectionId == collectionId) {
                 "Parent folder must be active and belong to Collection $collectionId"
+            }
+            require(parent.origin == CollectionOrigin.USER) {
+                "System folders must be duplicated before adding subfolders"
             }
         }
 
@@ -143,11 +149,17 @@ class ManageCollectionDefinitions internal constructor(
         require(collection.deletedAt == null) {
             "Cannot add Lists to a deleted Collection"
         }
+        require(collection.origin == CollectionOrigin.USER) {
+            "System Collections must be duplicated before adding Lists"
+        }
         val folder = requireNotNull(store.getFolder(folderId)) {
             "Folder $folderId does not exist"
         }
         require(folder.deletedAt == null && folder.collectionId == collectionId) {
             "List folder must be active and belong to Collection $collectionId"
+        }
+        require(folder.origin == CollectionOrigin.USER) {
+            "System folders must be duplicated before adding Lists"
         }
 
         val now = clock()

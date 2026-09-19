@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -424,17 +423,19 @@ private fun CollectionHeader(
                     )
                 }
 
-                TextButton(
-                    onClick = {
-                        onEdit(
-                            EditorDialog.CreateFolder(
-                                collectionId = collection.id,
-                                parentFolderId = null,
-                            ),
-                        )
-                    },
-                ) {
-                    Text("+ Folder")
+                if (collection.origin == CollectionOrigin.USER) {
+                    TextButton(
+                        onClick = {
+                            onEdit(
+                                EditorDialog.CreateFolder(
+                                    collectionId = collection.id,
+                                    parentFolderId = null,
+                                ),
+                            )
+                        },
+                    ) {
+                        Text("+ Folder")
+                    }
                 }
             }
 
@@ -496,29 +497,31 @@ private fun FolderRow(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(
-                onClick = {
-                    onEdit(
-                        EditorDialog.CreateFolder(
-                            collectionId = collectionId,
-                            parentFolderId = folder.id,
-                        ),
-                    )
-                },
-            ) {
-                Text("+ Subfolder")
-            }
-            TextButton(
-                onClick = {
-                    onEdit(
-                        EditorDialog.CreateList(
-                            collectionId = collectionId,
-                            folderId = folder.id,
-                        ),
-                    )
-                },
-            ) {
-                Text("+ List")
+            if (folder.origin == CollectionOrigin.USER) {
+                TextButton(
+                    onClick = {
+                        onEdit(
+                            EditorDialog.CreateFolder(
+                                collectionId = collectionId,
+                                parentFolderId = folder.id,
+                            ),
+                        )
+                    },
+                ) {
+                    Text("+ Subfolder")
+                }
+                TextButton(
+                    onClick = {
+                        onEdit(
+                            EditorDialog.CreateList(
+                                collectionId = collectionId,
+                                folderId = folder.id,
+                            ),
+                        )
+                    },
+                ) {
+                    Text("+ List")
+                }
             }
         }
 
@@ -1081,35 +1084,36 @@ private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
 
     for (predicate in predicates) {
         if (!seen.add(predicate.field)) return null
+        val value = predicate.value
 
         result = when {
             predicate.field == QueryField.STATUS &&
                 predicate.operator == QueryOperator.EQUALS &&
-                predicate.value is QueryValue.StringValue -> {
-                result.copy(status = predicate.value.value)
+                value is QueryValue.StringValue -> {
+                result.copy(status = value.value)
             }
 
             predicate.field == QueryField.WORK_TYPE &&
                 predicate.operator == QueryOperator.EQUALS &&
-                predicate.value is QueryValue.StringValue -> {
-                result.copy(format = predicate.value.value)
+                value is QueryValue.StringValue -> {
+                result.copy(format = value.value)
             }
 
             predicate.field == QueryField.SCORE &&
                 predicate.operator == QueryOperator.GREATER_OR_EQUAL -> {
-                result.copy(minScore = numericText(predicate.value) ?: return null)
+                result.copy(minScore = numericText(value) ?: return null)
             }
 
             predicate.field == QueryField.CHAPTER_COUNT &&
                 predicate.operator == QueryOperator.GREATER_OR_EQUAL &&
-                predicate.value is QueryValue.IntegerValue -> {
-                result.copy(minChapters = predicate.value.value.toString())
+                value is QueryValue.IntegerValue -> {
+                result.copy(minChapters = value.value.toString())
             }
 
             predicate.field == QueryField.VOLUME_COUNT &&
                 predicate.operator == QueryOperator.GREATER_OR_EQUAL &&
-                predicate.value is QueryValue.IntegerValue -> {
-                result.copy(minVolumes = predicate.value.value.toString())
+                value is QueryValue.IntegerValue -> {
+                result.copy(minVolumes = value.value.toString())
             }
 
             else -> return null
