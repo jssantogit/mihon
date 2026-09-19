@@ -111,6 +111,26 @@ android {
 
             buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLatestCommitTime = false)}\"")
         }
+        create("deva") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.deva"
+            versionNameSuffix = "-deva-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
+        create("devb") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.devb"
+            versionNameSuffix = "-devb-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
         create("benchmark") {
             initWith(release)
 
