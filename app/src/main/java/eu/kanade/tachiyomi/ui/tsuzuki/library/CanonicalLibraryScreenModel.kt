@@ -8,15 +8,19 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.interactor.RemoveCanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
+import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 
 @Immutable
@@ -32,7 +36,20 @@ class CanonicalLibraryScreenModel(
     private val observeCanonicalLibrary: ObserveCanonicalLibrary,
     private val setCanonicalLibraryStatus: SetCanonicalLibraryStatus,
     private val removeCanonicalLibraryItem: RemoveCanonicalLibraryItem,
+    private val migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
 ) : ViewModel() {
+
+    init {
+        viewModelScope.launch {
+            try {
+                migrateMihonLibraryToCanonical.execute()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logcat(LogPriority.WARN, e) { "Mihon library migration failed non-blockingly" }
+            }
+        }
+    }
 
     val state: StateFlow<CanonicalLibraryScreenState> = observeCanonicalLibrary.subscribe()
         .map { items -> CanonicalLibraryScreenState.Success(items) as CanonicalLibraryScreenState }
