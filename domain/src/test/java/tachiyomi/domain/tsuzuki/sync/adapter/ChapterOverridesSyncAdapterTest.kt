@@ -127,8 +127,8 @@ class ChapterOverridesSyncAdapterTest {
                 .filter { includeDeleted || !it.isDeleted }
                 .sortedBy(ChapterOverride::id)
 
-        override suspend fun upsert(override: ChapterOverride) {
-            values[override.id] = override
+        override suspend fun upsert(chapterOverride: ChapterOverride) {
+            values[chapterOverride.id] = chapterOverride
         }
     }
 
