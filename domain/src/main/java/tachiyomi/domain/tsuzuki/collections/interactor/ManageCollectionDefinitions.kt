@@ -1,7 +1,6 @@
 package tachiyomi.domain.tsuzuki.collections.interactor
 
 import dev.zacsweers.metro.Inject
-import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
@@ -10,6 +9,7 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
+import java.util.UUID
 import kotlin.time.Clock
 
 class ManageCollectionDefinitions internal constructor(
