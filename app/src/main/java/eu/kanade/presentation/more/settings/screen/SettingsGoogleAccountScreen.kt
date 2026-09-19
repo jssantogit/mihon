@@ -47,7 +47,9 @@ object SettingsGoogleAccountScreen : SearchableSettings {
         ) { activityResult ->
             scope.launch {
                 when (val result = coordinator.complete(activityResult)) {
-                    GoogleAuthConnectResult.Completed -> Unit
+                    GoogleAuthConnectResult.Completed,
+                    GoogleAuthConnectResult.InProgress,
+                    -> Unit
                     is GoogleAuthConnectResult.UserActionRequired -> {
                         pendingRequest = coordinator.createRequest(result.action)
                     }
@@ -164,7 +166,9 @@ object SettingsGoogleAccountScreen : SearchableSettings {
             onClick = {
                 scope.launch {
                     when (val result = coordinator.beginConnect()) {
-                        GoogleAuthConnectResult.Completed -> Unit
+                        GoogleAuthConnectResult.Completed,
+                        GoogleAuthConnectResult.InProgress,
+                        -> Unit
                         is GoogleAuthConnectResult.UserActionRequired -> {
                             onUserActionRequired(coordinator.createRequest(result.action))
                         }

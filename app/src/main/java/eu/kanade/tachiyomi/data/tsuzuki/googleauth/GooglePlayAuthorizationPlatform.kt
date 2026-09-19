@@ -209,8 +209,13 @@ internal fun failureForStatus(statusCode: Int): GoogleAuthFailure {
 
         CommonStatusCodes.API_NOT_CONNECTED,
         CommonStatusCodes.CONNECTION_SUSPENDED_DURING_CALL,
+        CommonStatusCodes.INTERNAL_ERROR,
+        CommonStatusCodes.INTERRUPTED,
+        CommonStatusCodes.REMOTE_EXCEPTION,
         CommonStatusCodes.RECONNECTION_TIMED_OUT,
         CommonStatusCodes.RECONNECTION_TIMED_OUT_DURING_UPDATE,
+        CommonStatusCodes.SERVICE_DISABLED,
+        CommonStatusCodes.SERVICE_VERSION_UPDATE_REQUIRED,
         -> GoogleAuthFailure(
             reason = GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE,
             message = "Google Play services are temporarily unavailable",

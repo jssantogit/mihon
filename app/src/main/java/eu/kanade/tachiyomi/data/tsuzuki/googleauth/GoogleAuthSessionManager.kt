@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.googleauth
 
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CancellationException
@@ -15,10 +16,11 @@ import tachiyomi.domain.tsuzuki.googleauth.service.GoogleAuthStateMachine
 
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class GoogleAuthSessionManager(
     private val authorizationPlatform: GoogleAuthorizationPlatform,
     private val accountHintStore: GoogleAccountHintStore,
-) {
+) : GoogleAuthorizedAccess {
     private val stateMachine = GoogleAuthStateMachine(
         initialState = GoogleAuthState.Restoring,
     )
@@ -50,6 +52,12 @@ class GoogleAuthSessionManager(
 
     suspend fun connect(): GoogleAuthConnectResult {
         return operationMutex.withLock {
+            when (state.value) {
+                GoogleAuthState.Connecting -> return@withLock GoogleAuthConnectResult.InProgress
+                is GoogleAuthState.Connected -> return@withLock GoogleAuthConnectResult.Completed
+                else -> Unit
+            }
+
             session = null
             pendingAccountHint = null
             stateMachine.beginConnection()
@@ -85,6 +93,23 @@ class GoogleAuthSessionManager(
         operationMutex.withLock {
             pendingAccountHint = null
             stateMachine.complete(GoogleAuthorizationResult.Cancelled)
+        }
+    }
+
+    override fun accessTokenOrNull(): GoogleAccessToken? {
+        return session?.let { GoogleAccessToken(it.accessToken) }
+    }
+
+    override suspend fun invalidateRejectedAccessToken(): GoogleAuthorizationOperationResult {
+        return operationMutex.withLock {
+            val rejectedSession = session ?: return@withLock GoogleAuthorizationOperationResult.Success
+            session = null
+            pendingAccountHint = null
+            stateMachine.complete(
+                GoogleAuthorizationResult.AuthorizationRequired(rejectedSession.account),
+            )
+
+            authorizationPlatform.clearAccessToken(rejectedSession)
         }
     }
 

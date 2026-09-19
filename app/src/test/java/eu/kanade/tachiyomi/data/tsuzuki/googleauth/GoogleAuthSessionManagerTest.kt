@@ -1,8 +1,12 @@
 package eu.kanade.tachiyomi.data.tsuzuki.googleauth
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.googleauth.model.GoogleAccountIdentity
@@ -321,8 +325,176 @@ class GoogleAuthSessionManagerTest {
         hintStore.read().shouldBeNull()
     }
 
+    @Test
+    fun `case 17 - repeated connect while interactive flow is pending is ignored`() = runTest {
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                    account = account,
+                ),
+            ),
+        )
+        val manager = manager(platform, FakeAccountHintStore(account))
+
+        manager.connect() shouldBe GoogleAuthConnectResult.UserActionRequired(FakeUserAction)
+        manager.connect() shouldBe GoogleAuthConnectResult.InProgress
+
+        platform.authorizeHints shouldContainExactly listOf(account)
+        manager.state.value shouldBe GoogleAuthState.Connecting
+    }
+
+    @Test
+    fun `case 18 - concurrent connect calls serialize to one Google request`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var authorizeCalls = 0
+        val platform = object : GoogleAuthorizationPlatform {
+            override suspend fun authorize(accountHint: GoogleAccountIdentity?): GoogleAuthorizationPlatformResult {
+                authorizeCalls++
+                started.complete(Unit)
+                release.await()
+                return GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                    account = account,
+                )
+            }
+
+            override suspend fun revoke(account: GoogleAccountIdentity) =
+                GoogleAuthorizationOperationResult.Success
+
+            override suspend fun clearAccessToken(session: GoogleAuthorizationSession) =
+                GoogleAuthorizationOperationResult.Success
+        }
+        val manager = manager(platform, FakeAccountHintStore(account))
+
+        val first = async { manager.connect() }
+        started.await()
+        val second = async { manager.connect() }
+        release.complete(Unit)
+
+        first.await() shouldBe GoogleAuthConnectResult.UserActionRequired(FakeUserAction)
+        second.await() shouldBe GoogleAuthConnectResult.InProgress
+        authorizeCalls shouldBe 1
+    }
+
+    @Test
+    fun `case 19 - connect cancellation restores previous stable state`() = runTest {
+        val platform = object : GoogleAuthorizationPlatform {
+            override suspend fun authorize(accountHint: GoogleAccountIdentity?): GoogleAuthorizationPlatformResult {
+                throw CancellationException("cancelled")
+            }
+
+            override suspend fun revoke(account: GoogleAccountIdentity) =
+                GoogleAuthorizationOperationResult.Success
+
+            override suspend fun clearAccessToken(session: GoogleAuthorizationSession) =
+                GoogleAuthorizationOperationResult.Success
+        }
+        val manager = manager(platform, FakeAccountHintStore())
+
+        shouldThrow<CancellationException> {
+            manager.connect()
+        }
+
+        manager.state.value shouldBe GoogleAuthState.SignedOut
+        manager.currentSession().shouldBeNull()
+    }
+
+    @Test
+    fun `case 20 - rejected access token is dropped and requires authorization again`() = runTest {
+        val session = GoogleAuthorizationSession(account, "rejected-token")
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Authorized(session),
+            ),
+        )
+        val hintStore = FakeAccountHintStore(account)
+        val manager = manager(platform, hintStore)
+
+        manager.restore()
+        manager.accessTokenOrNull()?.toString() shouldBe "GoogleAccessToken([REDACTED])"
+
+        manager.invalidateRejectedAccessToken() shouldBe GoogleAuthorizationOperationResult.Success
+
+        manager.state.value shouldBe GoogleAuthState.AuthorizationRequired(account)
+        manager.currentSession().shouldBeNull()
+        manager.accessTokenOrNull().shouldBeNull()
+        hintStore.read() shouldBe account
+        platform.clearedSessions shouldContainExactly listOf(session)
+    }
+
+    @Test
+    fun `case 21 - rejected token clear failure never restores rejected local token`() = runTest {
+        val session = GoogleAuthorizationSession(account, "rejected-token")
+        val failure = GoogleAuthFailure(
+            reason = GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE,
+            message = "temporarily unavailable",
+        )
+        val clearResult = GoogleAuthorizationOperationResult.RecoverableFailure(failure)
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Authorized(session),
+            ),
+            clearTokenResult = clearResult,
+        )
+        val manager = manager(platform, FakeAccountHintStore(account))
+
+        manager.restore()
+        manager.invalidateRejectedAccessToken() shouldBe clearResult
+
+        manager.state.value shouldBe GoogleAuthState.AuthorizationRequired(account)
+        manager.currentSession().shouldBeNull()
+        manager.accessTokenOrNull().shouldBeNull()
+    }
+
+    @Test
+    fun `case 22 - authorization rejected during reconnect preserves non-secret account hint`() = runTest {
+        val failure = GoogleAuthFailure(
+            reason = GoogleAuthFailureReason.AUTHORIZATION_REJECTED,
+            message = "token rejected",
+        )
+        val hintStore = FakeAccountHintStore(account)
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Failure(failure),
+            ),
+        )
+        val manager = manager(platform, hintStore)
+
+        manager.connect()
+
+        manager.state.value shouldBe GoogleAuthState.AuthorizationRequired(account)
+        hintStore.read() shouldBe account
+        manager.currentSession().shouldBeNull()
+    }
+
+    @Test
+    fun `case 23 - clear token failure is surfaced when revoke succeeds`() = runTest {
+        val session = GoogleAuthorizationSession(account, "transient-token")
+        val failure = GoogleAuthFailure(
+            reason = GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE,
+            message = "temporarily unavailable",
+        )
+        val clearResult = GoogleAuthorizationOperationResult.RecoverableFailure(failure)
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Authorized(session),
+            ),
+            clearTokenResult = clearResult,
+        )
+        val manager = manager(platform, FakeAccountHintStore(account))
+
+        manager.restore()
+        manager.disconnect() shouldBe clearResult
+
+        manager.state.value shouldBe GoogleAuthState.SignedOut
+        manager.currentSession().shouldBeNull()
+        platform.revokedAccounts shouldContainExactly listOf(account)
+    }
+
     private fun manager(
-        platform: FakeAuthorizationPlatform = FakeAuthorizationPlatform(),
+        platform: GoogleAuthorizationPlatform = FakeAuthorizationPlatform(),
         hintStore: FakeAccountHintStore = FakeAccountHintStore(),
     ) = GoogleAuthSessionManager(
         authorizationPlatform = platform,
