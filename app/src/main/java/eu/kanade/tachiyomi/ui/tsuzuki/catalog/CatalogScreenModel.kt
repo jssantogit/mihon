@@ -23,6 +23,8 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.DiscoverFeed
 import tachiyomi.domain.tsuzuki.library.interactor.AddCatalogItemToLibrary
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
+import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
+import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 
 @Immutable
 sealed interface LibraryActionState {
@@ -119,6 +121,8 @@ class CatalogScreenModel(
     private val searchCatalog: SearchCatalog,
     private val getDiscoverFeed: GetDiscoverFeed,
     private val addCatalogItemToLibrary: AddCatalogItemToLibrary,
+    private val canonicalTitleRepository: CanonicalTitleRepository,
+    private val canonicalLibraryRepository: CanonicalLibraryRepository,
 ) : ViewModel() {
 
     private val searchQueryFlow = MutableStateFlow("")
@@ -129,6 +133,7 @@ class CatalogScreenModel(
 
     private var discoverJob: Job? = null
     private var searchJob: Job? = null
+    private var previewJob: Job? = null
 
     val state: StateFlow<CatalogScreenState> = combine(
         searchQueryFlow,
@@ -234,11 +239,29 @@ class CatalogScreenModel(
     }
 
     fun openPreview(item: CatalogItem) {
+        previewJob?.cancel()
         selectedItemFlow.value = item
         libraryActionStateFlow.value = LibraryActionState.Idle
+        previewJob = viewModelScope.launch {
+            try {
+                val canonicalTitle = canonicalTitleRepository.getByExternalIdentity(
+                    provider = item.provider,
+                    externalId = item.providerId,
+                )
+                val libraryEntry = canonicalTitle?.let { canonicalLibraryRepository.get(it.id) }
+                if (selectedItemFlow.value == item && canonicalTitle != null && libraryEntry != null) {
+                    libraryActionStateFlow.value = LibraryActionState.Saved(canonicalTitle.id)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // Membership lookup is best-effort; explicit add remains idempotent.
+            }
+        }
     }
 
     fun dismissPreview() {
+        previewJob?.cancel()
         selectedItemFlow.value = null
         libraryActionStateFlow.value = LibraryActionState.Idle
     }

@@ -52,16 +52,23 @@ class CatalogScreenModelTest {
 
     private fun createScreenModel(
         provider: CatalogProvider,
-        addCatalogItemToLibrary: AddCatalogItemToLibrary = createFakeAddCatalogItemToLibrary(),
+        titleRepository: FakeCanonicalTitleRepository = FakeCanonicalTitleRepository(),
+        libraryRepository: CanonicalLibraryRepository = FakeCanonicalLibraryRepository(),
+        addCatalogItemToLibrary: AddCatalogItemToLibrary = createFakeAddCatalogItemToLibrary(
+            titleRepository = titleRepository,
+            libraryRepository = libraryRepository,
+        ),
     ) = CatalogScreenModel(
         searchCatalog = SearchCatalog(provider),
         getDiscoverFeed = GetDiscoverFeed(provider),
         addCatalogItemToLibrary = addCatalogItemToLibrary,
+        canonicalTitleRepository = titleRepository,
+        canonicalLibraryRepository = libraryRepository,
     )
 
     private fun createFakeAddCatalogItemToLibrary(
         titleRepository: FakeCanonicalTitleRepository = FakeCanonicalTitleRepository(),
-        libraryRepository: FakeCanonicalLibraryRepository = FakeCanonicalLibraryRepository(),
+        libraryRepository: CanonicalLibraryRepository = FakeCanonicalLibraryRepository(),
     ): AddCatalogItemToLibrary {
         val materializeCanonicalTitle = MaterializeCanonicalTitle(repository = titleRepository)
         val materializeFromCatalog = MaterializeCanonicalTitleFromCatalog(materializeCanonicalTitle)
@@ -217,7 +224,7 @@ class CatalogScreenModelTest {
     }
 
     @Test
-    fun `item selection and preview remains ephemeral with no repository or materialization calls`() = runTest(
+    fun `item selection and preview remains ephemeral with no writes or materialization`() = runTest(
         testDispatcher,
     ) {
         val fakeProvider = FakeCatalogProvider(
@@ -231,6 +238,8 @@ class CatalogScreenModelTest {
         )
         val screenModel = createScreenModel(
             provider = fakeProvider,
+            titleRepository = titleRepository,
+            libraryRepository = libraryRepository,
             addCatalogItemToLibrary = addInteractor,
         )
         advanceUntilIdle()
@@ -267,6 +276,8 @@ class CatalogScreenModelTest {
         )
         val screenModel = createScreenModel(
             provider = fakeProvider,
+            titleRepository = titleRepository,
+            libraryRepository = libraryRepository,
             addCatalogItemToLibrary = addInteractor,
         )
         advanceUntilIdle()
@@ -286,6 +297,39 @@ class CatalogScreenModelTest {
     }
 
     @Test
+    fun `reopening preview reflects persisted library membership`() = runTest(testDispatcher) {
+        val fakeProvider = FakeCatalogProvider()
+        val titleRepository = FakeCanonicalTitleRepository()
+        val libraryRepository = FakeCanonicalLibraryRepository()
+        val addInteractor = createFakeAddCatalogItemToLibrary(
+            titleRepository = titleRepository,
+            libraryRepository = libraryRepository,
+        )
+        val screenModel = createScreenModel(
+            provider = fakeProvider,
+            titleRepository = titleRepository,
+            libraryRepository = libraryRepository,
+            addCatalogItemToLibrary = addInteractor,
+        )
+        advanceUntilIdle()
+
+        val item = CatalogItem("kitsu", "123", "Death Note")
+        screenModel.openPreview(item)
+        advanceUntilIdle()
+        screenModel.state.value.libraryActionState shouldBe LibraryActionState.Idle
+
+        screenModel.addToLibrary(item)
+        advanceUntilIdle()
+        screenModel.state.value.libraryActionState.shouldBeInstanceOf<LibraryActionState.Saved>()
+
+        screenModel.dismissPreview()
+        screenModel.openPreview(item)
+        advanceUntilIdle()
+
+        screenModel.state.value.libraryActionState.shouldBeInstanceOf<LibraryActionState.Saved>()
+    }
+
+    @Test
     fun `repeated addToLibrary reports already-added without duplicate membership`() = runTest(testDispatcher) {
         val fakeProvider = FakeCatalogProvider()
         val titleRepository = FakeCanonicalTitleRepository()
@@ -296,6 +340,8 @@ class CatalogScreenModelTest {
         )
         val screenModel = createScreenModel(
             provider = fakeProvider,
+            titleRepository = titleRepository,
+            libraryRepository = libraryRepository,
             addCatalogItemToLibrary = addInteractor,
         )
         advanceUntilIdle()
