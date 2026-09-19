@@ -131,6 +131,16 @@ android {
 
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
+        create("devc") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.devc"
+            versionNameSuffix = "-devc-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
         create("benchmark") {
             initWith(release)
 
