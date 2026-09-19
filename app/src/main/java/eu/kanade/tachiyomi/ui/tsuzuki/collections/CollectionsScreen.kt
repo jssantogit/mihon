@@ -11,12 +11,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.metroViewModel
-import eu.kanade.presentation.tsuzuki.collections.CollectionsScreen as CollectionsScreenContent
 import eu.kanade.presentation.util.Screen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import eu.kanade.presentation.tsuzuki.collections.CollectionsScreen as CollectionsScreenContent
 
 class CollectionsScreen : Screen() {
 
@@ -86,8 +86,10 @@ class CollectionsScreen : Screen() {
             }
         }
 
-        val exportJson = ((state as? CollectionsScreenState.Ready)
-            ?.transferState as? CollectionsTransferState.ExportReady)
+        val exportJson = (
+            (state as? CollectionsScreenState.Ready)
+                ?.transferState as? CollectionsTransferState.ExportReady
+            )
             ?.json
 
         LaunchedEffect(exportJson) {

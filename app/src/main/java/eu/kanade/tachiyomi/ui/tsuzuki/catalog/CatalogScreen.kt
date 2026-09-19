@@ -6,9 +6,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.metroViewModel
-import eu.kanade.presentation.tsuzuki.catalog.CatalogScreen as CatalogScreenContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionsScreen
+import eu.kanade.presentation.tsuzuki.catalog.CatalogScreen as CatalogScreenContent
 
 class CatalogScreen : Screen() {
 
