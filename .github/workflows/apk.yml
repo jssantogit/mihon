@@ -53,9 +53,16 @@ jobs:
               mapping="app/build/outputs/mapping/devb"
               flags=""
               ;;
+            tsuzuki/mvp-v3-*)
+              lane="dev-c"
+              task="assembleDevc"
+              apk="app/build/outputs/apk/devc/app-arm64-v8a-devc.apk"
+              mapping="app/build/outputs/mapping/devc"
+              flags=""
+              ;;
             *)
               echo "::error::No APK lane is defined for branch '$GITHUB_REF_NAME'."
-              echo "::error::Use tsuzuki/mvp-v1-* for Dev A, tsuzuki/mvp-v2-* for Dev B, or tsuzuki/bootstrap for the integrated release."
+              echo "::error::Use tsuzuki/mvp-v1-* for Dev A, tsuzuki/mvp-v2-* for Dev B, tsuzuki/mvp-v3-* for Dev C, or tsuzuki/bootstrap for the integrated release."
               exit 1
               ;;
           esac
