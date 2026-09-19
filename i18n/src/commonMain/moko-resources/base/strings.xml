@@ -875,6 +875,10 @@
     <string name="transition_pages_error">Failed to load pages: %1$s</string>
     <string name="page_list_empty_error">No pages found</string>
     <string name="loader_not_implemented_error">Source not found</string>
+    <string name="tsuzuki_reader_fallback_title">Alternative source available</string>
+    <string name="tsuzuki_reader_fallback_message">The preferred source does not have this chapter. Another source can be used for this chapter without changing the title's preferred source.</string>
+    <string name="tsuzuki_reader_fallback_read_once">Read once</string>
+    <string name="tsuzuki_reader_fallback_always">Always use fallback</string>
 
     <!-- Updates -->
     <string name="updating_library">Updating library</string>
