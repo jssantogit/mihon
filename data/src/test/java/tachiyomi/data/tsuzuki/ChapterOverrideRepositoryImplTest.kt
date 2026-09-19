@@ -83,7 +83,7 @@ class ChapterOverrideRepositoryImplTest {
 
     @Test
     fun `chapter overrides are portable persisted and enqueue sync`() = runBlocking<Unit> {
-        val override = ChapterOverride(
+        val chapterOverride = ChapterOverride(
             id = "override-1",
             canonicalTitleId = "title-1",
             canonicalChapterKey = "01|0000000073|9999999999|00|",
@@ -96,15 +96,15 @@ class ChapterOverrideRepositoryImplTest {
             updatedAt = 20L,
         )
 
-        repository.upsert(override)
+        repository.upsert(chapterOverride)
 
-        repository.getById("override-1") shouldBe override
-        repository.getAll() shouldContainExactly listOf(override)
+        repository.getById("override-1") shouldBe chapterOverride
+        repository.getAll() shouldContainExactly listOf(chapterOverride)
         outbox.get(SyncDocumentKind.CHAPTER_OVERRIDES)?.documentKind shouldBe
             SyncDocumentKind.CHAPTER_OVERRIDES
 
         repository.upsert(
-            override.copy(
+            chapterOverride.copy(
                 revision = 1L,
                 updatedAt = 30L,
                 deletedAt = 30L,
