@@ -8,7 +8,6 @@ import dev.zacsweers.metro.SingleIn
 import tachiyomi.domain.tsuzuki.googleauth.model.GoogleAccountIdentity
 import java.io.File
 
-@Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class NoBackupGoogleAccountHintStore internal constructor(
