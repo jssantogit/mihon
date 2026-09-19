@@ -8,7 +8,7 @@ Baseline: `cad129ac1d3eebd7554c31f70672dd2c7b2f60c3`
 
 Expose the accepted Milestone 8 Collections engine through user-facing management while preserving the provider-neutral query model and upstream-friendly Mihon boundaries.
 
-## Block I — Portable JSON v1 ✅
+## Block I — Portable JSON v1 ✅ ✅
 
 - Domain portable document contract.
 - Versioned JSON codec.
@@ -17,7 +17,7 @@ Expose the accepted Milestone 8 Collections engine through user-facing managemen
 - Query AST preserved without provider-specific leakage.
 - Fail closed on unsupported schema versions and malformed references.
 
-## Block J — Import / Export Interactors
+## Block J — Import / Export Interactors ✅
 
 - Export active user-authored Collections.
 - Import as user-owned definitions.
