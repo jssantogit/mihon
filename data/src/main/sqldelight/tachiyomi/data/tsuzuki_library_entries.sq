@@ -53,25 +53,7 @@ SELECT
     t.display_title,
     t.identity_state,
     t.created_at AS title_created_at,
-    t.updated_at AS title_updated_at,
-    m.id AS mapping_id,
-    m.mihon_manga_id,
-    m.source_id,
-    m.source_url,
-    m.language,
-    m.match_confidence,
-    m.verified_by_user,
-    m.availability,
-    m.preferred_override,
-    m.created_at AS mapping_created_at,
-    m.updated_at AS mapping_updated_at
+    t.updated_at AS title_updated_at
 FROM tsuzuki_library_entries l
 JOIN tsuzuki_titles t ON t.id = l.canonical_title_id
-LEFT JOIN tsuzuki_source_mappings m ON m.id = (
-    SELECT sm.id FROM tsuzuki_source_mappings sm
-    WHERE sm.canonical_title_id = l.canonical_title_id
-    ORDER BY sm.preferred_override DESC, sm.created_at ASC
-    LIMIT 1
-)
 ORDER BY l.added_at DESC;
-
