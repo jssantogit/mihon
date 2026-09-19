@@ -4,9 +4,9 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.SourceResolutionResult
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
 @Inject

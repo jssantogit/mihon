@@ -277,7 +277,10 @@ class ResolveReadingSourceTest {
         override suspend fun getById(id: String): CanonicalTitle? = titles[id]
         override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> = emptyFlow()
         override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? = null
-        override suspend fun getOrCreateByExternalIdentity(title: CanonicalTitle, identity: ExternalIdentity): CanonicalTitle =
+        override suspend fun getOrCreateByExternalIdentity(
+            title: CanonicalTitle,
+            identity: ExternalIdentity,
+        ): CanonicalTitle =
             title
         override suspend fun insert(title: CanonicalTitle) {
             titles[title.id] = title
@@ -300,7 +303,8 @@ class ResolveReadingSourceTest {
 
     private class FakeReadingSourcePreferenceRepository : ReadingSourcePreferenceRepository {
         private val prefs = mutableMapOf<String, List<ReadingSourcePreference>>()
-        override suspend fun getForLanguage(language: String): List<ReadingSourcePreference> = prefs[language] ?: emptyList()
+        override suspend fun getForLanguage(language: String): List<ReadingSourcePreference> =
+            prefs[language] ?: emptyList()
         override fun observeForLanguage(language: String): Flow<List<ReadingSourcePreference>> =
             MutableStateFlow(prefs[language] ?: emptyList())
         override suspend fun getConfiguredLanguages(): List<String> = prefs.keys.sorted()
