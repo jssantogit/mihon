@@ -115,6 +115,19 @@ class ParseCanonicalChapterLabelTest {
         (epilogue1.identity == epilogue2.identity) shouldBe false
     }
 
+
+    @Test
+    fun `semantic parsing preserves numbered one shots and rejects ambiguous numeric tails`() {
+        val numberedOneShot = parse.execute("One-shot 2")
+
+        numberedOneShot.type shouldBe CanonicalChapterType.ONESHOT
+        numberedOneShot.baseNumber shouldBe 2
+        parse.execute("Extra 3 4").type shouldBe CanonicalChapterType.UNKNOWN
+        parse.execute("Prologue 1 2").type shouldBe CanonicalChapterType.UNKNOWN
+        parse.execute("24 Part 2 3").type shouldBe CanonicalChapterType.UNKNOWN
+        parse.execute("One-shot 2 3").type shouldBe CanonicalChapterType.UNKNOWN
+    }
+
     @Test
     fun `common Portuguese labels get semantic types`() {
         parse.execute("Capítulo 12").let {

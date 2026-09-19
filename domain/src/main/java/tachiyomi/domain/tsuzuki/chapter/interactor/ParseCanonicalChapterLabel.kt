@@ -58,6 +58,8 @@ class ParseCanonicalChapterLabel {
     private fun parseSemanticType(normalized: String): SemanticParse? {
         val extra = SPECIAL_PREFIX.find(normalized)
         if (extra != null) {
+            val remainder = normalized.substring(extra.range.last + 1).trim()
+            if (!isAllowedRemainder(remainder)) return null
             return SemanticParse(
                 type = if (extra.groupValues[1] == "extra") {
                     CanonicalChapterType.EXTRA
@@ -75,8 +77,10 @@ class ParseCanonicalChapterLabel {
             )
         }
 
-        val numberedSemantic = NUMBERED_SEMANTIC_PREFIX.matchEntire(normalized)
+        val numberedSemantic = NUMBERED_SEMANTIC_PREFIX.find(normalized)
         if (numberedSemantic != null) {
+            val remainder = normalized.substring(numberedSemantic.range.last + 1).trim()
+            if (!isAllowedRemainder(remainder)) return null
             val type = when (numberedSemantic.groupValues[1]) {
                 "prologue", "prologo" -> CanonicalChapterType.PROLOGUE
                 else -> CanonicalChapterType.EPILOGUE
@@ -89,6 +93,35 @@ class ParseCanonicalChapterLabel {
                 part = null,
                 alphaSuffix = null,
                 displayNumber = "$label $number",
+                confidence = 1.0,
+            )
+        }
+
+        val numberedOneShot = NUMBERED_ONE_SHOT_PREFIX.find(normalized)
+        if (numberedOneShot != null) {
+            val remainder = normalized.substring(numberedOneShot.range.last + 1).trim()
+            if (!isAllowedRemainder(remainder)) return null
+            val number = numberedOneShot.groupValues[1].toIntOrNull() ?: return null
+            return SemanticParse(
+                type = CanonicalChapterType.ONESHOT,
+                baseNumber = number,
+                part = null,
+                alphaSuffix = null,
+                displayNumber = "One-shot $number",
+                confidence = 1.0,
+            )
+        }
+
+        val oneShot = ONE_SHOT_PREFIX.find(normalized)
+        if (oneShot != null) {
+            val remainder = normalized.substring(oneShot.range.last + 1).trim()
+            if (!isAllowedRemainder(remainder)) return null
+            return SemanticParse(
+                type = CanonicalChapterType.ONESHOT,
+                baseNumber = null,
+                part = null,
+                alphaSuffix = null,
+                displayNumber = "One-shot",
                 confidence = 1.0,
             )
         }
@@ -114,16 +147,6 @@ class ParseCanonicalChapterLabel {
                     confidence = 1.0,
                 )
 
-            ONE_SHOT_PREFIX.matches(normalized) ->
-                SemanticParse(
-                    type = CanonicalChapterType.ONESHOT,
-                    baseNumber = null,
-                    part = null,
-                    alphaSuffix = null,
-                    displayNumber = "One-shot",
-                    confidence = 1.0,
-                )
-
             else -> null
         }
     }
@@ -133,7 +156,9 @@ class ParseCanonicalChapterLabel {
     }
 
     private fun parsePartForm(normalized: String): NumericParse? {
-        val match = PART_FORM.matchEntire(normalized) ?: return null
+        val match = PART_FORM.find(normalized) ?: return null
+        val remainder = normalized.substring(match.range.last + 1).trim()
+        if (!isAllowedRemainder(remainder)) return null
         return NumericParse(
             baseNumber = match.groupValues[1].toIntOrNull() ?: return null,
             part = match.groupValues[2].toIntOrNull() ?: return null,
@@ -171,7 +196,8 @@ class ParseCanonicalChapterLabel {
     private fun isAllowedRemainder(remainder: String): Boolean {
         if (remainder.isEmpty()) return true
         // A chapter title may follow a parsed number, but another bare number
-        // is ambiguous (it could be a volume, year, or release version).
+        // or a malformed second part is ambiguous and must not be discarded.
+        if (remainder.matches(AMBIGUOUS_PART_REMAINDER)) return false
         return remainder.matches(TRAILING_TITLE)
     }
 
@@ -255,12 +281,14 @@ class ParseCanonicalChapterLabel {
         // Accent-free forms are used because input is normalized before matching.
         val CHAPTER_PREFIX = Regex("^(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*")
         val SPECIAL_PREFIX =
-            Regex("^(extra|special|especial)(?:\\s+|\\s*[:.-]\\s*)(\\d+)?(?:\\s+(?:part|pt)\\s+(\\d+))?.*$")
+            Regex("^(extra|special|especial)(?:\\s+|\\s*[:.-]\\s*)(\\d+)?(?:\\s+(?:part|pt)\\s+(\\d+))?")
         val NUMBERED_SEMANTIC_PREFIX =
-            Regex("^(prologue|prologo|epilogue|epilogo)\\s*(?:[:.-]\\s*)?(\\d+)(?:\\s+.*)?$")
-        val ONE_SHOT_PREFIX = Regex("^one\\s*-?\\s*shot(?:\\b|\\s).*")
-        val PART_FORM = Regex("^(\\d+)\\s+(?:part|pt)\\s+(\\d+)(?:\\s+.*)?$")
+            Regex("^(prologue|prologo|epilogue|epilogo)(?:\\s+|\\s*[:.-]\\s*)(\\d+)")
+        val NUMBERED_ONE_SHOT_PREFIX = Regex("^one\\s*-?\\s*shot(?:\\s+|\\s*[:.-]\\s*)(\\d+)")
+        val ONE_SHOT_PREFIX = Regex("^one\\s*-?\\s*shot")
+        val PART_FORM = Regex("^(\\d+)\\s+(?:part|pt)\\s+(\\d+)")
         val NUMBER_FORM = Regex("^(\\d+)(?:[.]((?:\\d+))|[.]?([a-z]))?(?=$|\\s|[-:–—])")
+        val AMBIGUOUS_PART_REMAINDER = Regex("^(?:part|pt)\\s+\\d+.*")
         val TRAILING_TITLE = Regex("^(?:[-:–—:]\\s*[^0-9].*|[a-z].*)$")
 
         fun normalize(value: String): String {

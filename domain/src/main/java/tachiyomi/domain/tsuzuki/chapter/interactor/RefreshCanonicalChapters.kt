@@ -3,6 +3,7 @@ package tachiyomi.domain.tsuzuki.chapter.interactor
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
@@ -70,11 +71,11 @@ class RefreshCanonicalChapters(
             return Result.failure(IllegalArgumentException("Specify mappingId or mappingIds, not both"))
         }
 
-        val eligible = persisted.filter { it.mihonMangaId != null }
+        val eligible = persisted.filter(::isEligible)
         fun validate(candidate: SourceTitleMapping?): Result<List<SourceTitleMapping>> {
             if (candidate == null) return Result.failure(IllegalArgumentException("Source mapping not found"))
-            if (candidate.canonicalTitleId != canonicalTitleId || candidate.mihonMangaId == null) {
-                return Result.failure(IllegalArgumentException("Source mapping is not materialized for this title"))
+            if (candidate.canonicalTitleId != canonicalTitleId || !isEligible(candidate)) {
+                return Result.failure(IllegalArgumentException("Source mapping is not available and materialized for this title"))
             }
             return Result.success(listOf(candidate))
         }
@@ -89,13 +90,20 @@ class RefreshCanonicalChapters(
             val selected = requested.distinct().map { id -> byId[id] }
             if (selected.any { it == null }) return Result.failure(IllegalArgumentException("Source mapping not found"))
             val materialized = selected.filterNotNull()
-            if (materialized.any { it.canonicalTitleId != canonicalTitleId || it.mihonMangaId == null }) {
-                return Result.failure(IllegalArgumentException("Source mapping is not materialized for this title"))
+            if (materialized.any { it.canonicalTitleId != canonicalTitleId || !isEligible(it) }) {
+                return Result.failure(
+                    IllegalArgumentException("Source mapping is not available and materialized for this title"),
+                )
             }
             return Result.success(materialized)
         }
 
         val selected = eligible.firstOrNull { it.preferredOverride } ?: eligible.firstOrNull()
         return validate(selected)
+    }
+
+    private fun isEligible(mapping: SourceTitleMapping): Boolean {
+        return mapping.mihonMangaId != null &&
+            mapping.availability != SourceMappingAvailability.UNAVAILABLE
     }
 }

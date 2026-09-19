@@ -67,11 +67,20 @@ class ReconcileChapterInventory internal constructor(
         val now = clock()
 
         for (inventory in inventories) {
-            inventory.sourceMappingId.takeIf(String::isNotBlank)?.let(sourceMappingIds::add)
+            require(inventory.sourceMappingId.isNotBlank()) { "Source mapping id is required" }
+            sourceMappingIds += inventory.sourceMappingId
 
             for (snapshot in inventory.chapters) {
-                val sourceId = snapshot.sourceId.takeIf { it != 0L } ?: inventory.sourceId
+                require(snapshot.sourceMappingId == inventory.sourceMappingId) {
+                    "Snapshot mapping ${snapshot.sourceMappingId} does not match inventory mapping ${inventory.sourceMappingId}"
+                }
+                require(snapshot.sourceId == inventory.sourceId) {
+                    "Snapshot source ${snapshot.sourceId} does not match inventory source ${inventory.sourceId}"
+                }
+
+                val sourceId = snapshot.sourceId
                 val sourceChapterId = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
+                require(sourceChapterId.isNotBlank()) { "Source chapter identity is required" }
                 val sourceIdentity = sourceId to sourceChapterId
                 val associatedVariant = variantsBySourceIdentity[sourceIdentity]
                     ?: canonicalChapterRepository.getVariantBySourceIdentity(

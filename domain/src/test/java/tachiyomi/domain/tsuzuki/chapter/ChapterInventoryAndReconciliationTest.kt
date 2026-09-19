@@ -243,6 +243,60 @@ class ChapterInventoryAndReconciliationTest {
         repository.upsertBatchCalls shouldBe callsAfterDefault + 1
     }
 
+
+    @Test
+    fun `refresh skips unavailable mappings and rejects explicitly unavailable mapping`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val gateway = FakeChapterInventoryGateway()
+        val unavailablePreferred = mapping("mapping-1", materialized = true, preferred = true).copy(
+            availability = SourceMappingAvailability.UNAVAILABLE,
+        )
+        val available = mapping("mapping-2", materialized = true)
+        val mappings = FakeSourceTitleMappingRepository(unavailablePreferred, available)
+        gateway.inventories = mapOf(
+            "mapping-2" to inventory("mapping-2", 2L, "Chapter 2"),
+        )
+        val refresh = RefreshCanonicalChapters(mappings, gateway, reconciler(repository))
+
+        refresh.execute("title-1").getOrThrow().sourceMappingIds shouldBe setOf("mapping-2")
+        gateway.requestedMappingIds shouldContainExactly listOf("mapping-2")
+
+        gateway.requestedMappingIds.clear()
+        refresh.execute("title-1", mappingId = "mapping-1").isFailure shouldBe true
+        gateway.requestedMappingIds shouldBe emptyList()
+    }
+
+    @Test
+    fun `reconciliation rejects mismatched or blank source identity evidence`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val reconciler = reconciler(repository)
+
+        shouldThrow<IllegalArgumentException> {
+            reconciler.execute(
+                inventory("mapping-1", 1L, "Chapter 1").copy(
+                    chapters = listOf(snapshot(2L, "mapping-1", "Chapter 1", "/one")),
+                ),
+            )
+        }
+        shouldThrow<IllegalArgumentException> {
+            reconciler.execute(
+                inventory("mapping-1", 1L, "Chapter 1").copy(
+                    chapters = listOf(snapshot(1L, "mapping-2", "Chapter 1", "/one")),
+                ),
+            )
+        }
+        shouldThrow<IllegalArgumentException> {
+            reconciler.execute(
+                inventory("mapping-1", 1L, "Chapter 1").copy(
+                    chapters = listOf(snapshot(1L, "mapping-1", "Chapter 1", "")),
+                ),
+            )
+        }
+
+        repository.chapters shouldBe emptyMap()
+        repository.variants shouldBe emptyMap()
+    }
+
     private fun reconciler(repository: FakeCanonicalChapterRepository) = ReconcileChapterInventory(
         parser = ParseCanonicalChapterLabel(),
         canonicalChapterRepository = repository,
