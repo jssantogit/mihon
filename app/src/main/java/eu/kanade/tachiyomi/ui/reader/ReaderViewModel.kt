@@ -23,6 +23,7 @@ import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.readerOrientation
 import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.domain.source.interactor.GetIncognitoState
+import eu.kanade.domain.track.interactor.TrackCanonicalChapter
 import eu.kanade.domain.track.interactor.TrackChapter
 import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.tachiyomi.data.cache.ChapterCache
@@ -115,6 +116,7 @@ class ReaderViewModel(
     private val downloadPreferences: DownloadPreferences,
     private val trackPreferences: TrackPreferences,
     private val trackChapter: TrackChapter,
+    private val trackCanonicalChapter: TrackCanonicalChapter,
     private val getManga: GetManga,
     private val getChaptersByMangaId: GetChaptersByMangaId,
     private val getNextChapters: GetNextChapters,
@@ -786,6 +788,8 @@ class ReaderViewModel(
         val canonical = canonicalSessionFor(readerChapter)
         if (canonical == null) {
             updateTrackChapterRead(readerChapter)
+        } else {
+            updateCanonicalTrackChapterRead(canonical)
         }
         deleteChapterIfNeeded(readerChapter)
 
@@ -1204,6 +1208,18 @@ class ReaderViewModel(
 
         viewModelScope.launchNonCancellable {
             trackChapter.await(context, manga.id, readerChapter.chapter.chapter_number.toDouble())
+        }
+    }
+
+    private fun updateCanonicalTrackChapterRead(session: OperationalReaderChapter) {
+        if (incognitoMode) return
+        if (!trackPreferences.autoUpdateTrack.get()) return
+
+        viewModelScope.launchNonCancellable {
+            trackCanonicalChapter.await(
+                context = context,
+                canonicalChapterId = session.canonicalChapterId,
+            )
         }
     }
 
