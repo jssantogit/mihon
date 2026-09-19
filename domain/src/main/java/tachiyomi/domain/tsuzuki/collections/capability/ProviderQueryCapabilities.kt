@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.collections.capability
 
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
@@ -12,23 +13,30 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 interface ProviderQueryCapabilities {
     val providerId: String
 
-    /**
-     * Determines whether a specific predicate can be pushed down to the remote provider.
-     */
     fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean
 
     /**
-     * Determines whether a specific sort configuration can be pushed down for global remote ordering.
+     * Returns true only when the provider can represent the complete expression with exact semantics.
+     *
+     * The default intentionally supports atomic predicates only. Compound boolean expressions must be
+     * explicitly advertised by a provider implementation; predicate-level support alone does not prove
+     * that AND, OR, or NOT can be represented by the provider query contract.
      */
+    fun canPushExpression(expression: QueryExpression): Boolean = when (expression) {
+        is QueryExpression.Predicate -> canPushPredicate(
+            field = expression.field,
+            operator = expression.operator,
+            value = expression.value,
+        )
+        is QueryExpression.All,
+        is QueryExpression.Any,
+        is QueryExpression.Not,
+        -> false
+    }
+
     fun canPushSort(sort: CatalogSort): Boolean
 
-    /**
-     * Whether the provider supports offset-based pagination.
-     */
     val supportsOffsetPaging: Boolean
 
-    /**
-     * Maximum page limit accepted by the remote provider, if any.
-     */
     val maxPageSize: Int?
 }
