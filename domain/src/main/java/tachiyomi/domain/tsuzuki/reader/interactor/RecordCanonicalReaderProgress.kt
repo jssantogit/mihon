@@ -19,6 +19,7 @@ class RecordCanonicalReaderProgress internal constructor(
 
     suspend fun recordPage(
         canonicalChapterId: String,
+        variantId: String,
         pageIndex: Int,
         completed: Boolean,
     ) {
@@ -29,6 +30,7 @@ class RecordCanonicalReaderProgress internal constructor(
                 canonicalChapterId = canonicalChapterId,
                 read = existing?.read == true || completed,
                 lastPageRead = pageIndex.toLong(),
+                lastVariantId = variantId,
                 updatedAt = clock(),
             ),
         )

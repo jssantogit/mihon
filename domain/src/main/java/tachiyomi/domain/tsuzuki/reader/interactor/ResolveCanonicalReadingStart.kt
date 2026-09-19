@@ -19,12 +19,14 @@ class ResolveCanonicalReadingStart(
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val refreshCanonicalChapters: RefreshCanonicalChapters,
+    private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val getCanonicalReadingStart: GetCanonicalReadingStart,
 ) : CanonicalReadingStartResolver {
 
     override suspend fun execute(canonicalTitleId: String): CanonicalReadingStart {
         return try {
             ensureInventory(canonicalTitleId)
+            importLegacyCanonicalProgress.execute(canonicalTitleId)
             getCanonicalReadingStart.execute(canonicalTitleId)
         } catch (error: CancellationException) {
             throw error

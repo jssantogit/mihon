@@ -18,21 +18,23 @@ class RecordCanonicalReaderProgressTest {
         val repository = FakeCanonicalReadingRepository()
         val recorder = RecordCanonicalReaderProgress(repository) { 500L }
 
-        recorder.recordPage("chapter-1", pageIndex = 4, completed = false)
+        recorder.recordPage("chapter-1", "variant-1", pageIndex = 4, completed = false)
         repository.progress shouldBe CanonicalChapterProgress(
             canonicalChapterId = "chapter-1",
             read = false,
             lastPageRead = 4L,
+            lastVariantId = "variant-1",
             updatedAt = 500L,
         )
 
         repository.progress = repository.progress!!.copy(read = true)
-        recorder.recordPage("chapter-1", pageIndex = 2, completed = false)
+        recorder.recordPage("chapter-1", "variant-1", pageIndex = 2, completed = false)
 
         repository.progress shouldBe CanonicalChapterProgress(
             canonicalChapterId = "chapter-1",
             read = true,
             lastPageRead = 2L,
+            lastVariantId = "variant-1",
             updatedAt = 500L,
         )
     }
@@ -42,7 +44,7 @@ class RecordCanonicalReaderProgressTest {
         val repository = FakeCanonicalReadingRepository()
         val recorder = RecordCanonicalReaderProgress(repository) { 900L }
 
-        recorder.recordPage("chapter-1", pageIndex = 9, completed = true)
+        recorder.recordPage("chapter-1", "variant-2", pageIndex = 9, completed = true)
         recorder.recordHistory("chapter-1", "variant-2", sessionReadDuration = 40L)
 
         repository.progress?.read shouldBe true

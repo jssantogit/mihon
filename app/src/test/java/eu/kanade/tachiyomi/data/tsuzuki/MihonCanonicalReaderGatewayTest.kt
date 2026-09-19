@@ -40,6 +40,7 @@ class MihonCanonicalReaderGatewayTest {
                 canonicalChapterId = "canonical-chapter-1",
                 read = true,
                 lastPageRead = 7L,
+                lastVariantId = "variant-1",
                 updatedAt = 200L,
             ),
         ).getOrThrow()
@@ -92,6 +93,7 @@ class MihonCanonicalReaderGatewayTest {
                 canonicalChapterId = "canonical-chapter-1",
                 read = true,
                 lastPageRead = 8L,
+                lastVariantId = "variant-1",
                 updatedAt = 300L,
             ),
         ).getOrThrow()
@@ -101,6 +103,42 @@ class MihonCanonicalReaderGatewayTest {
         chapters.rows.getValue(9L).read shouldBe true
         chapters.rows.getValue(9L).lastPageRead shouldBe 8L
         canonical.variant!!.mihonChapterId shouldBe 9L
+    }
+
+    @Test
+    fun `materialize never projects another variant page index`() = runTest {
+        val chapters = FakeChapterRepository().apply {
+            rows[9L] = Chapter.create().copy(
+                id = 9L,
+                mangaId = 55L,
+                url = "/chapter/1",
+                name = "Chapter 1",
+                read = false,
+                lastPageRead = 2L,
+            )
+        }
+        val canonical = FakeCanonicalChapterRepository().apply {
+            chapter = canonicalChapter()
+            variant = variant(mihonChapterId = 9L)
+        }
+        val gateway = MihonCanonicalReaderGateway(
+            chapters,
+            canonical,
+            FakeSourceTitleMappingRepository(mapping()),
+        )
+
+        gateway.materialize(
+            canonical.variant!!,
+            CanonicalChapterProgress(
+                canonicalChapterId = "canonical-chapter-1",
+                read = false,
+                lastPageRead = 8L,
+                lastVariantId = "other-variant",
+                updatedAt = 300L,
+            ),
+        ).getOrThrow()
+
+        chapters.rows.getValue(9L).lastPageRead shouldBe 2L
     }
 
     @Test

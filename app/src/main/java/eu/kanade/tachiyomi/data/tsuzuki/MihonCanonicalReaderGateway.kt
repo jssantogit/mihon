@@ -67,13 +67,18 @@ class MihonCanonicalReaderGateway(
                 ?.takeIf { it.mangaId == mangaId && it.url == sourceUrl }
                 ?: chapterRepository.getChapterByUrlAndMangaId(sourceUrl, mangaId)
 
+            val canonicalResumePage = progress
+                ?.takeIf { it.lastVariantId == variant.id }
+                ?.lastPageRead
+                ?: 0L
+
             val chapter = existing ?: Chapter.create().copy(
                 mangaId = mangaId,
                 url = sourceUrl,
                 name = variant.rawName,
                 scanlator = variant.scanlationGroup,
                 read = progress?.read ?: false,
-                lastPageRead = progress?.lastPageRead ?: 0L,
+                lastPageRead = canonicalResumePage,
                 chapterNumber = variant.rawNumberHint ?: -1.0,
                 sourceOrder = variant.rawSourceOrder ?: 0L,
                 dateUpload = variant.releaseDate ?: 0L,
@@ -84,14 +89,21 @@ class MihonCanonicalReaderGateway(
                     ?: error("Failed to materialize operational Mihon chapter")
             }
 
-            if (progress != null && (chapter.read != progress.read || chapter.lastPageRead != progress.lastPageRead)) {
-                chapterRepository.update(
-                    ChapterUpdate(
-                        id = chapter.id,
-                        read = progress.read,
-                        lastPageRead = progress.lastPageRead,
-                    ),
-                )
+            if (progress != null) {
+                val projectedLastPageRead = if (progress.lastVariantId == variant.id) {
+                    progress.lastPageRead
+                } else {
+                    chapter.lastPageRead
+                }
+                if (chapter.read != progress.read || chapter.lastPageRead != projectedLastPageRead) {
+                    chapterRepository.update(
+                        ChapterUpdate(
+                            id = chapter.id,
+                            read = progress.read,
+                            lastPageRead = projectedLastPageRead,
+                        ),
+                    )
+                }
             }
 
             if (variant.mihonMangaId != mangaId || variant.mihonChapterId != chapter.id) {

@@ -76,6 +76,7 @@ class CanonicalReadingRepositoryImpl(
             canonicalChapterId = progress.canonicalChapterId,
             read = progress.read,
             lastPageRead = progress.lastPageRead,
+            lastVariantId = progress.lastVariantId,
             updatedAt = progress.updatedAt,
         )
     }
@@ -94,11 +95,13 @@ class CanonicalReadingRepositoryImpl(
         canonicalChapterId: String,
         read: Boolean,
         lastPageRead: Long,
+        lastVariantId: String?,
         updatedAt: Long,
     ) = CanonicalChapterProgress(
         canonicalChapterId = canonicalChapterId,
         read = read,
         lastPageRead = lastPageRead,
+        lastVariantId = lastVariantId,
         updatedAt = updatedAt,
     )
 

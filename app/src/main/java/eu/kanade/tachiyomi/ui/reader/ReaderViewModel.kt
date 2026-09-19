@@ -770,6 +770,7 @@ class ReaderViewModel(
                 try {
                     recordCanonicalReaderProgress.recordPage(
                         canonicalChapterId = session.canonicalChapterId,
+                        variantId = session.variantId,
                         pageIndex = pageIndex,
                         completed = readerChapter.pages?.lastIndex == pageIndex,
                     )

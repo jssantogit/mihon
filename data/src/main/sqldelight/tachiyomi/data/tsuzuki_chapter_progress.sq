@@ -4,8 +4,10 @@ CREATE TABLE tsuzuki_chapter_progress(
     canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
     read INTEGER AS Boolean NOT NULL DEFAULT 0,
     last_page_read INTEGER NOT NULL DEFAULT 0,
+    last_variant_id TEXT,
     updated_at INTEGER NOT NULL,
-    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(last_variant_id) REFERENCES tsuzuki_chapter_variants(id) ON DELETE SET NULL
 );
 
 CREATE INDEX tsuzuki_chapter_progress_updated_index
@@ -36,15 +38,18 @@ INSERT INTO tsuzuki_chapter_progress(
     canonical_chapter_id,
     read,
     last_page_read,
+    last_variant_id,
     updated_at
 )
 VALUES (
     :canonicalChapterId,
     :read,
     :lastPageRead,
+    :lastVariantId,
     :updatedAt
 )
 ON CONFLICT(canonical_chapter_id) DO UPDATE SET
     read = excluded.read,
     last_page_read = excluded.last_page_read,
+    last_variant_id = excluded.last_variant_id,
     updated_at = excluded.updated_at;
