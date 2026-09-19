@@ -5,6 +5,8 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncOutboxEntry
 
 interface SyncOutboxRepository {
 
+    suspend fun get(documentKind: SyncDocumentKind): SyncOutboxEntry?
+
     suspend fun markDirty(
         documentKind: SyncDocumentKind,
         enqueuedAtEpochMillis: Long,
