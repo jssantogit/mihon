@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkerParameters
 import dev.zacsweers.metro.Inject
+import kotlinx.coroutines.CancellationException
 import mihon.app.di.AppGraph
 import mihon.core.metro.metroGraph
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentResult
@@ -31,6 +32,8 @@ class DriveSyncJob(
 
         val report = try {
             runtime.run(SyncTrigger.BACKGROUND)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Throwable) {
             return Result.retry()
         }
