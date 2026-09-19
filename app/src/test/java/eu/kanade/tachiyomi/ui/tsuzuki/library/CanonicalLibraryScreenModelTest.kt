@@ -32,10 +32,10 @@ import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
-import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
-import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
+import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
+import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
