@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.drivesync
 
 import android.content.Context
-import android.provider.Settings
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -30,6 +29,8 @@ import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeController
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
 import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
 import tachiyomi.domain.tsuzuki.sync.service.ThreeWaySyncMerger
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Clock
 
@@ -100,13 +101,7 @@ private class AndroidSyncRevisionSource(
     context: Context,
 ) : SyncRevisionSource {
 
-    private val deviceId = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ANDROID_ID,
-    )
-        ?.takeIf(String::isNotBlank)
-        ?.let { "android:$it" }
-        ?: "android:${context.packageName}"
+    private val deviceId = loadOrCreateSyncDeviceId(context)
 
     private val sequence = AtomicLong(
         Clock.System.now().toEpochMilliseconds().coerceAtLeast(0L),
@@ -123,3 +118,23 @@ private class AndroidSyncRevisionSource(
         )
     }
 }
+
+private fun loadOrCreateSyncDeviceId(context: Context): String {
+    val file = File(context.noBackupFilesDir, SYNC_DEVICE_ID_FILE)
+    val existing = runCatching {
+        file.takeIf(File::isFile)
+            ?.readText()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+    }.getOrNull()
+    if (existing != null) return existing
+
+    val generated = "device:${UUID.randomUUID()}"
+    runCatching {
+        file.parentFile?.mkdirs()
+        file.writeText(generated)
+    }
+    return generated
+}
+
+private const val SYNC_DEVICE_ID_FILE = "tsuzuki-drive-sync-device-id"
