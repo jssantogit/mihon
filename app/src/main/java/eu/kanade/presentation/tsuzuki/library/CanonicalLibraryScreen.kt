@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +39,10 @@ import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Delete
 import mihon.icons.materialsymbols.rounded.MoreVert
+import mihon.icons.materialsymbols.rounded.Settings
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
+import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
@@ -50,6 +53,8 @@ fun CanonicalLibraryScreen(
     navigateUp: () -> Unit,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
+    onResolveSource: (CanonicalLibraryItem) -> Unit = {},
+    onOpenSourcePreferences: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -58,6 +63,14 @@ fun CanonicalLibraryScreen(
             AppBar(
                 titleContent = { AppBarTitle("Tsuzuki Library") },
                 navigateUp = navigateUp,
+                actions = {
+                    TextButton(onClick = onOpenSourcePreferences) {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.Settings,
+                            contentDescription = "Reading source preferences",
+                        )
+                    }
+                },
             )
         },
     ) { paddingValues ->
@@ -78,8 +91,10 @@ fun CanonicalLibraryScreen(
                     } else {
                         CanonicalLibraryList(
                             items = state.items,
+                            mappingsByCanonicalTitleId = state.mappingsByCanonicalTitleId,
                             onUpdateStatus = onUpdateStatus,
                             onRemoveItem = onRemoveItem,
+                            onResolveSource = onResolveSource,
                         )
                     }
                 }
@@ -91,8 +106,10 @@ fun CanonicalLibraryScreen(
 @Composable
 private fun CanonicalLibraryList(
     items: List<CanonicalLibraryItem>,
+    mappingsByCanonicalTitleId: Map<String, List<SourceTitleMapping>>,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
+    onResolveSource: (CanonicalLibraryItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -106,8 +123,10 @@ private fun CanonicalLibraryList(
         ) { item ->
             CanonicalLibraryItemCard(
                 item = item,
+                mappings = mappingsByCanonicalTitleId[item.title.id].orEmpty(),
                 onUpdateStatus = { status -> onUpdateStatus(item.title.id, status) },
                 onRemove = { onRemoveItem(item.title.id) },
+                onResolveSource = { onResolveSource(item) },
             )
         }
     }
@@ -117,8 +136,10 @@ private fun CanonicalLibraryList(
 @Composable
 private fun CanonicalLibraryItemCard(
     item: CanonicalLibraryItem,
+    mappings: List<SourceTitleMapping>,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
+    onResolveSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var statusMenuExpanded by remember { mutableStateOf(false) }
@@ -217,6 +238,17 @@ private fun CanonicalLibraryItemCard(
                         )
                     },
                 )
+            }
+
+            val preferredMapping = mappings.firstOrNull { it.preferredOverride } ?: mappings.firstOrNull()
+            TextButton(onClick = onResolveSource) {
+                if (preferredMapping == null) {
+                    Text("Find reading source")
+                } else {
+                    Text(
+                        "Reading source: #${preferredMapping.sourceId} · ${preferredMapping.language}",
+                    )
+                }
             }
         }
     }
