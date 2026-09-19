@@ -3,10 +3,15 @@ package tachiyomi.domain.tsuzuki.chapter
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
+import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 
 class ParseCanonicalChapterLabelTest {
 
@@ -22,6 +27,8 @@ class ParseCanonicalChapterLabelTest {
         chapter.part.shouldBeNull()
         chapter.alphaSuffix.shouldBeNull()
         chapter.displayNumber shouldBe "12"
+        chapter.confidence shouldBe 1.0
+        abbreviated.confidence shouldBe 1.0
         abbreviated.identity shouldBe chapter.identity
         chapter.identity.shouldBeInstanceOf<CanonicalChapterIdentity>()
     }
@@ -88,6 +95,24 @@ class ParseCanonicalChapterLabelTest {
         }
         parse.execute("Epilogue").type shouldBe CanonicalChapterType.EPILOGUE
         parse.execute("One-shot").type shouldBe CanonicalChapterType.ONESHOT
+    }
+
+    @Test
+    fun `numbered prologues and epilogues preserve distinct identities`() {
+        val prologue1 = parse.execute("Prologue 1")
+        val prologue2 = parse.execute("Prologue 2")
+        val epilogue1 = parse.execute("Epilogue 1")
+        val epilogue2 = parse.execute("Epilogue 2")
+
+        prologue1.type shouldBe CanonicalChapterType.PROLOGUE
+        prologue1.baseNumber shouldBe 1
+        prologue2.baseNumber shouldBe 2
+        (prologue1.identity == prologue2.identity) shouldBe false
+
+        epilogue1.type shouldBe CanonicalChapterType.EPILOGUE
+        epilogue1.baseNumber shouldBe 1
+        epilogue2.baseNumber shouldBe 2
+        (epilogue1.identity == epilogue2.identity) shouldBe false
     }
 
     @Test
@@ -163,6 +188,44 @@ class ParseCanonicalChapterLabelTest {
         uppercase shouldBe lowercase
         uppercase.sortKey shouldBe lowercase.sortKey
         uppercase.compareTo(lowercase) shouldBe 0
+    }
+
+    @Test
+    fun `canonical chapter derives ordering from its identity`() {
+        val chapter = CanonicalChapter(
+            id = "chapter-12a",
+            canonicalTitleId = "title-1",
+            displayNumber = "12a",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 12,
+            alphaSuffix = "A",
+        )
+
+        chapter.sortKey shouldBe chapter.identity.sortKey
+    }
+
+    @Test
+    fun `chapter variant preserves structured raw source metadata losslessly`() {
+        val metadata = JsonObject(
+            mapOf(
+                "flag" to JsonPrimitive(true),
+                "count" to JsonPrimitive(2),
+                "nested" to JsonObject(
+                    mapOf(
+                        "values" to JsonArray(
+                            listOf(JsonPrimitive("alpha"), JsonPrimitive(3)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val variant = ChapterVariant(
+            id = "variant-1",
+            canonicalChapterId = "chapter-1",
+            rawSourceMetadata = metadata,
+        )
+
+        variant.rawSourceMetadata shouldBe metadata
     }
 
     @Test

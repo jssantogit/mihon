@@ -5,7 +5,6 @@ data class CanonicalChapter(
     val id: String,
     val canonicalTitleId: String,
     val displayNumber: String,
-    val sortKey: String,
     val volume: Int? = null,
     val title: String? = null,
     val type: CanonicalChapterType = CanonicalChapterType.UNKNOWN,
@@ -24,4 +23,8 @@ data class CanonicalChapter(
             part = part,
             alphaSuffix = alphaSuffix,
         )
+
+    /** Ordering is always derived from the structured canonical identity. */
+    val sortKey: String
+        get() = identity.sortKey
 }

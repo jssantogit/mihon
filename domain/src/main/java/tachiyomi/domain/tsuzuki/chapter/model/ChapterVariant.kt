@@ -1,5 +1,7 @@
 package tachiyomi.domain.tsuzuki.chapter.model
 
+import kotlinx.serialization.json.JsonObject
+
 /** One source release mapped to a [CanonicalChapter]. */
 data class ChapterVariant(
     val id: String,
@@ -18,8 +20,8 @@ data class ChapterVariant(
     /** Source number hint only; it is not a canonical identity component. */
     val rawNumberHint: Double? = null,
     val rawSourceOrder: Long? = null,
-    /** Extensible source metadata retained at the domain boundary. */
-    val rawSourceMetadata: Map<String, String> = emptyMap(),
+    /** Lossless structured metadata from the source boundary (for example SChapter.memo). */
+    val rawSourceMetadata: JsonObject = JsonObject(emptyMap()),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 ) {

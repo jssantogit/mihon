@@ -35,11 +35,12 @@ class ParseCanonicalChapterLabel {
             return semantic.toParsed(original, hint)
         }
 
+        val hasExplicitChapterPrefix = CHAPTER_PREFIX.find(normalized) != null
         val chapterText = removeChapterPrefix(normalized)
         parsePartForm(chapterText)?.let { parsed ->
             return parsed.toParsed(original, hint)
         }
-        parseNumberForm(chapterText)?.let { parsed ->
+        parseNumberForm(chapterText, hasExplicitChapterPrefix)?.let { parsed ->
             return parsed.toParsed(original, hint)
         }
 
@@ -70,6 +71,24 @@ class ParseCanonicalChapterLabel {
                     .replace(Regex("\\s+"), " ")
                     .trim()
                     .replaceFirstChar { it.uppercase(Locale.ROOT) },
+                confidence = 1.0,
+            )
+        }
+
+        val numberedSemantic = NUMBERED_SEMANTIC_PREFIX.matchEntire(normalized)
+        if (numberedSemantic != null) {
+            val type = when (numberedSemantic.groupValues[1]) {
+                "prologue", "prologo" -> CanonicalChapterType.PROLOGUE
+                else -> CanonicalChapterType.EPILOGUE
+            }
+            val number = numberedSemantic.groupValues[2].toIntOrNull() ?: return null
+            val label = if (type == CanonicalChapterType.PROLOGUE) "Prologue" else "Epilogue"
+            return SemanticParse(
+                type = type,
+                baseNumber = number,
+                part = null,
+                alphaSuffix = null,
+                displayNumber = "$label $number",
                 confidence = 1.0,
             )
         }
@@ -124,7 +143,7 @@ class ParseCanonicalChapterLabel {
         )
     }
 
-    private fun parseNumberForm(normalized: String): NumericParse? {
+    private fun parseNumberForm(normalized: String, hasExplicitChapterPrefix: Boolean): NumericParse? {
         val match = NUMBER_FORM.find(normalized) ?: return null
         val remainder = normalized.substring(match.range.last + 1).trim()
         if (!isAllowedRemainder(remainder)) return null
@@ -145,7 +164,7 @@ class ParseCanonicalChapterLabel {
             part = part,
             alphaSuffix = suffix,
             displayNumber = display,
-            confidence = if (CHAPTER_PREFIX.matches(normalized)) 1.0 else 0.95,
+            confidence = if (hasExplicitChapterPrefix) 1.0 else 0.95,
         )
     }
 
@@ -237,6 +256,8 @@ class ParseCanonicalChapterLabel {
         val CHAPTER_PREFIX = Regex("^(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*")
         val SPECIAL_PREFIX =
             Regex("^(extra|special|especial)(?:\\s+|\\s*[:.-]\\s*)(\\d+)?(?:\\s+(?:part|pt)\\s+(\\d+))?.*$")
+        val NUMBERED_SEMANTIC_PREFIX =
+            Regex("^(prologue|prologo|epilogue|epilogo)\\s*(?:[:.-]\\s*)?(\\d+)(?:\\s+.*)?$")
         val ONE_SHOT_PREFIX = Regex("^one\\s*-?\\s*shot(?:\\b|\\s).*")
         val PART_FORM = Regex("^(\\d+)\\s+(?:part|pt)\\s+(\\d+)(?:\\s+.*)?$")
         val NUMBER_FORM = Regex("^(\\d+)(?:[.]((?:\\d+))|[.]?([a-z]))?(?=$|\\s|[-:–—])")
