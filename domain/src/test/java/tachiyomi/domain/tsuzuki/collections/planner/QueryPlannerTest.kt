@@ -161,12 +161,12 @@ class QueryPlannerTest {
         val expression = QueryExpression.All(pushableStatus, pushableQuery)
         val plan = QueryPlanner.plan(expression, predicateOnlyCapabilities)
 
-        plan.pushdownExpression.shouldBeInstanceOf<QueryExpression.Predicate>()
-        plan.residualExpression.shouldBeInstanceOf<QueryExpression.Predicate>()
+        val pushed = plan.pushdownExpression.shouldBeInstanceOf<QueryExpression.Predicate>()
+        val residual = plan.residualExpression.shouldBeInstanceOf<QueryExpression.Predicate>()
 
         setOf(
-            plan.pushdownExpression!!.toCanonicalString(),
-            plan.residualExpression!!.toCanonicalString(),
+            pushed.toCanonicalString(),
+            residual.toCanonicalString(),
         ) shouldBe expression.expressions.map { it.toCanonicalString() }.toSet()
     }
 
@@ -192,8 +192,7 @@ class QueryPlannerTest {
         supported.sortPlan shouldBe SortPlan.RemoteExact(CatalogSort.POPULARITY_DESC)
 
         val unsupported = QueryPlanner.plan(pushableStatus, fakeCapabilities, CatalogSort.UPDATED_DESC)
-        unsupported.sortPlan.shouldBeInstanceOf<SortPlan.UnsupportedForGlobalOrdering>()
-        val details = unsupported.sortPlan as SortPlan.UnsupportedForGlobalOrdering
+        val details = unsupported.sortPlan.shouldBeInstanceOf<SortPlan.UnsupportedForGlobalOrdering>()
         details.requestedSort shouldBe CatalogSort.UPDATED_DESC
         details.fallbackRemoteSort shouldBe CatalogSort.POPULARITY_DESC
     }
@@ -222,6 +221,6 @@ class QueryPlannerTest {
     @Test
     fun `provider-specific capability does not leak into core query AST`() {
         val expression = QueryExpression.All(pushableStatus, nonPushableGenre)
-        expression.toCanonicalString() shouldBe "ALL(status = \"ongoing\", genre = \"Action\")"
+        expression.toCanonicalString() shouldBe "ALL(status EQUALS \"ongoing\", genre EQUALS \"Action\")"
     }
 }
