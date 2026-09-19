@@ -104,6 +104,7 @@ class GoogleAuthSessionManagerTest {
             reason = GoogleAuthFailureReason.ACCOUNT_UNAVAILABLE,
             message = "account unavailable",
         )
+        val hintStore = FakeAccountHintStore(account)
         val platform = FakeAuthorizationPlatform(
             authorizationResults = listOf(
                 GoogleAuthorizationPlatformResult.RecoverableFailure(
@@ -112,12 +113,13 @@ class GoogleAuthSessionManagerTest {
                 ),
             ),
         )
-        val manager = manager(platform, FakeAccountHintStore(account))
+        val manager = manager(platform, hintStore)
 
         manager.restore()
 
         manager.state.value shouldBe GoogleAuthState.AuthorizationRequired(account)
         manager.currentSession().shouldBeNull()
+        hintStore.read().shouldBeNull()
     }
 
     @Test
@@ -171,6 +173,154 @@ class GoogleAuthSessionManagerTest {
         manager.currentSession() shouldBe session
     }
 
+    @Test
+    fun `case 10 - explicit connect can complete without user interaction`() = runTest {
+        val session = GoogleAuthorizationSession(account, "transient-token")
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Authorized(session),
+            ),
+        )
+        val hintStore = FakeAccountHintStore()
+        val manager = manager(platform, hintStore)
+
+        manager.connect() shouldBe GoogleAuthConnectResult.Completed
+
+        manager.state.value shouldBe GoogleAuthState.Connected(account)
+        manager.currentSession() shouldBe session
+        hintStore.read() shouldBe account
+    }
+
+    @Test
+    fun `case 11 - explicit connect exposes only opaque user action and stays connecting`() = runTest {
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                    account = account,
+                ),
+            ),
+        )
+        val manager = manager(platform, FakeAccountHintStore(account))
+
+        manager.connect() shouldBe GoogleAuthConnectResult.UserActionRequired(FakeUserAction)
+
+        manager.state.value shouldBe GoogleAuthState.Connecting
+        manager.pendingInteractiveAccountHint() shouldBe account
+        manager.currentSession().shouldBeNull()
+    }
+
+    @Test
+    fun `case 12 - cancelling first interactive connection restores signed out`() = runTest {
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                ),
+            ),
+        )
+        val manager = manager(platform, FakeAccountHintStore())
+
+        manager.connect()
+        manager.completeInteractive(GoogleAuthorizationPlatformResult.Cancelled) shouldBe
+            GoogleAuthConnectResult.Completed
+
+        manager.state.value shouldBe GoogleAuthState.SignedOut
+        manager.pendingInteractiveAccountHint().shouldBeNull()
+    }
+
+    @Test
+    fun `case 13 - interactive success stores only the resulting session and account hint`() = runTest {
+        val session = GoogleAuthorizationSession(account, "transient-token")
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                ),
+            ),
+        )
+        val hintStore = FakeAccountHintStore()
+        val manager = manager(platform, hintStore)
+
+        manager.connect()
+        manager.completeInteractive(
+            GoogleAuthorizationPlatformResult.Authorized(session),
+        ) shouldBe GoogleAuthConnectResult.Completed
+
+        manager.state.value shouldBe GoogleAuthState.Connected(account)
+        manager.currentSession() shouldBe session
+        hintStore.read() shouldBe account
+    }
+
+    @Test
+    fun `case 14 - cancelled reauthorization restores authorization required state`() = runTest {
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                    account = account,
+                ),
+                GoogleAuthorizationPlatformResult.UserActionRequired(
+                    action = FakeUserAction,
+                    account = account,
+                ),
+            ),
+        )
+        val manager = manager(platform, FakeAccountHintStore(account))
+
+        manager.restore()
+        manager.connect()
+        manager.completeInteractive(GoogleAuthorizationPlatformResult.Cancelled)
+
+        manager.state.value shouldBe GoogleAuthState.AuthorizationRequired(account)
+    }
+
+    @Test
+    fun `case 15 - disconnect clears local auth before clearing token and revoking grant`() = runTest {
+        val session = GoogleAuthorizationSession(account, "transient-token")
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Authorized(session),
+            ),
+        )
+        val hintStore = FakeAccountHintStore(account)
+        val manager = manager(platform, hintStore)
+
+        manager.restore()
+        manager.disconnect() shouldBe GoogleAuthorizationOperationResult.Success
+
+        manager.state.value shouldBe GoogleAuthState.SignedOut
+        manager.currentSession().shouldBeNull()
+        hintStore.read().shouldBeNull()
+        platform.clearedSessions shouldContainExactly listOf(session)
+        platform.revokedAccounts shouldContainExactly listOf(account)
+    }
+
+    @Test
+    fun `case 16 - revoke failure still leaves Tsuzuki locally signed out`() = runTest {
+        val session = GoogleAuthorizationSession(account, "transient-token")
+        val failure = GoogleAuthFailure(
+            reason = GoogleAuthFailureReason.NETWORK_UNAVAILABLE,
+            message = "offline",
+        )
+        val revokeResult = GoogleAuthorizationOperationResult.RecoverableFailure(failure)
+        val platform = FakeAuthorizationPlatform(
+            authorizationResults = listOf(
+                GoogleAuthorizationPlatformResult.Authorized(session),
+            ),
+            revokeResult = revokeResult,
+        )
+        val hintStore = FakeAccountHintStore(account)
+        val manager = manager(platform, hintStore)
+
+        manager.restore()
+        manager.disconnect() shouldBe revokeResult
+
+        manager.state.value shouldBe GoogleAuthState.SignedOut
+        manager.currentSession().shouldBeNull()
+        hintStore.read().shouldBeNull()
+    }
+
     private fun manager(
         platform: FakeAuthorizationPlatform = FakeAuthorizationPlatform(),
         hintStore: FakeAccountHintStore = FakeAccountHintStore(),
@@ -205,10 +355,14 @@ class GoogleAuthSessionManagerTest {
 
     private class FakeAuthorizationPlatform(
         authorizationResults: List<GoogleAuthorizationPlatformResult> = emptyList(),
+        private val revokeResult: GoogleAuthorizationOperationResult = GoogleAuthorizationOperationResult.Success,
+        private val clearTokenResult: GoogleAuthorizationOperationResult = GoogleAuthorizationOperationResult.Success,
     ) : GoogleAuthorizationPlatform {
 
         private val pendingAuthorizationResults = ArrayDeque(authorizationResults)
         val authorizeHints = mutableListOf<GoogleAccountIdentity?>()
+        val revokedAccounts = mutableListOf<GoogleAccountIdentity>()
+        val clearedSessions = mutableListOf<GoogleAuthorizationSession>()
 
         override suspend fun authorize(accountHint: GoogleAccountIdentity?): GoogleAuthorizationPlatformResult {
             authorizeHints += accountHint
@@ -217,11 +371,13 @@ class GoogleAuthSessionManagerTest {
         }
 
         override suspend fun revoke(account: GoogleAccountIdentity): GoogleAuthorizationOperationResult {
-            return GoogleAuthorizationOperationResult.Success
+            revokedAccounts += account
+            return revokeResult
         }
 
         override suspend fun clearAccessToken(session: GoogleAuthorizationSession): GoogleAuthorizationOperationResult {
-            return GoogleAuthorizationOperationResult.Success
+            clearedSessions += session
+            return clearTokenResult
         }
     }
 }

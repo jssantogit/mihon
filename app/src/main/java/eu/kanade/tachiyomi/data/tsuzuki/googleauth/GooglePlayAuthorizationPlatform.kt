@@ -104,55 +104,6 @@ class GooglePlayAuthorizationPlatform(
         }
     }
 
-    private fun AuthorizationResult.toPlatformResult(
-        accountHint: GoogleAccountIdentity?,
-    ): GoogleAuthorizationPlatformResult {
-        if (hasResolution()) {
-            val resolution = pendingIntent
-            if (resolution != null) {
-                return GoogleAuthorizationPlatformResult.UserActionRequired(
-                    action = GooglePendingAuthorizationAction(resolution),
-                    account = accountHint,
-                )
-            }
-        }
-
-        val token = accessToken?.takeIf(String::isNotBlank)
-            ?: return GoogleAuthorizationPlatformResult.Failure(
-                GoogleAuthFailure(
-                    reason = GoogleAuthFailureReason.AUTHORIZATION_REJECTED,
-                    message = "Google authorization returned no access token",
-                ),
-            )
-
-        val account = resolvedAccountIdentity() ?: accountHint
-            ?: return GoogleAuthorizationPlatformResult.Failure(
-                GoogleAuthFailure(
-                    reason = GoogleAuthFailureReason.ACCOUNT_UNAVAILABLE,
-                    message = "Google authorization returned no account identity",
-                ),
-            )
-
-        return GoogleAuthorizationPlatformResult.Authorized(
-            GoogleAuthorizationSession(
-                account = account,
-                accessToken = token,
-            ),
-        )
-    }
-
-    @Suppress("DEPRECATION")
-    private fun AuthorizationResult.resolvedAccountIdentity(): GoogleAccountIdentity? {
-        return toGoogleSignInAccount()
-            ?.email
-            ?.takeIf(String::isNotBlank)
-            ?.let(::GoogleAccountIdentity)
-    }
-
-    private fun GoogleAccountIdentity.toAndroidAccount(): Account {
-        return Account(accountName, GOOGLE_ACCOUNT_TYPE)
-    }
-
     private fun ApiException.toOperationFailure(): GoogleAuthorizationOperationResult {
         val failure = failureForStatus(statusCode)
         return if (failure.reason == GoogleAuthFailureReason.CONFIGURATION_ERROR) {
@@ -184,6 +135,51 @@ internal data class GooglePendingAuthorizationAction(
     val pendingIntent: PendingIntent,
 ) : GoogleAuthorizationUserAction {
     override fun toString(): String = "GooglePendingAuthorizationAction([REDACTED])"
+}
+
+internal fun AuthorizationResult.toPlatformResult(
+    accountHint: GoogleAccountIdentity?,
+): GoogleAuthorizationPlatformResult {
+    if (hasResolution()) {
+        val resolution = pendingIntent
+        if (resolution != null) {
+            return GoogleAuthorizationPlatformResult.UserActionRequired(
+                action = GooglePendingAuthorizationAction(resolution),
+                account = accountHint,
+            )
+        }
+    }
+
+    val token = accessToken?.takeIf(String::isNotBlank)
+        ?: return GoogleAuthorizationPlatformResult.Failure(
+            GoogleAuthFailure(
+                reason = GoogleAuthFailureReason.AUTHORIZATION_REJECTED,
+                message = "Google authorization returned no access token",
+            ),
+        )
+
+    val account = resolvedAccountIdentity() ?: accountHint
+        ?: return GoogleAuthorizationPlatformResult.Failure(
+            GoogleAuthFailure(
+                reason = GoogleAuthFailureReason.ACCOUNT_UNAVAILABLE,
+                message = "Google authorization returned no account identity",
+            ),
+        )
+
+    return GoogleAuthorizationPlatformResult.Authorized(
+        GoogleAuthorizationSession(
+            account = account,
+            accessToken = token,
+        ),
+    )
+}
+
+@Suppress("DEPRECATION")
+private fun AuthorizationResult.resolvedAccountIdentity(): GoogleAccountIdentity? {
+    return toGoogleSignInAccount()
+        ?.email
+        ?.takeIf(String::isNotBlank)
+        ?.let(::GoogleAccountIdentity)
 }
 
 internal fun mapAuthorizationApiStatus(
@@ -237,6 +233,10 @@ internal fun failureForStatus(statusCode: Int): GoogleAuthFailure {
             message = "Google authorization failed",
         )
     }
+}
+
+private fun GoogleAccountIdentity.toAndroidAccount(): Account {
+    return Account(accountName, GOOGLE_ACCOUNT_TYPE)
 }
 
 private const val GOOGLE_ACCOUNT_TYPE = "com.google"
