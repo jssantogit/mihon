@@ -296,6 +296,9 @@ dependencies {
     // RxJava
     implementation(libs.rxJava)
 
+    // Google account authorization
+    implementation(libs.google.playServicesAuth)
+
     // Networking
     implementation(libs.bundles.okhttp)
     implementation(libs.okio)

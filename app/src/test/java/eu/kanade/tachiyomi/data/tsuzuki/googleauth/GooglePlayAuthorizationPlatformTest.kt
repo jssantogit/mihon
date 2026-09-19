@@ -1,0 +1,82 @@
+package eu.kanade.tachiyomi.data.tsuzuki.googleauth
+
+import com.google.android.gms.common.api.CommonStatusCodes
+import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.googleauth.model.GoogleAccountIdentity
+import tachiyomi.domain.tsuzuki.googleauth.model.GoogleAuthFailureReason
+
+class GooglePlayAuthorizationPlatformTest {
+
+    private val account = GoogleAccountIdentity("reader@example.com")
+
+    @Test
+    fun `case 1 - canceled status maps to cancellation`() {
+        mapAuthorizationApiStatus(CommonStatusCodes.CANCELED, account) shouldBe
+            GoogleAuthorizationPlatformResult.Cancelled
+    }
+
+    @Test
+    fun `case 2 - developer error is fatal configuration failure`() {
+        mapAuthorizationApiStatus(CommonStatusCodes.DEVELOPER_ERROR, account) shouldBe
+            GoogleAuthorizationPlatformResult.Failure(
+                failureForStatus(CommonStatusCodes.DEVELOPER_ERROR),
+            )
+        failureForStatus(CommonStatusCodes.DEVELOPER_ERROR).reason shouldBe
+            GoogleAuthFailureReason.CONFIGURATION_ERROR
+    }
+
+    @Test
+    fun `case 3 - network error is recoverable and keeps account hint`() {
+        val result = mapAuthorizationApiStatus(CommonStatusCodes.NETWORK_ERROR, account)
+
+        result shouldBe GoogleAuthorizationPlatformResult.RecoverableFailure(
+            failure = failureForStatus(CommonStatusCodes.NETWORK_ERROR),
+            account = account,
+        )
+        failureForStatus(CommonStatusCodes.NETWORK_ERROR).reason shouldBe
+            GoogleAuthFailureReason.NETWORK_UNAVAILABLE
+    }
+
+    @Test
+    fun `case 4 - unavailable Google services are recoverable`() {
+        failureForStatus(CommonStatusCodes.API_NOT_CONNECTED).reason shouldBe
+            GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE
+    }
+
+    @Test
+    fun `case 5 - sign in required maps to unavailable account`() {
+        failureForStatus(CommonStatusCodes.SIGN_IN_REQUIRED).reason shouldBe
+            GoogleAuthFailureReason.ACCOUNT_UNAVAILABLE
+    }
+
+    @Test
+    fun `case 6 - internal and remote failures map to unavailable Google services`() {
+        failureForStatus(CommonStatusCodes.INTERNAL_ERROR).reason shouldBe
+            GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE
+        failureForStatus(CommonStatusCodes.INTERRUPTED).reason shouldBe
+            GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE
+        failureForStatus(CommonStatusCodes.REMOTE_EXCEPTION).reason shouldBe
+            GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE
+    }
+
+    @Test
+    fun `case 7 - disabled or outdated Play services map to unavailable Google services`() {
+        failureForStatus(CommonStatusCodes.SERVICE_DISABLED).reason shouldBe
+            GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE
+        failureForStatus(CommonStatusCodes.SERVICE_VERSION_UPDATE_REQUIRED).reason shouldBe
+            GoogleAuthFailureReason.GOOGLE_SERVICES_UNAVAILABLE
+    }
+
+    @Test
+    fun `case 8 - unknown status remains recoverable without exposing SDK details`() {
+        val result = mapAuthorizationApiStatus(9999, account)
+
+        result shouldBe GoogleAuthorizationPlatformResult.RecoverableFailure(
+            failure = failureForStatus(9999),
+            account = account,
+        )
+        failureForStatus(9999).reason shouldBe GoogleAuthFailureReason.UNKNOWN
+        failureForStatus(9999).message shouldBe "Google authorization failed"
+    }
+}

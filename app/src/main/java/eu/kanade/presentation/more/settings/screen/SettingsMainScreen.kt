@@ -202,6 +202,12 @@ object SettingsMainScreen : Screen() {
             screen = SettingsTrackingScreen,
         ),
         Item(
+            titleRes = MR.strings.pref_category_google_account,
+            subtitleRes = MR.strings.pref_google_account_summary,
+            icon = MaterialSymbols.Rounded.Sync,
+            screen = SettingsGoogleAccountScreen,
+        ),
+        Item(
             titleRes = MR.strings.browse,
             subtitleRes = MR.strings.pref_browse_summary,
             icon = MaterialSymbols.Rounded.Explore,
