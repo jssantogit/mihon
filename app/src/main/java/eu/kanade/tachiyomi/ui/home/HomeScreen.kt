@@ -39,6 +39,7 @@ import eu.kanade.tachiyomi.ui.history.HistoryTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
+import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeTab
 import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
@@ -64,6 +65,7 @@ object HomeScreen : Screen() {
     private const val TabNavigatorKey = "HomeTabs"
 
     private val TABS = listOf(
+        TsuzukiHomeTab,
         LibraryTab,
         UpdatesTab,
         HistoryTab,
@@ -75,7 +77,7 @@ object HomeScreen : Screen() {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         TabNavigator(
-            tab = LibraryTab,
+            tab = TsuzukiHomeTab,
             key = TabNavigatorKey,
         ) { tabNavigator ->
             // Provide usable navigator to content screen
@@ -127,9 +129,10 @@ object HomeScreen : Screen() {
                 }
             }
 
+            val goToHomeTab = { tabNavigator.current = TsuzukiHomeTab }
             val goToLibraryTab = { tabNavigator.current = LibraryTab }
 
-            BackHandler(enabled = tabNavigator.current != LibraryTab, onBack = goToLibraryTab)
+            BackHandler(enabled = tabNavigator.current != TsuzukiHomeTab, onBack = goToHomeTab)
 
             LaunchedEffect(Unit) {
                 launch {
