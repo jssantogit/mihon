@@ -178,21 +178,15 @@ class GoogleAuthSessionManagerTest {
     }
 
     @Test
-    fun `case 10 - explicit connect can complete without user interaction`() = runTest {
-        val session = GoogleAuthorizationSession(account, "transient-token")
-        val platform = FakeAuthorizationPlatform(
-            authorizationResults = listOf(
-                GoogleAuthorizationPlatformResult.Authorized(session),
-            ),
-        )
-        val hintStore = FakeAccountHintStore()
-        val manager = manager(platform, hintStore)
+    fun `case 10 - first connect requires explicit account selection before Google authorization`() = runTest {
+        val platform = FakeAuthorizationPlatform()
+        val manager = manager(platform, FakeAccountHintStore())
 
-        manager.connect() shouldBe GoogleAuthConnectResult.Completed
+        manager.connect() shouldBe GoogleAuthConnectResult.AccountSelectionRequired
 
-        manager.state.value shouldBe GoogleAuthState.Connected(account)
-        manager.currentSession() shouldBe session
-        hintStore.read() shouldBe account
+        manager.state.value shouldBe GoogleAuthState.Connecting
+        platform.authorizeHints shouldBe emptyList()
+        manager.currentSession().shouldBeNull()
     }
 
     @Test
@@ -215,19 +209,11 @@ class GoogleAuthSessionManagerTest {
     }
 
     @Test
-    fun `case 12 - cancelling first interactive connection restores signed out`() = runTest {
-        val platform = FakeAuthorizationPlatform(
-            authorizationResults = listOf(
-                GoogleAuthorizationPlatformResult.UserActionRequired(
-                    action = FakeUserAction,
-                ),
-            ),
-        )
-        val manager = manager(platform, FakeAccountHintStore())
+    fun `case 12 - cancelling first account selection restores signed out`() = runTest {
+        val manager = manager(FakeAuthorizationPlatform(), FakeAccountHintStore())
 
-        manager.connect()
-        manager.completeInteractive(GoogleAuthorizationPlatformResult.Cancelled) shouldBe
-            GoogleAuthConnectResult.Completed
+        manager.connect() shouldBe GoogleAuthConnectResult.AccountSelectionRequired
+        manager.cancelInteractive()
 
         manager.state.value shouldBe GoogleAuthState.SignedOut
         manager.pendingInteractiveAccountHint().shouldBeNull()
@@ -246,7 +232,8 @@ class GoogleAuthSessionManagerTest {
         val hintStore = FakeAccountHintStore()
         val manager = manager(platform, hintStore)
 
-        manager.connect()
+        manager.connect() shouldBe GoogleAuthConnectResult.AccountSelectionRequired
+        manager.connect(account) shouldBe GoogleAuthConnectResult.UserActionRequired(FakeUserAction)
         manager.completeInteractive(
             GoogleAuthorizationPlatformResult.Authorized(session),
         ) shouldBe GoogleAuthConnectResult.Completed
@@ -391,7 +378,7 @@ class GoogleAuthSessionManagerTest {
             override suspend fun clearAccessToken(session: GoogleAuthorizationSession) =
                 GoogleAuthorizationOperationResult.Success
         }
-        val manager = manager(platform, FakeAccountHintStore())
+        val manager = manager(platform, FakeAccountHintStore(account))
 
         shouldThrow<CancellationException> {
             manager.connect()

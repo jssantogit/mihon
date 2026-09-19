@@ -41,6 +41,7 @@ object SettingsGoogleAccountScreen : SearchableSettings {
         val state by coordinator.state.collectAsState()
 
         var pendingRequest by remember { mutableStateOf<IntentSenderRequest?>(null) }
+        var accountSelectionRequested by remember { mutableStateOf(false) }
 
         val launcher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.StartIntentSenderForResult(),
@@ -50,10 +51,45 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                     GoogleAuthConnectResult.Completed,
                     GoogleAuthConnectResult.InProgress,
                     -> Unit
+                    GoogleAuthConnectResult.AccountSelectionRequired -> {
+                        accountSelectionRequested = true
+                    }
                     is GoogleAuthConnectResult.UserActionRequired -> {
                         pendingRequest = coordinator.createRequest(result.action)
                     }
                 }
+            }
+        }
+
+        val accountLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult(),
+        ) { activityResult ->
+            scope.launch {
+                when (val result = coordinator.completeAccountSelection(activityResult)) {
+                    GoogleAuthConnectResult.Completed,
+                    GoogleAuthConnectResult.InProgress,
+                    -> Unit
+                    GoogleAuthConnectResult.AccountSelectionRequired -> {
+                        accountSelectionRequested = true
+                    }
+                    is GoogleAuthConnectResult.UserActionRequired -> {
+                        pendingRequest = coordinator.createRequest(result.action)
+                    }
+                }
+            }
+        }
+
+        LaunchedEffect(accountSelectionRequested) {
+            if (!accountSelectionRequested) {
+                return@LaunchedEffect
+            }
+            accountSelectionRequested = false
+
+            try {
+                accountLauncher.launch(coordinator.createAccountSelectionRequest())
+            } catch (_: Exception) {
+                coordinator.cancelPending()
+                context.toast(MR.strings.google_auth_launch_failed)
             }
         }
 
@@ -169,6 +205,9 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                         GoogleAuthConnectResult.Completed,
                         GoogleAuthConnectResult.InProgress,
                         -> Unit
+                        GoogleAuthConnectResult.AccountSelectionRequired -> {
+                            accountSelectionRequested = true
+                        }
                         is GoogleAuthConnectResult.UserActionRequired -> {
                             onUserActionRequired(coordinator.createRequest(result.action))
                         }

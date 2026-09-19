@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.googleauth
 
+import android.content.Intent
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.IntentSenderRequest
 import dev.zacsweers.metro.AppScope
@@ -18,6 +19,19 @@ class GoogleAuthInteractiveCoordinator(
 
     suspend fun beginConnect(): GoogleAuthConnectResult {
         return sessionManager.connect()
+    }
+
+    fun createAccountSelectionRequest(): Intent {
+        return createGoogleAccountPickerIntent()
+    }
+
+    suspend fun completeAccountSelection(activityResult: ActivityResult): GoogleAuthConnectResult {
+        val account = resolveGoogleAccountSelection(activityResult)
+        if (account == null) {
+            sessionManager.cancelInteractive()
+            return GoogleAuthConnectResult.Completed
+        }
+        return sessionManager.connect(account)
     }
 
     fun createRequest(action: GoogleAuthorizationUserAction): IntentSenderRequest {

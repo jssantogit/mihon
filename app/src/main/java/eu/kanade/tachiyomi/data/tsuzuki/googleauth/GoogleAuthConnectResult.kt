@@ -5,6 +5,8 @@ sealed interface GoogleAuthConnectResult {
 
     data object InProgress : GoogleAuthConnectResult
 
+    data object AccountSelectionRequired : GoogleAuthConnectResult
+
     data class UserActionRequired(
         val action: GoogleAuthorizationUserAction,
     ) : GoogleAuthConnectResult

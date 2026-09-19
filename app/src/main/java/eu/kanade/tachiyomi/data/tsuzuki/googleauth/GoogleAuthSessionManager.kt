@@ -63,16 +63,20 @@ class GoogleAuthSessionManager(
             stateMachine.beginConnection()
 
             val accountHint = readAccountHint()
-            try {
-                handleConnectResult(
-                    result = authorizationPlatform.authorize(accountHint),
-                    fallbackAccount = accountHint,
-                )
-            } catch (e: CancellationException) {
-                pendingAccountHint = null
-                stateMachine.complete(GoogleAuthorizationResult.Cancelled)
-                throw e
+                ?: return@withLock GoogleAuthConnectResult.AccountSelectionRequired
+
+            authorizeForConnect(accountHint)
+        }
+    }
+
+    suspend fun connect(account: GoogleAccountIdentity): GoogleAuthConnectResult {
+        return operationMutex.withLock {
+            if (state.value !is GoogleAuthState.Connecting) {
+                stateMachine.beginConnection()
             }
+            session = null
+            pendingAccountHint = account
+            authorizeForConnect(account)
         }
     }
 
@@ -182,6 +186,21 @@ class GoogleAuthSessionManager(
                     GoogleAuthorizationResult.AuthorizationRequired(fallbackAccount),
                 )
             }
+        }
+    }
+
+    private suspend fun authorizeForConnect(
+        account: GoogleAccountIdentity,
+    ): GoogleAuthConnectResult {
+        return try {
+            handleConnectResult(
+                result = authorizationPlatform.authorize(account),
+                fallbackAccount = account,
+            )
+        } catch (e: CancellationException) {
+            pendingAccountHint = null
+            stateMachine.complete(GoogleAuthorizationResult.Cancelled)
+            throw e
         }
     }
 
