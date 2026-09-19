@@ -43,6 +43,8 @@ class ImportCollections internal constructor(
         val collectionIdMap = mutableMapOf<String, String>()
         val folderIdMap = mutableMapOf<String, String>()
         val listIdMap = mutableMapOf<String, String>()
+        val sourceFoldersById = document.folders.associateBy(CollectionFolder::id)
+        val orderedFolders = document.folders.sortedBy { folderDepth(it, sourceFoldersById) }
         var remapped = 0
 
         for (collection in document.collections) {
@@ -56,7 +58,7 @@ class ImportCollections internal constructor(
             collectionIdMap[collection.id] = targetId
         }
 
-        for (folder in document.folders) {
+        for (folder in orderedFolders) {
             val targetId = allocateId(
                 preferred = folder.id,
                 forceRemap = folder.origin == CollectionOrigin.SYSTEM || folder.id.startsWith(SYSTEM_ID_PREFIX),
@@ -92,8 +94,7 @@ class ImportCollections internal constructor(
             )
         }
 
-        val sourceFoldersById = document.folders.associateBy(CollectionFolder::id)
-        for (folder in document.folders.sortedBy { folderDepth(it, sourceFoldersById) }) {
+        for (folder in orderedFolders) {
             store.upsertFolder(
                 folder.copy(
                     id = folderIdMap.getValue(folder.id),
