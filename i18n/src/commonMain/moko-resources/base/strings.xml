@@ -1107,5 +1107,14 @@
     <string name="google_auth_scope_info">Tsuzuki requests access only to its private app-data area in Google Drive. Regular Drive files are not exposed to Tsuzuki, and access tokens are kept only in memory.</string>
     <string name="google_auth_launch_failed">Could not open Google authorization.</string>
     <string name="google_auth_remote_disconnect_failed">Signed out locally, but Google access could not be revoked right now.</string>
+    <string name="drive_sync_status">Private Drive sync</string>
+    <string name="drive_sync_ready">Ready</string>
+    <string name="drive_sync_running">Syncing…</string>
+    <string name="drive_sync_complete">Sync complete</string>
+    <string name="drive_sync_complete_with_issues">Sync completed with issues</string>
+    <string name="drive_sync_failed">Sync failed</string>
+    <string name="drive_sync_now">Sync now</string>
+    <string name="drive_sync_info">Private sync currently includes Library, Collections, and logical source mappings/preferences. Downloads, page caches, and tracker credentials are never synchronized.</string>
+    <string name="drive_sync_failed_to_start">Could not run Drive sync.</string>
 
 </resources>
