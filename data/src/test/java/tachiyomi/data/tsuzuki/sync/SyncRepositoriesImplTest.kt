@@ -112,6 +112,52 @@ class SyncRepositoriesImplTest {
     }
 
     @Test
+    fun `domain writes transactionally queue their logical sync documents`() = runBlocking<Unit> {
+        database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+            id = "title-1",
+            displayTitle = "Tsuzuki",
+            identityState = "SOURCE_ONLY",
+            createdAt = 10L,
+            updatedAt = 10L,
+        )
+
+        outbox.get(SyncDocumentKind.LIBRARY)?.documentKind shouldBe SyncDocumentKind.LIBRARY
+        outbox.get(SyncDocumentKind.SOURCE_MAPPINGS)?.documentKind shouldBe SyncDocumentKind.SOURCE_MAPPINGS
+
+        outbox.clear(SyncDocumentKind.LIBRARY)
+        outbox.clear(SyncDocumentKind.SOURCE_MAPPINGS)
+
+        database.tsuzuki_library_entriesQueries.upsertTsuzukiLibraryEntry(
+            canonicalTitleId = "title-1",
+            status = "READING",
+            favorite = true,
+            addedAt = 10L,
+            updatedAt = 20L,
+        )
+        outbox.get(SyncDocumentKind.LIBRARY)?.documentKind shouldBe SyncDocumentKind.LIBRARY
+
+        database.tsuzuki_source_preferencesQueries.insertPreference(
+            language = "en",
+            sourceId = 7L,
+            position = 0L,
+        )
+        outbox.get(SyncDocumentKind.SOURCE_MAPPINGS)?.documentKind shouldBe SyncDocumentKind.SOURCE_MAPPINGS
+
+        database.tsuzuki_collectionsQueries.upsertTsuzukiCollection(
+            id = "collection-1",
+            title = "Favorites",
+            origin = "USER",
+            sortOrder = 0L,
+            schemaVersion = 1L,
+            revision = 0L,
+            createdAt = 10L,
+            updatedAt = 10L,
+            deletedAt = null,
+        )
+        outbox.get(SyncDocumentKind.COLLECTIONS)?.documentKind shouldBe SyncDocumentKind.COLLECTIONS
+    }
+
+    @Test
     fun `accepted base and remote revision round trip without becoming domain authority`() = runBlocking<Unit> {
         val document = SyncDocumentEnvelope(
             schemaVersion = 1,
