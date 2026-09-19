@@ -13,8 +13,6 @@ import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
-import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
-import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 
 @Inject
@@ -80,17 +78,6 @@ class CanonicalLibraryRepositoryImpl(
         identityState: String,
         titleCreatedAt: Long,
         titleUpdatedAt: Long,
-        mappingId: String?,
-        mihonMangaId: Long?,
-        sourceId: Long?,
-        sourceUrl: String?,
-        language: String?,
-        matchConfidence: Double?,
-        verifiedByUser: Boolean?,
-        availability: String?,
-        preferredOverride: Boolean?,
-        mappingCreatedAt: Long?,
-        mappingUpdatedAt: Long?,
     ): CanonicalLibraryItem {
         val title = CanonicalTitle(
             id = canonicalTitleId,
@@ -106,30 +93,9 @@ class CanonicalLibraryRepositoryImpl(
             addedAt = addedAt,
             updatedAt = updatedAt,
         )
-        val mapping = if (mappingId != null && sourceId != null && sourceUrl != null && language != null &&
-            availability != null
-        ) {
-            SourceTitleMapping(
-                id = mappingId,
-                canonicalTitleId = canonicalTitleId,
-                mihonMangaId = mihonMangaId,
-                sourceId = sourceId,
-                sourceUrl = sourceUrl,
-                language = language,
-                matchConfidence = matchConfidence,
-                verifiedByUser = verifiedByUser ?: false,
-                availability = SourceMappingAvailability.valueOf(availability),
-                preferredOverride = preferredOverride ?: false,
-                createdAt = mappingCreatedAt ?: 0L,
-                updatedAt = mappingUpdatedAt ?: 0L,
-            )
-        } else {
-            null
-        }
         return CanonicalLibraryItem(
             title = title,
             entry = entry,
-            primaryMapping = mapping,
         )
     }
 }
