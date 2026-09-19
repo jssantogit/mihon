@@ -11,8 +11,8 @@ import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.repository.MangaRepository
-import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.model.SourceNotInstalledException
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot

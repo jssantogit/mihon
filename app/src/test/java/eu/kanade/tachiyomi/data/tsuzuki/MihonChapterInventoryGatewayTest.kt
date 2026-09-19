@@ -222,7 +222,10 @@ class MihonChapterInventoryGatewayTest {
         override suspend fun getLibraryManga(): List<LibraryManga> = emptyList()
         override fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>> = emptyFlow()
         override fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>> = emptyFlow()
-        override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> = emptyList()
+        override suspend fun getDuplicateLibraryManga(
+            id: Long,
+            title: String,
+        ): List<MangaWithChapterCount> = emptyList()
         override suspend fun getUpcomingManga(
             statuses: Set<Long>,
             excludedCategories: List<Long>,
@@ -230,25 +233,46 @@ class MihonChapterInventoryGatewayTest {
         ): Flow<List<Manga>> = emptyFlow()
         override suspend fun resetViewerFlags(): Boolean = true
         override suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>) {}
-        override suspend fun update(update: MangaUpdate): Boolean { writeCount++; return true }
-        override suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean { writeCount++; return true }
-        override suspend fun insertNetworkManga(manga: List<Manga>): List<Manga> { writeCount++; return manga }
+        override suspend fun update(update: MangaUpdate): Boolean {
+            writeCount++
+            return true
+        }
+        override suspend fun updateAll(mangaUpdates: List<MangaUpdate>): Boolean {
+            writeCount++
+            return true
+        }
+        override suspend fun insertNetworkManga(manga: List<Manga>): List<Manga> {
+            writeCount++
+            return manga
+        }
     }
 
     private class FakeChapterRepository(
         private val chapters: List<Chapter>,
     ) : ChapterRepository {
         var writeCount = 0
-        override suspend fun addAll(chapters: List<Chapter>): List<Chapter> { writeCount++; return chapters }
-        override suspend fun update(chapterUpdate: ChapterUpdate) { writeCount++ }
-        override suspend fun updateAll(chapterUpdates: List<ChapterUpdate>) { writeCount++ }
-        override suspend fun removeChaptersWithIds(chapterIds: List<Long>) { writeCount++ }
+        override suspend fun addAll(chapters: List<Chapter>): List<Chapter> {
+            writeCount++
+            return chapters
+        }
+        override suspend fun update(chapterUpdate: ChapterUpdate) {
+            writeCount++
+        }
+        override suspend fun updateAll(chapterUpdates: List<ChapterUpdate>) {
+            writeCount++
+        }
+        override suspend fun removeChaptersWithIds(chapterIds: List<Long>) {
+            writeCount++
+        }
         override suspend fun getChapterByMangaId(mangaId: Long, applyScanlatorFilter: Boolean): List<Chapter> = chapters
         override suspend fun getScanlatorsByMangaId(mangaId: Long): List<String> = emptyList()
         override fun getScanlatorsByMangaIdAsFlow(mangaId: Long): Flow<List<String>> = emptyFlow()
         override suspend fun getBookmarkedChaptersByMangaId(mangaId: Long): List<Chapter> = emptyList()
         override suspend fun getChapterById(id: Long): Chapter? = chapters.firstOrNull { it.id == id }
-        override suspend fun getChapterByMangaIdAsFlow(mangaId: Long, applyScanlatorFilter: Boolean): Flow<List<Chapter>> = emptyFlow()
+        override suspend fun getChapterByMangaIdAsFlow(
+            mangaId: Long,
+            applyScanlatorFilter: Boolean,
+        ): Flow<List<Chapter>> = emptyFlow()
         override suspend fun getChapterByUrlAndMangaId(url: String, mangaId: Long): Chapter? =
             chapters.firstOrNull { it.url == url }
     }
