@@ -36,6 +36,7 @@ import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher
 import eu.kanade.tachiyomi.data.coil.MangaCoverKeyer
 import eu.kanade.tachiyomi.data.coil.MangaKeyer
 import eu.kanade.tachiyomi.data.notification.Notifications
+import eu.kanade.tachiyomi.data.tsuzuki.drivesync.DriveSyncJob
 import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthSessionManager
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
@@ -135,6 +136,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         scope.launch {
             googleAuthSessionManager.restore()
         }
+
+        DriveSyncJob.setupTask(this)
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()
