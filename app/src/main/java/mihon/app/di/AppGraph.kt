@@ -27,6 +27,7 @@ import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.tsuzuki.drivesync.DriveSyncJob
+import eu.kanade.tachiyomi.data.tsuzuki.drivesync.DriveSyncRuntime
 import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthInteractiveCoordinator
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
 import eu.kanade.tachiyomi.extension.ExtensionManager
@@ -103,6 +104,7 @@ interface AppGraph : ViewModelGraph {
     val sourceManager: SourceManager
     val trackerManager: TrackerManager
     val googleAuthInteractiveCoordinator: GoogleAuthInteractiveCoordinator
+    val driveSyncRuntime: DriveSyncRuntime
     val extensionManager: ExtensionManager
     val chapterCache: ChapterCache
     val downloadCache: DownloadCache
