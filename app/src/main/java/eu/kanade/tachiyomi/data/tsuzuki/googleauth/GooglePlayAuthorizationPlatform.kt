@@ -36,7 +36,7 @@ class GooglePlayAuthorizationPlatform(
     override suspend fun authorize(accountHint: GoogleAccountIdentity?): GoogleAuthorizationPlatformResult {
         return try {
             val request = AuthorizationRequest.builder()
-                .setRequestedScopes(DRIVE_APPDATA_SCOPES)
+                .setRequestedScopes(driveAppDataScopes())
                 .apply {
                     accountHint?.let { setAccount(it.toAndroidAccount()) }
                 }
@@ -63,7 +63,7 @@ class GooglePlayAuthorizationPlatform(
         return try {
             val request = RevokeAccessRequest.builder()
                 .setAccount(account.toAndroidAccount())
-                .setScopes(DRIVE_APPDATA_SCOPES)
+                .setScopes(driveAppDataScopes())
                 .build()
 
             authorizationClient.revokeAccess(request).awaitResult()
@@ -240,6 +240,6 @@ internal fun failureForStatus(statusCode: Int): GoogleAuthFailure {
 }
 
 private const val GOOGLE_ACCOUNT_TYPE = "com.google"
-private val DRIVE_APPDATA_SCOPES = listOf(
+private fun driveAppDataScopes() = listOf(
     Scope("https://www.googleapis.com/auth/drive.appdata"),
 )
