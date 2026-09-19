@@ -100,5 +100,5 @@
 - [x] Block D: SQLDelight persistence for collections/folders/lists.
 - [x] Block E: Query result cache & in-flight deduplication.
 - [x] Block F: Lazy priority scheduler.
-- [ ] Block G: System & user repositories.
+- [x] Block G: System & user repositories.
 - [ ] Block H: Integrated list execution pipeline.
