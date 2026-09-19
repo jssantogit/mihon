@@ -243,7 +243,6 @@ class ChapterInventoryAndReconciliationTest {
         repository.upsertBatchCalls shouldBe callsAfterDefault + 1
     }
 
-
     @Test
     fun `refresh skips unavailable mappings and rejects explicitly unavailable mapping`() = runTest {
         val repository = FakeCanonicalChapterRepository()

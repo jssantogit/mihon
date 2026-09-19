@@ -75,7 +75,9 @@ class RefreshCanonicalChapters(
         fun validate(candidate: SourceTitleMapping?): Result<List<SourceTitleMapping>> {
             if (candidate == null) return Result.failure(IllegalArgumentException("Source mapping not found"))
             if (candidate.canonicalTitleId != canonicalTitleId || !isEligible(candidate)) {
-                return Result.failure(IllegalArgumentException("Source mapping is not available and materialized for this title"))
+                return Result.failure(
+                    IllegalArgumentException("Source mapping is not available and materialized for this title"),
+                )
             }
             return Result.success(listOf(candidate))
         }

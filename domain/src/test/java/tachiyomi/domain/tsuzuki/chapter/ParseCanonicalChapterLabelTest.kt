@@ -115,7 +115,6 @@ class ParseCanonicalChapterLabelTest {
         (epilogue1.identity == epilogue2.identity) shouldBe false
     }
 
-
     @Test
     fun `semantic parsing preserves numbered one shots and rejects ambiguous numeric tails`() {
         val numberedOneShot = parse.execute("One-shot 2")
