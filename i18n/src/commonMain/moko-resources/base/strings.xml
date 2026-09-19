@@ -1085,4 +1085,23 @@
     <string name="donationCampaign.paragraph3">Regardless, Mihon will continue to be maintained by me and the volunteers, and it will stay open source.</string>
     <string name="donationCampaign.contactPlatform">Discord</string>
     <string name="donationCampaign.dismiss">Dismiss</string>
+    <!-- Tsuzuki Google account -->
+    <string name="pref_category_google_account">Google account</string>
+    <string name="pref_google_account_summary">Authorization for Tsuzuki cloud data</string>
+    <string name="google_auth_status">Google authorization</string>
+    <string name="google_auth_restoring">Checking authorization…</string>
+    <string name="google_auth_signed_out">Not connected</string>
+    <string name="google_auth_connecting">Waiting for Google…</string>
+    <string name="google_auth_connected">Connected</string>
+    <string name="google_auth_authorization_required">Authorization required</string>
+    <string name="google_auth_temporarily_unavailable">Temporarily unavailable</string>
+    <string name="google_auth_error">Google authorization error</string>
+    <string name="google_auth_wait">Please wait…</string>
+    <string name="google_auth_connect">Connect Google account</string>
+    <string name="google_auth_reconnect">Reconnect Google account</string>
+    <string name="google_auth_disconnect">Disconnect Google account</string>
+    <string name="google_auth_scope_info">Tsuzuki requests access only to its private app-data area in Google Drive. Regular Drive files are not exposed to Tsuzuki, and access tokens are kept only in memory.</string>
+    <string name="google_auth_launch_failed">Could not open Google authorization.</string>
+    <string name="google_auth_remote_disconnect_failed">Signed out locally, but Google access could not be revoked right now.</string>
+
 </resources>
