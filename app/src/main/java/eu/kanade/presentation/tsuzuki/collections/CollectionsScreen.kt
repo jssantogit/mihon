@@ -831,7 +831,8 @@ private fun ListEditorDialog(
                 if (!editor.filtersEditable) {
                     item {
                         Text(
-                            text = "This List contains an advanced imported query. Its query is preserved exactly, but this version of the visual editor cannot modify those filters.",
+                            text = "This List contains an advanced imported query. " +
+                                "Its query is preserved exactly, but this visual editor cannot modify those filters.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.tertiary,
                         )
