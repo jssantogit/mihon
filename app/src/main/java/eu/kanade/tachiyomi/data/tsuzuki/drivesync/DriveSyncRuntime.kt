@@ -9,9 +9,9 @@ import kotlinx.serialization.json.Json
 import tachiyomi.data.tsuzuki.sync.CollectionsSyncAdapter
 import tachiyomi.domain.tsuzuki.chapter.repository.ChapterOverrideRepository
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
-import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.domain.tsuzuki.source.repository.ReadingSourcePreferenceRepository
 import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalLibrarySyncAdapter
