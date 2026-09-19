@@ -53,6 +53,33 @@ class CanonicalTrackerProgressTest {
                     track(id = 2L, mangaId = 11L, trackerId = 200L, remoteId = 2000L),
                 ),
                 22L to listOf(
+                    track(id = 3L, mangaId = 22L, trackerId = 100L, remoteId = 1000L),
+                    track(id = 4L, mangaId = 22L, trackerId = 300L, remoteId = 3000L),
+                ),
+            ),
+        )
+
+        val resolved = ResolveCanonicalTrackerBindings(mappings, tracks).execute("title-1")
+
+        resolved.tracks.map { it.trackerId } shouldContainExactly listOf(100L, 200L, 300L)
+        resolved.conflictingTrackerIds shouldBe emptySet()
+        resolved.tracks.first { it.trackerId == 100L }.mangaId shouldBe 11L
+        resolved.tracks.first { it.trackerId == 100L }.remoteId shouldBe 1000L
+    }
+
+    @Test
+    fun `conflicting remote identities for the same tracker are not silently selected`() = runTest {
+        val mappings = FakeSourceTitleMappingRepository(
+            mapping("preferred", 1L, 11L, preferred = true),
+            mapping("fallback", 2L, 22L, preferred = false),
+        )
+        val tracks = FakeTrackRepository(
+            mapOf(
+                11L to listOf(
+                    track(id = 1L, mangaId = 11L, trackerId = 100L, remoteId = 1000L),
+                    track(id = 2L, mangaId = 11L, trackerId = 200L, remoteId = 2000L),
+                ),
+                22L to listOf(
                     track(id = 3L, mangaId = 22L, trackerId = 100L, remoteId = 9999L),
                     track(id = 4L, mangaId = 22L, trackerId = 300L, remoteId = 3000L),
                 ),
@@ -61,9 +88,8 @@ class CanonicalTrackerProgressTest {
 
         val resolved = ResolveCanonicalTrackerBindings(mappings, tracks).execute("title-1")
 
-        resolved.map { it.trackerId } shouldContainExactly listOf(100L, 200L, 300L)
-        resolved.first { it.trackerId == 100L }.mangaId shouldBe 11L
-        resolved.first { it.trackerId == 100L }.remoteId shouldBe 1000L
+        resolved.tracks.map { it.trackerId } shouldContainExactly listOf(200L, 300L)
+        resolved.conflictingTrackerIds shouldBe setOf(100L)
     }
 
     private fun chapter(

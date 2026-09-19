@@ -33,10 +33,17 @@ class TrackCanonicalChapter(
         withNonCancellableContext {
             val progress = getCanonicalTrackerProgress.execute(canonicalChapterId)
                 ?: return@withNonCancellableContext
-            val tracks = resolveCanonicalTrackerBindings.execute(progress.canonicalTitleId)
-            if (tracks.isEmpty()) return@withNonCancellableContext
+            val resolution = resolveCanonicalTrackerBindings.execute(progress.canonicalTitleId)
 
-            tracks.mapNotNull { track ->
+            resolution.conflictingTrackerIds.forEach { trackerId ->
+                logcat(LogPriority.WARN) {
+                    "Skipping canonical tracker $trackerId because source mappings disagree on remote identity"
+                }
+            }
+
+            if (resolution.tracks.isEmpty()) return@withNonCancellableContext
+
+            resolution.tracks.mapNotNull { track ->
                 val service = trackerManager.get(track.trackerId)
                 if (
                     service == null ||
