@@ -12,7 +12,6 @@ CREATE TABLE tsuzuki_chapter_overrides(
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER,
-    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE,
     CHECK((source_id IS NULL) = (source_title_url IS NULL)),
     CHECK(source_chapter_id IS NULL OR source_id IS NOT NULL)
 );
