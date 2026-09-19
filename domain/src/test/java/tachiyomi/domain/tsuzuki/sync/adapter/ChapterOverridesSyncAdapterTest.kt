@@ -50,8 +50,10 @@ class ChapterOverridesSyncAdapterTest {
             chapterOverrideSyncRecordId("repair-73"),
             readerPreferenceSyncRecordId("title-1"),
         )
-        ("sourceMappingId" in exported.records.getValue(chapterOverrideSyncRecordId("repair-73")).fields) shouldBe false
-        ("chapterVariantId" in exported.records.getValue(chapterOverrideSyncRecordId("repair-73")).fields) shouldBe false
+        ("sourceMappingId" in exported.records.getValue(chapterOverrideSyncRecordId("repair-73")).fields) shouldBe
+            false
+        ("chapterVariantId" in exported.records.getValue(chapterOverrideSyncRecordId("repair-73")).fields) shouldBe
+            false
 
         val targetOverrides = FakeOverrideRepository()
         val targetPreferences = FakeReaderPreferenceRepository()
@@ -79,11 +81,11 @@ class ChapterOverridesSyncAdapterTest {
         val exported = adapter(FakeOverrideRepository(), sourcePreferences).exportDocument()
         val preferenceId = readerPreferenceSyncRecordId("title-1")
         val tombstoned = exported.copy(
-            records = exported.records + (
+            records = exported.records + mapOf(
                 preferenceId to exported.records.getValue(preferenceId).copy(
                     updatedAtEpochMillis = 40L,
                     deletedAtEpochMillis = 40L,
-                )
+                ),
             ),
         )
 
