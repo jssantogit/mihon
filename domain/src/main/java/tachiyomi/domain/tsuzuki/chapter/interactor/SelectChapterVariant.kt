@@ -25,9 +25,9 @@ class SelectChapterVariant(
     ): ChapterVariantSelection {
         val chapter = canonicalChapterRepository.getById(canonicalChapterId)
             ?: return emptySelection(canonicalChapterId, preferredLanguage)
-        val mappings = sourceTitleMappingRepository
+        val mappingList = sourceTitleMappingRepository
             .getByCanonicalTitleId(chapter.canonicalTitleId)
-            .associateBy { it.id }
+        val mappings = mappingList.associateBy { it.id }
 
         val candidates = canonicalChapterRepository
             .getVariantsByCanonicalChapterId(canonicalChapterId)
@@ -42,12 +42,27 @@ class SelectChapterVariant(
                 )
             }
 
+        val normalizedPreferredLanguage = normalizeLanguage(preferredLanguage)
+        val relevantLanguages = buildSet {
+            preferredLanguage?.takeIf(String::isNotBlank)?.let(::add)
+            mappingList.mapTo(this) { it.language }
+            candidates.mapTo(this) { it.effectiveLanguage }
+        }
+        val preferenceRanks = loadPreferenceRanks(relevantLanguages)
+        val preferredSourceMappingId = determinePreferredMapping(
+            mappings = mappingList,
+            normalizedPreferredLanguage = normalizedPreferredLanguage,
+            preferenceRanks = preferenceRanks,
+        )
+
         if (candidates.isEmpty()) {
-            return emptySelection(canonicalChapterId, preferredLanguage)
+            return emptySelection(
+                canonicalChapterId = canonicalChapterId,
+                preferredLanguage = preferredLanguage,
+                preferredSourceMappingId = preferredSourceMappingId,
+            )
         }
 
-        val preferenceRanks = loadPreferenceRanks(candidates)
-        val normalizedPreferredLanguage = normalizeLanguage(preferredLanguage)
         val ordered = candidates.sortedWith(
             compareBy<RankedCandidate> {
                 if (
@@ -79,6 +94,9 @@ class SelectChapterVariant(
             usedPreferredLanguage = normalizedPreferredLanguage != null &&
                 normalizeLanguage(selected.effectiveLanguage) == normalizedPreferredLanguage,
             usedPreferredMapping = selected.mapping.preferredOverride,
+            preferredSourceMappingId = preferredSourceMappingId,
+            requiresFallback = preferredSourceMappingId != null &&
+                selected.mapping.id != preferredSourceMappingId,
         )
     }
 
@@ -88,17 +106,48 @@ class SelectChapterVariant(
     ): ChapterVariantSelection = execute(canonicalChapterId, preferredLanguage)
 
     private suspend fun loadPreferenceRanks(
-        candidates: List<RankedCandidate>,
+        languages: Set<String>,
     ): Map<String?, Map<Long, Int>> {
-        val languages = candidates
-            .map { it.effectiveLanguage }
-            .filter { it.isNotBlank() }
+        return languages
+            .filter(String::isNotBlank)
             .distinctBy(::normalizeLanguage)
+            .associate { language ->
+                normalizeLanguage(language) to getPreferredReadingSources.await(language)
+                    .associate { it.sourceId to it.position }
+            }
+    }
 
-        return languages.associate { language ->
-            normalizeLanguage(language) to getPreferredReadingSources.await(language)
-                .associate { it.sourceId to it.position }
+    private fun determinePreferredMapping(
+        mappings: List<SourceTitleMapping>,
+        normalizedPreferredLanguage: String?,
+        preferenceRanks: Map<String?, Map<Long, Int>>,
+    ): String? {
+        val eligible = mappings.filter {
+            it.availability != SourceMappingAvailability.UNAVAILABLE
         }
+        if (eligible.isEmpty()) return null
+
+        val languageMatches = normalizedPreferredLanguage?.let { preferred ->
+            eligible.filter { normalizeLanguage(it.language) == preferred }
+        }.orEmpty()
+        val scope = languageMatches.ifEmpty { eligible }
+
+        scope.firstOrNull { it.preferredOverride }?.let { return it.id }
+
+        val ranks = normalizedPreferredLanguage
+            ?.let(preferenceRanks::get)
+            .orEmpty()
+        return scope
+            .mapNotNull { mapping ->
+                ranks[mapping.sourceId]?.let { rank -> mapping to rank }
+            }
+            .minWithOrNull(
+                compareBy<Pair<SourceTitleMapping, Int>> { it.second }
+                    .thenBy { if (it.first.verifiedByUser) 0 else 1 }
+                    .thenBy { it.first.id },
+            )
+            ?.first
+            ?.id
     }
 
     private fun effectiveLanguage(
@@ -109,11 +158,13 @@ class SelectChapterVariant(
     private fun emptySelection(
         canonicalChapterId: String,
         preferredLanguage: String?,
+        preferredSourceMappingId: String? = null,
     ) = ChapterVariantSelection(
         canonicalChapterId = canonicalChapterId,
         preferredLanguage = preferredLanguage,
         selected = null,
         candidates = emptyList(),
+        preferredSourceMappingId = preferredSourceMappingId,
     )
 
     private fun normalizeLanguage(language: String?): String? {

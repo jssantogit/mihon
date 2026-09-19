@@ -4,6 +4,7 @@ package tachiyomi.domain.tsuzuki.reader.model
 data class OperationalReaderChapter(
     val canonicalChapterId: String,
     val variantId: String,
+    val sourceMappingId: String,
     val mihonMangaId: Long,
     val mihonChapterId: Long,
     val sourceId: Long,

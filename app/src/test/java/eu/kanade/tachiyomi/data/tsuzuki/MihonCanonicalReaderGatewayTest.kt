@@ -46,6 +46,7 @@ class MihonCanonicalReaderGatewayTest {
 
         target.canonicalChapterId shouldBe "canonical-chapter-1"
         target.variantId shouldBe "variant-1"
+        target.sourceMappingId shouldBe "mapping-1"
         target.mihonMangaId shouldBe 55L
         target.mihonChapterId shouldBe 1L
         chapters.addCalls shouldBe 1

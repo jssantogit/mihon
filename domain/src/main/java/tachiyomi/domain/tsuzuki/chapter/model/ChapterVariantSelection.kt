@@ -13,6 +13,8 @@ data class ChapterVariantSelection(
     val candidates: List<ChapterVariant>,
     val usedPreferredLanguage: Boolean = false,
     val usedPreferredMapping: Boolean = false,
+    val preferredSourceMappingId: String? = null,
+    val requiresFallback: Boolean = false,
 ) {
     val selectedVariant: ChapterVariant?
         get() = selected

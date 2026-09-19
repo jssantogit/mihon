@@ -107,6 +107,7 @@ class MihonCanonicalReaderGateway(
                 OperationalReaderChapter(
                     canonicalChapterId = variant.canonicalChapterId,
                     variantId = variant.id,
+                    sourceMappingId = variant.sourceMappingId,
                     mihonMangaId = mangaId,
                     mihonChapterId = chapter.id,
                     sourceId = variant.sourceId,

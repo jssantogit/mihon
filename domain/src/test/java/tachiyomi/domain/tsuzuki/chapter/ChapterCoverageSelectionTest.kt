@@ -121,6 +121,65 @@ class ChapterCoverageSelectionTest {
         )
     }
 
+
+    @Test
+    fun `selection reports fallback when preferred mapping lacks the canonical chapter`() = runTest {
+        val repository = FakeCanonicalChapterRepository(
+            chapters = listOf(chapter("chapter-1", CanonicalChapterType.REGULAR, 1)),
+            variants = listOf(
+                variant("fallback", "chapter-1", "mapping-2", 2L, "en"),
+            ),
+        )
+        val mappings = FakeSourceTitleMappingRepository(
+            mapping("mapping-1", 1L, "en", preferred = true),
+            mapping("mapping-2", 2L, "en"),
+        )
+        val selector = SelectChapterVariant(
+            repository,
+            mappings,
+            GetPreferredReadingSources(FakeReadingSourcePreferenceRepository()),
+        )
+
+        val selection = selector.execute("chapter-1", preferredLanguage = "en")
+
+        selection.selected?.id shouldBe "fallback"
+        selection.preferredSourceMappingId shouldBe "mapping-1"
+        selection.requiresFallback shouldBe true
+    }
+
+    @Test
+    fun `language source preference defines expected mapping even when its chapter is missing`() = runTest {
+        val repository = FakeCanonicalChapterRepository(
+            chapters = listOf(chapter("chapter-1", CanonicalChapterType.REGULAR, 1)),
+            variants = listOf(
+                variant("fallback", "chapter-1", "mapping-2", 2L, "en"),
+            ),
+        )
+        val mappings = FakeSourceTitleMappingRepository(
+            mapping("mapping-1", 1L, "en"),
+            mapping("mapping-2", 2L, "en"),
+        )
+        val sourcePreferences = FakeReadingSourcePreferenceRepository(
+            mapOf(
+                "en" to listOf(
+                    ReadingSourcePreference("en", 1L, 0),
+                    ReadingSourcePreference("en", 2L, 1),
+                ),
+            ),
+        )
+        val selector = SelectChapterVariant(
+            repository,
+            mappings,
+            GetPreferredReadingSources(sourcePreferences),
+        )
+
+        val selection = selector.execute("chapter-1", preferredLanguage = "en")
+
+        selection.selected?.id shouldBe "fallback"
+        selection.preferredSourceMappingId shouldBe "mapping-1"
+        selection.requiresFallback shouldBe true
+    }
+
     @Test
     fun `source preference applies when no title override wins and unavailable mappings are excluded`() = runTest {
         val repository = FakeCanonicalChapterRepository(
