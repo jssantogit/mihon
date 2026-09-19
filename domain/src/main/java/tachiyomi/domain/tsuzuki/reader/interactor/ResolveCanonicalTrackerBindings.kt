@@ -3,6 +3,7 @@ package tachiyomi.domain.tsuzuki.reader.interactor
 import dev.zacsweers.metro.Inject
 import tachiyomi.domain.track.model.Track
 import tachiyomi.domain.track.repository.TrackRepository
+import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 @Inject
@@ -16,7 +17,7 @@ class ResolveCanonicalTrackerBindings(
             .getByCanonicalTitleId(canonicalTitleId)
             .filter { it.mihonMangaId != null }
             .sortedWith(
-                compareBy { if (it.preferredOverride) 0 else 1 }
+                compareBy<SourceTitleMapping> { if (it.preferredOverride) 0 else 1 }
                     .thenBy { if (it.verifiedByUser) 0 else 1 }
                     .thenBy { it.id },
             )
