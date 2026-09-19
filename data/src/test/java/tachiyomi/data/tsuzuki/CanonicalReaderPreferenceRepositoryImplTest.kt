@@ -88,6 +88,11 @@ class CanonicalReaderPreferenceRepositoryImplTest {
         val disabled = enabled.copy(automaticFallback = false, updatedAt = 200L)
         repository.upsert(disabled)
         repository.get("title-1") shouldBe disabled
+        repository.getAll() shouldBe listOf(disabled)
+
+        repository.delete("title-1")
+        repository.get("title-1") shouldBe null
+        repository.getAll() shouldBe emptyList()
     }
 
     @Test
