@@ -34,33 +34,33 @@ class ChapterOverridesSyncAdapter(
 
         overrideRepository.getAll(includeDeleted = true)
             .sortedBy(ChapterOverride::id)
-            .forEach { override ->
-                val recordId = chapterOverrideSyncRecordId(override.id)
+            .forEach { chapterOverride ->
+                val recordId = chapterOverrideSyncRecordId(chapterOverride.id)
                 records[recordId] = SyncRecordEnvelope(
                     id = recordId,
                     revision = revisionSource.nextRevision(),
-                    updatedAtEpochMillis = override.updatedAt,
-                    deletedAtEpochMillis = override.deletedAt,
+                    updatedAtEpochMillis = chapterOverride.updatedAt,
+                    deletedAtEpochMillis = chapterOverride.deletedAt,
                     fields = buildJsonObject {
                         put("recordType", RECORD_TYPE_OVERRIDE)
-                        put("canonicalTitleId", override.canonicalTitleId)
+                        put("canonicalTitleId", chapterOverride.canonicalTitleId)
                         put(
                             "canonicalChapterKey",
-                            override.canonicalChapterKey?.let(::JsonPrimitive) ?: JsonNull,
+                            chapterOverride.canonicalChapterKey?.let(::JsonPrimitive) ?: JsonNull,
                         )
-                        put("sourceId", override.sourceId?.let(::JsonPrimitive) ?: JsonNull)
+                        put("sourceId", chapterOverride.sourceId?.let(::JsonPrimitive) ?: JsonNull)
                         put(
                             "sourceTitleUrl",
-                            override.sourceTitleUrl?.let(::JsonPrimitive) ?: JsonNull,
+                            chapterOverride.sourceTitleUrl?.let(::JsonPrimitive) ?: JsonNull,
                         )
                         put(
                             "sourceChapterId",
-                            override.sourceChapterId?.let(::JsonPrimitive) ?: JsonNull,
+                            chapterOverride.sourceChapterId?.let(::JsonPrimitive) ?: JsonNull,
                         )
-                        put("kind", override.kind.name)
-                        put("payloadJson", override.payloadJson)
-                        put("schemaVersion", override.schemaVersion)
-                        put("createdAt", override.createdAt)
+                        put("kind", chapterOverride.kind.name)
+                        put("payloadJson", chapterOverride.payloadJson)
+                        put("schemaVersion", chapterOverride.schemaVersion)
+                        put("createdAt", chapterOverride.createdAt)
                     },
                 )
             }
