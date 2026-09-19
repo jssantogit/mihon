@@ -87,6 +87,9 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
+import tachiyomi.domain.tsuzuki.reader.interactor.RecordCanonicalReaderProgress
+import tachiyomi.domain.tsuzuki.reader.model.OperationalReaderChapter
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.isLocal
 import java.util.Date
@@ -113,6 +116,8 @@ class ReaderViewModel(
     private val getNextChapters: GetNextChapters,
     private val upsertHistory: UpsertHistory,
     private val updateChapter: UpdateChapter,
+    private val prepareCanonicalChapterForReader: PrepareCanonicalChapterForReader,
+    private val recordCanonicalReaderProgress: RecordCanonicalReaderProgress,
     private val setMangaViewerFlags: SetMangaViewerFlags,
     private val getIncognitoState: GetIncognitoState,
     private val libraryPreferences: LibraryPreferences,
@@ -138,12 +143,26 @@ class ReaderViewModel(
     val state = mutableState.asStateFlow()
 
     /**
-     * Ids of the manga and chapter the reader was launched with, taken from the activity intent.
+     * Legacy Reader coordinates remain supported. Canonical launches instead
+     * resolve these coordinates lazily through the Tsuzuki compatibility bridge.
      */
-    val mangaId = savedState.get<Long>("manga") ?: -1L
-    private val initialChapterId = savedState.get<Long>("chapter") ?: -1L
+    private val canonicalChapterId = savedState.get<String>("canonical_chapter")
+    private val canonicalPreferredLanguage = savedState.get<String>("canonical_language")
 
-    val hasValidArgs = mangaId != -1L && initialChapterId != -1L
+    var mangaId = savedState.get<Long>("manga") ?: -1L
+        private set(value) {
+            savedState["manga"] = value
+            field = value
+        }
+
+    private var initialChapterId = savedState.get<Long>("chapter") ?: -1L
+        set(value) {
+            savedState["chapter"] = value
+            field = value
+        }
+
+    val hasValidArgs: Boolean
+        get() = canonicalChapterId != null || (mangaId != -1L && initialChapterId != -1L)
 
     private val eventChannel = Channel<Event>()
     val eventFlow = eventChannel.receiveAsFlow()
@@ -182,6 +201,9 @@ class ReaderViewModel(
      * The chapter loader for the loaded manga. It'll be null until [manga] is set.
      */
     private var loader: ChapterLoader? = null
+
+    /** Canonical identity attached to the operational Reader chapter for this session. */
+    private var canonicalSession: OperationalReaderChapter? = null
 
     /**
      * The time the chapter was started reading
@@ -320,6 +342,17 @@ class ReaderViewModel(
     private suspend fun init() {
         withIOContext {
             try {
+                canonicalChapterId?.let { canonicalId ->
+                    val target = prepareCanonicalChapterForReader.execute(
+                        canonicalChapterId = canonicalId,
+                        preferredLanguage = canonicalPreferredLanguage,
+                    ).getOrThrow()
+                    canonicalSession = target
+                    mangaId = target.mihonMangaId
+                    initialChapterId = target.mihonChapterId
+                    chapterId = target.mihonChapterId
+                }
+
                 val manga = getManga.await(mangaId) ?: error("Requested manga of id $mangaId not found")
                 val source = sourceManager.getOrStub(manga.source)
                 incognitoMode = getIncognitoState.await(manga.source)
@@ -589,6 +622,18 @@ class ReaderViewModel(
                     lastPageRead = readerChapter.chapter.last_page_read.toLong(),
                 ),
             )
+
+            canonicalSessionFor(readerChapter)?.let { session ->
+                try {
+                    recordCanonicalReaderProgress.recordPage(
+                        canonicalChapterId = session.canonicalChapterId,
+                        pageIndex = pageIndex,
+                        completed = readerChapter.pages?.lastIndex == pageIndex,
+                    )
+                } catch (error: Throwable) {
+                    logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader progress" }
+                }
+            }
         }
     }
 
@@ -632,6 +677,17 @@ class ReaderViewModel(
             val sessionReadDuration = chapterReadStartTime?.let { endTime.time - it } ?: 0
 
             upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
+            canonicalSessionFor(readerChapter)?.let { session ->
+                try {
+                    recordCanonicalReaderProgress.recordHistory(
+                        canonicalChapterId = session.canonicalChapterId,
+                        variantId = session.variantId,
+                        sessionReadDuration = sessionReadDuration,
+                    )
+                } catch (error: Throwable) {
+                    logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader history" }
+                }
+            }
             chapterReadStartTime = null
         }
     }
@@ -657,6 +713,11 @@ class ReaderViewModel(
      */
     private fun getCurrentChapter(): ReaderChapter? {
         return state.value.currentChapter
+    }
+
+    private fun canonicalSessionFor(readerChapter: ReaderChapter): OperationalReaderChapter? {
+        val session = canonicalSession ?: return null
+        return session.takeIf { it.mihonChapterId == readerChapter.chapter.id }
     }
 
     fun getSource() = state.value.source as? HttpSource

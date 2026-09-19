@@ -114,6 +114,18 @@ class ReaderActivity : BaseActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
         }
+
+        fun newCanonicalIntent(
+            context: Context,
+            canonicalChapterId: String,
+            preferredLanguage: String? = null,
+        ): Intent {
+            return Intent(context, ReaderActivity::class.java).apply {
+                putExtra("canonical_chapter", canonicalChapterId)
+                preferredLanguage?.let { putExtra("canonical_language", it) }
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        }
     }
 
     @Inject private lateinit var readerPreferences: ReaderPreferences
@@ -175,11 +187,13 @@ class ReaderActivity : BaseActivity() {
             return
         }
 
-        NotificationReceiver.dismissNotification(
-            this,
-            viewModel.mangaId.hashCode(),
-            Notifications.ID_NEW_CHAPTERS,
-        )
+        if (viewModel.mangaId != -1L) {
+            NotificationReceiver.dismissNotification(
+                this,
+                viewModel.mangaId.hashCode(),
+                Notifications.ID_NEW_CHAPTERS,
+            )
+        }
 
         config = ReaderConfig()
         setMenuVisibility(viewModel.state.value.menuVisible)
