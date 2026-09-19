@@ -40,6 +40,25 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
+    fun `multiple inventories reconcile through one atomic batch and share new canonical identities`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val reconciler = reconciler(repository)
+
+        val report = reconciler.execute(
+            listOf(
+                inventory(mappingId = "mapping-1", sourceId = 1L, name = "Chapter 12", sourceChapterId = "/one"),
+                inventory(mappingId = "mapping-2", sourceId = 2L, name = "Ch. 012", sourceChapterId = "/two"),
+            ),
+        )
+
+        report.canonicalChapters.map { it.id } shouldBe listOf("chapter-1")
+        report.variants.map { it.sourceMappingId } shouldContainExactly listOf("mapping-1", "mapping-2")
+        report.sourceMappingIds shouldBe setOf("mapping-1", "mapping-2")
+        repository.upsertBatchCalls shouldBe 1
+        repository.getByCanonicalTitleId("title-1").size shouldBe 1
+    }
+
+    @Test
     fun `incompatible type part suffix and numbered semantic labels stay separate`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val reconciler = reconciler(repository)
@@ -155,6 +174,28 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
+    fun `multi mapping refresh batch failure leaves every mapping unpersisted`() = runTest {
+        val repository = FailingTransactionalCanonicalChapterRepository()
+        val gateway = FakeChapterInventoryGateway()
+        val mappings = FakeSourceTitleMappingRepository(
+            mapping("mapping-1", materialized = true),
+            mapping("mapping-2", materialized = true),
+        )
+        gateway.inventories = mapOf(
+            "mapping-1" to inventory("mapping-1", 1L, "Chapter 1", "/one"),
+            "mapping-2" to inventory("mapping-2", 2L, "Chapter 2", "/two"),
+        )
+        repository.failBatch = true
+
+        val refresh = RefreshCanonicalChapters(mappings, gateway, reconciler(repository))
+        refresh.execute("title-1", mappingIds = listOf("mapping-1", "mapping-2")).isFailure shouldBe true
+
+        repository.upsertBatchCalls shouldBe 1
+        repository.chapters shouldBe emptyMap()
+        repository.variants shouldBe emptyMap()
+    }
+
+    @Test
     fun `source failure leaves persisted state intact and cancellation propagates`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val gateway = FakeChapterInventoryGateway()
@@ -179,7 +220,7 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
-    fun `refresh defaults to one eligible preferred mapping and explicit subset can broaden`() = runTest {
+    fun `refresh defaults to one eligible preferred mapping and explicit subset can broaden atomically`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val gateway = FakeChapterInventoryGateway()
         val mappings = FakeSourceTitleMappingRepository(
@@ -195,8 +236,11 @@ class ChapterInventoryAndReconciliationTest {
         val refresh = RefreshCanonicalChapters(mappings, gateway, reconciler(repository))
 
         refresh.execute("title-1").getOrThrow().sourceMappingIds shouldBe setOf("mapping-2")
+        val callsAfterDefault = repository.upsertBatchCalls
+
         refresh.execute("title-1", mappingIds = listOf("mapping-1", "mapping-3"))
             .getOrThrow().sourceMappingIds shouldBe setOf("mapping-1", "mapping-3")
+        repository.upsertBatchCalls shouldBe callsAfterDefault + 1
     }
 
     private fun reconciler(repository: FakeCanonicalChapterRepository) = ReconcileChapterInventory(
@@ -277,6 +321,7 @@ class ChapterInventoryAndReconciliationTest {
     private open class FakeCanonicalChapterRepository : CanonicalChapterRepository {
         val chapters = linkedMapOf<String, CanonicalChapter>()
         val variants = linkedMapOf<String, ChapterVariant>()
+        var upsertBatchCalls = 0
 
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
             chapters.values.filter { it.canonicalTitleId == canonicalTitleId }
@@ -304,6 +349,7 @@ class ChapterInventoryAndReconciliationTest {
         }
 
         override suspend fun upsertBatch(chapters: List<CanonicalChapter>, variants: List<ChapterVariant>) {
+            upsertBatchCalls += 1
             chapters.forEach { upsert(it) }
             variants.forEach { upsertVariant(it) }
         }

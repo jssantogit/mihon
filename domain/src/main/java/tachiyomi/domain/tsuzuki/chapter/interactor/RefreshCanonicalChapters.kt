@@ -28,31 +28,25 @@ class RefreshCanonicalChapters(
             ).getOrThrow()
 
             // Fetch every requested source before writing any canonical state.
-            // This keeps a failed source/network call non-destructive.
+            // The resulting inventories are then reconciled in one atomic batch.
             val inventories = selected.map { mapping ->
-                val result = chapterInventoryGateway.fetch(mapping)
-                result.getOrElse { error ->
+                val inventory = chapterInventoryGateway.fetch(mapping).getOrElse { error ->
                     if (error is CancellationException) throw error
                     throw error
-                }.also { inventory ->
-                    require(inventory.canonicalTitleId.isBlank() || inventory.canonicalTitleId == canonicalTitleId) {
-                        "Inventory title ${inventory.canonicalTitleId} does not match $canonicalTitleId"
-                    }
-                    require(inventory.sourceMappingId.isBlank() || inventory.sourceMappingId == mapping.id) {
-                        "Inventory mapping ${inventory.sourceMappingId} does not match ${mapping.id}"
-                    }
                 }
-            }
-
-            val reports = selected.zip(inventories).map { (mapping, inventory) ->
-                reconcileChapterInventory.execute(
-                    inventory.copy(
-                        canonicalTitleId = inventory.canonicalTitleId.ifBlank { canonicalTitleId },
-                        sourceMappingId = inventory.sourceMappingId.ifBlank { mapping.id },
-                    ),
+                require(inventory.canonicalTitleId.isBlank() || inventory.canonicalTitleId == canonicalTitleId) {
+                    "Inventory title ${inventory.canonicalTitleId} does not match $canonicalTitleId"
+                }
+                require(inventory.sourceMappingId.isBlank() || inventory.sourceMappingId == mapping.id) {
+                    "Inventory mapping ${inventory.sourceMappingId} does not match ${mapping.id}"
+                }
+                inventory.copy(
+                    canonicalTitleId = inventory.canonicalTitleId.ifBlank { canonicalTitleId },
+                    sourceMappingId = inventory.sourceMappingId.ifBlank { mapping.id },
                 )
             }
-            Result.success(mergeReports(canonicalTitleId, reports))
+
+            Result.success(reconcileChapterInventory.execute(inventories))
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -103,22 +97,5 @@ class RefreshCanonicalChapters(
 
         val selected = eligible.firstOrNull { it.preferredOverride } ?: eligible.firstOrNull()
         return validate(selected)
-    }
-
-    private fun mergeReports(
-        canonicalTitleId: String,
-        reports: List<ChapterReconciliationReport>,
-    ): ChapterReconciliationReport {
-        val chapters = reports.flatMap { it.canonicalChapters }.distinctBy { it.id }
-        val variants = reports
-            .flatMap { it.variants }
-            .distinctBy { it.sourceId to it.sourceChapterId }
-        return ChapterReconciliationReport(
-            canonicalTitleId = canonicalTitleId,
-            canonicalChapters = chapters,
-            variants = variants,
-            sourceMappingIds = reports.flatMap { it.sourceMappingIds }.toSet(),
-            createdCanonicalChapterIds = reports.flatMap { it.createdCanonicalChapterIds }.toSet(),
-        )
     }
 }
