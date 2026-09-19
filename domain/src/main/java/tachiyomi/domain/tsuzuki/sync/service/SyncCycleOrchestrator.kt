@@ -29,6 +29,7 @@ class SyncCycleOrchestrator(
     private val merger: ThreeWaySyncMerger,
     private val revisionSource: SyncRevisionSource,
     private val clock: SyncClock,
+    private val retryPolicy: SyncRetryPolicy = SyncRetryPolicy(),
 ) {
     private val mutex = Mutex()
     private val adapters = adapters.sortedBy { it.documentKind.name }
@@ -81,6 +82,7 @@ class SyncCycleOrchestrator(
                     documentKind = adapter.documentKind,
                     pending = pending,
                     nowEpochMillis = now,
+                    failure = failure,
                 )
                 results += SyncDocumentResult.Failed(
                     documentKind = adapter.documentKind,
@@ -381,6 +383,7 @@ class SyncCycleOrchestrator(
             documentKind = documentKind,
             pending = pending,
             nowEpochMillis = nowEpochMillis,
+            failure = failure,
         )
         return SyncDocumentResult.Failed(
             documentKind = documentKind,
@@ -392,6 +395,7 @@ class SyncCycleOrchestrator(
         documentKind: SyncDocumentKind,
         pending: SyncOutboxEntry?,
         nowEpochMillis: Long,
+        failure: SyncFailure,
     ) {
         if (pending == null) {
             outboxRepository.markDirty(
@@ -401,7 +405,11 @@ class SyncCycleOrchestrator(
         }
         outboxRepository.recordFailure(
             documentKind = documentKind,
-            nextAttemptAtEpochMillis = null,
+            nextAttemptAtEpochMillis = retryPolicy.nextAttemptAt(
+                nowEpochMillis = nowEpochMillis,
+                currentAttemptCount = pending?.attemptCount ?: 0,
+                failure = failure,
+            ),
         )
     }
 

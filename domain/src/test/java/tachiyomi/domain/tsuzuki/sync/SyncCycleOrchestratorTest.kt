@@ -199,7 +199,13 @@ class SyncCycleOrchestratorTest {
         report.globalFailure?.reason shouldBe SyncFailureReason.NETWORK_UNAVAILABLE
         adapter.applied shouldBe emptyList()
         stores.state.get(SyncDocumentKind.LIBRARY) shouldBe null
-        stores.outbox.get(SyncDocumentKind.LIBRARY)?.attemptCount shouldBe 1
+        stores.outbox.get(SyncDocumentKind.LIBRARY) shouldBe
+            SyncOutboxEntry(
+                documentKind = SyncDocumentKind.LIBRARY,
+                enqueuedAtEpochMillis = 100,
+                attemptCount = 1,
+                nextAttemptAtEpochMillis = 60_100,
+            )
     }
 
     @Test
@@ -348,7 +354,13 @@ class SyncCycleOrchestratorTest {
         (report.documentResults.single() as SyncDocumentResult.Failed)
             .failure.reason shouldBe SyncFailureReason.REMOTE_CHANGED
         stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe base
-        stores.outbox.get(SyncDocumentKind.LIBRARY)?.attemptCount shouldBe 1
+        stores.outbox.get(SyncDocumentKind.LIBRARY) shouldBe
+            SyncOutboxEntry(
+                documentKind = SyncDocumentKind.LIBRARY,
+                enqueuedAtEpochMillis = 100,
+                attemptCount = 1,
+                nextAttemptAtEpochMillis = 60_100,
+            )
     }
 
     private fun engine(
