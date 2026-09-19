@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -25,6 +26,12 @@ class CanonicalReaderPreferenceRepositoryImpl(
             .awaitAsOneOrNull()
     }
 
+    override suspend fun getAll(): List<CanonicalReaderPreference> {
+        return database.tsuzuki_reader_preferencesQueries
+            .getAllTsuzukiReaderPreferences(::mapPreference)
+            .awaitAsList()
+    }
+
     override fun observe(canonicalTitleId: String): Flow<CanonicalReaderPreference?> {
         return database.tsuzuki_reader_preferencesQueries
             .observeTsuzukiReaderPreference(canonicalTitleId, ::mapPreference)
@@ -38,6 +45,11 @@ class CanonicalReaderPreferenceRepositoryImpl(
             automaticFallback = preference.automaticFallback,
             updatedAt = preference.updatedAt,
         )
+    }
+
+    override suspend fun delete(canonicalTitleId: String) {
+        database.tsuzuki_reader_preferencesQueries
+            .deleteTsuzukiReaderPreference(canonicalTitleId)
     }
 
     private fun mapPreference(
