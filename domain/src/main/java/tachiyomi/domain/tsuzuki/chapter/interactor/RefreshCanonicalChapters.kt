@@ -1,5 +1,6 @@
 package tachiyomi.domain.tsuzuki.chapter.interactor
 
+import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
@@ -8,6 +9,7 @@ import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 /** Fetches an explicit source subset and reconciles it without source-wide scans. */
+@Inject
 class RefreshCanonicalChapters(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val chapterInventoryGateway: ChapterInventoryGateway,

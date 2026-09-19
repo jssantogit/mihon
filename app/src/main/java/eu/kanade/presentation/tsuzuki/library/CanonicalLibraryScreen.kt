@@ -53,6 +53,7 @@ fun CanonicalLibraryScreen(
     navigateUp: () -> Unit,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
+    onRead: (CanonicalLibraryItem) -> Unit = {},
     onResolveSource: (CanonicalLibraryItem) -> Unit = {},
     onOpenSourcePreferences: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -94,6 +95,7 @@ fun CanonicalLibraryScreen(
                             mappingsByCanonicalTitleId = state.mappingsByCanonicalTitleId,
                             onUpdateStatus = onUpdateStatus,
                             onRemoveItem = onRemoveItem,
+                            onRead = onRead,
                             onResolveSource = onResolveSource,
                         )
                     }
@@ -109,6 +111,7 @@ private fun CanonicalLibraryList(
     mappingsByCanonicalTitleId: Map<String, List<SourceTitleMapping>>,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
+    onRead: (CanonicalLibraryItem) -> Unit,
     onResolveSource: (CanonicalLibraryItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -126,6 +129,7 @@ private fun CanonicalLibraryList(
                 mappings = mappingsByCanonicalTitleId[item.title.id].orEmpty(),
                 onUpdateStatus = { status -> onUpdateStatus(item.title.id, status) },
                 onRemove = { onRemoveItem(item.title.id) },
+                onRead = { onRead(item) },
                 onResolveSource = { onResolveSource(item) },
             )
         }
@@ -139,6 +143,7 @@ private fun CanonicalLibraryItemCard(
     mappings: List<SourceTitleMapping>,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
+    onRead: () -> Unit,
     onResolveSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -241,13 +246,25 @@ private fun CanonicalLibraryItemCard(
             }
 
             val preferredMapping = mappings.firstOrNull { it.preferredOverride } ?: mappings.firstOrNull()
-            TextButton(onClick = onResolveSource) {
-                if (preferredMapping == null) {
-                    Text("Find reading source")
-                } else {
-                    Text(
-                        "Reading source: #${preferredMapping.sourceId} · ${preferredMapping.language}",
-                    )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = onRead,
+                    enabled = preferredMapping != null,
+                ) {
+                    Text("Read / Continue")
+                }
+
+                TextButton(onClick = onResolveSource) {
+                    if (preferredMapping == null) {
+                        Text("Find reading source")
+                    } else {
+                        Text(
+                            "Reading source: #${preferredMapping.sourceId} · ${preferredMapping.language}",
+                        )
+                    }
                 }
             }
         }

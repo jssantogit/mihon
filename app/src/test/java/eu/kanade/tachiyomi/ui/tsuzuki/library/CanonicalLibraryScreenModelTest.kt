@@ -5,8 +5,10 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -32,6 +34,8 @@ import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
+import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,6 +62,7 @@ class CanonicalLibraryScreenModelTest {
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
             migrateMihonLibraryToCanonical = fakeMigration,
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
 
         val canonicalItem = CanonicalLibraryItem(
@@ -116,6 +121,7 @@ class CanonicalLibraryScreenModelTest {
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
             migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
         advanceUntilIdle()
 
@@ -144,6 +150,7 @@ class CanonicalLibraryScreenModelTest {
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
             migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
         advanceUntilIdle()
 
@@ -163,6 +170,7 @@ class CanonicalLibraryScreenModelTest {
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
             migrateMihonLibraryToCanonical = fakeMigration,
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
         advanceUntilIdle()
 
@@ -181,6 +189,7 @@ class CanonicalLibraryScreenModelTest {
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
             migrateMihonLibraryToCanonical = fakeMigration,
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
 
         val item = CanonicalLibraryItem(
@@ -223,6 +232,7 @@ class CanonicalLibraryScreenModelTest {
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
             migrateMihonLibraryToCanonical = failingMigration,
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
 
         val item = CanonicalLibraryItem(
@@ -247,6 +257,29 @@ class CanonicalLibraryScreenModelTest {
         val state = screenModel.state.value
         state.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
         state.items shouldBe listOf(item)
+    }
+
+    @Test
+    fun `read or continue emits canonical reader event`() = runTest(testDispatcher) {
+        val fakeRepo = FakeCanonicalLibraryRepository()
+        val resolver = FakeCanonicalReadingStartResolver(
+            result = CanonicalReadingStart.Ready("chapter-42"),
+        )
+        val screenModel = CanonicalLibraryScreenModel(
+            observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
+            setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
+            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
+            resolveCanonicalReadingStart = resolver,
+        )
+        advanceUntilIdle()
+
+        val event = async { screenModel.events.first() }
+        screenModel.readOrContinue("title-42", "Title 42")
+        advanceUntilIdle()
+
+        event.await() shouldBe CanonicalLibraryEvent.OpenReader("chapter-42")
+        resolver.lastCanonicalTitleId shouldBe "title-42"
     }
 
     private class FakeMigrateMihonLibraryToCanonical(
@@ -311,6 +344,20 @@ class CanonicalLibraryScreenModelTest {
         ): CanonicalTitle = title
         override suspend fun insert(title: CanonicalTitle) {}
         override suspend fun addExternalIdentity(identity: ExternalIdentity) {}
+    }
+
+    private class FakeCanonicalReadingStartResolver(
+        private val result: CanonicalReadingStart = CanonicalReadingStart.Unavailable("unused"),
+    ) : CanonicalReadingStartResolver {
+        var lastCanonicalTitleId: String? = null
+
+        override suspend fun execute(canonicalTitleId: String): CanonicalReadingStart {
+            lastCanonicalTitleId = canonicalTitleId
+            return when (result) {
+                is CanonicalReadingStart.Ready -> result
+                is CanonicalReadingStart.Unavailable -> result.copy(canonicalTitleId = canonicalTitleId)
+            }
+        }
     }
 
     private class FakeSourceTitleMappingRepository : SourceTitleMappingRepository {
