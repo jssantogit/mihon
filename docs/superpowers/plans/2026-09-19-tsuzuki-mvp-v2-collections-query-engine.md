@@ -101,4 +101,4 @@
 - [x] Block E: Query result cache & in-flight deduplication.
 - [x] Block F: Lazy priority scheduler.
 - [x] Block G: System & user repositories.
-- [ ] Block H: Integrated list execution pipeline.
+- [x] Block H: Integrated list execution pipeline.
