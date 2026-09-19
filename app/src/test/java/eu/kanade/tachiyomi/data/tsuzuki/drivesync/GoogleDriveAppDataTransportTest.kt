@@ -140,7 +140,7 @@ class GoogleDriveAppDataTransportTest {
             ) as SyncTransportResult.Success
 
             result.value.revision.revisionToken shouldBe "8"
-            requests.map(Request::method) shouldContainExactly listOf("GET", "PATCH")
+            requests.map { it.method } shouldContainExactly listOf("GET", "PATCH")
             requests[1].url.queryParameter("uploadType") shouldBe "media"
         }
 
