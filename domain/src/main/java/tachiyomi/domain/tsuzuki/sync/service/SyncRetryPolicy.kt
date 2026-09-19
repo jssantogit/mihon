@@ -37,7 +37,7 @@ class SyncRetryPolicy(
         }
 
         val policyDelay = retryDelaysMillis[
-            currentAttemptCount.coerceAtMost(retryDelaysMillis.lastIndex)
+            currentAttemptCount.coerceAtMost(retryDelaysMillis.lastIndex),
         ]
         val serverDelay = failure.retryAfterMillis
             ?.coerceAtMost(maxRetryDelayMillis)

@@ -10,6 +10,8 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncFailure
 import tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason
+import tachiyomi.domain.tsuzuki.sync.model.SyncManifest
+import tachiyomi.domain.tsuzuki.sync.model.SyncManifestEntry
 import tachiyomi.domain.tsuzuki.sync.model.SyncMergeResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncOutboxEntry
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteFile
@@ -26,6 +28,8 @@ class SyncCycleOrchestrator(
     private val conflictRepository: SyncConflictRepository,
     adapters: List<SyncDocumentAdapter>,
     private val codec: SyncDocumentCodec,
+    private val manifestCodec: SyncManifestCodec,
+    private val contentDigest: SyncContentDigest = Sha256SyncContentDigest(),
     private val merger: ThreeWaySyncMerger,
     private val revisionSource: SyncRevisionSource,
     private val clock: SyncClock,
@@ -63,6 +67,14 @@ class SyncCycleOrchestrator(
         }
 
         val filesByName = remoteFiles.groupBy(SyncRemoteFile::name)
+        val manifestFiles = filesByName[SyncDocumentKind.MANIFEST.fileName].orEmpty()
+        if (manifestFiles.size > 1) {
+            return SyncCycleReport(
+                documentResults = emptyList(),
+                globalFailure = SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+            )
+        }
+
         val results = mutableListOf<SyncDocumentResult>()
 
         for (adapter in adapters) {
@@ -109,7 +121,104 @@ class SyncCycleOrchestrator(
             }
         }
 
-        return SyncCycleReport(documentResults = results)
+        val report = SyncCycleReport(documentResults = results)
+        if (report.hasFailures ||
+            report.hasConflicts ||
+            results.any { it is SyncDocumentResult.Deferred }
+        ) {
+            return report
+        }
+
+        val manifestFailure = syncManifest(
+            remoteFile = manifestFiles.singleOrNull(),
+            nowEpochMillis = now,
+        )
+        return if (manifestFailure == null) {
+            report
+        } else {
+            report.copy(globalFailure = manifestFailure)
+        }
+    }
+
+    private suspend fun syncManifest(
+        remoteFile: SyncRemoteFile?,
+        nowEpochMillis: Long,
+    ): SyncFailure? {
+        return try {
+            val existingManifest = if (remoteFile == null) {
+                null
+            } else {
+                val content = when (val downloaded = transport.download(remoteFile)) {
+                    is SyncTransportResult.Success -> downloaded.value.content
+                    is SyncTransportResult.Failure -> return downloaded.failure
+                }
+                when (val decoded = manifestCodec.decode(content)) {
+                    is SyncCodecResult.Success -> decoded.value
+                    is SyncCodecResult.Failure -> return decoded.failure
+                }
+            }
+
+            if (existingManifest != null && existingManifest.schemaVersion != MANIFEST_SCHEMA_VERSION) {
+                return SyncFailure(SyncFailureReason.UNSUPPORTED_SCHEMA)
+            }
+
+            val documents = existingManifest?.documents
+                ?.toMutableMap()
+                ?: linkedMapOf()
+
+            for (adapter in adapters) {
+                val accepted = stateRepository.get(adapter.documentKind)
+                    ?.acceptedBase
+                    ?: return SyncFailure(SyncFailureReason.LOCAL_STATE_UNAVAILABLE)
+                val encoded = when (val value = codec.encode(accepted)) {
+                    is SyncCodecResult.Success -> value.value
+                    is SyncCodecResult.Failure -> return value.failure
+                }
+
+                documents[adapter.documentKind] = SyncManifestEntry(
+                    schemaVersion = accepted.schemaVersion,
+                    revision = accepted.revision,
+                    updatedAtEpochMillis = accepted.generatedAtEpochMillis,
+                    contentDigest = contentDigest.digest(encoded),
+                )
+            }
+
+            if (existingManifest?.documents == documents) {
+                return null
+            }
+
+            val manifest = SyncManifest(
+                schemaVersion = MANIFEST_SCHEMA_VERSION,
+                revision = revisionSource.nextRevision(),
+                updatedAtEpochMillis = nowEpochMillis,
+                documents = documents,
+            )
+            val content = when (val encoded = manifestCodec.encode(manifest)) {
+                is SyncCodecResult.Success -> encoded.value
+                is SyncCodecResult.Failure -> return encoded.failure
+            }
+
+            val result = if (remoteFile == null) {
+                transport.create(
+                    documentKind = SyncDocumentKind.MANIFEST,
+                    content = content,
+                )
+            } else {
+                transport.update(
+                    file = remoteFile,
+                    content = content,
+                )
+            }
+
+            when (result) {
+                is SyncTransportResult.Success -> null
+                is SyncTransportResult.Failure -> result.failure
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            SyncFailure(SyncFailureReason.LOCAL_STATE_UNAVAILABLE)
+        }
     }
 
     private suspend fun syncDocument(
@@ -418,5 +527,9 @@ class SyncCycleOrchestrator(
             this == SyncFailureReason.NETWORK_UNAVAILABLE ||
             this == SyncFailureReason.REMOTE_UNAVAILABLE ||
             this == SyncFailureReason.RATE_LIMITED
+    }
+
+    private companion object {
+        const val MANIFEST_SCHEMA_VERSION = 1
     }
 }

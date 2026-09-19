@@ -33,6 +33,7 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.DriveSyncTransport
 import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncDocumentCodec
+import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncManifestCodec
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
 import tachiyomi.domain.tsuzuki.sync.service.SyncCycleOrchestrator
 import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentAdapter
@@ -42,6 +43,7 @@ import tachiyomi.domain.tsuzuki.sync.service.ThreeWaySyncMerger
 class SyncCycleOrchestratorTest {
 
     private val codec = KotlinxSyncDocumentCodec(Json)
+    private val manifestCodec = KotlinxSyncManifestCodec(Json)
 
     @Test
     fun `case 1 - missing remote document creates it and accepts base`() = runTest {
@@ -53,7 +55,21 @@ class SyncCycleOrchestratorTest {
         val report = engine(transport, stores, adapter).runOnce()
 
         report.hasFailures.shouldBeFalse()
-        transport.createdKinds shouldContainExactly listOf(SyncDocumentKind.LIBRARY)
+        transport.createdKinds shouldContainExactly
+            listOf(SyncDocumentKind.LIBRARY, SyncDocumentKind.MANIFEST)
+        val manifestFile = transport.files.single {
+            it.name == SyncDocumentKind.MANIFEST.fileName
+        }
+        val manifest = when (
+            val decoded = manifestCodec.decode(
+                transport.contents.getValue(manifestFile.remoteId),
+            )
+        ) {
+            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Success -> decoded.value
+            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Failure -> error("manifest decode failed")
+        }
+        manifest.documents.keys shouldContainExactly listOf(SyncDocumentKind.LIBRARY)
+        manifest.documents.getValue(SyncDocumentKind.LIBRARY).contentDigest.length shouldBe 64
         stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe local
         stores.outbox.get(SyncDocumentKind.LIBRARY) shouldBe null
     }
@@ -374,6 +390,7 @@ class SyncCycleOrchestratorTest {
         conflictRepository = stores.conflicts,
         adapters = adapters.toList(),
         codec = codec,
+        manifestCodec = manifestCodec,
         merger = ThreeWaySyncMerger(),
         revisionSource = object : SyncRevisionSource {
             private var sequence = 10L
