@@ -534,7 +534,6 @@ class SyncCycleOrchestrator(
     }
 }
 
-
 private val SyncDocumentKind.syncApplyOrder: Int
     get() = when (this) {
         SyncDocumentKind.LIBRARY -> 0
