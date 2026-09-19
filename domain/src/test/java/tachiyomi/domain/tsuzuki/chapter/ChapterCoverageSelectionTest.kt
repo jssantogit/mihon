@@ -121,7 +121,6 @@ class ChapterCoverageSelectionTest {
         )
     }
 
-
     @Test
     fun `selection reports fallback when preferred mapping lacks the canonical chapter`() = runTest {
         val repository = FakeCanonicalChapterRepository(
