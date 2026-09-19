@@ -1,0 +1,6 @@
+CREATE TABLE tsuzuki_reader_preferences(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    automatic_fallback INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);

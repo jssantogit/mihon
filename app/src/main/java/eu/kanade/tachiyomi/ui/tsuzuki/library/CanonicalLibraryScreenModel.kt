@@ -9,6 +9,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import logcat.LogPriority
@@ -28,6 +30,8 @@ import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
+import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 @Immutable
@@ -39,6 +43,14 @@ sealed interface CanonicalLibraryScreenState {
     ) : CanonicalLibraryScreenState
 }
 
+sealed interface CanonicalLibraryEvent {
+    data class OpenReader(val canonicalChapterId: String) : CanonicalLibraryEvent
+    data class ResolveReadingSource(
+        val canonicalTitleId: String,
+        val title: String,
+    ) : CanonicalLibraryEvent
+}
+
 @Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
@@ -47,9 +59,13 @@ class CanonicalLibraryScreenModel(
     private val setCanonicalLibraryStatus: SetCanonicalLibraryStatus,
     private val removeCanonicalLibraryItem: RemoveCanonicalLibraryItem,
     private val migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
+    private val resolveCanonicalReadingStart: CanonicalReadingStartResolver,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository =
         EmptySourceTitleMappingRepository,
 ) : ViewModel() {
+
+    private val eventChannel = Channel<CanonicalLibraryEvent>()
+    val events = eventChannel.receiveAsFlow()
 
     val state: StateFlow<CanonicalLibraryScreenState> = flow<CanonicalLibraryScreenState> {
         try {
@@ -96,6 +112,24 @@ class CanonicalLibraryScreenModel(
     fun removeItem(canonicalTitleId: String) {
         viewModelScope.launch {
             removeCanonicalLibraryItem.execute(canonicalTitleId)
+        }
+    }
+
+    fun readOrContinue(canonicalTitleId: String, title: String) {
+        viewModelScope.launch {
+            when (val result = resolveCanonicalReadingStart.execute(canonicalTitleId)) {
+                is CanonicalReadingStart.Ready -> {
+                    eventChannel.send(CanonicalLibraryEvent.OpenReader(result.canonicalChapterId))
+                }
+                is CanonicalReadingStart.Unavailable -> {
+                    eventChannel.send(
+                        CanonicalLibraryEvent.ResolveReadingSource(
+                            canonicalTitleId = canonicalTitleId,
+                            title = title,
+                        ),
+                    )
+                }
+            }
         }
     }
 

@@ -2,8 +2,10 @@ package tachiyomi.domain.tsuzuki.source.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.SourceResolutionResult
@@ -28,7 +30,11 @@ class ResolveReadingSource(
         val existing = existingMappings.firstOrNull { it.preferredOverride }
             ?: existingMappings.firstOrNull { it.language.equals(language, ignoreCase = true) }
             ?: existingMappings.firstOrNull()
-        if (existing != null) {
+        if (
+            existing != null &&
+            existing.mihonMangaId != null &&
+            existing.availability != SourceMappingAvailability.UNAVAILABLE
+        ) {
             return SourceResolutionResult.Resolved(
                 mapping = existing,
                 reused = true,
@@ -40,6 +46,27 @@ class ResolveReadingSource(
                 searchedSourceIds = emptyList(),
                 canBroaden = false,
             )
+
+        if (existing != null) {
+            return confirmSourceMapping.execute(
+                canonicalTitleId = canonicalTitleId,
+                candidate = ReadingSourceCandidate(
+                    sourceId = existing.sourceId,
+                    sourceName = "Source ${existing.sourceId}",
+                    language = existing.language,
+                    sourceUrl = existing.sourceUrl,
+                    title = canonicalTitle.displayTitle,
+                    thumbnailUrl = null,
+                    author = null,
+                    artist = null,
+                    description = null,
+                    genres = null,
+                    status = 0L,
+                ),
+                matchConfidence = existing.matchConfidence,
+                verifiedByUser = existing.verifiedByUser,
+            )
+        }
 
         val preferred = getPreferredReadingSources.await(language)
         if (preferred.isEmpty()) {

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ConfirmSourceMapping
@@ -177,12 +178,27 @@ class SourceResolverScreenModel(
         try {
             val mappings = sourceTitleMappingRepository.getByCanonicalTitleId(canonicalTitleId)
             val preferred = mappings.firstOrNull { it.preferredOverride } ?: mappings.firstOrNull()
-            if (preferred != null) {
+            if (
+                preferred != null &&
+                preferred.mihonMangaId != null &&
+                preferred.availability != SourceMappingAvailability.UNAVAILABLE
+            ) {
                 _state.value = SourceResolverScreenState.Resolved(
                     title = title,
                     mapping = preferred,
                     mappings = mappings,
                     reused = true,
+                )
+                return
+            }
+
+            if (preferred != null) {
+                selectedLanguage = preferred.language
+                resolveNow(
+                    canonicalTitleId = canonicalTitleId,
+                    title = title,
+                    language = preferred.language,
+                    broaden = false,
                 )
                 return
             }
