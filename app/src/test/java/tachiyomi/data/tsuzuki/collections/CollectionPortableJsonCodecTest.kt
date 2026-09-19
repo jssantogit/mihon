@@ -89,6 +89,7 @@ class CollectionPortableJsonCodecTest {
 
         codec.decode(codec.encode(document)) shouldBe document.copy(
             folders = listOf(root, child),
+            lists = listOf(list.copy(query = list.query?.normalize())),
         )
     }
 
