@@ -65,6 +65,32 @@ class SourceResolverScreenModelTest {
     }
 
     @Test
+    fun `incomplete persisted mapping is repaired before showing resolved`() = runTest(dispatcher) {
+        val mapping = mapping(
+            id = "m-1",
+            titleId = "title-1",
+            sourceId = 10L,
+            url = "/frieren",
+            preferred = true,
+            mihonMangaId = null,
+            availability = SourceMappingAvailability.UNKNOWN,
+        )
+        val mappings = FakeMappings().apply { upsert(mapping) }
+        val gateway = FakeGateway()
+        val model = model(mappings = mappings, gateway = gateway)
+
+        model.start("title-1", "Frieren")
+        advanceUntilIdle()
+
+        val state = model.state.value.shouldBeInstanceOf<SourceResolverScreenState.Resolved>()
+        state.reused shouldBe true
+        state.mapping.id shouldBe mapping.id
+        state.mapping.mihonMangaId shouldBe 1010L
+        state.mapping.availability shouldBe SourceMappingAvailability.AVAILABLE
+        gateway.searches shouldBe emptyList()
+    }
+
+    @Test
     fun `no configured sources is exposed as no preferred sources`() = runTest(dispatcher) {
         val model = model()
 
@@ -270,16 +296,18 @@ class SourceResolverScreenModelTest {
         sourceId: Long,
         url: String,
         preferred: Boolean = false,
+        mihonMangaId: Long? = sourceId,
+        availability: SourceMappingAvailability = SourceMappingAvailability.AVAILABLE,
     ) = SourceTitleMapping(
         id = id,
         canonicalTitleId = titleId,
-        mihonMangaId = sourceId,
+        mihonMangaId = mihonMangaId,
         sourceId = sourceId,
         sourceUrl = url,
         language = "en",
         matchConfidence = 1.0,
         verifiedByUser = false,
-        availability = SourceMappingAvailability.AVAILABLE,
+        availability = availability,
         preferredOverride = preferred,
         createdAt = 1L,
         updatedAt = 1L,
