@@ -217,7 +217,6 @@ private fun CanonicalLibraryItemCard(
                         )
                     },
                 )
-
             }
         }
     }
