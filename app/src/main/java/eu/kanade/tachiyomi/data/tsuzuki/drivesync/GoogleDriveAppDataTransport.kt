@@ -77,10 +77,12 @@ class GoogleDriveAppDataTransport internal constructor(
                 is DriveCallResult.Success -> {
                     files += page.value.files.mapNotNull(DriveFileDto::toRemoteFile)
                     pageToken = page.value.nextPageToken?.takeIf(String::isNotBlank)
-                    if (pageToken != null && !seenPageTokens.add(pageToken!!)) {
-                        return SyncTransportResult.Failure(
-                            SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
-                        )
+                    pageToken?.let { token ->
+                        if (!seenPageTokens.add(token)) {
+                            return SyncTransportResult.Failure(
+                                SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                            )
+                        }
                     }
                 }
 
