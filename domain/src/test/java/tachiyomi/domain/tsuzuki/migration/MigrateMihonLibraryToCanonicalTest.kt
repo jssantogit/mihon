@@ -321,6 +321,19 @@ class MigrateMihonLibraryToCanonicalTest {
         override suspend fun upsert(mapping: SourceTitleMapping) {
             mappings[mapping.id] = mapping
         }
+
+        override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) {
+            if (mappingId != null) {
+                val target = mappings[mappingId] ?: throw IllegalArgumentException("Mapping not found")
+                require(target.canonicalTitleId == canonicalTitleId) { "Cross title" }
+            }
+            mappings.values.filter { it.canonicalTitleId == canonicalTitleId }.forEach {
+                mappings[it.id] = it.copy(
+                    preferredOverride = it.id == mappingId,
+                    updatedAt = updatedAt,
+                )
+            }
+        }
     }
 
     private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
@@ -332,7 +345,10 @@ class MigrateMihonLibraryToCanonicalTest {
 
         override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? = null
 
-        override suspend fun getOrCreateByExternalIdentity(title: CanonicalTitle, identity: ExternalIdentity): CanonicalTitle {
+        override suspend fun getOrCreateByExternalIdentity(
+            title: CanonicalTitle,
+            identity: ExternalIdentity,
+        ): CanonicalTitle {
             return titles.getOrPut(title.id) { title }
         }
 

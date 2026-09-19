@@ -253,15 +253,21 @@ class CanonicalLibraryScreenModelTest {
         override suspend fun getById(id: String): CanonicalTitle? = null
         override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> = MutableStateFlow(null)
         override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? = null
-        override suspend fun getOrCreateByExternalIdentity(title: CanonicalTitle, identity: ExternalIdentity): CanonicalTitle = title
+        override suspend fun getOrCreateByExternalIdentity(
+            title: CanonicalTitle,
+            identity: ExternalIdentity,
+        ): CanonicalTitle = title
         override suspend fun insert(title: CanonicalTitle) {}
         override suspend fun addExternalIdentity(identity: ExternalIdentity) {}
     }
 
     private class FakeSourceTitleMappingRepository : SourceTitleMappingRepository {
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> = emptyList()
-        override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>> = MutableStateFlow(emptyList())
+        override fun getByCanonicalTitleIdAsFlow(
+            canonicalTitleId: String,
+        ): Flow<List<SourceTitleMapping>> = MutableStateFlow(emptyList())
         override suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping? = null
         override suspend fun upsert(mapping: SourceTitleMapping) {}
+        override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) {}
     }
 }
