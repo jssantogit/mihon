@@ -40,7 +40,7 @@ class CanonicalLibraryScreenModelTest {
     }
 
     @Test
-    fun `source-less entries are observable`() = runTest(testDispatcher) {
+    fun `canonical entries are observable without any source state`() = runTest(testDispatcher) {
         val fakeRepo = FakeCanonicalLibraryRepository()
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
@@ -48,7 +48,7 @@ class CanonicalLibraryScreenModelTest {
             removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
         )
 
-        val sourcelessItem = CanonicalLibraryItem(
+        val canonicalItem = CanonicalLibraryItem(
             title = CanonicalTitle(
                 id = "title-1",
                 displayTitle = "Frieren",
@@ -63,16 +63,16 @@ class CanonicalLibraryScreenModelTest {
                 addedAt = 1000L,
                 updatedAt = 1000L,
             ),
-            primaryMapping = null,
         )
 
-        fakeRepo.emitItems(listOf(sourcelessItem))
+        fakeRepo.emitItems(listOf(canonicalItem))
         advanceUntilIdle()
 
         val state = screenModel.state.value
         state.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
-        state.items shouldBe listOf(sourcelessItem)
-        state.items.first().primaryMapping shouldBe null
+        state.items shouldBe listOf(canonicalItem)
+        state.items.first().title.id shouldBe "title-1"
+        state.items.first().entry.canonicalTitleId shouldBe "title-1"
     }
 
     @Test
