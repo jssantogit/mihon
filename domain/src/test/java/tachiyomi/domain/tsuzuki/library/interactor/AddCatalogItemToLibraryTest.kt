@@ -158,7 +158,7 @@ class AddCatalogItemToLibraryTest {
     }
 
     @Test
-    fun `adding to Library never touches SourceTitleMappingRepository and requires no reading source`() = runTest {
+    fun `adding to Library requires no reading-source repository`() = runTest {
         val titleRepository = FakeCanonicalTitleRepository()
         val libraryRepository = FakeCanonicalLibraryRepository()
         val materializeCanonicalTitle = MaterializeCanonicalTitle(
@@ -181,9 +181,10 @@ class AddCatalogItemToLibraryTest {
 
         val result = interactor.execute(catalogItem)
 
-        result.primaryMapping shouldBe null
+        result.title.id shouldBe "canonical-sourceless"
         result.entry.canonicalTitleId shouldBe "canonical-sourceless"
-        libraryRepository.get("canonical-sourceless") shouldNotBe null
+        result.entry.status shouldBe LibraryStatus.PLANNING
+        libraryRepository.get("canonical-sourceless") shouldBe result.entry
     }
 
     private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
