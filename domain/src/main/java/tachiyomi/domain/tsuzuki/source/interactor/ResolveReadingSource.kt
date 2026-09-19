@@ -4,9 +4,9 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
-import tachiyomi.domain.tsuzuki.source.model.ConfirmSourceResult
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.SourceResolutionResult
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
 @Inject
@@ -20,119 +20,100 @@ class ResolveReadingSource(
 ) {
 
     suspend fun execute(
-        canonicalTitleId: Long,
-        language: String,
-        broaden: Boolean = false,
-    ): SourceResolutionResult {
-        return execute(canonicalTitleId.toString(), language, broaden)
-    }
-
-    suspend fun execute(
         canonicalTitleId: String,
         language: String,
         broaden: Boolean = false,
     ): SourceResolutionResult {
         val existingMappings = sourceTitleMappingRepository.getByCanonicalTitleId(canonicalTitleId)
-        val existing = existingMappings.firstOrNull { it.language.equals(language, ignoreCase = true) }
-            ?: existingMappings.firstOrNull { it.preferredOverride }
+        val existing = existingMappings.firstOrNull { it.preferredOverride }
+            ?: existingMappings.firstOrNull { it.language.equals(language, ignoreCase = true) }
             ?: existingMappings.firstOrNull()
         if (existing != null) {
-            return SourceResolutionResult.ExistingMapping(mapping = existing, reused = true)
+            return SourceResolutionResult.Resolved(
+                mapping = existing,
+                reused = true,
+            )
         }
 
         val canonicalTitle = canonicalTitleRepository.getById(canonicalTitleId)
-            ?: return SourceResolutionResult.NotFound
-        val query = canonicalTitle.displayTitle
+            ?: return SourceResolutionResult.NotFound(
+                searchedSourceIds = emptyList(),
+                canBroaden = false,
+            )
 
         val preferred = getPreferredReadingSources.await(language)
-        if (preferred.isEmpty() && !broaden) {
-            return SourceResolutionResult.NoPreferredSources
+        if (preferred.isEmpty()) {
+            return SourceResolutionResult.NoPreferredSources(language)
         }
 
-        val targetSourceIds = if (!broaden) {
-            preferred.take(3).map { it.sourceId }
+        val targetSourceIds = if (broaden) {
+            broadenedSourceIds(language, preferred)
         } else {
-            val prefIds = preferred.map { it.sourceId }
-            val available = try {
-                readingSourceGateway.getAvailableSources(language)
+            preferred.take(3).map { it.sourceId }
+        }
+
+        val searchedSourceIds = mutableListOf<Long>()
+        val allCandidates = mutableListOf<ScoredSourceCandidate>()
+
+        for ((rank, sourceId) in targetSourceIds.withIndex()) {
+            searchedSourceIds += sourceId
+            val searchResult = try {
+                readingSourceGateway.search(sourceId, canonicalTitle.displayTitle)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Throwable) {
-                emptyList()
+                continue
             }
-            val additionalIds = available.map { it.sourceId }.filter { it !in prefIds }
-            prefIds + additionalIds
-        }
 
-        if (targetSourceIds.isEmpty()) {
-            return if (preferred.isEmpty()) {
-                SourceResolutionResult.NoPreferredSources
-            } else {
-                SourceResolutionResult.NotFound
+            val failure = searchResult.exceptionOrNull()
+            if (failure != null) {
+                if (failure is CancellationException) throw failure
+                continue
             }
-        }
 
-        val allScoredCandidates = mutableListOf<ScoredSourceCandidate>()
-        val candidatesBySource = mutableMapOf<Long, MutableList<ScoredSourceCandidate>>()
-
-        for ((index, sourceId) in targetSourceIds.withIndex()) {
-            try {
-                val searchResult = readingSourceGateway.searchSource(sourceId, query)
-                if (searchResult.isSuccess) {
-                    val candidates = searchResult.getOrThrow()
-                    for (candidate in candidates) {
-                        val score = scoreSourceTitleMatch(query, candidate.title)
-                        val scored = ScoredSourceCandidate(
-                            candidate = candidate,
-                            confidence = score,
-                            sourcePreferenceRank = index,
-                        )
-                        allScoredCandidates.add(scored)
-                        candidatesBySource.getOrPut(sourceId) { mutableListOf() }.add(scored)
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Throwable) {
-                // Source failures do not abort healthy attempts
-            }
-        }
-
-        for (sourceId in targetSourceIds) {
-            val sourceCandidates = candidatesBySource[sourceId]?.sortedByDescending { it.confidence } ?: continue
-            if (sourceCandidates.isEmpty()) continue
-
-            val best = sourceCandidates[0]
-            if (best.confidence >= 0.97) {
-                val second = sourceCandidates.getOrNull(1)
-                val isUnambiguous = second == null || (best.confidence - second.confidence > 0.08)
-                if (isUnambiguous) {
-                    val confirmResult = confirmSourceMapping.execute(
-                        canonicalTitleId = canonicalTitleId,
-                        candidate = best.candidate,
-                        language = language,
-                        matchConfidence = best.confidence,
-                        verifiedByUser = false,
+            val sourceCandidates = searchResult.getOrThrow()
+                .map { candidate ->
+                    ScoredSourceCandidate(
+                        candidate = candidate,
+                        confidence = scoreSourceTitleMatch(
+                            targetTitle = canonicalTitle.displayTitle,
+                            candidateTitle = candidate.title,
+                        ),
+                        sourcePreferenceRank = rank,
                     )
-                    when (confirmResult) {
-                        is ConfirmSourceResult.Success -> {
-                            return SourceResolutionResult.AutoAccepted(
-                                mapping = confirmResult.mapping,
-                                candidate = best,
-                            )
-                        }
-                        is ConfirmSourceResult.Conflict -> {
-                            return SourceResolutionResult.Conflict(confirmResult.existingCanonicalTitleId)
-                        }
-                        is ConfirmSourceResult.Failure -> {
-                            // If confirm fails, fall through to NeedsConfirmation
-                        }
+                }
+                .sortedByDescending { it.confidence }
+
+            allCandidates += sourceCandidates
+
+            val best = sourceCandidates.firstOrNull()
+            if (best != null && best.confidence >= 0.97) {
+                val second = sourceCandidates.getOrNull(1)
+                val unambiguous = second == null || best.confidence - second.confidence > 0.08
+                if (unambiguous) {
+                    val confirmed = try {
+                        confirmSourceMapping.execute(
+                            canonicalTitleId = canonicalTitleId,
+                            candidate = best.candidate,
+                            matchConfidence = best.confidence,
+                            verifiedByUser = false,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                        null
+                    }
+
+                    when (confirmed) {
+                        is SourceResolutionResult.Resolved -> return confirmed
+                        is SourceResolutionResult.Conflict -> return confirmed
+                        else -> Unit
                     }
                 }
             }
         }
 
-        val candidatesForConfirmation = allScoredCandidates
+        val confirmationCandidates = allCandidates
             .filter { it.confidence >= 0.70 }
             .sortedWith(
                 compareBy<ScoredSourceCandidate> { it.sourcePreferenceRank }
@@ -140,13 +121,52 @@ class ResolveReadingSource(
             )
             .take(5)
 
-        if (candidatesForConfirmation.isNotEmpty()) {
-            return SourceResolutionResult.NeedsConfirmation(
-                canonicalTitleId = canonicalTitleId,
-                candidates = candidatesForConfirmation,
-            )
+        if (confirmationCandidates.isNotEmpty()) {
+            return SourceResolutionResult.NeedsConfirmation(confirmationCandidates)
         }
 
-        return SourceResolutionResult.NotFound
+        return SourceResolutionResult.NotFound(
+            searchedSourceIds = searchedSourceIds,
+            canBroaden = !broaden && canBroaden(
+                language = language,
+                preferred = preferred,
+                searchedSourceIds = searchedSourceIds,
+            ),
+        )
+    }
+
+    private suspend fun broadenedSourceIds(
+        language: String,
+        preferred: List<ReadingSourcePreference>,
+    ): List<Long> {
+        val preferredIds = preferred.map { it.sourceId }
+        val installed = try {
+            readingSourceGateway.listInstalled(language)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        return (preferredIds + installed.map { it.sourceId })
+            .distinct()
+    }
+
+    private suspend fun canBroaden(
+        language: String,
+        preferred: List<ReadingSourcePreference>,
+        searchedSourceIds: List<Long>,
+    ): Boolean {
+        if (preferred.any { it.sourceId !in searchedSourceIds }) {
+            return true
+        }
+
+        val installed = try {
+            readingSourceGateway.listInstalled(language)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            return false
+        }
+        return installed.any { it.sourceId !in searchedSourceIds }
     }
 }

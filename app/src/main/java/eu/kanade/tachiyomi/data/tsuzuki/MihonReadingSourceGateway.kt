@@ -9,7 +9,6 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
-import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
@@ -25,7 +24,7 @@ class MihonReadingSourceGateway(
     private val networkToLocalManga: NetworkToLocalManga,
 ) : ReadingSourceGateway {
 
-    override suspend fun getAvailableSources(language: String): List<ReadingSourceDescriptor> {
+    override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> {
         val disabledSources = sourcePreferences.disabledSources.get()
         return sourceManager.getAll()
             .filterIsInstance<CatalogueSource>()
@@ -36,41 +35,46 @@ class MihonReadingSourceGateway(
                     sourceId = source.id,
                     name = source.name,
                     language = source.lang,
-                    isInstalled = true,
-                    isEnabled = true,
                 )
             }
     }
 
-    override suspend fun searchSource(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
+    override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
         val disabledSources = sourcePreferences.disabledSources.get()
         if (sourceId.toString() in disabledSources) {
             return Result.failure(IllegalStateException("Source $sourceId is disabled"))
         }
 
         val source = sourceManager.get(sourceId)
-        if (source == null || source !is CatalogueSource) {
+        if (source !is CatalogueSource) {
             return Result.failure(IllegalStateException("Source $sourceId is not an installed CatalogueSource"))
         }
 
         return try {
-            val filters = source.getFilterList()
-            val mangasPage = source.getSearchManga(
+            val page = source.getSearchManga(
                 page = 1,
                 query = query,
-                filters = filters,
+                filters = source.getFilterList(),
             )
-            val candidates = mangasPage.mangas
-                .distinctBy { it.url }
-                .map { sManga ->
-                    ReadingSourceCandidate(
-                        sourceId = sourceId,
-                        sourceUrl = sManga.url,
-                        title = sManga.title,
-                        thumbnailUrl = sManga.thumbnail_url,
-                    )
-                }
-            Result.success(candidates)
+            Result.success(
+                page.mangas
+                    .distinctBy { it.url }
+                    .map { manga ->
+                        ReadingSourceCandidate(
+                            sourceId = source.id,
+                            sourceName = source.name,
+                            language = source.lang,
+                            sourceUrl = manga.url,
+                            title = manga.title,
+                            thumbnailUrl = manga.thumbnail_url,
+                            author = manga.author,
+                            artist = manga.artist,
+                            description = manga.description,
+                            genres = manga.getGenres(),
+                            status = manga.status.toLong(),
+                        )
+                    },
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -78,25 +82,27 @@ class MihonReadingSourceGateway(
         }
     }
 
-    override suspend fun materializeSource(
-        sourceId: Long,
-        sourceUrl: String,
-        title: String,
-    ): Result<MaterializedReadingSource> {
+    override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
         return try {
-            val unpersistedManga = Manga.create().copy(
-                source = sourceId,
-                url = sourceUrl,
-                title = title,
+            val manga = Manga.create().copy(
+                source = candidate.sourceId,
+                url = candidate.sourceUrl,
+                title = candidate.title,
+                thumbnailUrl = candidate.thumbnailUrl,
+                author = candidate.author,
+                artist = candidate.artist,
+                description = candidate.description,
+                genre = candidate.genres,
+                status = candidate.status,
                 favorite = false,
             )
-            val localManga = networkToLocalManga(unpersistedManga)
+            val localManga = networkToLocalManga(manga)
             Result.success(
                 MaterializedReadingSource(
-                    sourceId = sourceId,
-                    sourceUrl = sourceUrl,
                     mihonMangaId = localManga.id,
-                    title = localManga.title.ifBlank { title },
+                    sourceId = candidate.sourceId,
+                    sourceUrl = candidate.sourceUrl,
+                    language = candidate.language,
                 ),
             )
         } catch (e: CancellationException) {

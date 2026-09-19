@@ -30,217 +30,154 @@ import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 
 class MihonReadingSourceGatewayTest {
 
-    private lateinit var preferenceStore: InMemoryPreferenceStore
     private lateinit var sourcePreferences: SourcePreferences
-    private lateinit var fakeSourceManager: FakeSourceManager
-    private lateinit var fakeMangaRepository: FakeMangaRepository
-    private lateinit var networkToLocalManga: NetworkToLocalManga
+    private lateinit var sourceManager: FakeSourceManager
+    private lateinit var mangaRepository: FakeMangaRepository
     private lateinit var gateway: MihonReadingSourceGateway
 
     @BeforeEach
     fun setUp() {
-        preferenceStore = InMemoryPreferenceStore()
-        sourcePreferences = SourcePreferences(preferenceStore)
-        fakeSourceManager = FakeSourceManager()
-        fakeMangaRepository = FakeMangaRepository()
-        networkToLocalManga = NetworkToLocalManga(fakeMangaRepository)
+        sourcePreferences = SourcePreferences(InMemoryPreferenceStore())
+        sourceManager = FakeSourceManager()
+        mangaRepository = FakeMangaRepository()
         gateway = MihonReadingSourceGateway(
-            sourceManager = fakeSourceManager,
+            sourceManager = sourceManager,
             sourcePreferences = sourcePreferences,
-            networkToLocalManga = networkToLocalManga,
+            networkToLocalManga = NetworkToLocalManga(mangaRepository),
         )
     }
 
     @Test
-    fun `getAvailableSources returns only installed enabled CatalogueSource for requested language`() = runTest {
-        val enSource1 = TestCatalogueSource(id = 1L, name = "Source 1", lang = "en")
-        val enSource2 = TestCatalogueSource(id = 2L, name = "Source 2", lang = "en")
-        val jaSource = TestCatalogueSource(id = 3L, name = "Source 3", lang = "ja")
-        fakeSourceManager.sourcesList.addAll(listOf(enSource1, enSource2, jaSource))
+    fun `listInstalled filters installed enabled catalogue sources by language`() = runTest {
+        sourceManager.sourcesList += listOf(
+            TestCatalogueSource(1L, "English A", "en"),
+            TestCatalogueSource(2L, "English B", "en"),
+            TestCatalogueSource(3L, "Japanese", "ja"),
+            StubSource(4L, "en", "Missing"),
+        )
+        sourcePreferences.disabledSources.set(setOf("2"))
 
-        val result = gateway.getAvailableSources("en")
-
-        result shouldContainExactly listOf(
-            ReadingSourceDescriptor(
-                sourceId = 1L,
-                name = "Source 1",
-                language = "en",
-                isInstalled = true,
-                isEnabled = true,
-            ),
-            ReadingSourceDescriptor(
-                sourceId = 2L,
-                name = "Source 2",
-                language = "en",
-                isInstalled = true,
-                isEnabled = true,
-            ),
+        gateway.listInstalled("en") shouldContainExactly listOf(
+            ReadingSourceDescriptor(1L, "English A", "en"),
         )
     }
 
     @Test
-    fun `getAvailableSources excludes disabled sources`() = runTest {
-        val enSource1 = TestCatalogueSource(id = 1L, name = "Source 1", lang = "en")
-        val enSource2 = TestCatalogueSource(id = 2L, name = "Source 2", lang = "en")
-        fakeSourceManager.sourcesList.addAll(listOf(enSource1, enSource2))
-
-        sourcePreferences.disabledSources.set(setOf("1"))
-
-        val result = gateway.getAvailableSources("en")
-
-        result shouldContainExactly listOf(
-            ReadingSourceDescriptor(
-                sourceId = 2L,
-                name = "Source 2",
-                language = "en",
-                isInstalled = true,
-                isEnabled = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `getAvailableSources excludes StubSource`() = runTest {
-        val enSource = TestCatalogueSource(id = 1L, name = "Source 1", lang = "en")
-        val stubSource = StubSource(id = 2L, lang = "en", name = "Stub")
-        fakeSourceManager.sourcesList.addAll(listOf(enSource, stubSource))
-
-        val result = gateway.getAvailableSources("en")
-
-        result shouldContainExactly listOf(
-            ReadingSourceDescriptor(
-                sourceId = 1L,
-                name = "Source 1",
-                language = "en",
-                isInstalled = true,
-                isEnabled = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `searchSource queries page 1 with default filters and collapses duplicate URLs`() = runTest {
-        val manga1 = SManga.create().apply {
+    fun `search uses one source page one default filters and keeps results transient`() = runTest {
+        val first = SManga.create().apply {
             url = "/manga/1"
             title = "Title 1"
             thumbnail_url = "https://thumb/1.jpg"
+            author = "Author"
+            artist = "Artist"
+            description = "Description"
+            genre = "Action, Drama"
+            status = SManga.ONGOING
         }
-        val manga1Duplicate = SManga.create().apply {
-            url = "/manga/1"
-            title = "Title 1 Duplicate"
-            thumbnail_url = "https://thumb/1-dup.jpg"
-        }
-        val manga2 = SManga.create().apply {
-            url = "/manga/2"
-            title = "Title 2"
-            thumbnail_url = "https://thumb/2.jpg"
-        }
+        val duplicate = first.copy().apply { title = "Duplicate" }
         val source = TestCatalogueSource(
             id = 10L,
             name = "Test Source",
             lang = "en",
-            searchResults = listOf(manga1, manga1Duplicate, manga2),
+            searchResults = listOf(first, duplicate),
         )
-        fakeSourceManager.sourcesList.add(source)
+        sourceManager.sourcesList += source
 
-        val result = gateway.searchSource(10L, "test query")
+        val result = gateway.search(10L, "query").getOrThrow()
 
-        result.isSuccess shouldBe true
-        val candidates = result.getOrThrow()
-        candidates shouldContainExactly listOf(
+        result shouldContainExactly listOf(
             ReadingSourceCandidate(
                 sourceId = 10L,
+                sourceName = "Test Source",
+                language = "en",
                 sourceUrl = "/manga/1",
                 title = "Title 1",
                 thumbnailUrl = "https://thumb/1.jpg",
-            ),
-            ReadingSourceCandidate(
-                sourceId = 10L,
-                sourceUrl = "/manga/2",
-                title = "Title 2",
-                thumbnailUrl = "https://thumb/2.jpg",
+                author = "Author",
+                artist = "Artist",
+                description = "Description",
+                genres = listOf("Action", "Drama"),
+                status = SManga.ONGOING.toLong(),
             ),
         )
         source.lastPageSearched shouldBe 1
-        source.lastQuerySearched shouldBe "test query"
+        source.lastQuerySearched shouldBe "query"
         source.lastFiltersSearched shouldBe source.getFilterList()
-        fakeMangaRepository.insertedCount shouldBe 0
+        mangaRepository.insertedCount shouldBe 0
     }
 
     @Test
-    fun `searchSource does not call NetworkToLocalManga`() = runTest {
-        val manga = SManga.create().apply {
-            url = "/manga/1"
-            title = "Title 1"
-        }
-        val source = TestCatalogueSource(id = 10L, name = "Test", lang = "en", searchResults = listOf(manga))
-        fakeSourceManager.sourcesList.add(source)
+    fun `search rejects disabled source without persistence`() = runTest {
+        sourceManager.sourcesList += TestCatalogueSource(10L, "Test", "en")
+        sourcePreferences.disabledSources.set(setOf("10"))
 
-        gateway.searchSource(10L, "query")
-
-        fakeMangaRepository.insertedCount shouldBe 0
+        gateway.search(10L, "query").isFailure shouldBe true
+        mangaRepository.insertedCount shouldBe 0
     }
 
     @Test
-    fun `searchSource converts source exceptions to failed Result`() = runTest {
-        val source = TestCatalogueSource(
-            id = 10L,
-            name = "Failing Source",
-            lang = "en",
-            errorToThrow = RuntimeException("Network timeout"),
+    fun `search wraps source failure but rethrows cancellation`() = runTest {
+        sourceManager.sourcesList += TestCatalogueSource(
+            10L,
+            "Failure",
+            "en",
+            errorToThrow = RuntimeException("boom"),
         )
-        fakeSourceManager.sourcesList.add(source)
+        gateway.search(10L, "query").exceptionOrNull()?.message shouldBe "boom"
 
-        val result = gateway.searchSource(10L, "query")
-
-        result.isFailure shouldBe true
-        result.exceptionOrNull()?.message shouldBe "Network timeout"
-    }
-
-    @Test
-    fun `searchSource rethrows CancellationException`() = runTest {
-        val source = TestCatalogueSource(
-            id = 10L,
-            name = "Cancelled Source",
-            lang = "en",
-            errorToThrow = CancellationException("Job was cancelled"),
+        sourceManager.sourcesList.clear()
+        sourceManager.sourcesList += TestCatalogueSource(
+            11L,
+            "Cancelled",
+            "en",
+            errorToThrow = CancellationException("cancelled"),
         )
-        fakeSourceManager.sourcesList.add(source)
-
         shouldThrow<CancellationException> {
-            gateway.searchSource(10L, "query")
+            gateway.search(11L, "query")
         }
     }
 
     @Test
-    fun `materializeSource calls NetworkToLocalManga and does not favorite manga`() = runTest {
-        val result = gateway.materializeSource(
-            sourceId = 100L,
-            sourceUrl = "/manga/berserk",
-            title = "Berserk",
-        )
+    fun `materialize persists accepted candidate metadata without favoriting`() = runTest {
+        val candidate = candidate()
+        val materialized = gateway.materialize(candidate).getOrThrow()
 
-        result.isSuccess shouldBe true
-        val materialized = result.getOrThrow()
-        materialized.sourceId shouldBe 100L
-        materialized.sourceUrl shouldBe "/manga/berserk"
-        materialized.title shouldBe "Berserk"
         materialized.mihonMangaId shouldBe 1L
+        materialized.sourceId shouldBe candidate.sourceId
+        materialized.sourceUrl shouldBe candidate.sourceUrl
+        materialized.language shouldBe candidate.language
 
-        fakeMangaRepository.insertedCount shouldBe 1
-        fakeMangaRepository.lastInsertedManga?.favorite shouldBe false
-        fakeMangaRepository.lastInsertedManga?.source shouldBe 100L
-        fakeMangaRepository.lastInsertedManga?.url shouldBe "/manga/berserk"
+        mangaRepository.insertedCount shouldBe 1
+        mangaRepository.lastInsertedManga?.favorite shouldBe false
+        mangaRepository.lastInsertedManga?.author shouldBe "Author"
+        mangaRepository.lastInsertedManga?.artist shouldBe "Artist"
+        mangaRepository.lastInsertedManga?.description shouldBe "Description"
+        mangaRepository.lastInsertedManga?.genre shouldBe listOf("Action")
+        mangaRepository.lastInsertedManga?.status shouldBe SManga.ONGOING.toLong()
     }
 
     @Test
-    fun `materializeSource rethrows CancellationException`() = runTest {
-        fakeMangaRepository.errorToThrow = CancellationException("Cancelled in repo")
+    fun `materialize rethrows cancellation`() = runTest {
+        mangaRepository.errorToThrow = CancellationException("cancelled")
 
         shouldThrow<CancellationException> {
-            gateway.materializeSource(100L, "/url", "Title")
+            gateway.materialize(candidate())
         }
     }
+
+    private fun candidate() = ReadingSourceCandidate(
+        sourceId = 100L,
+        sourceName = "Source",
+        language = "en",
+        sourceUrl = "/manga/berserk",
+        title = "Berserk",
+        thumbnailUrl = "https://thumb",
+        author = "Author",
+        artist = "Artist",
+        description = "Description",
+        genres = listOf("Action"),
+        status = SManga.ONGOING.toLong(),
+    )
 
     private class TestCatalogueSource(
         override val id: Long,
@@ -259,7 +196,7 @@ class MihonReadingSourceGatewayTest {
         override fun getFilterList(): FilterList = filters
 
         override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
-            if (errorToThrow != null) throw errorToThrow
+            errorToThrow?.let { throw it }
             lastPageSearched = page
             lastQuerySearched = query
             lastFiltersSearched = filters
@@ -272,7 +209,6 @@ class MihonReadingSourceGatewayTest {
 
     private class FakeSourceManager : SourceManager {
         val sourcesList = mutableListOf<Source>()
-
         override val sources: Flow<List<Source>> = emptyFlow()
         override suspend fun get(sourceKey: Long): Source? = sourcesList.firstOrNull { it.id == sourceKey }
         override suspend fun getOrStub(sourceKey: Long): Source = get(sourceKey) ?: StubSource(sourceKey, "", "")
@@ -288,7 +224,7 @@ class MihonReadingSourceGatewayTest {
         private var nextId = 1L
 
         override suspend fun insertNetworkManga(manga: List<Manga>): List<Manga> {
-            if (errorToThrow != null) throw errorToThrow!!
+            errorToThrow?.let { throw it }
             insertedCount += manga.size
             return manga.map {
                 lastInsertedManga = it
@@ -305,10 +241,7 @@ class MihonReadingSourceGatewayTest {
         override suspend fun getLibraryManga(): List<LibraryManga> = emptyList()
         override fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>> = emptyFlow()
         override fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>> = emptyFlow()
-        override suspend fun getDuplicateLibraryManga(
-            id: Long,
-            title: String,
-        ): List<MangaWithChapterCount> = emptyList()
+        override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> = emptyList()
         override suspend fun getUpcomingManga(
             statuses: Set<Long>,
             excludedCategories: List<Long>,

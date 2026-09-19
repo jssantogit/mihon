@@ -4,6 +4,4 @@ data class ReadingSourceDescriptor(
     val sourceId: Long,
     val name: String,
     val language: String,
-    val isInstalled: Boolean = true,
-    val isEnabled: Boolean = true,
 )

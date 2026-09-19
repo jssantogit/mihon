@@ -3,27 +3,25 @@ package tachiyomi.domain.tsuzuki.source.model
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 
 sealed interface SourceResolutionResult {
-    data class ExistingMapping(
+    data class Resolved(
         val mapping: SourceTitleMapping,
-        val reused: Boolean = true,
-    ) : SourceResolutionResult
-
-    data class AutoAccepted(
-        val mapping: SourceTitleMapping,
-        val candidate: ScoredSourceCandidate,
+        val reused: Boolean,
     ) : SourceResolutionResult
 
     data class NeedsConfirmation(
-        val canonicalTitleId: String,
         val candidates: List<ScoredSourceCandidate>,
-    ) : SourceResolutionResult {
-        constructor(
-            canonicalTitleId: Long,
-            candidates: List<ScoredSourceCandidate>,
-        ) : this(canonicalTitleId.toString(), candidates)
-    }
+    ) : SourceResolutionResult
 
-    data object NotFound : SourceResolutionResult
-    data object NoPreferredSources : SourceResolutionResult
-    data class Conflict(val existingCanonicalTitleId: String) : SourceResolutionResult
+    data class NotFound(
+        val searchedSourceIds: List<Long>,
+        val canBroaden: Boolean,
+    ) : SourceResolutionResult
+
+    data class NoPreferredSources(
+        val language: String,
+    ) : SourceResolutionResult
+
+    data class Conflict(
+        val existingCanonicalTitleId: String,
+    ) : SourceResolutionResult
 }

@@ -5,7 +5,7 @@ import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 
 interface ReadingSourceGateway {
-    suspend fun getAvailableSources(language: String): List<ReadingSourceDescriptor>
-    suspend fun searchSource(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>>
-    suspend fun materializeSource(sourceId: Long, sourceUrl: String, title: String): Result<MaterializedReadingSource>
+    suspend fun listInstalled(language: String): List<ReadingSourceDescriptor>
+    suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>>
+    suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource>
 }
