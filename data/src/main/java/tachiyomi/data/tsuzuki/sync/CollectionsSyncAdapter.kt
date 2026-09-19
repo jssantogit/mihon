@@ -79,27 +79,27 @@ class CollectionsSyncAdapter(
         val activeLists = parsed.filterIsInstance<ParsedCollectionRecord.ListRecord>()
             .filterNot(ParsedCollectionRecord.ListRecord::deleted)
 
-        activeCollections.forEach(::applyActiveCollection)
+        activeCollections.forEach { applyActiveCollection(it) }
 
         val foldersById = activeFolders.associateBy { it.id }
         activeFolders
             .sortedWith(compareBy({ folderDepth(it, foldersById) }, { it.id }))
-            .forEach(::applyActiveFolder)
+            .forEach { applyActiveFolder(it) }
 
-        activeLists.forEach(::applyActiveList)
+        activeLists.forEach { applyActiveList(it) }
 
         parsed.filterIsInstance<ParsedCollectionRecord.ListRecord>()
             .filter(ParsedCollectionRecord.ListRecord::deleted)
-            .forEach(::applyDeletedList)
+            .forEach { applyDeletedList(it) }
 
         parsed.filterIsInstance<ParsedCollectionRecord.Folder>()
             .filter(ParsedCollectionRecord.Folder::deleted)
             .sortedByDescending { folderDepthForDeletion(it.id, parsed) }
-            .forEach(::applyDeletedFolder)
+            .forEach { applyDeletedFolder(it) }
 
         parsed.filterIsInstance<ParsedCollectionRecord.Collection>()
             .filter(ParsedCollectionRecord.Collection::deleted)
-            .forEach(::applyDeletedCollection)
+            .forEach { applyDeletedCollection(it) }
     }
 
     private suspend fun applyActiveCollection(record: ParsedCollectionRecord.Collection) {
