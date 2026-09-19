@@ -289,7 +289,40 @@ class SyncCycleOrchestratorTest {
     }
 
     @Test
-    fun `case 10 - remote change during update keeps accepted base unchanged`() = runTest {
+    fun `case 10 - local deletion is materialized as tombstone before merge`() = runTest {
+        val base = document(record("a", "name" to "Base"))
+        val local = document()
+        val remote = base
+        val remoteFile = remoteFile()
+        val adapter = FakeAdapter(SyncDocumentKind.LIBRARY, local)
+        val transport = FakeTransport(
+            files = mutableListOf(remoteFile),
+            contents = mutableMapOf(remoteFile.remoteId to encode(remote)),
+        )
+        val stores = Stores()
+        stores.state.put(
+            SyncStoredState(
+                documentKind = SyncDocumentKind.LIBRARY,
+                acceptedBase = base,
+                remoteRevision = remoteFile.revision,
+                lastSuccessfulSyncAtEpochMillis = 50,
+            ),
+        )
+
+        val report = engine(transport, stores, adapter).runOnce()
+
+        val result = report.documentResults.single() as SyncDocumentResult.Synchronized
+        result.remoteWritten.shouldBeTrue()
+        val uploaded = transport.contents.getValue(remoteFile.remoteId)
+        val decoded = when (val value = codec.decode(uploaded)) {
+            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Success -> value.value
+            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Failure -> error("decode failed")
+        }
+        decoded.records.getValue("a").isTombstone.shouldBeTrue()
+    }
+
+    @Test
+    fun `case 11 - remote change during update keeps accepted base unchanged`() = runTest {
         val base = document(record("a", "name" to "Base"))
         val local = document(record("a", "name" to "Local", device = "phone", sequence = 2))
         val remote = base

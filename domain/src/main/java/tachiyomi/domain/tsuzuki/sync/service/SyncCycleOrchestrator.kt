@@ -117,8 +117,9 @@ class SyncCycleOrchestrator(
         nowEpochMillis: Long,
     ): SyncDocumentResult {
         return try {
-            val localDocument = adapter.exportDocument()
-            if (localDocument.kind != adapter.documentKind) {
+            val storedState = stateRepository.get(adapter.documentKind)
+            val exportedLocalDocument = adapter.exportDocument()
+            if (exportedLocalDocument.kind != adapter.documentKind) {
                 return failDocument(
                     documentKind = adapter.documentKind,
                     pending = pending,
@@ -126,6 +127,12 @@ class SyncCycleOrchestrator(
                     failure = SyncFailure(SyncFailureReason.MALFORMED_DOCUMENT),
                 )
             }
+
+            val localDocument = materializeLocalTombstones(
+                base = storedState?.acceptedBase,
+                local = exportedLocalDocument,
+                nowEpochMillis = nowEpochMillis,
+            )
 
             if (remoteFile == null) {
                 return createRemote(
@@ -160,7 +167,6 @@ class SyncCycleOrchestrator(
                 }
             }
 
-            val storedState = stateRepository.get(adapter.documentKind)
             val mergeRevision = revisionSource.nextRevision()
             val mergeResult = merger.merge(
                 base = storedState?.acceptedBase,
@@ -268,6 +274,34 @@ class SyncCycleOrchestrator(
                 failure = SyncFailure(SyncFailureReason.LOCAL_STATE_UNAVAILABLE),
             )
         }
+    }
+
+    private fun materializeLocalTombstones(
+        base: SyncDocumentEnvelope?,
+        local: SyncDocumentEnvelope,
+        nowEpochMillis: Long,
+    ): SyncDocumentEnvelope {
+        if (base == null ||
+            base.kind != local.kind ||
+            base.schemaVersion != local.schemaVersion
+        ) {
+            return local
+        }
+
+        val missingRecordIds = base.records.keys - local.records.keys
+        if (missingRecordIds.isEmpty()) return local
+
+        val records = local.records.toMutableMap()
+        missingRecordIds.sorted().forEach { recordId ->
+            val previous = base.records.getValue(recordId)
+            records[recordId] = previous.copy(
+                revision = revisionSource.nextRevision(),
+                updatedAtEpochMillis = nowEpochMillis,
+                deletedAtEpochMillis = nowEpochMillis,
+            )
+        }
+
+        return local.copy(records = records)
     }
 
     private suspend fun createRemote(

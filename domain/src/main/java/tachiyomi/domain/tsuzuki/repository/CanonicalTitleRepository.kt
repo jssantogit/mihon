@@ -13,5 +13,17 @@ interface CanonicalTitleRepository {
         identity: ExternalIdentity,
     ): CanonicalTitle
     suspend fun insert(title: CanonicalTitle)
+
+    suspend fun upsert(title: CanonicalTitle) {
+        val existing = getById(title.id)
+        if (existing == null) {
+            insert(title)
+        } else {
+            require(existing == title) {
+                "Repository does not support updating an existing canonical title"
+            }
+        }
+    }
+
     suspend fun addExternalIdentity(identity: ExternalIdentity)
 }

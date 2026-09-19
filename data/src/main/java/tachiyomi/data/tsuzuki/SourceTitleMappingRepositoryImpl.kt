@@ -20,6 +20,12 @@ class SourceTitleMappingRepositoryImpl(
     private val database: Database,
 ) : SourceTitleMappingRepository {
 
+    override suspend fun getAll(): List<SourceTitleMapping> {
+        return database.tsuzuki_source_mappingsQueries
+            .getAllTsuzukiSourceMappings(::mapMapping)
+            .awaitAsList()
+    }
+
     override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> {
         return database.tsuzuki_source_mappingsQueries
             .getTsuzukiSourceMappingsByTitle(canonicalTitleId, ::mapMapping)
@@ -53,6 +59,10 @@ class SourceTitleMappingRepositoryImpl(
             createdAt = mapping.createdAt,
             updatedAt = mapping.updatedAt,
         )
+    }
+
+    override suspend fun remove(id: String) {
+        database.tsuzuki_source_mappingsQueries.deleteTsuzukiSourceMappingById(id)
     }
 
     override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) {
