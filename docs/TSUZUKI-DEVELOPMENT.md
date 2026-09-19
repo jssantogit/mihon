@@ -105,10 +105,11 @@ Tsuzuki supports parallel physical-device testing. The APK lane is selected from
 | `main`, `tsuzuki/bootstrap` | `release` | `app.mihon` | normal integrated app |
 | `tsuzuki/mvp-v1-*` | `deva` | `app.mihon.tsuzuki.deva` | `Tsuzuki Dev A` |
 | `tsuzuki/mvp-v2-*` | `devb` | `app.mihon.tsuzuki.devb` | `Tsuzuki Dev B` |
+| `tsuzuki/mvp-v3-*` | `devc` | `app.mihon.tsuzuki.devc` | `Tsuzuki Dev C` |
 
-The Dev A and Dev B packages have separate Android app sandboxes, databases, preferences, and app-local files, so both can remain installed on one phone while the reading and Collections tracks are tested independently. The integrated `release` package remains separate from both.
+The Dev A, Dev B, and Dev C packages have separate Android app sandboxes, databases, preferences, and app-local files, so all three can remain installed on one phone while the reading, Collections, and Google/auth tracks are tested independently. The integrated `release` package remains separate from all three.
 
-Dev A/Dev B APKs intentionally build without telemetry and without the in-app updater. The integrated release retains the normal telemetry/updater flags. All lanes use the persistent Tsuzuki signing secrets and verify the resulting APK with `apksigner`.
+Dev A/Dev B/Dev C APKs intentionally build without telemetry and without the in-app updater. The integrated release retains the normal telemetry/updater flags. All lanes use the persistent Tsuzuki signing secrets and verify the resulting APK with `apksigner`.
 
 The workflow uploads:
 
@@ -117,7 +118,7 @@ The workflow uploads:
 
 Development APK and mapping artifacts use `retention-days: 3`.
 
-Android extension APKs remain device-global rather than app-sandboxed. Disabling a source inside one Tsuzuki install is preferable to physically uninstalling its extension while parallel testing is active, because an uninstall affects both installs. OAuth/deep-link callback isolation must be revisited before parallel tracker/sync testing.
+Android extension APKs remain device-global rather than app-sandboxed. Disabling a source inside one Tsuzuki install is preferable to physically uninstalling its extension while parallel testing is active, because an uninstall affects both installs. OAuth/deep-link callback isolation is part of the Dev C Google-auth milestone: new Google authentication callbacks must use Dev-C-safe package/callback configuration rather than relying on a callback identity shared by the other installed Tsuzuki variants. Existing Mihon tracker deep links remain legacy behavior until that integration is explicitly addressed.
 
 Use APK Build when there is something meaningful to validate on a physical Android device, especially:
 
