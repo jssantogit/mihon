@@ -296,7 +296,43 @@ class SyncCycleOrchestratorTest {
     }
 
     @Test
-    fun `case 9 - fallback progress adapter is rejected until milestone 12`() {
+    fun `case 9 - dependent documents apply after title materializing documents`() = runTest {
+        val chapterOverrides = FakeAdapter(
+            SyncDocumentKind.CHAPTER_OVERRIDES,
+            document(
+                record("override", "enabled" to "true"),
+                kind = SyncDocumentKind.CHAPTER_OVERRIDES,
+            ),
+        )
+        val sourceMappings = FakeAdapter(
+            SyncDocumentKind.SOURCE_MAPPINGS,
+            document(
+                record("mapping", "source" to "42"),
+                kind = SyncDocumentKind.SOURCE_MAPPINGS,
+            ),
+        )
+        val library = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(record("title", "name" to "Tsuzuki")),
+        )
+
+        val report = engine(
+            FakeTransport(),
+            Stores(),
+            chapterOverrides,
+            sourceMappings,
+            library,
+        ).runOnce()
+
+        report.documentResults.map { it.documentKind } shouldContainExactly listOf(
+            SyncDocumentKind.LIBRARY,
+            SyncDocumentKind.SOURCE_MAPPINGS,
+            SyncDocumentKind.CHAPTER_OVERRIDES,
+        )
+    }
+
+    @Test
+    fun `case 10 - fallback progress adapter is rejected until milestone 12`() {
         val adapter = FakeAdapter(
             SyncDocumentKind.FALLBACK_PROGRESS,
             document(
@@ -311,7 +347,7 @@ class SyncCycleOrchestratorTest {
     }
 
     @Test
-    fun `case 10 - local deletion is materialized as tombstone before merge`() = runTest {
+    fun `case 11 - local deletion is materialized as tombstone before merge`() = runTest {
         val base = document(record("a", "name" to "Base"))
         val local = document()
         val remote = base
@@ -344,7 +380,7 @@ class SyncCycleOrchestratorTest {
     }
 
     @Test
-    fun `case 11 - remote change during update keeps accepted base unchanged`() = runTest {
+    fun `case 12 - remote change during update keeps accepted base unchanged`() = runTest {
         val base = document(record("a", "name" to "Base"))
         val local = document(record("a", "name" to "Local", device = "phone", sequence = 2))
         val remote = base
