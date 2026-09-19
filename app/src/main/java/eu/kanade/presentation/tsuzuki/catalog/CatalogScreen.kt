@@ -15,6 +15,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,7 @@ fun CatalogScreen(
     onSelectItem: (CatalogItem) -> Unit,
     onDismissPreview: () -> Unit,
     onRetry: () -> Unit,
+    onOpenCollections: () -> Unit,
     onAddToLibrary: (CatalogItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -74,6 +76,13 @@ fun CatalogScreen(
                     onClickCloseSearch()
                 },
                 navigateUp = navigateUp,
+                actions = {
+                    if (!searchOpen) {
+                        TextButton(onClick = onOpenCollections) {
+                            Text("Collections")
+                        }
+                    }
+                },
                 scrollBehavior = scrollBehavior,
             )
         },

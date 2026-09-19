@@ -1,0 +1,15 @@
+CREATE TABLE tsuzuki_catalog_cache(
+    provider_id TEXT NOT NULL,
+    query_key TEXT NOT NULL,
+    sort TEXT NOT NULL,
+    raw_offset INTEGER NOT NULL,
+    page_size INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    stale_until INTEGER NOT NULL,
+    PRIMARY KEY(provider_id, query_key, sort, raw_offset, page_size)
+);
+
+CREATE INDEX tsuzuki_catalog_cache_stale_index
+ON tsuzuki_catalog_cache(stale_until);
