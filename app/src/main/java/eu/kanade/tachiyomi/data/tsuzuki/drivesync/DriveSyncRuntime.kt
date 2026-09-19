@@ -7,12 +7,15 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import tachiyomi.data.tsuzuki.sync.CollectionsSyncAdapter
+import tachiyomi.domain.tsuzuki.chapter.repository.ChapterOverrideRepository
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.domain.tsuzuki.source.repository.ReadingSourcePreferenceRepository
 import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalLibrarySyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.ChapterOverridesSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.SourceMappingsSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
@@ -47,6 +50,8 @@ class DriveSyncRuntime(
     mappingRepository: SourceTitleMappingRepository,
     sourcePreferenceRepository: ReadingSourcePreferenceRepository,
     collectionStore: CollectionStore,
+    chapterOverrideRepository: ChapterOverrideRepository,
+    readerPreferenceRepository: CanonicalReaderPreferenceRepository,
     json: Json,
 ) {
 
@@ -74,6 +79,12 @@ class DriveSyncRuntime(
                 ),
                 CollectionsSyncAdapter(
                     store = collectionStore,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                ChapterOverridesSyncAdapter(
+                    overrideRepository = chapterOverrideRepository,
+                    readerPreferenceRepository = readerPreferenceRepository,
                     revisionSource = revisionSource,
                     clock = clock,
                 ),
