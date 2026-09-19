@@ -229,9 +229,11 @@ object ResidualEvaluator {
             QueryOperator.IN -> {
                 val expectedValues = (expected as QueryValue.ListValue).values
                     .map { it as QueryValue.StringValue }
-                truth(actual.any { actualValue ->
-                    expectedValues.any { expectedValue -> stringEquals(actualValue.value, expectedValue.value) }
-                })
+                truth(
+                    actual.any { actualValue ->
+                        expectedValues.any { expectedValue -> stringEquals(actualValue.value, expectedValue.value) }
+                    },
+                )
             }
             else -> error("Unsupported collection operator reached evaluator: $operator")
         }

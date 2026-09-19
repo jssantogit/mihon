@@ -1,8 +1,8 @@
 package tachiyomi.domain.tsuzuki.collections.execution
 
-import java.util.concurrent.CancellationException
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
+import java.util.concurrent.CancellationException
 
 fun interface CatalogPageFetcher {
     suspend fun fetch(offset: Int, limit: Int): Result<CatalogPage>

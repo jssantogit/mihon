@@ -141,7 +141,11 @@ class ResidualEvaluatorTest {
         ) shouldBe TruthValue.TRUE
 
         evaluate(
-            predicate(QueryField.WORK_TYPE, QueryOperator.IN, QueryValue.of(listOf(QueryValue.of("manga"), QueryValue.of("manhwa")))),
+            predicate(
+                QueryField.WORK_TYPE,
+                QueryOperator.IN,
+                QueryValue.of(listOf(QueryValue.of("manga"), QueryValue.of("manhwa"))),
+            ),
             target,
         ) shouldBe TruthValue.TRUE
     }
