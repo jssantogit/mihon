@@ -103,19 +103,22 @@ object ResidualEvaluator {
     }
 
     private fun isStringOperand(operator: QueryOperator, value: QueryValue): Boolean = when (operator) {
-        QueryOperator.IN -> value is QueryValue.ListValue &&
-            value.values.isNotEmpty() &&
-            value.values.all { it is QueryValue.StringValue }
+        QueryOperator.IN ->
+            value is QueryValue.ListValue &&
+                value.values.isNotEmpty() &&
+                value.values.all { it is QueryValue.StringValue }
         else -> value is QueryValue.StringValue
     }
 
     private fun isNumericOperand(operator: QueryOperator, value: QueryValue): Boolean = when (operator) {
-        QueryOperator.IN -> value is QueryValue.ListValue &&
-            value.values.isNotEmpty() &&
-            value.values.all(::isNumeric)
-        QueryOperator.BETWEEN -> value is QueryValue.RangeValue &&
-            isNumeric(value.lower) &&
-            isNumeric(value.upper)
+        QueryOperator.IN ->
+            value is QueryValue.ListValue &&
+                value.values.isNotEmpty() &&
+                value.values.all(::isNumeric)
+        QueryOperator.BETWEEN ->
+            value is QueryValue.RangeValue &&
+                isNumeric(value.lower) &&
+                isNumeric(value.upper)
         else -> isNumeric(value)
     }
 
@@ -148,19 +151,22 @@ object ResidualEvaluator {
             else -> FieldValue.Scalar(QueryValue.StringValue(item.status.name))
         }
 
-        QueryField.Standard.CHAPTER_COUNT -> item.chapterCount
-            ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
-            ?: FieldValue.Missing
+        QueryField.Standard.CHAPTER_COUNT ->
+            item.chapterCount
+                ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
+                ?: FieldValue.Missing
 
-        QueryField.Standard.VOLUME_COUNT -> item.volumeCount
-            ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
-            ?: FieldValue.Missing
+        QueryField.Standard.VOLUME_COUNT ->
+            item.volumeCount
+                ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
+                ?: FieldValue.Missing
 
         QueryField.Standard.SCORE,
         QueryField.Standard.RATING,
-        -> item.score
-            ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.value)) }
-            ?: FieldValue.Missing
+        ->
+            item.score
+                ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.value)) }
+                ?: FieldValue.Missing
 
         QueryField.Standard.GENRE -> if (item.genres.isEmpty()) {
             FieldValue.Missing
