@@ -4,7 +4,7 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
@@ -24,7 +24,7 @@ import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 class CollectionsSyncAdapterTest {
 
     @Test
-    fun `round trip preserves user collection hierarchy and provider neutral query`() = runTest {
+    fun `round trip preserves user collection hierarchy and provider neutral query`() = runBlocking {
         val source = FakeCollectionStore()
         source.upsertCollection(collection("collection-1", "Favorites"))
         source.upsertFolder(folder("folder-1", "collection-1", null, "Reading"))
@@ -77,7 +77,7 @@ class CollectionsSyncAdapterTest {
     }
 
     @Test
-    fun `tombstones soft delete existing entities without deleting their rows`() = runTest {
+    fun `tombstones soft delete existing entities without deleting their rows`() = runBlocking {
         val source = FakeCollectionStore()
         source.upsertCollection(collection("collection-1", "Favorites", deletedAt = 500L))
         source.upsertFolder(folder("folder-1", "collection-1", null, "Reading", deletedAt = 500L))
