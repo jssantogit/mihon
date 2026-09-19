@@ -1,0 +1,120 @@
+CREATE TABLE tsuzuki_sync_outbox(
+    document_kind TEXT NOT NULL PRIMARY KEY,
+    enqueued_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL,
+    next_attempt_at INTEGER
+);
+
+CREATE INDEX tsuzuki_sync_outbox_ready_index
+ON tsuzuki_sync_outbox(next_attempt_at, enqueued_at);
+
+CREATE TABLE tsuzuki_sync_state(
+    document_kind TEXT NOT NULL PRIMARY KEY,
+    accepted_base_json TEXT,
+    remote_id TEXT,
+    remote_revision_token TEXT,
+    remote_modified_at INTEGER,
+    last_successful_sync_at INTEGER,
+    CHECK(remote_id IS NOT NULL OR (remote_revision_token IS NULL AND remote_modified_at IS NULL))
+);
+
+CREATE TABLE tsuzuki_sync_conflicts(
+    document_kind TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    conflict_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(document_kind, sort_order)
+);
+
+getTsuzukiSyncOutbox:
+SELECT *
+FROM tsuzuki_sync_outbox
+WHERE document_kind = :documentKind
+LIMIT 1;
+
+getPendingTsuzukiSyncOutbox:
+SELECT *
+FROM tsuzuki_sync_outbox
+WHERE next_attempt_at IS NULL OR next_attempt_at <= :nowEpochMillis
+ORDER BY enqueued_at ASC, document_kind ASC
+LIMIT :limit;
+
+upsertTsuzukiSyncOutbox:
+INSERT INTO tsuzuki_sync_outbox(
+    document_kind,
+    enqueued_at,
+    attempt_count,
+    next_attempt_at
+)
+VALUES (
+    :documentKind,
+    :enqueuedAt,
+    :attemptCount,
+    :nextAttemptAt
+)
+ON CONFLICT(document_kind) DO UPDATE SET
+    enqueued_at = excluded.enqueued_at,
+    attempt_count = excluded.attempt_count,
+    next_attempt_at = excluded.next_attempt_at;
+
+deleteTsuzukiSyncOutbox:
+DELETE FROM tsuzuki_sync_outbox
+WHERE document_kind = :documentKind;
+
+getTsuzukiSyncState:
+SELECT *
+FROM tsuzuki_sync_state
+WHERE document_kind = :documentKind
+LIMIT 1;
+
+upsertTsuzukiSyncState:
+INSERT INTO tsuzuki_sync_state(
+    document_kind,
+    accepted_base_json,
+    remote_id,
+    remote_revision_token,
+    remote_modified_at,
+    last_successful_sync_at
+)
+VALUES (
+    :documentKind,
+    :acceptedBaseJson,
+    :remoteId,
+    :remoteRevisionToken,
+    :remoteModifiedAt,
+    :lastSuccessfulSyncAt
+)
+ON CONFLICT(document_kind) DO UPDATE SET
+    accepted_base_json = excluded.accepted_base_json,
+    remote_id = excluded.remote_id,
+    remote_revision_token = excluded.remote_revision_token,
+    remote_modified_at = excluded.remote_modified_at,
+    last_successful_sync_at = excluded.last_successful_sync_at;
+
+deleteTsuzukiSyncState:
+DELETE FROM tsuzuki_sync_state
+WHERE document_kind = :documentKind;
+
+getTsuzukiSyncConflicts:
+SELECT *
+FROM tsuzuki_sync_conflicts
+WHERE document_kind = :documentKind
+ORDER BY sort_order ASC;
+
+insertTsuzukiSyncConflict:
+INSERT INTO tsuzuki_sync_conflicts(
+    document_kind,
+    sort_order,
+    conflict_json,
+    created_at
+)
+VALUES (
+    :documentKind,
+    :sortOrder,
+    :conflictJson,
+    :createdAt
+);
+
+deleteTsuzukiSyncConflicts:
+DELETE FROM tsuzuki_sync_conflicts
+WHERE document_kind = :documentKind;
