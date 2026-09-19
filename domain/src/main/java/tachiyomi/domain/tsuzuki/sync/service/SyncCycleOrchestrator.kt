@@ -36,7 +36,7 @@ class SyncCycleOrchestrator(
     private val retryPolicy: SyncRetryPolicy = SyncRetryPolicy(),
 ) : SyncCycleRunner {
     private val mutex = Mutex()
-    private val adapters = adapters.sortedBy { it.documentKind.name }
+    private val adapters = adapters.sortedBy { it.documentKind.syncApplyOrder }
 
     init {
         require(this.adapters.map { it.documentKind }.distinct().size == this.adapters.size) {
@@ -533,3 +533,15 @@ class SyncCycleOrchestrator(
         const val MANIFEST_SCHEMA_VERSION = 1
     }
 }
+
+
+private val SyncDocumentKind.syncApplyOrder: Int
+    get() = when (this) {
+        SyncDocumentKind.LIBRARY -> 0
+        SyncDocumentKind.SOURCE_MAPPINGS -> 1
+        SyncDocumentKind.COLLECTIONS -> 2
+        SyncDocumentKind.CHAPTER_OVERRIDES -> 3
+        SyncDocumentKind.SETTINGS -> 4
+        SyncDocumentKind.FALLBACK_PROGRESS -> 5
+        SyncDocumentKind.MANIFEST -> 6
+    }
