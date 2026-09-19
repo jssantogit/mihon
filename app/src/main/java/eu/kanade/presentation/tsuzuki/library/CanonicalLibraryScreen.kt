@@ -218,29 +218,6 @@ private fun CanonicalLibraryItemCard(
                     },
                 )
 
-                val primaryMapping = item.primaryMapping
-                if (primaryMapping != null) {
-                    SuggestionChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                text = "Source: ${primaryMapping.language}",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
-                    )
-                } else {
-                    SuggestionChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                text = "Source-independent",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                    )
-                }
             }
         }
     }
