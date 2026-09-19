@@ -95,6 +95,25 @@ class ConfirmSourceMappingTest {
     }
 
     @Test
+    fun `same-title incomplete mapping is materialized in place`() = runTest {
+        val existing = mapping("canonical-1", verified = true).copy(
+            mihonMangaId = null,
+            availability = SourceMappingAvailability.UNKNOWN,
+        )
+        mappingRepository.upsert(existing)
+        gateway.materializeResult = Result.success(MaterializedReadingSource(99L, 10L, "/manga/1", "en"))
+
+        val result = confirm.execute("canonical-1", candidate())
+
+        result.shouldBeInstanceOf<SourceResolutionResult.Resolved>()
+        result.reused shouldBe true
+        result.mapping.id shouldBe existing.id
+        result.mapping.mihonMangaId shouldBe 99L
+        result.mapping.availability shouldBe SourceMappingAvailability.AVAILABLE
+        gateway.materializeCallCount shouldBe 1
+    }
+
+    @Test
     fun `cross-title mapping returns conflict without materialization`() = runTest {
         mappingRepository.upsert(mapping("other-title", verified = true))
 

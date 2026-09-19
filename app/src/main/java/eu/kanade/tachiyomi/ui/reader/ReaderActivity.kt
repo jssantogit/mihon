@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -114,6 +115,18 @@ class ReaderActivity : BaseActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
         }
+
+        fun newCanonicalIntent(
+            context: Context,
+            canonicalChapterId: String,
+            preferredLanguage: String? = null,
+        ): Intent {
+            return Intent(context, ReaderActivity::class.java).apply {
+                putExtra("canonical_chapter", canonicalChapterId)
+                preferredLanguage?.let { putExtra("canonical_language", it) }
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        }
     }
 
     @Inject private lateinit var readerPreferences: ReaderPreferences
@@ -175,11 +188,13 @@ class ReaderActivity : BaseActivity() {
             return
         }
 
-        NotificationReceiver.dismissNotification(
-            this,
-            viewModel.mangaId.hashCode(),
-            Notifications.ID_NEW_CHAPTERS,
-        )
+        if (viewModel.mangaId != -1L) {
+            NotificationReceiver.dismissNotification(
+                this,
+                viewModel.mangaId.hashCode(),
+                Notifications.ID_NEW_CHAPTERS,
+            )
+        }
 
         config = ReaderConfig()
         setMenuVisibility(viewModel.state.value.menuVisible)
@@ -225,6 +240,9 @@ class ReaderActivity : BaseActivity() {
                     }
                     ReaderViewModel.Event.PageChanged -> {
                         displayRefreshHost.flash()
+                    }
+                    ReaderViewModel.Event.CloseReader -> {
+                        finish()
                     }
                     is ReaderViewModel.Event.SetOrientation -> {
                         setOrientation(event.orientation)
@@ -327,6 +345,32 @@ class ReaderActivity : BaseActivity() {
                     onSetAsCover = viewModel::setAsCover,
                     onShare = viewModel::shareImage,
                     onSave = viewModel::saveImage,
+                )
+            }
+            is ReaderViewModel.Dialog.CanonicalFallback -> {
+                AlertDialog(
+                    onDismissRequest = viewModel::cancelCanonicalFallback,
+                    title = {
+                        Text(stringResource(MR.strings.tsuzuki_reader_fallback_title))
+                    },
+                    text = {
+                        Text(stringResource(MR.strings.tsuzuki_reader_fallback_message))
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.confirmCanonicalFallback(always = false) }) {
+                            Text(stringResource(MR.strings.tsuzuki_reader_fallback_read_once))
+                        }
+                    },
+                    dismissButton = {
+                        Row {
+                            TextButton(onClick = { viewModel.confirmCanonicalFallback(always = true) }) {
+                                Text(stringResource(MR.strings.tsuzuki_reader_fallback_always))
+                            }
+                            TextButton(onClick = viewModel::cancelCanonicalFallback) {
+                                Text(stringResource(MR.strings.action_cancel))
+                            }
+                        }
+                    },
                 )
             }
             null -> {}
@@ -490,9 +534,9 @@ class ReaderActivity : BaseActivity() {
             },
             verticalNavigatorHeight = verticalNavigatorHeight / 100f,
             onNextChapter = ::loadNextChapter,
-            enabledNext = state.viewerChapters?.nextChapter != null,
+            enabledNext = state.canonicalCanNavigateNext || state.viewerChapters?.nextChapter != null,
             onPreviousChapter = ::loadPreviousChapter,
-            enabledPrevious = state.viewerChapters?.prevChapter != null,
+            enabledPrevious = state.canonicalCanNavigatePrevious || state.viewerChapters?.prevChapter != null,
             currentPage = state.currentPage,
             totalPages = state.totalPages,
             onPageIndexChange = {

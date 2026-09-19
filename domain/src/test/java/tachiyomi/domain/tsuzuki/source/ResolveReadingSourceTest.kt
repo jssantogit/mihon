@@ -75,6 +75,32 @@ class ResolveReadingSourceTest {
     }
 
     @Test
+    fun `persisted incomplete mapping is materialized instead of blindly reused`() = runTest {
+        titles.insert(title("title-1", "Tokyo Ghoul"))
+        mappings.upsert(
+            mapping(
+                id = "existing",
+                canonicalTitleId = "title-1",
+                sourceId = 10L,
+                language = "en",
+                mihonMangaId = null,
+                sourceUrl = "/tokyo-ghoul",
+            ),
+        )
+        gateway.materializeResult = Result.success(
+            MaterializedReadingSource(555L, 10L, "/tokyo-ghoul", "en"),
+        )
+
+        val result = resolver.execute("title-1", "en")
+
+        result.shouldBeInstanceOf<SourceResolutionResult.Resolved>()
+        result.reused shouldBe true
+        result.mapping.mihonMangaId shouldBe 555L
+        gateway.materializeCallCount shouldBe 1
+        gateway.searchedSourceIds shouldBe emptyList()
+    }
+
+    @Test
     fun `no preferences returns requested language`() = runTest {
         titles.insert(title("title-1", "One Piece"))
 
@@ -256,11 +282,12 @@ class ResolveReadingSourceTest {
         sourceId: Long,
         language: String,
         preferred: Boolean = false,
+        mihonMangaId: Long? = 1L,
         sourceUrl: String = "/$id",
     ) = SourceTitleMapping(
         id = id,
         canonicalTitleId = canonicalTitleId,
-        mihonMangaId = 1L,
+        mihonMangaId = mihonMangaId,
         sourceId = sourceId,
         sourceUrl = sourceUrl,
         language = language,

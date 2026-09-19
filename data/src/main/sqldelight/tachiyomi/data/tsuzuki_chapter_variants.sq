@@ -1,0 +1,110 @@
+CREATE TABLE tsuzuki_chapter_variants(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_chapter_id TEXT NOT NULL,
+    source_mapping_id TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    mihon_manga_id INTEGER,
+    mihon_chapter_id INTEGER,
+    source_chapter_id TEXT NOT NULL,
+    source_chapter_url TEXT,
+    language TEXT NOT NULL,
+    scanlation_group TEXT,
+    version INTEGER,
+    release_date INTEGER,
+    raw_name TEXT NOT NULL,
+    raw_number_hint REAL,
+    raw_source_order INTEGER,
+    raw_source_metadata BLOB NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(source_mapping_id) REFERENCES tsuzuki_source_mappings(id) ON DELETE CASCADE,
+    UNIQUE(source_id, source_chapter_id)
+);
+
+CREATE INDEX tsuzuki_chapter_variant_canonical_index
+ON tsuzuki_chapter_variants(canonical_chapter_id);
+
+CREATE INDEX tsuzuki_chapter_variant_source_mapping_index
+ON tsuzuki_chapter_variants(source_mapping_id);
+
+CREATE INDEX tsuzuki_chapter_variant_source_identity_index
+ON tsuzuki_chapter_variants(source_id, source_chapter_id);
+
+getTsuzukiChapterVariantBySourceIdentity:
+SELECT *
+FROM tsuzuki_chapter_variants
+WHERE source_id = :sourceId
+AND source_chapter_id = :sourceChapterId
+LIMIT 1;
+
+getTsuzukiChapterVariantsByCanonicalChapter:
+SELECT *
+FROM tsuzuki_chapter_variants
+WHERE canonical_chapter_id = :canonicalChapterId
+ORDER BY created_at ASC, id ASC;
+
+getTsuzukiChapterVariantsBySourceMapping:
+SELECT *
+FROM tsuzuki_chapter_variants
+WHERE source_mapping_id = :sourceMappingId
+ORDER BY created_at ASC, id ASC;
+
+upsertTsuzukiChapterVariant:
+INSERT INTO tsuzuki_chapter_variants(
+    id,
+    canonical_chapter_id,
+    source_mapping_id,
+    source_id,
+    mihon_manga_id,
+    mihon_chapter_id,
+    source_chapter_id,
+    source_chapter_url,
+    language,
+    scanlation_group,
+    version,
+    release_date,
+    raw_name,
+    raw_number_hint,
+    raw_source_order,
+    raw_source_metadata,
+    created_at,
+    updated_at
+)
+VALUES (
+    :id,
+    :canonicalChapterId,
+    :sourceMappingId,
+    :sourceId,
+    :mihonMangaId,
+    :mihonChapterId,
+    :sourceChapterId,
+    :sourceChapterUrl,
+    :language,
+    :scanlationGroup,
+    :version,
+    :releaseDate,
+    :rawName,
+    :rawNumberHint,
+    :rawSourceOrder,
+    :rawSourceMetadata,
+    :createdAt,
+    :updatedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    canonical_chapter_id = excluded.canonical_chapter_id,
+    source_mapping_id = excluded.source_mapping_id,
+    source_id = excluded.source_id,
+    mihon_manga_id = excluded.mihon_manga_id,
+    mihon_chapter_id = excluded.mihon_chapter_id,
+    source_chapter_id = excluded.source_chapter_id,
+    source_chapter_url = excluded.source_chapter_url,
+    language = excluded.language,
+    scanlation_group = excluded.scanlation_group,
+    version = excluded.version,
+    release_date = excluded.release_date,
+    raw_name = excluded.raw_name,
+    raw_number_hint = excluded.raw_number_hint,
+    raw_source_order = excluded.raw_source_order,
+    raw_source_metadata = excluded.raw_source_metadata,
+    updated_at = excluded.updated_at;

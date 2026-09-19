@@ -1,0 +1,51 @@
+CREATE TABLE tsuzuki_canonical_chapters(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    display_number TEXT NOT NULL,
+    volume INTEGER,
+    title TEXT,
+    type TEXT NOT NULL,
+    base_number INTEGER,
+    part INTEGER,
+    alpha_suffix TEXT,
+    confidence REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_canonical_chapter_title_index
+ON tsuzuki_canonical_chapters(canonical_title_id);
+
+CREATE TABLE tsuzuki_chapter_variants(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_chapter_id TEXT NOT NULL,
+    source_mapping_id TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    mihon_manga_id INTEGER,
+    mihon_chapter_id INTEGER,
+    source_chapter_id TEXT NOT NULL,
+    source_chapter_url TEXT,
+    language TEXT NOT NULL,
+    scanlation_group TEXT,
+    version INTEGER,
+    release_date INTEGER,
+    raw_name TEXT NOT NULL,
+    raw_number_hint REAL,
+    raw_source_order INTEGER,
+    raw_source_metadata BLOB NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(source_mapping_id) REFERENCES tsuzuki_source_mappings(id) ON DELETE CASCADE,
+    UNIQUE(source_id, source_chapter_id)
+);
+
+CREATE INDEX tsuzuki_chapter_variant_canonical_index
+ON tsuzuki_chapter_variants(canonical_chapter_id);
+
+CREATE INDEX tsuzuki_chapter_variant_source_mapping_index
+ON tsuzuki_chapter_variants(source_mapping_id);
+
+CREATE INDEX tsuzuki_chapter_variant_source_identity_index
+ON tsuzuki_chapter_variants(source_id, source_chapter_id);
