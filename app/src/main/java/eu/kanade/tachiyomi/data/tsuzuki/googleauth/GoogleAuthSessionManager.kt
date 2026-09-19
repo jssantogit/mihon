@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.tsuzuki.googleauth
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,10 +55,16 @@ class GoogleAuthSessionManager(
             stateMachine.beginConnection()
 
             val accountHint = readAccountHint()
-            handleConnectResult(
-                result = authorizationPlatform.authorize(accountHint),
-                fallbackAccount = accountHint,
-            )
+            try {
+                handleConnectResult(
+                    result = authorizationPlatform.authorize(accountHint),
+                    fallbackAccount = accountHint,
+                )
+            } catch (e: CancellationException) {
+                pendingAccountHint = null
+                stateMachine.complete(GoogleAuthorizationResult.Cancelled)
+                throw e
+            }
         }
     }
 
@@ -71,6 +78,13 @@ class GoogleAuthSessionManager(
                 result = result,
                 fallbackAccount = accountHint,
             )
+        }
+    }
+
+    suspend fun cancelInteractive() {
+        operationMutex.withLock {
+            pendingAccountHint = null
+            stateMachine.complete(GoogleAuthorizationResult.Cancelled)
         }
     }
 

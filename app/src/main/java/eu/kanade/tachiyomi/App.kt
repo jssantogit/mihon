@@ -36,6 +36,7 @@ import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher
 import eu.kanade.tachiyomi.data.coil.MangaCoverKeyer
 import eu.kanade.tachiyomi.data.coil.MangaKeyer
 import eu.kanade.tachiyomi.data.notification.Notifications
+import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthSessionManager
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
@@ -48,6 +49,7 @@ import eu.kanade.tachiyomi.util.system.notify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -91,6 +93,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     @Inject private lateinit var sourceManager: SourceManager
 
+    @Inject private lateinit var googleAuthSessionManager: GoogleAuthSessionManager
+
     @Inject private lateinit var widgetManager: WidgetManager
 
     @Inject private lateinit var injektMetroInteropModule: MetroInteropModule
@@ -127,6 +131,10 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
+
+        scope.launch {
+            googleAuthSessionManager.restore()
+        }
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()

@@ -32,6 +32,10 @@ class GoogleAuthInteractiveCoordinator(
         return sessionManager.completeInteractive(result)
     }
 
+    suspend fun cancelPending() {
+        sessionManager.cancelInteractive()
+    }
+
     suspend fun disconnect(): GoogleAuthorizationOperationResult {
         return sessionManager.disconnect()
     }
