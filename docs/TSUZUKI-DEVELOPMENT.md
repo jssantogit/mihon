@@ -98,12 +98,26 @@ It runs when:
 - a commit message contains `[apk]`; or
 - the workflow is manually dispatched.
 
-The workflow builds the release application and uploads:
+Tsuzuki supports parallel physical-device testing. The APK lane is selected from the branch name:
 
-- the ARM64 APK;
-- the release mapping artifact.
+| Branch | Variant | Application ID | Device label |
+| --- | --- | --- | --- |
+| `main`, `tsuzuki/bootstrap` | `release` | `app.mihon` | normal integrated app |
+| `tsuzuki/mvp-v1-*` | `deva` | `app.mihon.tsuzuki.deva` | `Tsuzuki Dev A` |
+| `tsuzuki/mvp-v2-*` | `devb` | `app.mihon.tsuzuki.devb` | `Tsuzuki Dev B` |
+
+The Dev A and Dev B packages have separate Android app sandboxes, databases, preferences, and app-local files, so both can remain installed on one phone while the reading and Collections tracks are tested independently. The integrated `release` package remains separate from both.
+
+Dev A/Dev B APKs intentionally build without telemetry and without the in-app updater. The integrated release retains the normal telemetry/updater flags. All lanes use the persistent Tsuzuki signing secrets and verify the resulting APK with `apksigner`.
+
+The workflow uploads:
+
+- the ARM64 APK, with the lane included in the artifact name;
+- the matching ProGuard/R8 mapping artifact.
 
 Development APK and mapping artifacts use `retention-days: 3`.
+
+Android extension APKs remain device-global rather than app-sandboxed. Disabling a source inside one Tsuzuki install is preferable to physically uninstalling its extension while parallel testing is active, because an uninstall affects both installs. OAuth/deep-link callback isolation must be revisited before parallel tracker/sync testing.
 
 Use APK Build when there is something meaningful to validate on a physical Android device, especially:
 
