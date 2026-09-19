@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.data.collections.query
+package tachiyomi.domain.tsuzuki.collections.query
 
 /**
  * Validates query expressions against strict semantic and structural constraints.

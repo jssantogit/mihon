@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.data.collections.query
+package tachiyomi.domain.tsuzuki.collections.query
 
 /**
  * Supported comparison and membership operators in the provider-neutral query language.

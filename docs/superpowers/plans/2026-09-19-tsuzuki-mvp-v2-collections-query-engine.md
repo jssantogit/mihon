@@ -79,7 +79,7 @@
   - Produce stable canonical key representation (`normalizedKey()`).
 
 ### Task 3: Block A — Unit Tests & Validation
-- [x] Implement `app/src/test/java/eu/kanade/tachiyomi/data/collections/QueryNormalizerTest.kt`.
+- [x] Implement `domain/src/test/java/tachiyomi/domain/tsuzuki/collections/query/QueryNormalizerTest.kt`.
 - [x] Verify all 12 core test invariants:
   1. Provider-neutral AST construction;
   2. Nested `All` flattening;

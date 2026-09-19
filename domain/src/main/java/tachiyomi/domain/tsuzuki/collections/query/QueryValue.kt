@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.data.collections.query
+package tachiyomi.domain.tsuzuki.collections.query
 
 /**
  * Strongly typed value wrappers supporting scalars, collections, ranges, and relative temporal expressions.

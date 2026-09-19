@@ -1,13 +1,5 @@
-package eu.kanade.tachiyomi.data.collections
+package tachiyomi.domain.tsuzuki.collections.query
 
-import eu.kanade.tachiyomi.data.collections.query.QueryExpression
-import eu.kanade.tachiyomi.data.collections.query.QueryField
-import eu.kanade.tachiyomi.data.collections.query.QueryNormalizer
-import eu.kanade.tachiyomi.data.collections.query.QueryOperator
-import eu.kanade.tachiyomi.data.collections.query.QueryValidationException
-import eu.kanade.tachiyomi.data.collections.query.QueryValidationResult
-import eu.kanade.tachiyomi.data.collections.query.QueryValidator
-import eu.kanade.tachiyomi.data.collections.query.QueryValue
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
