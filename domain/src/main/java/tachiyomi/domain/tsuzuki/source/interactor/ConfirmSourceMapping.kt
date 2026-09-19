@@ -43,7 +43,28 @@ class ConfirmSourceMapping internal constructor(
                 return SourceResolutionResult.Conflict(existing.canonicalTitleId)
             }
 
-            val mapping = if (verifiedByUser && !existing.verifiedByUser) {
+            val needsMaterialization =
+                existing.mihonMangaId == null ||
+                    existing.availability == SourceMappingAvailability.UNAVAILABLE
+
+            val mapping = if (needsMaterialization) {
+                val materialized = readingSourceGateway.materialize(candidate).getOrThrow()
+                require(materialized.sourceId == existing.sourceId) {
+                    "Materialized source does not match persisted mapping"
+                }
+                require(materialized.sourceUrl == existing.sourceUrl) {
+                    "Materialized URL does not match persisted mapping"
+                }
+
+                existing.copy(
+                    mihonMangaId = materialized.mihonMangaId,
+                    language = materialized.language,
+                    matchConfidence = matchConfidence ?: existing.matchConfidence,
+                    verifiedByUser = existing.verifiedByUser || verifiedByUser,
+                    availability = SourceMappingAvailability.AVAILABLE,
+                    updatedAt = clock(),
+                ).also { sourceTitleMappingRepository.upsert(it) }
+            } else if (verifiedByUser && !existing.verifiedByUser) {
                 existing.copy(
                     verifiedByUser = true,
                     updatedAt = clock(),

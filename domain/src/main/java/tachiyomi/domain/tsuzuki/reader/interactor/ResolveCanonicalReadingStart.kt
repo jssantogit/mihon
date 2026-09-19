@@ -11,6 +11,8 @@ import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveReadingSource
+import tachiyomi.domain.tsuzuki.source.model.SourceResolutionResult
 
 @Inject
 @SingleIn(AppScope::class)
@@ -19,6 +21,7 @@ class ResolveCanonicalReadingStart(
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val refreshCanonicalChapters: RefreshCanonicalChapters,
+    private val resolveReadingSource: ResolveReadingSource,
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val getCanonicalReadingStart: GetCanonicalReadingStart,
 ) : CanonicalReadingStartResolver {
@@ -36,13 +39,26 @@ class ResolveCanonicalReadingStart(
     }
 
     private suspend fun ensureInventory(canonicalTitleId: String) {
-        val mappings = sourceTitleMappingRepository
-            .getByCanonicalTitleId(canonicalTitleId)
-            .filter {
-                it.mihonMangaId != null &&
-                    it.availability != SourceMappingAvailability.UNAVAILABLE
-            }
+        var persisted = sourceTitleMappingRepository.getByCanonicalTitleId(canonicalTitleId)
+        val requested = persisted.firstOrNull { it.preferredOverride } ?: persisted.firstOrNull()
 
+        if (requested != null && !isEligible(requested)) {
+            try {
+                val repaired = resolveReadingSource.execute(
+                    canonicalTitleId = canonicalTitleId,
+                    language = requested.language,
+                )
+                if (repaired is SourceResolutionResult.Resolved) {
+                    persisted = sourceTitleMappingRepository.getByCanonicalTitleId(canonicalTitleId)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // A secondary materialized mapping may still be usable below.
+            }
+        }
+
+        val mappings = persisted.filter(::isEligible)
         if (mappings.isEmpty()) {
             throw IllegalStateException("No materialized reading source is available")
         }
@@ -74,5 +90,10 @@ class ResolveCanonicalReadingStart(
                 // Best-effort fallback inventory enrichment.
             }
         }
+    }
+
+    private fun isEligible(mapping: tachiyomi.domain.tsuzuki.model.SourceTitleMapping): Boolean {
+        return mapping.mihonMangaId != null &&
+            mapping.availability != SourceMappingAvailability.UNAVAILABLE
     }
 }

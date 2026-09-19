@@ -92,6 +92,36 @@ class ImportLegacyCanonicalProgressTest {
         reading.progress?.updatedAt shouldBe 999L
     }
 
+    @Test
+    fun `newer legacy activity advances existing canonical progress`() = runTest {
+        val canonical = FakeCanonicalChapterRepository(
+            chapters = listOf(chapter("canonical-1")),
+            variants = listOf(variant("variant-a", chapterId = 11L, mangaId = 101L)),
+        )
+        val chapters = FakeChapterRepository(
+            chapter(11L, 101L, read = false, lastPage = 8L),
+        )
+        val reading = FakeCanonicalReadingRepository().apply {
+            progress = CanonicalChapterProgress(
+                canonicalChapterId = "canonical-1",
+                read = false,
+                lastPageRead = 3L,
+                lastVariantId = "variant-a",
+                updatedAt = 999L,
+            )
+        }
+        val importer = ImportLegacyCanonicalProgress(
+            canonical,
+            reading,
+            chapters,
+            FakeHistoryRepository(History(1L, 11L, Date(1200L), 20L)),
+        )
+
+        importer.execute("title-1") shouldBe 1
+        reading.progress?.lastPageRead shouldBe 8L
+        reading.progress?.updatedAt shouldBe 1200L
+    }
+
     private fun chapter(id: String) = CanonicalChapter(
         id = id,
         canonicalTitleId = "title-1",

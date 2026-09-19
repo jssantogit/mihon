@@ -61,14 +61,21 @@ class ImportLegacyCanonicalProgress(
                     .thenBy { if (it.chapter.read) 1 else 0 },
             ) ?: continue
 
-            if (canonicalChapter.id !in existingProgress) {
+            val existing = existingProgress[canonicalChapter.id]
+            val legacyUpdatedAt = active.history?.readAt?.time ?: 0L
+            if (existing == null || legacyUpdatedAt > existing.updatedAt) {
+                val lastPageRead = if (existing?.lastVariantId == active.variant.id) {
+                    maxOf(existing.lastPageRead, active.chapter.lastPageRead)
+                } else {
+                    active.chapter.lastPageRead
+                }
                 canonicalReadingRepository.upsertProgress(
                     CanonicalChapterProgress(
                         canonicalChapterId = canonicalChapter.id,
-                        read = meaningfulStates.any { it.chapter.read },
-                        lastPageRead = active.chapter.lastPageRead,
+                        read = existing?.read == true || meaningfulStates.any { it.chapter.read },
+                        lastPageRead = lastPageRead,
                         lastVariantId = active.variant.id,
-                        updatedAt = active.history?.readAt?.time ?: 0L,
+                        updatedAt = legacyUpdatedAt,
                     ),
                 )
                 imported++

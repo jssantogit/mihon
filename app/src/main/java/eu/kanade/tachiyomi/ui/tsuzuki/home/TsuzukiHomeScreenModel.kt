@@ -13,13 +13,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.tsuzuki.home.interactor.GetHomeCatalogFeed
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.HomeCatalogFeed
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
+import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
+import tachiyomi.domain.tsuzuki.reader.interactor.ImportLegacyCanonicalProgress
 
 @Immutable
 data class TsuzukiHomeScreenState(
@@ -34,6 +38,9 @@ data class TsuzukiHomeScreenState(
 class TsuzukiHomeScreenModel(
     observeHomeContinueReading: ObserveHomeContinueReading,
     private val getHomeCatalogFeed: GetHomeCatalogFeed,
+    private val observeCanonicalLibrary: ObserveCanonicalLibrary,
+    private val historyRepository: HistoryRepository,
+    private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
 ) : ViewModel() {
 
     private val catalogFeed = MutableStateFlow<HomeCatalogFeed?>(null)
@@ -57,6 +64,24 @@ class TsuzukiHomeScreenModel(
     )
 
     init {
+        viewModelScope.launch {
+            combine(
+                observeCanonicalLibrary.subscribe(),
+                historyRepository.getHistory(""),
+            ) { libraryItems, _ ->
+                libraryItems
+            }.collectLatest { libraryItems ->
+                for (item in libraryItems) {
+                    try {
+                        importLegacyCanonicalProgress.execute(item.title.id)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        // Legacy compatibility must never block Home.
+                    }
+                }
+            }
+        }
         refresh()
     }
 
