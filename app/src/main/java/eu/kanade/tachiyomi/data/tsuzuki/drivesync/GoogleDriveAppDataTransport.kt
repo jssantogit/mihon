@@ -8,8 +8,8 @@ import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthorizedAccess
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -30,7 +30,6 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncTransportResult
 import tachiyomi.domain.tsuzuki.sync.service.DriveSyncTransport
 import java.io.IOException
 
-@Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class GoogleDriveAppDataTransport internal constructor(
@@ -143,7 +142,7 @@ class GoogleDriveAppDataTransport internal constructor(
             )
         ) {
             is DriveCallResult.Success -> response.value.toRemoteFile()
-                ?.let(SyncTransportResult::Success)
+                ?.let { SyncTransportResult.Success(it) }
                 ?: SyncTransportResult.Failure(
                     SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
                 )
@@ -188,7 +187,7 @@ class GoogleDriveAppDataTransport internal constructor(
             )
         ) {
             is DriveCallResult.Success -> response.value.toRemoteFile()
-                ?.let(SyncTransportResult::Success)
+                ?.let { SyncTransportResult.Success(it) }
                 ?: SyncTransportResult.Failure(
                     SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
                 )
