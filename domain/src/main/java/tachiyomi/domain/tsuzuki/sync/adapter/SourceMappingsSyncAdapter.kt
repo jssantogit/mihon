@@ -248,10 +248,10 @@ class SourceMappingsSyncAdapter(
 }
 
 internal fun sourceMappingSyncRecordId(sourceId: Long, sourceUrl: String): String =
-    "mapping:${sourceId}:${sourceUrl}"
+    "mapping:$sourceId:$sourceUrl"
 
 internal fun sourcePreferenceSyncRecordId(language: String): String =
-    "preference:${language}"
+    "preference:$language"
 
 private fun JsonObject.requiredString(name: String): String =
     getValue(name).jsonPrimitive.content
