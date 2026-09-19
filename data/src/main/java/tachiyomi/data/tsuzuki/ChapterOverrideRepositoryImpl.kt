@@ -36,21 +36,21 @@ class ChapterOverrideRepositoryImpl(
         }
     }
 
-    override suspend fun upsert(override: ChapterOverride) {
+    override suspend fun upsert(chapterOverride: ChapterOverride) {
         database.tsuzuki_chapter_overridesQueries.upsertTsuzukiChapterOverride(
-            id = override.id,
-            canonicalTitleId = override.canonicalTitleId,
-            canonicalChapterKey = override.canonicalChapterKey,
-            sourceId = override.sourceId,
-            sourceTitleUrl = override.sourceTitleUrl,
-            sourceChapterId = override.sourceChapterId,
-            kind = override.kind.name,
-            payloadJson = override.payloadJson,
-            schemaVersion = override.schemaVersion.toLong(),
-            revision = override.revision,
-            createdAt = override.createdAt,
-            updatedAt = override.updatedAt,
-            deletedAt = override.deletedAt,
+            id = chapterOverride.id,
+            canonicalTitleId = chapterOverride.canonicalTitleId,
+            canonicalChapterKey = chapterOverride.canonicalChapterKey,
+            sourceId = chapterOverride.sourceId,
+            sourceTitleUrl = chapterOverride.sourceTitleUrl,
+            sourceChapterId = chapterOverride.sourceChapterId,
+            kind = chapterOverride.kind.name,
+            payloadJson = chapterOverride.payloadJson,
+            schemaVersion = chapterOverride.schemaVersion.toLong(),
+            revision = chapterOverride.revision,
+            createdAt = chapterOverride.createdAt,
+            updatedAt = chapterOverride.updatedAt,
+            deletedAt = chapterOverride.deletedAt,
         )
     }
 
