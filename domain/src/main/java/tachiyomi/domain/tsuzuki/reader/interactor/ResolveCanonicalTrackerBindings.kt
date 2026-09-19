@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.reader.interactor
 
 import dev.zacsweers.metro.Inject
+import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.track.model.Track
 import tachiyomi.domain.track.repository.TrackRepository
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
@@ -27,6 +28,8 @@ class ResolveCanonicalTrackerBindings(
             val mangaId = mapping.mihonMangaId ?: continue
             val tracks = try {
                 trackRepository.getTracksByMangaId(mangaId)
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Throwable) {
                 emptyList()
             }
