@@ -8,4 +8,5 @@ interface SourceTitleMappingRepository {
     fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>>
     suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping?
     suspend fun upsert(mapping: SourceTitleMapping)
+    suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long)
 }

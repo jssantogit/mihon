@@ -55,6 +55,35 @@ class SourceTitleMappingRepositoryImpl(
         )
     }
 
+    override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) {
+        database.transaction {
+            if (mappingId != null) {
+                val mapping = database.tsuzuki_source_mappingsQueries
+                    .getTsuzukiSourceMappingById(mappingId, ::mapMapping)
+                    .awaitAsOneOrNull()
+                    ?: throw IllegalArgumentException("Mapping $mappingId not found")
+                require(mapping.canonicalTitleId == canonicalTitleId) {
+                    "Mapping $mappingId does not belong to canonical title $canonicalTitleId"
+                }
+                database.tsuzuki_source_mappingsQueries.clearOtherPreferredForTitle(
+                    canonicalTitleId = canonicalTitleId,
+                    excludeId = mappingId,
+                    updatedAt = updatedAt,
+                )
+                database.tsuzuki_source_mappingsQueries.setPreferredMapping(
+                    id = mappingId,
+                    canonicalTitleId = canonicalTitleId,
+                    updatedAt = updatedAt,
+                )
+            } else {
+                database.tsuzuki_source_mappingsQueries.clearPreferredForTitle(
+                    canonicalTitleId = canonicalTitleId,
+                    updatedAt = updatedAt,
+                )
+            }
+        }
+    }
+
     private fun mapMapping(
         id: String,
         canonicalTitleId: String,

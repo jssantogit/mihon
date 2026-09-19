@@ -1,0 +1,34 @@
+CREATE TABLE tsuzuki_source_preferences(
+    language TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY(language, source_id),
+    UNIQUE(language, position)
+);
+
+getPreferencesForLanguage:
+SELECT *
+FROM tsuzuki_source_preferences
+WHERE language = :language
+ORDER BY position ASC;
+
+getConfiguredLanguages:
+SELECT DISTINCT language
+FROM tsuzuki_source_preferences
+ORDER BY language ASC;
+
+deletePreferencesForLanguage:
+DELETE FROM tsuzuki_source_preferences
+WHERE language = :language;
+
+insertPreference:
+INSERT INTO tsuzuki_source_preferences(
+    language,
+    source_id,
+    position
+)
+VALUES (
+    :language,
+    :sourceId,
+    :position
+);

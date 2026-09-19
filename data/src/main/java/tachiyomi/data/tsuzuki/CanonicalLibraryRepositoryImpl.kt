@@ -8,7 +8,10 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
+import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
+import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 
@@ -28,6 +31,12 @@ class CanonicalLibraryRepositoryImpl(
     override fun getAllAsFlow(): Flow<List<CanonicalLibraryEntry>> {
         return database.tsuzuki_library_entriesQueries
             .getAllTsuzukiLibraryEntries(::mapEntry)
+            .subscribeToList()
+    }
+
+    override fun getAllItemsAsFlow(): Flow<List<CanonicalLibraryItem>> {
+        return database.tsuzuki_library_entriesQueries
+            .getAllTsuzukiLibraryItems(::mapItem)
             .subscribeToList()
     }
 
@@ -58,4 +67,35 @@ class CanonicalLibraryRepositoryImpl(
         addedAt = addedAt,
         updatedAt = updatedAt,
     )
+
+    private fun mapItem(
+        canonicalTitleId: String,
+        status: String,
+        favorite: Boolean,
+        addedAt: Long,
+        updatedAt: Long,
+        displayTitle: String,
+        identityState: String,
+        titleCreatedAt: Long,
+        titleUpdatedAt: Long,
+    ): CanonicalLibraryItem {
+        val title = CanonicalTitle(
+            id = canonicalTitleId,
+            displayTitle = displayTitle,
+            identityState = CanonicalIdentityState.valueOf(identityState),
+            createdAt = titleCreatedAt,
+            updatedAt = titleUpdatedAt,
+        )
+        val entry = CanonicalLibraryEntry(
+            canonicalTitleId = canonicalTitleId,
+            status = LibraryStatus.valueOf(status),
+            favorite = favorite,
+            addedAt = addedAt,
+            updatedAt = updatedAt,
+        )
+        return CanonicalLibraryItem(
+            title = title,
+            entry = entry,
+        )
+    }
 }

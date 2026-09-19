@@ -42,3 +42,18 @@ ON CONFLICT(canonical_title_id) DO UPDATE SET
 deleteTsuzukiLibraryEntry:
 DELETE FROM tsuzuki_library_entries
 WHERE canonical_title_id = :canonicalTitleId;
+
+getAllTsuzukiLibraryItems:
+SELECT
+    l.canonical_title_id,
+    l.status,
+    l.favorite,
+    l.added_at,
+    l.updated_at,
+    t.display_title,
+    t.identity_state,
+    t.created_at AS title_created_at,
+    t.updated_at AS title_updated_at
+FROM tsuzuki_library_entries l
+JOIN tsuzuki_titles t ON t.id = l.canonical_title_id
+ORDER BY l.added_at DESC;

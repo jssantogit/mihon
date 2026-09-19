@@ -25,6 +25,7 @@ class CatalogScreen : Screen() {
             onClickCloseSearch = screenModel::clearSearch,
             onSelectItem = screenModel::openPreview,
             onDismissPreview = screenModel::dismissPreview,
+            onAddToLibrary = screenModel::addToLibrary,
             onRetry = {
                 if (state.isSearching) {
                     screenModel.search()

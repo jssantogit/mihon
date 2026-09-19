@@ -1,0 +1,7 @@
+CREATE TABLE tsuzuki_source_preferences(
+    language TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY(language, source_id),
+    UNIQUE(language, position)
+);

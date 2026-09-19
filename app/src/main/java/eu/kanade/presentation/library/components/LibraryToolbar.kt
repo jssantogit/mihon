@@ -36,6 +36,7 @@ fun LibraryToolbar(
     onClickRefresh: () -> Unit,
     onClickGlobalUpdate: () -> Unit,
     onClickOpenRandomManga: () -> Unit,
+    onClickOpenCanonicalLibrary: (() -> Unit)? = null,
     searchQuery: String?,
     onSearchQueryChange: (String?) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior?,
@@ -55,6 +56,7 @@ fun LibraryToolbar(
         onClickRefresh = onClickRefresh,
         onClickGlobalUpdate = onClickGlobalUpdate,
         onClickOpenRandomManga = onClickOpenRandomManga,
+        onClickOpenCanonicalLibrary = onClickOpenCanonicalLibrary,
         scrollBehavior = scrollBehavior,
     )
 }
@@ -69,6 +71,7 @@ private fun LibraryRegularToolbar(
     onClickRefresh: () -> Unit,
     onClickGlobalUpdate: () -> Unit,
     onClickOpenRandomManga: () -> Unit,
+    onClickOpenCanonicalLibrary: (() -> Unit)?,
     scrollBehavior: TopAppBarScrollBehavior?,
 ) {
     val pillAlpha = if (isSystemInDarkTheme()) 0.12f else 0.08f
@@ -114,6 +117,18 @@ private fun LibraryRegularToolbar(
                         title = stringResource(MR.strings.action_open_random_manga),
                         onClick = onClickOpenRandomManga,
                     ),
+                    *(
+                        if (onClickOpenCanonicalLibrary != null) {
+                            arrayOf(
+                                AppBar.OverflowAction(
+                                    title = "Tsuzuki Library",
+                                    onClick = onClickOpenCanonicalLibrary,
+                                ),
+                            )
+                        } else {
+                            emptyArray()
+                        }
+                        ),
                 ),
             )
         },
