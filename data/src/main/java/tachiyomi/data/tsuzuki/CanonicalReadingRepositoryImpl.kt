@@ -43,6 +43,14 @@ class CanonicalReadingRepositoryImpl(
             .awaitAsList()
     }
 
+    override fun observeProgressByCanonicalTitleId(
+        canonicalTitleId: String,
+    ): Flow<List<CanonicalChapterProgress>> {
+        return database.tsuzuki_chapter_progressQueries
+            .observeTsuzukiChapterProgressByTitle(canonicalTitleId, ::mapProgress)
+            .subscribeToList()
+    }
+
     override suspend fun upsertProgress(progress: CanonicalChapterProgress) {
         upsertProgressInternal(progress)
     }

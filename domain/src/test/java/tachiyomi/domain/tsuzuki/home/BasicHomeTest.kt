@@ -2,9 +2,12 @@ package tachiyomi.domain.tsuzuki.home
 
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
@@ -65,6 +68,44 @@ class BasicHomeTest {
         items.map { it.canonicalChapterId } shouldContainExactly listOf("chapter-2")
         items.single().title shouldBe "Title One"
         items.single().lastPageRead shouldBe 5L
+    }
+
+    @Test
+    fun `continue reading reacts to reader progress without a library mutation`() = runTest {
+        val libraryRepository = FakeCanonicalLibraryRepository(
+            listOf(libraryItem("title-1", "Title One")),
+        )
+        val chapterRepository = FakeCanonicalChapterRepository(
+            mapOf("title-1" to listOf(chapter("chapter-1", "title-1", 1))),
+        )
+        val readingRepository = FakeCanonicalReadingRepository(
+            mapOf(
+                "title-1" to listOf(
+                    progress("chapter-1", read = false, page = 0L, updatedAt = 0L),
+                ),
+            ),
+        )
+        val observer = ObserveHomeContinueReading(
+            observeCanonicalLibrary = ObserveCanonicalLibrary(libraryRepository),
+            canonicalChapterRepository = chapterRepository,
+            canonicalReadingRepository = readingRepository,
+        )
+
+        val updated = async {
+            observer.subscribe().first { it.isNotEmpty() }
+        }
+        runCurrent()
+
+        readingRepository.upsertProgress(
+            progress("chapter-1", read = false, page = 4L, updatedAt = 500L),
+        )
+        runCurrent()
+
+        updated.await().single().let { item ->
+            item.canonicalChapterId shouldBe "chapter-1"
+            item.lastPageRead shouldBe 4L
+            item.updatedAt shouldBe 500L
+        }
     }
 
     @Test
@@ -152,21 +193,52 @@ class BasicHomeTest {
     }
 
     private class FakeCanonicalReadingRepository(
-        private val byTitle: Map<String, List<CanonicalChapterProgress>>,
+        byTitle: Map<String, List<CanonicalChapterProgress>>,
     ) : CanonicalReadingRepository {
+        private val chapterIdsByTitle = byTitle.mapValues { (_, progressItems) ->
+            progressItems.map { it.canonicalChapterId }
+        }
+        private val progressByChapter = byTitle.values
+            .flatten()
+            .associate { progress ->
+                progress.canonicalChapterId to MutableStateFlow<CanonicalChapterProgress?>(progress)
+            }
+            .toMutableMap()
+
         override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? =
-            byTitle.values.flatten().firstOrNull { it.canonicalChapterId == canonicalChapterId }
+            progressByChapter[canonicalChapterId]?.value
+
         override fun observeProgress(canonicalChapterId: String): Flow<CanonicalChapterProgress?> =
-            MutableStateFlow(null)
-        override suspend fun getProgressByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapterProgress> =
-            byTitle[canonicalTitleId].orEmpty()
-        override suspend fun upsertProgress(progress: CanonicalChapterProgress) = Unit
+            progressByChapter.getOrPut(canonicalChapterId) { MutableStateFlow(null) }
+
+        override suspend fun getProgressByCanonicalTitleId(
+            canonicalTitleId: String,
+        ): List<CanonicalChapterProgress> = chapterIdsByTitle[canonicalTitleId]
+            .orEmpty()
+            .mapNotNull { progressByChapter[it]?.value }
+
+        override fun observeProgressByCanonicalTitleId(
+            canonicalTitleId: String,
+        ): Flow<List<CanonicalChapterProgress>> {
+            val chapterIds = chapterIdsByTitle[canonicalTitleId].orEmpty()
+            if (chapterIds.isEmpty()) return MutableStateFlow(emptyList())
+            return combine(chapterIds.map(::observeProgress)) { progressItems ->
+                progressItems.filterNotNull()
+            }
+        }
+
+        override suspend fun upsertProgress(progress: CanonicalChapterProgress) {
+            progressByChapter.getOrPut(progress.canonicalChapterId) { MutableStateFlow(null) }.value = progress
+        }
+
         override suspend fun getHistory(canonicalChapterId: String): CanonicalChapterHistory? = null
         override suspend fun recordHistory(update: CanonicalChapterHistoryUpdate) = Unit
         override suspend fun recordCheckpoint(
             progress: CanonicalChapterProgress,
             history: CanonicalChapterHistoryUpdate?,
-        ) = Unit
+        ) {
+            upsertProgress(progress)
+        }
     }
 
     private class FakeCatalogProvider : CatalogProvider {

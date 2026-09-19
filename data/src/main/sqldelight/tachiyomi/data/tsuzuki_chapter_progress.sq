@@ -33,6 +33,14 @@ ON C.id = P.canonical_chapter_id
 WHERE C.canonical_title_id = :canonicalTitleId
 ORDER BY C.created_at ASC, C.id ASC;
 
+observeTsuzukiChapterProgressByTitle:
+SELECT P.*
+FROM tsuzuki_chapter_progress P
+JOIN tsuzuki_canonical_chapters C
+ON C.id = P.canonical_chapter_id
+WHERE C.canonical_title_id = :canonicalTitleId
+ORDER BY C.created_at ASC, C.id ASC;
+
 upsertTsuzukiChapterProgress:
 INSERT INTO tsuzuki_chapter_progress(
     canonical_chapter_id,
