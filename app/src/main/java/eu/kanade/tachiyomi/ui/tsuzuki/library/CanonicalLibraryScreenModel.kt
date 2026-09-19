@@ -11,6 +11,8 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -39,25 +41,24 @@ class CanonicalLibraryScreenModel(
     private val migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
 ) : ViewModel() {
 
-    init {
-        viewModelScope.launch {
-            try {
-                migrateMihonLibraryToCanonical.execute()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                logcat(LogPriority.WARN, e) { "Mihon library migration failed non-blockingly" }
-            }
+    val state: StateFlow<CanonicalLibraryScreenState> = flow<CanonicalLibraryScreenState> {
+        try {
+            migrateMihonLibraryToCanonical.execute()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logcat(LogPriority.WARN, e) { "Mihon library migration failed non-blockingly" }
         }
-    }
 
-    val state: StateFlow<CanonicalLibraryScreenState> = observeCanonicalLibrary.subscribe()
-        .map { items -> CanonicalLibraryScreenState.Success(items) as CanonicalLibraryScreenState }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = CanonicalLibraryScreenState.Loading,
+        emitAll(
+            observeCanonicalLibrary.subscribe()
+                .map { items -> CanonicalLibraryScreenState.Success(items) },
         )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = CanonicalLibraryScreenState.Loading,
+    )
 
     fun setStatus(canonicalTitleId: String, status: LibraryStatus) {
         viewModelScope.launch {
