@@ -34,10 +34,10 @@ class ImportLegacyCanonicalProgress(
 
             val states = variants.mapNotNull { variant ->
                 val legacyChapter = findLegacyChapter(variant) ?: return@mapNotNull null
-                val histories = historiesByMangaId.getOrPut(legacyChapter.mangaId) {
-                    historyRepository.getHistoryByMangaId(legacyChapter.mangaId)
+                val histories = historiesByMangaId[legacyChapter.mangaId]
+                    ?: historyRepository.getHistoryByMangaId(legacyChapter.mangaId)
                         .associateBy { it.chapterId }
-                }
+                        .also { historiesByMangaId[legacyChapter.mangaId] = it }
                 LegacyState(
                     variant = variant,
                     chapter = legacyChapter,
