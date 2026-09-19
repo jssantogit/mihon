@@ -87,7 +87,11 @@ import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
+import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.interactor.GetAdjacentCanonicalChapter
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
 import tachiyomi.domain.tsuzuki.reader.interactor.RecordCanonicalReaderProgress
@@ -95,6 +99,7 @@ import tachiyomi.domain.tsuzuki.reader.interactor.SetCanonicalAutomaticFallback
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterDirection
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.OperationalReaderChapter
+import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.isLocal
 import java.util.Date
@@ -122,6 +127,9 @@ class ReaderViewModel(
     private val getNextChapters: GetNextChapters,
     private val upsertHistory: UpsertHistory,
     private val updateChapter: UpdateChapter,
+    private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val sourceTitleMappingRepository: SourceTitleMappingRepository,
+    private val refreshCanonicalChapters: RefreshCanonicalChapters,
     private val prepareCanonicalChapterForReader: PrepareCanonicalChapterForReader,
     private val recordCanonicalReaderProgress: RecordCanonicalReaderProgress,
     private val getAdjacentCanonicalChapter: GetAdjacentCanonicalChapter,
@@ -389,8 +397,78 @@ class ReaderViewModel(
         mutableState.update { it.copy(manga = manga, source = source) }
         if (chapterId == -1L) chapterId = initialChapterId
 
+        val initial = chapterList.first { chapterId == it.chapter.id }
+        attachCanonicalSessionForLegacy(manga, source, initial)
+
         loader = ChapterLoader(context, downloadManager, downloadProvider, chapterCache, manga, source)
-        loadChapter(loader!!, chapterList.first { chapterId == it.chapter.id })
+        loadChapter(loader!!, initial)
+    }
+
+    private suspend fun attachCanonicalSessionForLegacy(
+        manga: Manga,
+        source: Source,
+        readerChapter: ReaderChapter,
+    ) {
+        try {
+            var mapping = sourceTitleMappingRepository.getBySource(
+                sourceId = manga.source,
+                sourceUrl = manga.url,
+            ) ?: return
+
+            val sourceAvailable = source !is StubSource
+            if (
+                mapping.mihonMangaId != manga.id ||
+                (sourceAvailable && mapping.availability == SourceMappingAvailability.UNAVAILABLE)
+            ) {
+                mapping = mapping.copy(
+                    mihonMangaId = manga.id,
+                    availability = if (sourceAvailable) {
+                        SourceMappingAvailability.AVAILABLE
+                    } else {
+                        mapping.availability
+                    },
+                    updatedAt = Clock.System.now().toEpochMilliseconds(),
+                )
+                sourceTitleMappingRepository.upsert(mapping)
+            }
+
+            var variant = canonicalChapterRepository
+                .getVariantBySourceIdentity(
+                    sourceId = manga.source,
+                    sourceChapterId = readerChapter.chapter.url,
+                )
+                ?.takeIf { it.sourceMappingId == mapping.id }
+
+            if (variant == null && sourceAvailable) {
+                refreshCanonicalChapters.execute(
+                    canonicalTitleId = mapping.canonicalTitleId,
+                    mappingId = mapping.id,
+                ).getOrThrow()
+                variant = canonicalChapterRepository
+                    .getVariantBySourceIdentity(
+                        sourceId = manga.source,
+                        sourceChapterId = readerChapter.chapter.url,
+                    )
+                    ?.takeIf { it.sourceMappingId == mapping.id }
+            }
+
+            if (variant != null) {
+                canonicalSession = OperationalReaderChapter(
+                    canonicalChapterId = variant.canonicalChapterId,
+                    variantId = variant.id,
+                    sourceMappingId = mapping.id,
+                    mihonMangaId = manga.id,
+                    mihonChapterId = readerChapter.chapter.id!!,
+                    sourceId = manga.source,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logcat(LogPriority.WARN, error) {
+                "Failed to attach legacy Reader session to canonical progress"
+            }
+        }
     }
 
     private suspend fun loadCanonicalTarget(
