@@ -120,7 +120,6 @@ android {
             matchingFallbacks.addAll(commonMatchingFallbacks)
 
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
-            resValue("string", "app_name", "Tsuzuki Dev A")
         }
         create("devb") {
             initWith(release)
@@ -131,7 +130,6 @@ android {
             matchingFallbacks.addAll(commonMatchingFallbacks)
 
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
-            resValue("string", "app_name", "Tsuzuki Dev B")
         }
         create("benchmark") {
             initWith(release)
