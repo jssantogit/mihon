@@ -27,7 +27,7 @@ Expose the accepted Milestone 8 Collections engine through user-facing managemen
 - Validate the complete document before persistence.
 - Never overwrite SYSTEM definitions implicitly.
 
-## Block K — Collections Management UI
+## Block K — Collections Management UI ✅
 
 - Collections overview.
 - Folder/subfolder hierarchy.
@@ -37,7 +37,7 @@ Expose the accepted Milestone 8 Collections engine through user-facing managemen
 - Query summary visible without exposing provider internals.
 - No query-builder overreach beyond semantics supported by the current AST.
 
-## Block L — Import/Export UI + Navigation
+## Block L — Import/Export UI + Navigation ✅
 
 - User-facing import/export actions.
 - Android document picker for portable JSON.

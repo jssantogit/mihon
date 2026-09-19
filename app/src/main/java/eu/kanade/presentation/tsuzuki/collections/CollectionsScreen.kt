@@ -14,7 +14,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,7 +21,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListRuntimeState
@@ -50,7 +50,6 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CollectionsScreen(
     state: CollectionsScreenState,
@@ -67,25 +66,27 @@ fun CollectionsScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text("Collections") },
-                navigationIcon = {
-                    TextButton(onClick = navigateUp) {
-                        Text("Back")
-                    }
-                },
+            AppBar(
+                title = "Collections",
+                navigateUp = navigateUp,
                 actions = {
-                    TextButton(onClick = onImportRequest) {
-                        Text("Import")
-                    }
-                    TextButton(onClick = onExportRequest) {
-                        Text("Export")
-                    }
                     TextButton(
                         onClick = { editor = EditorDialog.CreateCollection },
                     ) {
                         Text("New")
                     }
+                    AppBarActions(
+                        listOf(
+                            AppBar.OverflowAction(
+                                title = "Import",
+                                onClick = onImportRequest,
+                            ),
+                            AppBar.OverflowAction(
+                                title = "Export",
+                                onClick = onExportRequest,
+                            ),
+                        ),
+                    )
                 },
             )
         },
