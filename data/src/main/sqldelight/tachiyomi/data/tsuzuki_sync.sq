@@ -567,59 +567,59 @@ END;
 CREATE TRIGGER tsuzuki_reader_preferences_sync_dirty_insert
 AFTER INSERT ON tsuzuki_reader_preferences
 BEGIN
-    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
-    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
-    UPDATE tsuzuki_sync_outbox
-    SET attempt_count = 0, next_attempt_at = NULL
-    WHERE document_kind = 'CHAPTER_OVERRIDES';
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL)
+    ON CONFLICT(document_kind) DO UPDATE SET
+        attempt_count = 0,
+        next_attempt_at = NULL;
 END;
 
 CREATE TRIGGER tsuzuki_reader_preferences_sync_dirty_update
 AFTER UPDATE ON tsuzuki_reader_preferences
 BEGIN
-    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
-    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
-    UPDATE tsuzuki_sync_outbox
-    SET attempt_count = 0, next_attempt_at = NULL
-    WHERE document_kind = 'CHAPTER_OVERRIDES';
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL)
+    ON CONFLICT(document_kind) DO UPDATE SET
+        attempt_count = 0,
+        next_attempt_at = NULL;
 END;
 
 CREATE TRIGGER tsuzuki_reader_preferences_sync_dirty_delete
 AFTER DELETE ON tsuzuki_reader_preferences
 BEGIN
-    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
-    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
-    UPDATE tsuzuki_sync_outbox
-    SET attempt_count = 0, next_attempt_at = NULL
-    WHERE document_kind = 'CHAPTER_OVERRIDES';
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL)
+    ON CONFLICT(document_kind) DO UPDATE SET
+        attempt_count = 0,
+        next_attempt_at = NULL;
 END;
 
 CREATE TRIGGER tsuzuki_chapter_overrides_sync_dirty_insert
 AFTER INSERT ON tsuzuki_chapter_overrides
 BEGIN
-    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
-    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
-    UPDATE tsuzuki_sync_outbox
-    SET attempt_count = 0, next_attempt_at = NULL
-    WHERE document_kind = 'CHAPTER_OVERRIDES';
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL)
+    ON CONFLICT(document_kind) DO UPDATE SET
+        attempt_count = 0,
+        next_attempt_at = NULL;
 END;
 
 CREATE TRIGGER tsuzuki_chapter_overrides_sync_dirty_update
 AFTER UPDATE ON tsuzuki_chapter_overrides
 BEGIN
-    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
-    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
-    UPDATE tsuzuki_sync_outbox
-    SET attempt_count = 0, next_attempt_at = NULL
-    WHERE document_kind = 'CHAPTER_OVERRIDES';
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL)
+    ON CONFLICT(document_kind) DO UPDATE SET
+        attempt_count = 0,
+        next_attempt_at = NULL;
 END;
 
 CREATE TRIGGER tsuzuki_chapter_overrides_sync_dirty_delete
 AFTER DELETE ON tsuzuki_chapter_overrides
 BEGIN
-    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
-    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
-    UPDATE tsuzuki_sync_outbox
-    SET attempt_count = 0, next_attempt_at = NULL
-    WHERE document_kind = 'CHAPTER_OVERRIDES';
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL)
+    ON CONFLICT(document_kind) DO UPDATE SET
+        attempt_count = 0,
+        next_attempt_at = NULL;
 END;
