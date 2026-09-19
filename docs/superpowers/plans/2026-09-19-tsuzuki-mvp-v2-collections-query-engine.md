@@ -95,7 +95,7 @@
   12. Collision resistance for non-equivalent query structures.
 
 ### Task 4: Subsequent Blocks (B through H)
-- [ ] Block B: Provider capabilities & planner.
+- [x] Block B: Provider capabilities & planner.
 - [ ] Block C: Residual filtering & pagination.
 - [ ] Block D: SQLDelight persistence for collections/folders/lists.
 - [ ] Block E: Query result cache & in-flight deduplication.
