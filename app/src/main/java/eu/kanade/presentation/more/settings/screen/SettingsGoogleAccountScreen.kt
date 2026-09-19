@@ -18,6 +18,7 @@ import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthConnectResult
 import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthorizationOperationResult
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import mihon.app.di.appGraph
 import tachiyomi.domain.tsuzuki.googleauth.model.GoogleAuthState
@@ -150,6 +151,8 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                 scope.launch {
                     try {
                         syncRuntime.run(SyncTrigger.MANUAL)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         context.toast(MR.strings.drive_sync_failed_to_start)
                     }
