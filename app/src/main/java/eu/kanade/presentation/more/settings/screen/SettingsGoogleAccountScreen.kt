@@ -152,6 +152,7 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                 title = stringResource(MR.strings.google_auth_connect),
                 coordinator = coordinator,
                 onUserActionRequired = { pendingRequest = it },
+                onAccountSelectionRequired = { accountSelectionRequested = true },
                 scope = scope,
             )
 
@@ -159,6 +160,7 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                 title = stringResource(MR.strings.google_auth_reconnect),
                 coordinator = coordinator,
                 onUserActionRequired = { pendingRequest = it },
+                onAccountSelectionRequired = { accountSelectionRequested = true },
                 scope = scope,
             )
 
@@ -168,6 +170,7 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                 title = stringResource(MR.strings.action_retry),
                 coordinator = coordinator,
                 onUserActionRequired = { pendingRequest = it },
+                onAccountSelectionRequired = { accountSelectionRequested = true },
                 scope = scope,
             )
         }
@@ -195,6 +198,7 @@ object SettingsGoogleAccountScreen : SearchableSettings {
         title: String,
         coordinator: eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthInteractiveCoordinator,
         onUserActionRequired: (IntentSenderRequest) -> Unit,
+        onAccountSelectionRequired: () -> Unit,
         scope: kotlinx.coroutines.CoroutineScope,
     ): Preference.PreferenceItem.TextPreference {
         return Preference.PreferenceItem.TextPreference(
@@ -206,7 +210,7 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                         GoogleAuthConnectResult.InProgress,
                         -> Unit
                         GoogleAuthConnectResult.AccountSelectionRequired -> {
-                            accountSelectionRequested = true
+                            onAccountSelectionRequired()
                         }
                         is GoogleAuthConnectResult.UserActionRequired -> {
                             onUserActionRequired(coordinator.createRequest(result.action))
