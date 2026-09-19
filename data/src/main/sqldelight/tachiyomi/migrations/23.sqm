@@ -1,0 +1,27 @@
+CREATE TABLE tsuzuki_sync_outbox(
+    document_kind TEXT NOT NULL PRIMARY KEY,
+    enqueued_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL,
+    next_attempt_at INTEGER
+);
+
+CREATE INDEX tsuzuki_sync_outbox_ready_index
+ON tsuzuki_sync_outbox(next_attempt_at, enqueued_at);
+
+CREATE TABLE tsuzuki_sync_state(
+    document_kind TEXT NOT NULL PRIMARY KEY,
+    accepted_base_json TEXT,
+    remote_id TEXT,
+    remote_revision_token TEXT,
+    remote_modified_at INTEGER,
+    last_successful_sync_at INTEGER,
+    CHECK(remote_id IS NOT NULL OR (remote_revision_token IS NULL AND remote_modified_at IS NULL))
+);
+
+CREATE TABLE tsuzuki_sync_conflicts(
+    document_kind TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    conflict_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(document_kind, sort_order)
+);
