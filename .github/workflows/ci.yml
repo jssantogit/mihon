@@ -1,0 +1,101 @@
+name: Fast CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'tsuzuki/**'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!fastlane/**'
+      - '!i18n/src/commonMain/moko-resources/**/strings.xml'
+      - '!i18n/src/commonMain/moko-resources/**/plurals.xml'
+      - 'i18n/src/commonMain/moko-resources/base/strings.xml'
+      - 'i18n/src/commonMain/moko-resources/base/plurals.xml'
+
+concurrency:
+  group: fast-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Check code format
+        run: ./gradlew spotlessCheck
+
+  kotlin:
+    name: Kotlin Compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Compile debug Kotlin
+        run: ./gradlew :app:compileDebugKotlin
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Run unit tests
+        id: unit_tests
+        run: ./gradlew testDebugUnitTest
+      - name: Upload failed test reports
+        if: failure() && steps.unit_tests.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-reports-${{ github.sha }}
+          path: '**/build/reports/tests/testDebugUnitTest/**'
+          if-no-files-found: ignore
+          retention-days: 3
+
+  database:
+    name: SQLDelight Migrations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Verify SQLDelight migrations
+        run: ./gradlew verifySqlDelightMigration

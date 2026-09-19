@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "id": "1234",
+      "type": "manga",
+      "attributes": {
+        "createdAt": "2013-12-18T13:48:38.892Z",
+        "updatedAt": "2026-09-18T10:00:00.000Z",
+        "slug": "berserk",
+        "synopsis": "Guts is a skilled wanderer...",
+        "description": "Guts is a skilled wanderer...",
+        "titles": {
+          "en": "Berserk",
+          "en_jp": "Berserk",
+          "ja_jp": "ベルセルク"
+        },
+        "canonicalTitle": "Berserk",
+        "abbreviatedTitles": [],
+        "averageRating": "84.56",
+        "userCount": 42000,
+        "favoritesCount": 8500,
+        "startDate": "1989-08-25",
+        "endDate": null,
+        "status": "current",
+        "subtype": "manga",
+        "posterImage": {
+          "tiny": "https://media.kitsu.io/manga/poster_images/1234/tiny.jpg",
+          "small": "https://media.kitsu.io/manga/poster_images/1234/small.jpg",
+          "medium": "https://media.kitsu.io/manga/poster_images/1234/medium.jpg",
+          "large": "https://media.kitsu.io/manga/poster_images/1234/large.jpg",
+          "original": "https://media.kitsu.io/manga/poster_images/1234/original.jpg"
+        },
+        "coverImage": {
+          "tiny": "https://media.kitsu.io/manga/cover_images/1234/tiny.jpg",
+          "small": "https://media.kitsu.io/manga/cover_images/1234/small.jpg",
+          "large": "https://media.kitsu.io/manga/cover_images/1234/large.jpg",
+          "original": "https://media.kitsu.io/manga/cover_images/1234/original.jpg"
+        },
+        "chapterCount": null,
+        "volumeCount": 41,
+        "serialization": "Young Animal"
+      }
+    }
+  ],
+  "meta": {
+    "count": 1
+  },
+  "links": {
+    "first": "https://kitsu.io/api/edge/manga?page%5Blimit%5D=10&page%5Boffset%5D=0",
+    "last": "https://kitsu.io/api/edge/manga?page%5Blimit%5D=10&page%5Boffset%5D=0"
+  }
+}

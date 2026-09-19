@@ -1,0 +1,139 @@
+name: APK Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'tsuzuki/**'
+
+concurrency:
+  group: apk-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Installable APK
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[apk]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve APK lane
+        id: apk
+        shell: bash
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main|tsuzuki/bootstrap)
+              lane="release"
+              task="assembleRelease"
+              apk="app/build/outputs/apk/release/app-arm64-v8a-release.apk"
+              mapping="app/build/outputs/mapping/release"
+              flags="-Pinclude-telemetry -Penable-updater"
+              ;;
+            tsuzuki/mvp-v1-*)
+              lane="dev-a"
+              task="assembleDeva"
+              apk="app/build/outputs/apk/deva/app-arm64-v8a-deva.apk"
+              mapping="app/build/outputs/mapping/deva"
+              flags=""
+              ;;
+            tsuzuki/mvp-v2-*)
+              lane="dev-b"
+              task="assembleDevb"
+              apk="app/build/outputs/apk/devb/app-arm64-v8a-devb.apk"
+              mapping="app/build/outputs/mapping/devb"
+              flags=""
+              ;;
+            tsuzuki/mvp-v3-*)
+              lane="dev-c"
+              task="assembleDevc"
+              apk="app/build/outputs/apk/devc/app-arm64-v8a-devc.apk"
+              mapping="app/build/outputs/mapping/devc"
+              flags=""
+              ;;
+            *)
+              echo "::error::No APK lane is defined for branch '$GITHUB_REF_NAME'."
+              echo "::error::Use tsuzuki/mvp-v1-* for Dev A, tsuzuki/mvp-v2-* for Dev B, tsuzuki/mvp-v3-* for Dev C, or tsuzuki/bootstrap for the integrated release."
+              exit 1
+              ;;
+          esac
+
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
+          echo "task=$task" >> "$GITHUB_OUTPUT"
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "mapping=$mapping" >> "$GITHUB_OUTPUT"
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
+
+          echo "APK lane: $lane"
+          echo "Gradle task: $task"
+          echo "APK path: $apk"
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Validate persistent signing secrets
+        env:
+          TSUZUKI_KEYSTORE_BASE64: ${{ secrets.TSUZUKI_KEYSTORE_BASE64 }}
+          TSUZUKI_KEYSTORE_PASSWORD: ${{ secrets.TSUZUKI_KEYSTORE_PASSWORD }}
+          TSUZUKI_KEY_ALIAS: ${{ secrets.TSUZUKI_KEY_ALIAS }}
+          TSUZUKI_KEY_PASSWORD: ${{ secrets.TSUZUKI_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in             TSUZUKI_KEYSTORE_BASE64             TSUZUKI_KEYSTORE_PASSWORD             TSUZUKI_KEY_ALIAS             TSUZUKI_KEY_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required Actions secret: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Build signed APK
+        env:
+          MIHON_GITHUB_RELEASE: "true"
+          storeFileBase64: ${{ secrets.TSUZUKI_KEYSTORE_BASE64 }}
+          storePassword: ${{ secrets.TSUZUKI_KEYSTORE_PASSWORD }}
+          keyAlias: ${{ secrets.TSUZUKI_KEY_ALIAS }}
+          keyPassword: ${{ secrets.TSUZUKI_KEY_PASSWORD }}
+        run: |
+          task="${{ steps.apk.outputs.task }}"
+          flags="${{ steps.apk.outputs.flags }}"
+          ./gradlew "$task" $flags
+
+      - name: Verify APK signature
+        run: |
+          apk="${{ steps.apk.outputs.apk }}"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tsuzuki-${{ steps.apk.outputs.lane }}-arm64-v8a-${{ github.sha }}
+          path: ${{ steps.apk.outputs.apk }}
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload mapping
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mapping-${{ steps.apk.outputs.lane }}-${{ github.sha }}
+          path: ${{ steps.apk.outputs.mapping }}
+          if-no-files-found: error
+          retention-days: 3

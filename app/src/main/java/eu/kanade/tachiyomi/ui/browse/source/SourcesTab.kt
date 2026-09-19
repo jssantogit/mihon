@@ -14,9 +14,11 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.TabContent
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.catalog.CatalogScreen
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import mihon.icons.materialsymbols.MaterialSymbols
+import mihon.icons.materialsymbols.rounded.Explore
 import mihon.icons.materialsymbols.rounded.FilterList
 import mihon.icons.materialsymbols.rounded.TravelExplore
 import tachiyomi.i18n.MR
@@ -31,6 +33,11 @@ fun Screen.sourcesTab(): TabContent {
     return TabContent(
         titleRes = MR.strings.label_sources,
         actions = listOf(
+            AppBar.Action(
+                title = "Catalog",
+                icon = MaterialSymbols.Rounded.Explore,
+                onClick = { navigator.push(CatalogScreen()) },
+            ),
             AppBar.Action(
                 title = stringResource(MR.strings.action_global_search),
                 icon = MaterialSymbols.Rounded.TravelExplore,
