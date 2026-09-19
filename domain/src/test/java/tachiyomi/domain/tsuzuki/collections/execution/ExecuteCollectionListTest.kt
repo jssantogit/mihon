@@ -513,7 +513,9 @@ class ExecuteCollectionListTest {
         }
 
         override suspend fun getCollection(id: String): TsuzukiCollection? = collections[id]
-        override suspend fun getCollections(includeDeleted: Boolean): List<TsuzukiCollection> = collections.values.toList()
+        override suspend fun getCollections(
+            includeDeleted: Boolean,
+        ): List<TsuzukiCollection> = collections.values.toList()
         override fun observeCollections(): Flow<List<TsuzukiCollection>> = flowOf(collections.values.toList())
         override suspend fun upsertCollection(collection: TsuzukiCollection) {
             collections[collection.id] = collection
