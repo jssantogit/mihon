@@ -34,7 +34,7 @@ class SyncCycleOrchestrator(
     private val revisionSource: SyncRevisionSource,
     private val clock: SyncClock,
     private val retryPolicy: SyncRetryPolicy = SyncRetryPolicy(),
-) {
+) : SyncCycleRunner {
     private val mutex = Mutex()
     private val adapters = adapters.sortedBy { it.documentKind.name }
 
@@ -50,7 +50,7 @@ class SyncCycleOrchestrator(
         }
     }
 
-    suspend fun runOnce(): SyncCycleReport = mutex.withLock {
+    override suspend fun runOnce(): SyncCycleReport = mutex.withLock {
         runCycle()
     }
 
