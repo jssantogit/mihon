@@ -97,7 +97,7 @@
 ### Task 4: Subsequent Blocks (B through H)
 - [x] Block B: Provider capabilities & planner.
 - [x] Block C: Residual filtering & pagination.
-- [ ] Block D: SQLDelight persistence for collections/folders/lists.
+- [x] Block D: SQLDelight persistence for collections/folders/lists.
 - [ ] Block E: Query result cache & in-flight deduplication.
 - [ ] Block F: Lazy priority scheduler.
 - [ ] Block G: System & user repositories.
