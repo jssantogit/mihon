@@ -75,7 +75,13 @@ class GoogleDriveAppDataTransport internal constructor(
 
             when (val page = executeJson<DriveFileListDto>(Request.Builder().url(url).get())) {
                 is DriveCallResult.Success -> {
-                    files += page.value.files.mapNotNull(DriveFileDto::toRemoteFile)
+                    val mapped = page.value.files.map { dto ->
+                        dto.toRemoteFile()
+                            ?: return SyncTransportResult.Failure(
+                                SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                            )
+                    }
+                    files += mapped
                     pageToken = page.value.nextPageToken?.takeIf(String::isNotBlank)
                     pageToken?.let { token ->
                         if (!seenPageTokens.add(token)) {
@@ -110,6 +116,153 @@ class GoogleDriveAppDataTransport internal constructor(
             )
 
             is DriveCallResult.Failure -> SyncTransportResult.Failure(response.failure)
+        }
+    }
+
+    override suspend fun generateFileId(): SyncTransportResult<String> {
+        val url = metadataBaseUrl.newBuilder()
+            .removePathSegment(metadataBaseUrl.pathSize - 1)
+            .addPathSegment("generateIds")
+            .addQueryParameter("count", "1")
+            .addQueryParameter("space", APP_DATA_FOLDER)
+            .build()
+
+        return when (val response = executeJson<DriveGeneratedIdsDto>(Request.Builder().url(url).get())) {
+            is DriveCallResult.Success -> {
+                val id = response.value.ids.singleOrNull()?.takeIf(String::isNotBlank)
+                    ?: return SyncTransportResult.Failure(
+                        SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                    )
+                SyncTransportResult.Success(id)
+            }
+
+            is DriveCallResult.Failure -> SyncTransportResult.Failure(response.failure)
+        }
+    }
+
+    override suspend fun createReplica(
+        remoteId: String,
+        documentKind: SyncDocumentKind,
+        ownerDeviceId: String,
+        content: String,
+    ): SyncTransportResult<SyncRemoteFile> {
+        if (remoteId.isBlank() || ownerDeviceId.isBlank() || documentKind == SyncDocumentKind.MANIFEST) {
+            return SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.MALFORMED_DOCUMENT),
+            )
+        }
+
+        val url = uploadBaseUrl.newBuilder()
+            .addQueryParameter("uploadType", "multipart")
+            .addQueryParameter("fields", FILE_FIELDS)
+            .build()
+
+        val metadata = driveJson.encodeToString(
+            DriveCreateMetadataDto.serializer(),
+            DriveCreateMetadataDto(
+                id = remoteId,
+                name = replicaFileName(documentKind, ownerDeviceId),
+                parents = listOf(APP_DATA_FOLDER),
+                mimeType = JSON_MIME_TYPE,
+                appProperties = replicaAppProperties(documentKind, ownerDeviceId),
+            ),
+        )
+        val body = MultipartBody.Builder()
+            .setType(MULTIPART_RELATED)
+            .addPart(metadata.toRequestBody(JSON_MEDIA_TYPE))
+            .addPart(content.toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        return when (
+            val response = executeJson<DriveFileDto>(
+                Request.Builder()
+                    .url(url)
+                    .post(body),
+            )
+        ) {
+            is DriveCallResult.Success -> {
+                val file = response.value.toRemoteFile()
+                    ?: return SyncTransportResult.Failure(
+                        SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                    )
+                if (
+                    file.remoteId != remoteId ||
+                    file.protocolVersion != REPLICA_PROTOCOL_VERSION ||
+                    file.logicalKind != documentKind ||
+                    file.ownerDeviceId != ownerDeviceId
+                ) {
+                    SyncTransportResult.Failure(
+                        SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                    )
+                } else {
+                    SyncTransportResult.Success(file)
+                }
+            }
+
+            is DriveCallResult.Failure -> SyncTransportResult.Failure(response.failure)
+        }
+    }
+
+    override suspend fun updateOwnedReplica(
+        file: SyncRemoteFile,
+        ownerDeviceId: String,
+        content: String,
+    ): SyncTransportResult<SyncRemoteFile> {
+        if (
+            file.protocolVersion != REPLICA_PROTOCOL_VERSION ||
+            file.logicalKind == null ||
+            file.logicalKind == SyncDocumentKind.MANIFEST ||
+            file.ownerDeviceId != ownerDeviceId
+        ) {
+            return SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+            )
+        }
+
+        val expectedRevision = file.revision.revisionToken
+            ?: return SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.REMOTE_CHANGED),
+            )
+
+        val currentFile = when (val current = getMetadata(file.remoteId)) {
+            is DriveCallResult.Success -> current.value.toRemoteFile()
+                ?: return SyncTransportResult.Failure(
+                    SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                )
+            is DriveCallResult.Failure -> return SyncTransportResult.Failure(current.failure)
+        }
+        if (
+            currentFile.protocolVersion != REPLICA_PROTOCOL_VERSION ||
+            currentFile.logicalKind != file.logicalKind ||
+            currentFile.ownerDeviceId != ownerDeviceId
+        ) {
+            return SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+            )
+        }
+        if (currentFile.revision.revisionToken != expectedRevision) {
+            return SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.REMOTE_CHANGED),
+            )
+        }
+
+        return patchContent(file.remoteId, content)
+    }
+
+    override suspend fun getFile(remoteId: String): SyncTransportResult<SyncRemoteFile> {
+        if (remoteId.isBlank()) {
+            return SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.MALFORMED_DOCUMENT),
+            )
+        }
+        return when (val current = getMetadata(remoteId)) {
+            is DriveCallResult.Success -> current.value.toRemoteFile()
+                ?.let(SyncTransportResult::Success)
+                ?: SyncTransportResult.Failure(
+                    SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                )
+
+            is DriveCallResult.Failure -> SyncTransportResult.Failure(current.failure)
         }
     }
 
@@ -175,8 +328,15 @@ class GoogleDriveAppDataTransport internal constructor(
             is DriveCallResult.Failure -> return SyncTransportResult.Failure(current.failure)
         }
 
+        return patchContent(file.remoteId, content)
+    }
+
+    private suspend fun patchContent(
+        remoteId: String,
+        content: String,
+    ): SyncTransportResult<SyncRemoteFile> {
         val url = uploadBaseUrl.newBuilder()
-            .addPathSegment(file.remoteId)
+            .addPathSegment(remoteId)
             .addQueryParameter("uploadType", "media")
             .addQueryParameter("fields", FILE_FIELDS)
             .build()
@@ -345,11 +505,32 @@ internal data class DriveFileDto(
     val name: String? = null,
     val mimeType: String? = null,
     val version: String? = null,
+    val appProperties: Map<String, String>? = null,
 ) {
     fun toRemoteFile(): SyncRemoteFile? {
         val resolvedId = id?.takeIf(String::isNotBlank) ?: return null
         val resolvedName = name?.takeIf(String::isNotBlank) ?: return null
         val revisionToken = version?.takeIf(String::isNotBlank) ?: return null
+
+        val properties = appProperties.orEmpty()
+        val protocolRaw = properties[APP_PROPERTY_PROTOCOL]
+        val protocolVersion = when {
+            protocolRaw == null -> null
+            else -> protocolRaw.toIntOrNull() ?: return null
+        }
+        val logicalKindRaw = properties[APP_PROPERTY_KIND]
+        val logicalKind = when {
+            logicalKindRaw == null -> null
+            else -> runCatching { SyncDocumentKind.valueOf(logicalKindRaw) }.getOrNull() ?: return null
+        }
+        val ownerDeviceId = properties[APP_PROPERTY_OWNER]?.takeIf(String::isNotBlank)
+
+        if (
+            protocolVersion == REPLICA_PROTOCOL_VERSION &&
+            (logicalKind == null || logicalKind == SyncDocumentKind.MANIFEST || ownerDeviceId == null)
+        ) {
+            return null
+        }
 
         return SyncRemoteFile(
             remoteId = resolvedId,
@@ -359,15 +540,26 @@ internal data class DriveFileDto(
                 remoteId = resolvedId,
                 revisionToken = revisionToken,
             ),
+            protocolVersion = protocolVersion,
+            logicalKind = logicalKind,
+            ownerDeviceId = ownerDeviceId,
         )
     }
 }
 
 @Serializable
 internal data class DriveCreateMetadataDto(
+    val id: String? = null,
     val name: String,
     val parents: List<String>,
     val mimeType: String,
+    val appProperties: Map<String, String>? = null,
+)
+
+@Serializable
+internal data class DriveGeneratedIdsDto(
+    val ids: List<String> = emptyList(),
+    val space: String? = null,
 )
 
 @Serializable
@@ -410,10 +602,32 @@ private const val DRIVE_UPLOAD_FILES_URL = "https://www.googleapis.com/upload/dr
 private const val APP_DATA_FOLDER = "appDataFolder"
 private const val PAGE_SIZE = 100
 private const val JSON_MIME_TYPE = "application/json"
-private const val FILE_LIST_FIELDS = "nextPageToken,files(id,name,mimeType,version)"
-private const val FILE_FIELDS = "id,name,mimeType,version"
+private const val FILE_LIST_FIELDS = "nextPageToken,files(id,name,mimeType,version,appProperties)"
+private const val FILE_FIELDS = "id,name,mimeType,version,appProperties"
+private const val REPLICA_PROTOCOL_VERSION = 2
+private const val APP_PROPERTY_PROTOCOL = "tsuzukiProtocol"
+private const val APP_PROPERTY_KIND = "logicalKind"
+private const val APP_PROPERTY_OWNER = "ownerDeviceId"
 private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 private val MULTIPART_RELATED = "multipart/related".toMediaType()
+private fun replicaAppProperties(
+    documentKind: SyncDocumentKind,
+    ownerDeviceId: String,
+) = mapOf(
+    APP_PROPERTY_PROTOCOL to REPLICA_PROTOCOL_VERSION.toString(),
+    APP_PROPERTY_KIND to documentKind.name,
+    APP_PROPERTY_OWNER to ownerDeviceId,
+)
+
+private fun replicaFileName(
+    documentKind: SyncDocumentKind,
+    ownerDeviceId: String,
+): String {
+    val kind = documentKind.fileName.substringBeforeLast(".")
+    val owner = ownerDeviceId.replace(Regex("[^A-Za-z0-9._-]"), "-")
+    return "tsuzuki-v2-$kind-$owner.json"
+}
+
 private val RATE_LIMIT_REASONS = setOf(
     "dailyLimitExceeded",
     "rateLimitExceeded",
