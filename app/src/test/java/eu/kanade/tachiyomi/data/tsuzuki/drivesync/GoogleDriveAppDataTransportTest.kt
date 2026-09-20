@@ -144,7 +144,6 @@ class GoogleDriveAppDataTransportTest {
             requests[1].url.queryParameter("uploadType") shouldBe "media"
         }
 
-
     @Test
     fun `v2 list exposes private replica metadata`() = kotlinx.coroutines.test.runTest {
         val client = fakeClient { request, _ ->
