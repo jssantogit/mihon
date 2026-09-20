@@ -8,20 +8,21 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
-import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
@@ -34,6 +35,7 @@ sealed interface CanonicalLibraryScreenState {
     data object Loading : CanonicalLibraryScreenState
     data class Success(
         val items: List<CanonicalLibraryItem>,
+        val searchQuery: String? = null,
     ) : CanonicalLibraryScreenState
 }
 
@@ -59,6 +61,8 @@ class CanonicalLibraryScreenModel(
     private val eventChannel = Channel<CanonicalLibraryEvent>()
     val events = eventChannel.receiveAsFlow()
 
+    private val searchQuery = MutableStateFlow<String?>(null)
+
     val state: StateFlow<CanonicalLibraryScreenState> = flow<CanonicalLibraryScreenState> {
         try {
             migrateMihonLibraryToCanonical.execute()
@@ -69,14 +73,33 @@ class CanonicalLibraryScreenModel(
         }
 
         emitAll(
-            observeCanonicalLibrary.subscribe()
-                .map(CanonicalLibraryScreenState::Success),
+            combine(
+                observeCanonicalLibrary.subscribe(),
+                searchQuery,
+            ) { items, query ->
+                val normalizedQuery = query?.trim().orEmpty()
+                val filteredItems = if (normalizedQuery.isEmpty()) {
+                    items
+                } else {
+                    items.filter {
+                        it.title.displayTitle.contains(normalizedQuery, ignoreCase = true)
+                    }
+                }
+                CanonicalLibraryScreenState.Success(
+                    items = filteredItems,
+                    searchQuery = query,
+                )
+            },
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = CanonicalLibraryScreenState.Loading,
     )
+
+    fun search(query: String?) {
+        searchQuery.value = query
+    }
 
     fun setStatus(canonicalTitleId: String, status: LibraryStatus) {
         viewModelScope.launch {

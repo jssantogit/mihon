@@ -33,7 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
 import mihon.icons.materialsymbols.MaterialSymbols
@@ -54,6 +54,7 @@ fun CanonicalLibraryScreen(
     title: String = "Library",
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
+    onSearchQueryChange: (String?) -> Unit = {},
     onRead: (CanonicalLibraryItem) -> Unit = {},
     onResolveSource: (CanonicalLibraryItem) -> Unit = {},
     onOpenSourcePreferences: () -> Unit = {},
@@ -62,9 +63,11 @@ fun CanonicalLibraryScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            AppBar(
+            SearchToolbar(
                 titleContent = { AppBarTitle(title) },
                 navigateUp = navigateUp,
+                searchQuery = (state as? CanonicalLibraryScreenState.Success)?.searchQuery,
+                onChangeSearchQuery = onSearchQueryChange,
                 actions = {
                     TextButton(onClick = onOpenSourcePreferences) {
                         Icon(

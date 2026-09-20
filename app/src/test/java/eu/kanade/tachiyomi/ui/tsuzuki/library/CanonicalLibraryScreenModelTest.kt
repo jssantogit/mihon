@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.library
 
+import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CompletableDeferred
@@ -19,7 +20,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
-import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical

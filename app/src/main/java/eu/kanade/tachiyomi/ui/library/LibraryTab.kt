@@ -8,6 +8,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -79,6 +82,7 @@ data object LibraryTab : Tab {
             title = stringResource(MR.strings.label_library),
             onUpdateStatus = screenModel::setStatus,
             onRemoveItem = screenModel::removeItem,
+            onSearchQueryChange = screenModel::search,
             onRead = { item ->
                 screenModel.readOrContinue(
                     canonicalTitleId = item.title.id,
@@ -98,6 +102,14 @@ data object LibraryTab : Tab {
             },
         )
 
+        LaunchedEffect(screenModel) {
+            launch {
+                queryEvent.receiveAsFlow().collect { query ->
+                    screenModel.search(query)
+                }
+            }
+        }
+
         LaunchedEffect(state) {
             if (state is CanonicalLibraryScreenState.Success) {
                 (context as? MainActivity)?.ready = true
@@ -105,5 +117,7 @@ data object LibraryTab : Tab {
         }
     }
 
-    suspend fun search(query: String) = Unit
+    private val queryEvent = Channel<String>()
+
+    suspend fun search(query: String) = queryEvent.send(query)
 }

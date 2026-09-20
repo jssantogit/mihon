@@ -51,6 +51,7 @@ class CanonicalLibraryScreen : Screen() {
             navigateUp = navigator::pop,
             onUpdateStatus = screenModel::setStatus,
             onRemoveItem = screenModel::removeItem,
+            onSearchQueryChange = screenModel::search,
             onRead = { item ->
                 screenModel.readOrContinue(
                     canonicalTitleId = item.title.id,
