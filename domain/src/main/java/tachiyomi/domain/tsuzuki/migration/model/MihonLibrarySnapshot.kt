@@ -9,4 +9,5 @@ data class MihonLibrarySnapshot(
     val title: String,
     val dateAdded: Long,
     val hasStarted: Boolean,
+    val categoryIds: List<Long> = emptyList(),
 )

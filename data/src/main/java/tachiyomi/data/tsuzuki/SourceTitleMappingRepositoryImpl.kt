@@ -26,6 +26,12 @@ class SourceTitleMappingRepositoryImpl(
             .awaitAsList()
     }
 
+    override fun getAllAsFlow(): Flow<List<SourceTitleMapping>> {
+        return database.tsuzuki_source_mappingsQueries
+            .getAllTsuzukiSourceMappings(::mapMapping)
+            .subscribeToList()
+    }
+
     override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> {
         return database.tsuzuki_source_mappingsQueries
             .getTsuzukiSourceMappingsByTitle(canonicalTitleId, ::mapMapping)

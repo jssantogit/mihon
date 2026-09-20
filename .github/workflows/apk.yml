@@ -39,21 +39,21 @@ jobs:
               mapping="app/build/outputs/mapping/release"
               flags="-Pinclude-telemetry -Penable-updater"
               ;;
-            tsuzuki/mvp-v1-*)
+            tsuzuki/mvp-v1-*|tsuzuki/unified-library-dev-a*)
               lane="dev-a"
               task="assembleDeva"
               apk="app/build/outputs/apk/deva/app-arm64-v8a-deva.apk"
               mapping="app/build/outputs/mapping/deva"
               flags=""
               ;;
-            tsuzuki/mvp-v2-*)
+            tsuzuki/mvp-v2-*|tsuzuki/unified-library-dev-b*)
               lane="dev-b"
               task="assembleDevb"
               apk="app/build/outputs/apk/devb/app-arm64-v8a-devb.apk"
               mapping="app/build/outputs/mapping/devb"
               flags=""
               ;;
-            tsuzuki/mvp-v3-*)
+            tsuzuki/mvp-v3-*|tsuzuki/unified-library-dev-c*)
               lane="dev-c"
               task="assembleDevc"
               apk="app/build/outputs/apk/devc/app-arm64-v8a-devc.apk"
@@ -62,7 +62,7 @@ jobs:
               ;;
             *)
               echo "::error::No APK lane is defined for branch '$GITHUB_REF_NAME'."
-              echo "::error::Use tsuzuki/mvp-v1-* for Dev A, tsuzuki/mvp-v2-* for Dev B, tsuzuki/mvp-v3-* for Dev C, or tsuzuki/bootstrap for the integrated release."
+              echo "::error::Use tsuzuki/unified-library-dev-a* for Dev A, tsuzuki/unified-library-dev-b* for Dev B, tsuzuki/unified-library-dev-c* for Dev C, or tsuzuki/bootstrap for the integrated release."
               exit 1
               ;;
           esac
