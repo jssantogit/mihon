@@ -6,6 +6,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterEach
@@ -24,6 +25,7 @@ import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import java.nio.file.Files
+import java.util.Date
 
 class CanonicalHistoryViewTest {
 
@@ -100,6 +102,59 @@ class CanonicalHistoryViewTest {
                 ),
             )
         }
+
+    @Test
+    fun `canonical history duration is authoritative`() = runBlocking {
+        HistoryRepositoryImpl(database).getTotalReadDuration() shouldBe 45L
+    }
+
+    @Test
+    fun `resetting visible history clears canonical last read even when legacy history id is used`() = runBlocking<Unit> {
+        database.historyQueries.upsert(
+            chapterId = expectedChapterId,
+            readAt = Date(3_000L),
+            time_read = 5L,
+        )
+        val historyId = database.historyViewQueries.getLatestHistory(
+            mapper = { id, _, _, _, _, _, _, _, _, _, _ -> id },
+        ).awaitAsOne()
+
+        HistoryRepositoryImpl(database).resetHistory(historyId)
+
+        visibleHistoryRows() shouldBe emptyList()
+    }
+
+    @Test
+    fun `resetting history by operational manga clears the canonical title history`() = runBlocking<Unit> {
+        HistoryRepositoryImpl(database).resetHistoryByMangaId(expectedMangaId)
+
+        visibleHistoryRows() shouldBe emptyList()
+    }
+
+    @Test
+    fun `deleting all history clears canonical history and duration`() = runBlocking<Unit> {
+        val repository = HistoryRepositoryImpl(database)
+
+        repository.deleteAllHistory() shouldBe true
+
+        visibleHistoryRows() shouldBe emptyList()
+        repository.getTotalReadDuration() shouldBe 0L
+    }
+
+    private suspend fun visibleHistoryRows(): List<HistoryRow> =
+        database.historyViewQueries.history(
+            query = "",
+            mapper = { _, mangaId, chapterId, title, _, sourceId, _, _, _, readAt, readDuration ->
+                HistoryRow(
+                    mangaId = mangaId,
+                    chapterId = chapterId,
+                    title = title,
+                    sourceId = sourceId,
+                    readAt = readAt,
+                    readDuration = readDuration,
+                )
+            },
+        ).awaitAsList()
 
     private suspend fun seedCanonicalHistory() {
         database.tsuzuki_titlesQueries.insertTsuzukiTitle(
