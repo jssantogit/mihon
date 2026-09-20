@@ -10,7 +10,6 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 
-@Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class MihonCanonicalDownloadGateway internal constructor(
