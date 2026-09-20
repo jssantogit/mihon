@@ -57,9 +57,9 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.updates.interactor.ProjectCanonicalUpdateReadStatus
 import tachiyomi.domain.updates.interactor.GetUpdates
 import tachiyomi.domain.updates.model.UpdatesWithRelations
-import tachiyomi.domain.tsuzuki.updates.interactor.ProjectCanonicalUpdateReadStatus
 import tachiyomi.domain.updates.service.UpdatesPreferences
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -538,7 +538,6 @@ data class UpdatesItem(
     val downloadProgressProvider: () -> Int,
     val selected: Boolean = false,
 )
-
 
 internal suspend fun projectCanonicalReadStatusForUpdates(
     updates: List<UpdatesWithRelations>,
