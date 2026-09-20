@@ -224,7 +224,12 @@ class SyncCycleOrchestratorTest {
 
     @Test
     fun `protocol v2 concurrent bootstrap creates one valid shard per device`() = runTest {
-        val shared = FakeTransport()
+        val shared = FakeTransport(
+            listSnapshots = mutableListOf(
+                emptyList(),
+                emptyList(),
+            ),
+        )
         val storesA = Stores()
         val storesB = Stores()
         val adapterA = FakeAdapter(
@@ -244,6 +249,47 @@ class SyncCycleOrchestratorTest {
             .mapNotNull { it.ownerDeviceId }
             .sorted() shouldContainExactly listOf("device:A", "device:B")
         shared.createdKinds.contains(SyncDocumentKind.MANIFEST).shouldBeFalse()
+
+        val convergence = engine(
+            shared,
+            storesA,
+            adapterA,
+            deviceId = "device:A",
+        ).runOnce()
+        (convergence.documentResults.single() as SyncDocumentResult.Synchronized)
+            .localApplied.shouldBeTrue()
+        adapterA.applied.last().records.keys.sorted() shouldContainExactly listOf("a", "b")
+    }
+
+    @Test
+    fun `protocol v2 ambiguous create adopts reserved id without duplicate shard`() = runTest {
+        val transport = FakeTransport(ambiguousCreateOnce = true)
+        val stores = Stores()
+        val adapter = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(record("a", "name" to "A")),
+        )
+
+        val report = engine(
+            transport,
+            stores,
+            adapter,
+            deviceId = "device:A",
+        ).runOnce()
+
+        report.hasFailures.shouldBeFalse()
+        transport.createCount shouldBe 1
+        transport.getFileCount shouldBe 1
+        transport.files.count {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "device:A"
+        } shouldBe 1
+        val replica = stores.replica.get(
+            SyncDocumentKind.LIBRARY,
+            "device:A",
+        )
+        replica?.reservedRemoteId shouldBe transport.files.single().remoteId
     }
 
     @Test
@@ -270,8 +316,16 @@ class SyncCycleOrchestratorTest {
                 record("b", "name" to "B"),
             ),
         )
+        val foreignFile = shared.files.single {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "device:B"
+        }
+        val foreignContentBefore = shared.contents.getValue(foreignFile.remoteId)
+
         engine(shared, storesA, adapterA, deviceId = "device:A").runOnce()
 
+        shared.contents.getValue(foreignFile.remoteId) shouldBe foreignContentBefore
         shared.replicaUpdateOwners.all { (fileOwner, requestedOwner) ->
             fileOwner == requestedOwner
         }.shouldBeTrue()
@@ -647,15 +701,24 @@ class SyncCycleOrchestratorTest {
         val contents: MutableMap<String, String> = mutableMapOf(),
         private val createFailure: SyncFailure? = null,
         private val updateFailure: SyncFailure? = null,
+        private val listSnapshots: MutableList<List<SyncRemoteFile>> = mutableListOf(),
+        ambiguousCreateOnce: Boolean = false,
     ) : DriveSyncTransport {
         val createdKinds = mutableListOf<SyncDocumentKind>()
         var createCount = 0
         var updateCount = 0
         var downloadCount = 0
+        var getFileCount = 0
+        private var ambiguousCreateRemaining = ambiguousCreateOnce
         val replicaUpdateOwners = mutableListOf<Pair<String?, String>>()
 
         override suspend fun listFiles(): SyncTransportResult<List<SyncRemoteFile>> {
-            return SyncTransportResult.Success(files.toList())
+            val snapshot = if (listSnapshots.isNotEmpty()) {
+                listSnapshots.removeAt(0)
+            } else {
+                files.toList()
+            }
+            return SyncTransportResult.Success(snapshot)
         }
 
         override suspend fun download(file: SyncRemoteFile): SyncTransportResult<SyncRemoteContent> {
@@ -697,6 +760,12 @@ class SyncCycleOrchestratorTest {
             )
             files += file
             contents[file.remoteId] = content
+            if (ambiguousCreateRemaining) {
+                ambiguousCreateRemaining = false
+                return SyncTransportResult.Failure(
+                    SyncFailure(SyncFailureReason.REMOTE_CHANGED),
+                )
+            }
             return SyncTransportResult.Success(file)
         }
 
@@ -715,6 +784,7 @@ class SyncCycleOrchestratorTest {
         }
 
         override suspend fun getFile(remoteId: String): SyncTransportResult<SyncRemoteFile> {
+            getFileCount += 1
             val file = files.singleOrNull { it.remoteId == remoteId }
                 ?: return SyncTransportResult.Failure(
                     SyncFailure(SyncFailureReason.REMOTE_NOT_FOUND),
