@@ -20,6 +20,7 @@ import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.domain.tsuzuki.reader.interactor.ObserveCanonicalTrackerBindingsForManga
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalTrackerBindingResolution
 
 @Inject
 class AddTracks(
@@ -86,10 +87,7 @@ class AddTracks(
             val canonicalResolution = observeCanonicalTrackerBindingsForManga
                 .execute(manga.id)
                 .first()
-            val unavailableTrackerIds = buildSet {
-                addAll(canonicalResolution.tracks.map { it.trackerId })
-                addAll(canonicalResolution.conflictingTrackerIds)
-            }
+            val unavailableTrackerIds = canonicalTrackerIdsUnavailableForAutoBind(canonicalResolution)
 
             trackerManager.loggedInTrackers()
                 .filterIsInstance<EnhancedTracker>()
@@ -117,4 +115,12 @@ class AddTracks(
                 }
         }
     }
+}
+
+
+internal fun canonicalTrackerIdsUnavailableForAutoBind(
+    resolution: CanonicalTrackerBindingResolution,
+): Set<Long> = buildSet {
+    addAll(resolution.tracks.map { it.trackerId })
+    addAll(resolution.conflictingTrackerIds)
 }
