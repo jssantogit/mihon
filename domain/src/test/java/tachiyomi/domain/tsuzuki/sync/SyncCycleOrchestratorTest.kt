@@ -70,12 +70,16 @@ class SyncCycleOrchestratorTest {
         }
         transport.createdKinds shouldBe emptyList()
         transport.contents.containsKey(replicaFile.remoteId).shouldBeTrue()
-        stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase?.records shouldBe local.records
+        stores.state.get(SyncDocumentKind.LIBRARY)
+            ?.acceptedBase
+            ?.records
+            ?.getValue("a")
+            ?.fields shouldBe local.records.getValue("a").fields
         stores.outbox.get(SyncDocumentKind.LIBRARY) shouldBe null
     }
 
     @Test
-    fun `case 2 - remote only change applies locally without rewriting Drive`() = runTest {
+    fun `case 2 - remote only legacy change applies locally without mutating legacy file`() = runTest {
         val base = document(record("a", "name" to "Base"))
         val local = base
         val remote = document(record("a", "name" to "Remote", device = "tablet", sequence = 2))
@@ -97,11 +101,22 @@ class SyncCycleOrchestratorTest {
 
         val report = engine(transport, stores, adapter).runOnce()
 
-        (report.documentResults.single() as SyncDocumentResult.Synchronized)
-            .localApplied.shouldBeTrue()
+        val result = report.documentResults.single() as SyncDocumentResult.Synchronized
+        result.localApplied.shouldBeTrue()
+        result.remoteWritten.shouldBeTrue()
         transport.updateCount shouldBe 0
+        transport.contents.getValue(remoteFile.remoteId) shouldBe encode(remote)
+        transport.files.count {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "merge-device"
+        } shouldBe 1
         adapter.applied.single().records.getValue("a").fields["name"].toString() shouldBe "\"Remote\""
-        stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe remote
+        stores.state.get(SyncDocumentKind.LIBRARY)
+            ?.acceptedBase
+            ?.records
+            ?.getValue("a")
+            ?.fields shouldBe remote.records.getValue("a").fields
     }
 
     @Test
@@ -159,7 +174,13 @@ class SyncCycleOrchestratorTest {
 
         result.localApplied.shouldBeTrue()
         result.remoteWritten.shouldBeTrue()
-        transport.updateCount shouldBe 1
+        transport.updateCount shouldBe 0
+        transport.contents.getValue(remoteFile.remoteId) shouldBe encode(remote)
+        transport.files.count {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "merge-device"
+        } shouldBe 1
         val applied = adapter.applied.single().records.getValue("a").fields
         applied["name"].toString() shouldBe "\"Phone\""
         applied["status"].toString() shouldBe "\"completed\""
@@ -455,33 +476,43 @@ class SyncCycleOrchestratorTest {
 
         val result = report.documentResults.single() as SyncDocumentResult.Synchronized
         result.remoteWritten.shouldBeTrue()
-        val uploaded = transport.contents.getValue(remoteFile.remoteId)
-        val decoded = when (val value = codec.decode(uploaded)) {
-            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Success -> value.value
-            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Failure -> error("decode failed")
-        }
-        decoded.records.getValue("a").isTombstone.shouldBeTrue()
+        transport.contents.getValue(remoteFile.remoteId) shouldBe encode(remote)
+        stores.state.get(SyncDocumentKind.LIBRARY)
+            ?.acceptedBase
+            ?.records
+            ?.getValue("a")
+            ?.isTombstone
+            .shouldBeTrue()
     }
 
     @Test
-    fun `case 12 - remote change during update keeps accepted base unchanged`() = runTest {
+    fun `case 12 - local shard remote change keeps accepted base unchanged`() = runTest {
         val base = document(record("a", "name" to "Base"))
-        val local = document(record("a", "name" to "Local", device = "phone", sequence = 2))
-        val remote = base
-        val remoteFile = remoteFile()
-        val adapter = FakeAdapter(SyncDocumentKind.LIBRARY, local)
+        val adapter = FakeAdapter(SyncDocumentKind.LIBRARY, base)
         val transport = FakeTransport(
-            files = mutableListOf(remoteFile),
-            contents = mutableMapOf(remoteFile.remoteId to encode(remote)),
             updateFailure = SyncFailure(SyncFailureReason.REMOTE_CHANGED),
         )
         val stores = Stores()
-        stores.state.put(
-            SyncStoredState(
-                documentKind = SyncDocumentKind.LIBRARY,
-                acceptedBase = base,
-                remoteRevision = remoteFile.revision,
-                lastSuccessfulSyncAtEpochMillis = 50,
+
+        val first = engine(transport, stores, adapter).runOnce()
+        (first.documentResults.single() as SyncDocumentResult.Synchronized)
+            .remoteWritten.shouldBeTrue()
+        val acceptedBefore = checkNotNull(
+            stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase,
+        )
+
+        stores.outbox.markDirty(
+            documentKind = SyncDocumentKind.LIBRARY,
+            enqueuedAtEpochMillis = 90,
+        )
+        adapter.applyDocument(
+            document(
+                record(
+                    "a",
+                    "name" to "Local",
+                    device = "merge-device",
+                    sequence = 2,
+                ),
             ),
         )
 
@@ -489,11 +520,11 @@ class SyncCycleOrchestratorTest {
 
         (report.documentResults.single() as SyncDocumentResult.Failed)
             .failure.reason shouldBe SyncFailureReason.REMOTE_CHANGED
-        stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe base
+        stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe acceptedBefore
         stores.outbox.get(SyncDocumentKind.LIBRARY) shouldBe
             SyncOutboxEntry(
                 documentKind = SyncDocumentKind.LIBRARY,
-                enqueuedAtEpochMillis = 100,
+                enqueuedAtEpochMillis = 90,
                 attemptCount = 1,
                 nextAttemptAtEpochMillis = 60_100,
             )
