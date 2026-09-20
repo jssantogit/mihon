@@ -26,9 +26,9 @@ import mihon.core.metro.metroGraph
 import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.library.model.LibraryManga
-import tachiyomi.domain.manga.interactor.GetLibraryManga
+import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.tsuzuki.library.interactor.GetLibraryTitlesForUpdate
 import tachiyomi.domain.source.service.SourceManager
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.atomics.AtomicInt
@@ -43,13 +43,15 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
 
     @Inject private lateinit var sourceManager: SourceManager
 
-    @Inject private lateinit var getLibraryManga: GetLibraryManga
+    @Inject private lateinit var getLibraryTitlesForUpdate: GetLibraryTitlesForUpdate
+
+    @Inject private lateinit var getManga: GetManga
 
     @Inject private lateinit var updateMangaFromRemote: UpdateMangaFromRemote
 
     @Inject private lateinit var notifier: LibraryUpdateNotifier
 
-    private var mangaToUpdate: List<LibraryManga> = mutableListOf()
+    private var mangaToUpdate: List<Manga> = emptyList()
 
     override suspend fun doWork(): Result {
         graph.inject(this)
@@ -92,8 +94,14 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
      * Adds list of manga to be updated.
      */
     private suspend fun addMangaToQueue() {
-        mangaToUpdate = getLibraryManga.await()
-        notifier.showQueueSizeWarningNotificationIfNeeded(mangaToUpdate)
+        mangaToUpdate = getLibraryTitlesForUpdate.await()
+            .mapNotNull { libraryTitle ->
+                selectOperationalSourceRepresentations(libraryTitle.sources)
+                    .firstNotNullOfOrNull { representation ->
+                        representation.mihonMangaId?.let { getManga.await(it) }
+                    }
+            }
+        notifier.showQueueSizeWarningNotificationIfNeededForManga(mangaToUpdate)
     }
 
     private suspend fun updateMetadata() {
@@ -102,13 +110,12 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
         val currentlyUpdatingManga = CopyOnWriteArrayList<Manga>()
 
         coroutineScope {
-            mangaToUpdate.groupBy { it.manga.source }
+            mangaToUpdate.groupBy(Manga::source)
                 .values
                 .map { mangaInSource ->
                     async {
                         semaphore.withPermit {
-                            mangaInSource.forEach { libraryManga ->
-                                val manga = libraryManga.manga
+                            mangaInSource.forEach { manga ->
                                 ensureActive()
 
                                 withUpdateNotification(
