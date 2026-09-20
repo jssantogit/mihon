@@ -1,0 +1,11 @@
+ALTER TABLE tsuzuki_sync_state
+ADD COLUMN accepted_frontier_json TEXT;
+
+CREATE TABLE tsuzuki_sync_replicas(
+    document_kind TEXT NOT NULL,
+    owner_device_id TEXT NOT NULL,
+    reserved_remote_id TEXT,
+    last_remote_revision_token TEXT,
+    next_sequence INTEGER NOT NULL CHECK(next_sequence >= 1),
+    PRIMARY KEY(document_kind, owner_device_id)
+);
