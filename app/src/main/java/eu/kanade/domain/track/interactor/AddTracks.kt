@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.util.lang.convertEpochMillisZone
+import kotlinx.coroutines.flow.first
 import kotlinx.datetime.TimeZone
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.withIOContext
@@ -18,6 +19,7 @@ import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.track.interactor.InsertTrack
+import tachiyomi.domain.tsuzuki.reader.interactor.ObserveCanonicalTrackerBindingsForManga
 
 @Inject
 class AddTracks(
@@ -26,6 +28,7 @@ class AddTracks(
     private val getChaptersByMangaId: GetChaptersByMangaId,
     private val trackerManager: TrackerManager,
     private val getHistory: GetHistory,
+    private val observeCanonicalTrackerBindingsForManga: ObserveCanonicalTrackerBindingsForManga,
 ) {
 
     // TODO: update all trackers based on common data
@@ -80,9 +83,18 @@ class AddTracks(
 
     suspend fun bindEnhancedTrackers(manga: Manga, source: Source) = withNonCancellableContext {
         withIOContext {
+            val canonicalResolution = observeCanonicalTrackerBindingsForManga
+                .execute(manga.id)
+                .first()
+            val unavailableTrackerIds = buildSet {
+                addAll(canonicalResolution.tracks.map { it.trackerId })
+                addAll(canonicalResolution.conflictingTrackerIds)
+            }
+
             trackerManager.loggedInTrackers()
                 .filterIsInstance<EnhancedTracker>()
                 .filter { it.accept(source) }
+                .filterNot { it.id in unavailableTrackerIds }
                 .forEach { service ->
                     try {
                         service.match(manga)?.let { track ->
