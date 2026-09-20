@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
-import tachiyomi.domain.tsuzuki.library.interactor.RemoveCanonicalLibraryItem
+import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
@@ -51,7 +51,7 @@ sealed interface CanonicalLibraryEvent {
 class CanonicalLibraryScreenModel(
     private val observeCanonicalLibrary: ObserveCanonicalLibrary,
     private val setCanonicalLibraryStatus: SetCanonicalLibraryStatus,
-    private val removeCanonicalLibraryItem: RemoveCanonicalLibraryItem,
+    private val removeUnifiedLibraryTitle: RemoveUnifiedLibraryTitle,
     private val migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
     private val resolveCanonicalReadingStart: CanonicalReadingStartResolver,
 ) : ViewModel() {
@@ -86,7 +86,19 @@ class CanonicalLibraryScreenModel(
 
     fun removeItem(canonicalTitleId: String) {
         viewModelScope.launch {
-            removeCanonicalLibraryItem.execute(canonicalTitleId)
+            try {
+                if (!removeUnifiedLibraryTitle.execute(canonicalTitleId)) {
+                    logcat(LogPriority.WARN) {
+                        "Failed to clear Mihon projections for canonical library title $canonicalTitleId"
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logcat(LogPriority.ERROR, e) {
+                    "Failed to remove canonical library title $canonicalTitleId"
+                }
+            }
         }
     }
 

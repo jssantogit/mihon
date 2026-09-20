@@ -19,7 +19,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
-import tachiyomi.domain.tsuzuki.library.interactor.RemoveCanonicalLibraryItem
+import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
@@ -60,7 +60,11 @@ class CanonicalLibraryScreenModelTest {
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = fakeMigration,
             resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
@@ -119,7 +123,11 @@ class CanonicalLibraryScreenModelTest {
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
             resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
@@ -148,7 +156,11 @@ class CanonicalLibraryScreenModelTest {
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
             resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
@@ -168,7 +180,11 @@ class CanonicalLibraryScreenModelTest {
         CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = fakeMigration,
             resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
@@ -187,7 +203,11 @@ class CanonicalLibraryScreenModelTest {
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = fakeMigration,
             resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
@@ -230,7 +250,11 @@ class CanonicalLibraryScreenModelTest {
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = failingMigration,
             resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
         )
@@ -268,7 +292,11 @@ class CanonicalLibraryScreenModelTest {
         val screenModel = CanonicalLibraryScreenModel(
             observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
             setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
-            removeCanonicalLibraryItem = RemoveCanonicalLibraryItem(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
             migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
             resolveCanonicalReadingStart = resolver,
         )
