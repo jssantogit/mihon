@@ -142,13 +142,23 @@ data class SyncReplicaJournal(
     val protocolVersion: Int = 2,
     val kind: SyncDocumentKind,
     val ownerDeviceId: String,
+    val genesis: SyncReplicaGenesis? = null,
     val batches: List<SyncMutationBatch>,
+)
+
+@Serializable
+data class SyncReplicaGenesis(
+    val sourceRemoteId: String,
+    val sourceRevisionToken: String?,
+    val document: SyncDocumentEnvelope,
 )
 ```
 
 The list is ordered by the owner's strictly increasing sequence. A journal containing duplicate, decreasing, negative, or foreign-owner batch sequences is malformed.
 
-A journal update rewrites the physical file content, but it only appends to the logical `batches` sequence. Existing batches must never be modified or removed by protocol-v2 MVP code.
+`genesis` is normally null for accounts that start on protocol v2. During v1 migration it carries the immutable legacy base that all protocol-v2 deltas are interpreted against. Every v2 journal created while a legacy genesis exists copies the exact same genesis tuple. If non-null genesis values across journals disagree by legacy remote ID, revision token, document kind/schema, or canonical document content, the remote state is an unsafe mixed-protocol history and fails closed.
+
+A journal update rewrites the physical file content, but it only appends to the logical `batches` sequence. Existing batches and genesis must never be modified or removed by protocol-v2 MVP code.
 
 ## Causal frontier
 
@@ -214,10 +224,11 @@ The existing outbox still coalesces "this logical document is dirty"; it does no
 For each logical document kind:
 
 1. list and validate every v2 replica journal;
-2. take the union of all unique mutation batches, keyed by `SyncRevision(deviceId, sequence)`;
-3. verify each journal's internal sequence and observed-frontier consistency;
-4. deterministically reduce mutations using causal order;
-5. produce:
+2. resolve one canonical genesis: empty state when every journal has null genesis, or the one identical non-null legacy genesis copied across the participating journals;
+3. take the union of all unique mutation batches, keyed by `SyncRevision(deviceId, sequence)`;
+4. verify each journal's internal sequence and observed-frontier consistency;
+5. deterministically reduce mutations from genesis using causal order;
+6. produce:
    - a materialized `SyncDocumentEnvelope`;
    - the resulting causal frontier;
    - zero or more explicit conflicts.
@@ -229,6 +240,7 @@ For one `recordId + propertyPath`:
 - if mutation B causally observes mutation A, B supersedes A;
 - if A and B are concurrent and produce the same value/removal, collapse them as equivalent;
 - if A and B are concurrent and produce different values, persist a `FIELD_DIVERGENCE` conflict;
+- when three or more distinct concurrent values exist, emit a deterministic set of pairwise conflict entries against the canonically first contender so every competing value is represented; canonical ordering is presentation/deduplication only and never selects a winner;
 - no timestamp, device ID lexical order, or arbitrary iteration order may select a value for concurrent disagreement.
 
 Independent property paths merge automatically.
@@ -308,11 +320,11 @@ This is consistent with the existing rule that the manifest is derived and not d
 
 Exact legacy filenames such as `library.json`, `collections.json`, and `source-mappings.json` are never mutated by a protocol-v2 client.
 
-When exactly one valid legacy file exists for a logical kind and no accepted v2 genesis exists yet, its content is imported as a deterministic synthetic genesis state. The synthetic identity is derived from its remote file ID and revision so all v2 clients observing the same legacy file derive the same genesis input.
+When exactly one valid legacy file exists for a logical kind and no v2 journal exists yet, its decoded content becomes the immutable `SyncReplicaGenesis`. The first v2 journal and every later journal created while that genesis is active copies the same legacy remote ID, revision token, and canonical base document. Local changes are encoded only as deltas from that genesis, so an unchanged legacy value on one device does not become a false concurrent edit against another device's real change.
 
 If multiple legacy files exist for one logical kind, migration fails closed rather than inventing a winner.
 
-After protocol-v2 state has been established, a later mutation of the legacy shared file is treated as an unsafe mixed-protocol condition. The client must surface a typed protocol/migration failure and must not merge the changed legacy file through timestamp or filename heuristics.
+Once any v2 journal exists, its embedded genesis is the migration authority. A currently visible legacy file with a different ID/revision/content than that embedded genesis is an unsafe mixed-protocol condition. The client must surface a typed protocol/migration failure and must not merge the changed legacy file through timestamp or filename heuristics. A new v2 client can reconstruct the migration base from the journals themselves; correctness does not depend on the legacy file remaining unchanged or even present forever.
 
 Protocol v2 does not delete legacy files automatically during this audit fix. Safe garbage collection is a separate future concern.
 
