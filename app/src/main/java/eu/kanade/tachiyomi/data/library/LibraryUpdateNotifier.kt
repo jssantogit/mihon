@@ -114,8 +114,12 @@ class LibraryUpdateNotifier(
      * Warn when excessively checking any single source.
      */
     suspend fun showQueueSizeWarningNotificationIfNeeded(mangaToUpdate: List<LibraryManga>) {
+        showQueueSizeWarningNotificationIfNeededForManga(mangaToUpdate.map { it.manga })
+    }
+
+    suspend fun showQueueSizeWarningNotificationIfNeededForManga(mangaToUpdate: List<Manga>) {
         val maxUpdatesFromSource = mangaToUpdate
-            .groupBy { it.manga.source }
+            .groupBy(Manga::source)
             .filter { (sourceId, _) -> sourceManager.get(sourceId) !is UnmeteredSource }
             .maxOfOrNull { it.value.size } ?: 0
 
@@ -136,7 +140,6 @@ class LibraryUpdateNotifier(
             setContentIntent(NotificationHandler.openUrl(context, HELP_WARNING_URL))
         }
     }
-
     /**
      * Shows notification containing update entries that failed with action to open full log.
      *
