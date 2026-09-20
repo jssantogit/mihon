@@ -16,6 +16,7 @@ import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterStructureUncertainty
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
@@ -216,6 +217,40 @@ class ChapterCoverageSelectionTest {
     }
 
     @Test
+    fun `downloaded variant remains selectable when its source mapping is unavailable`() = runTest {
+        val repository = FakeCanonicalChapterRepository(
+            chapters = listOf(chapter("chapter-1", CanonicalChapterType.REGULAR, 1)),
+            variants = listOf(
+                variant("downloaded", "chapter-1", "mapping-offline", 4L, "en"),
+                variant("network", "chapter-1", "mapping-online", 2L, "en"),
+            ),
+        )
+        val mappings = FakeSourceTitleMappingRepository(
+            mapping(
+                "mapping-offline",
+                4L,
+                "en",
+                preferred = true,
+                availability = SourceMappingAvailability.UNAVAILABLE,
+            ),
+            mapping("mapping-online", 2L, "en"),
+        )
+        val selector = SelectChapterVariant(
+            canonicalChapterRepository = repository,
+            sourceTitleMappingRepository = mappings,
+            getPreferredReadingSources = GetPreferredReadingSources(FakeReadingSourcePreferenceRepository()),
+            canonicalDownloadGateway = FakeCanonicalDownloadGateway(setOf("downloaded")),
+        )
+
+        val selection = selector.execute("chapter-1", preferredLanguage = "en")
+
+        selection.selected?.id shouldBe "downloaded"
+        selection.candidates.map { it.id } shouldContainExactly listOf("downloaded", "network")
+        selection.preferredSourceMappingId shouldBe "mapping-offline"
+        selection.requiresFallback shouldBe false
+    }
+
+    @Test
     fun `verified release date and stable id provide deterministic tie breakers`() = runTest {
         val repository = FakeCanonicalChapterRepository(
             chapters = listOf(chapter("chapter-1", CanonicalChapterType.REGULAR, 1)),
@@ -410,6 +445,13 @@ class ChapterCoverageSelectionTest {
         ) {
             setPreferredCalls += 1
         }
+    }
+
+    private class FakeCanonicalDownloadGateway(
+        private val downloadedVariantIds: Set<String>,
+    ) : CanonicalDownloadGateway {
+        override suspend fun isDownloaded(variant: ChapterVariant): Boolean =
+            variant.id in downloadedVariantIds
     }
 
     private class FakeReadingSourcePreferenceRepository(

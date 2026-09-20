@@ -98,6 +98,19 @@ class ParseCanonicalChapterLabelTest {
     }
 
     @Test
+    fun `zero placeholder keeps semantic one shot distinct from regular zero chapter`() {
+        val oneShot = parse.execute("Ch. 0 - Oneshot")
+        val regularZero = parse.execute("Ch. 0 - Volume 20")
+
+        oneShot.type shouldBe CanonicalChapterType.ONESHOT
+        oneShot.baseNumber.shouldBeNull()
+        regularZero.type shouldBe CanonicalChapterType.REGULAR
+        regularZero.baseNumber shouldBe 0
+        (oneShot.identity == regularZero.identity) shouldBe false
+        (regularZero.identity < oneShot.identity) shouldBe true
+    }
+
+    @Test
     fun `numbered prologues and epilogues preserve distinct identities`() {
         val prologue1 = parse.execute("Prologue 1")
         val prologue2 = parse.execute("Prologue 2")

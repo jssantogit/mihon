@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
+import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderCompatibilityGateway
 
 class RecordCanonicalReaderProgressTest {
 
@@ -55,6 +56,88 @@ class RecordCanonicalReaderProgressTest {
             sessionReadDuration = 40L,
         )
     }
+
+    @Test
+    fun `canonical page is persisted before mihon compatibility projection`() = runTest {
+        val repository = FakeCanonicalReadingRepository()
+        val compatibility = FakeCompatibilityGateway(repository)
+        val recorder = RecordCanonicalReaderProgress(repository, compatibility) { 500L }
+
+        recorder.recordPage(
+            canonicalChapterId = "chapter-1",
+            variantId = "variant-1",
+            pageIndex = 4,
+            completed = false,
+            mihonChapterId = 11L,
+        )
+
+        compatibility.projectedPage shouldBe ProjectedPage(
+            mihonChapterId = 11L,
+            read = false,
+            lastPageRead = 4L,
+        )
+        compatibility.canonicalProgressWasPresentForPage shouldBe true
+    }
+
+    @Test
+    fun `canonical history is persisted before mihon compatibility projection`() = runTest {
+        val repository = FakeCanonicalReadingRepository()
+        val compatibility = FakeCompatibilityGateway(repository)
+        val recorder = RecordCanonicalReaderProgress(repository, compatibility) { 900L }
+
+        recorder.recordHistory(
+            canonicalChapterId = "chapter-1",
+            variantId = "variant-2",
+            sessionReadDuration = 40L,
+            mihonChapterId = 22L,
+        )
+
+        compatibility.projectedHistory shouldBe ProjectedHistory(
+            mihonChapterId = 22L,
+            readAt = 900L,
+            sessionReadDuration = 40L,
+        )
+        compatibility.canonicalHistoryWasPresent shouldBe true
+    }
+
+    private class FakeCompatibilityGateway(
+        private val repository: FakeCanonicalReadingRepository,
+    ) : CanonicalReaderCompatibilityGateway {
+        var projectedPage: ProjectedPage? = null
+        var projectedHistory: ProjectedHistory? = null
+        var canonicalProgressWasPresentForPage = false
+        var canonicalHistoryWasPresent = false
+
+        override suspend fun projectProgress(
+            mihonChapterId: Long,
+            read: Boolean,
+            lastPageRead: Long,
+        ) {
+            canonicalProgressWasPresentForPage = repository.progress != null
+            projectedPage = ProjectedPage(mihonChapterId, read, lastPageRead)
+        }
+
+        override suspend fun projectHistory(
+            mihonChapterId: Long,
+            readAt: Long,
+            sessionReadDuration: Long,
+        ) {
+            canonicalHistoryWasPresent = repository.lastHistoryUpdate != null
+            projectedHistory = ProjectedHistory(mihonChapterId, readAt, sessionReadDuration)
+        }
+    }
+
+    private data class ProjectedPage(
+        val mihonChapterId: Long,
+        val read: Boolean,
+        val lastPageRead: Long,
+    )
+
+    private data class ProjectedHistory(
+        val mihonChapterId: Long,
+        val readAt: Long,
+        val sessionReadDuration: Long,
+    )
 
     private class FakeCanonicalReadingRepository : CanonicalReadingRepository {
         var progress: CanonicalChapterProgress? = null

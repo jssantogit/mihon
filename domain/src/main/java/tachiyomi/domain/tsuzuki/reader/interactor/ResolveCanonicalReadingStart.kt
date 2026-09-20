@@ -6,6 +6,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
+import tachiyomi.domain.tsuzuki.chapter.interactor.RepairZeroPlaceholderChapterSemantics
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
@@ -21,6 +22,7 @@ class ResolveCanonicalReadingStart(
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val refreshCanonicalChapters: RefreshCanonicalChapters,
+    private val repairZeroPlaceholderChapterSemantics: RepairZeroPlaceholderChapterSemantics,
     private val resolveReadingSource: ResolveReadingSource,
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val getCanonicalReadingStart: GetCanonicalReadingStart,
@@ -29,12 +31,24 @@ class ResolveCanonicalReadingStart(
     override suspend fun execute(canonicalTitleId: String): CanonicalReadingStart {
         return try {
             ensureInventory(canonicalTitleId)
+            repairPersistedChapterSemantics(canonicalTitleId)
             importLegacyCanonicalProgress.execute(canonicalTitleId)
             getCanonicalReadingStart.execute(canonicalTitleId)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
             CanonicalReadingStart.Unavailable(canonicalTitleId, error)
+        }
+    }
+
+    private suspend fun repairPersistedChapterSemantics(canonicalTitleId: String) {
+        try {
+            repairZeroPlaceholderChapterSemantics.execute(canonicalTitleId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            // Repair is best-effort and must never make a previously readable
+            // canonical title unavailable.
         }
     }
 

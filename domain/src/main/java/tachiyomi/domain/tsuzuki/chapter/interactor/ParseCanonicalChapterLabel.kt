@@ -37,6 +37,9 @@ class ParseCanonicalChapterLabel {
 
         val hasExplicitChapterPrefix = CHAPTER_PREFIX.find(normalized) != null
         val chapterText = removeChapterPrefix(normalized)
+        parsePlaceholderSemantic(chapterText)?.let { semantic ->
+            return semantic.toParsed(original, hint)
+        }
         parsePartForm(chapterText)?.let { parsed ->
             return parsed.toParsed(original, hint)
         }
@@ -153,6 +156,16 @@ class ParseCanonicalChapterLabel {
 
     private fun removeChapterPrefix(normalized: String): String {
         return normalized.replaceFirst(CHAPTER_PREFIX, "").trimStart()
+    }
+
+    /**
+     * Some sources use chapter number 0 as a placeholder for semantic entries,
+     * for example "Ch. 0 - Oneshot". The semantic label is the stronger
+     * identity signal and must not collapse into an unrelated regular chapter 0.
+     */
+    private fun parsePlaceholderSemantic(normalized: String): SemanticParse? {
+        val match = ZERO_PLACEHOLDER_SEMANTIC.find(normalized) ?: return null
+        return parseSemanticType(match.groupValues[1])
     }
 
     private fun parsePartForm(normalized: String): NumericParse? {
@@ -280,6 +293,7 @@ class ParseCanonicalChapterLabel {
     private companion object {
         // Accent-free forms are used because input is normalized before matching.
         val CHAPTER_PREFIX = Regex("^(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*")
+        val ZERO_PLACEHOLDER_SEMANTIC = Regex("^0(?:[.]0+)?\\s*[-:]\\s*(.+)$")
         val SPECIAL_PREFIX =
             Regex("^(extra|special|especial)(?:\\s+|\\s*[:.-]\\s*)(\\d+)?(?:\\s+(?:part|pt)\\s+(\\d+))?")
         val NUMBERED_SEMANTIC_PREFIX =
