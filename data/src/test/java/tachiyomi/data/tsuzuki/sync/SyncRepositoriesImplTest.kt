@@ -358,7 +358,6 @@ class SyncRepositoriesImplTest {
         state.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe null
     }
 
-
     @Test
     fun `replica ownership and reserved remote id round trip by device identity`() = runBlocking<Unit> {
         val stored = SyncReplicaState(
