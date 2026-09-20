@@ -193,49 +193,49 @@ class SyncRepositoriesImplTest {
     @Test
     fun `repeated source mapping upsert resets retry state without duplicating its outbox document`() =
         runBlocking<Unit> {
-        seedTitleWithoutPendingOutbox()
-        outbox.markDirty(SyncDocumentKind.SOURCE_MAPPINGS, 100L)
-        outbox.recordFailure(SyncDocumentKind.SOURCE_MAPPINGS, 500L)
+            seedTitleWithoutPendingOutbox()
+            outbox.markDirty(SyncDocumentKind.SOURCE_MAPPINGS, 100L)
+            outbox.recordFailure(SyncDocumentKind.SOURCE_MAPPINGS, 500L)
 
-        database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
-            id = "mapping-1",
-            canonicalTitleId = "title-1",
-            mihonMangaId = null,
-            sourceId = 7L,
-            sourceUrl = "/title",
-            language = "en",
-            matchConfidence = null,
-            verifiedByUser = false,
-            availability = "AVAILABLE",
-            preferredOverride = false,
-            createdAt = 10L,
-            updatedAt = 20L,
-        )
-        database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
-            id = "mapping-1",
-            canonicalTitleId = "title-1",
-            mihonMangaId = 42L,
-            sourceId = 7L,
-            sourceUrl = "/title",
-            language = "en",
-            matchConfidence = 1.0,
-            verifiedByUser = true,
-            availability = "AVAILABLE",
-            preferredOverride = true,
-            createdAt = 10L,
-            updatedAt = 30L,
-        )
+            database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
+                id = "mapping-1",
+                canonicalTitleId = "title-1",
+                mihonMangaId = null,
+                sourceId = 7L,
+                sourceUrl = "/title",
+                language = "en",
+                matchConfidence = null,
+                verifiedByUser = false,
+                availability = "AVAILABLE",
+                preferredOverride = false,
+                createdAt = 10L,
+                updatedAt = 20L,
+            )
+            database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
+                id = "mapping-1",
+                canonicalTitleId = "title-1",
+                mihonMangaId = 42L,
+                sourceId = 7L,
+                sourceUrl = "/title",
+                language = "en",
+                matchConfidence = 1.0,
+                verifiedByUser = true,
+                availability = "AVAILABLE",
+                preferredOverride = true,
+                createdAt = 10L,
+                updatedAt = 30L,
+            )
 
-        outbox.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe SyncOutboxEntry(
-            documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
-            enqueuedAtEpochMillis = 100L,
-        )
-        outbox.getPending(nowEpochMillis = 0L, limit = 10) shouldContainExactly listOf(
-            SyncOutboxEntry(
+            outbox.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe SyncOutboxEntry(
                 documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
                 enqueuedAtEpochMillis = 100L,
-            ),
-        )
+            )
+            outbox.getPending(nowEpochMillis = 0L, limit = 10) shouldContainExactly listOf(
+                SyncOutboxEntry(
+                    documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
+                    enqueuedAtEpochMillis = 100L,
+                ),
+            )
     }
 
     @Test
