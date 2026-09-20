@@ -50,7 +50,8 @@ import tachiyomi.presentation.core.screens.LoadingScreen
 @Composable
 fun CanonicalLibraryScreen(
     state: CanonicalLibraryScreenState,
-    navigateUp: () -> Unit,
+    navigateUp: (() -> Unit)? = null,
+    title: String = "Library",
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
     onRead: (CanonicalLibraryItem) -> Unit = {},
@@ -62,7 +63,7 @@ fun CanonicalLibraryScreen(
         modifier = modifier,
         topBar = {
             AppBar(
-                titleContent = { AppBarTitle("Tsuzuki Library") },
+                titleContent = { AppBarTitle(title) },
                 navigateUp = navigateUp,
                 actions = {
                     TextButton(onClick = onOpenSourcePreferences) {
