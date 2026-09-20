@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 
 interface SourceTitleMappingRepository {
@@ -8,7 +9,9 @@ interface SourceTitleMappingRepository {
         throw UnsupportedOperationException("Listing all source mappings is not supported")
     }
 
-    fun getAllAsFlow(): Flow<List<SourceTitleMapping>>
+    fun getAllAsFlow(): Flow<List<SourceTitleMapping>> = flow {
+        emit(getAll())
+    }
 
     suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping>
     fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>>
