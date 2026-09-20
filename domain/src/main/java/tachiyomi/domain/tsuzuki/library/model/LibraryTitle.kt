@@ -1,5 +1,6 @@
 package tachiyomi.domain.tsuzuki.library.model
 
+import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.SourceRepresentation
@@ -8,6 +9,7 @@ data class LibraryTitle(
     val title: CanonicalTitle,
     val entry: CanonicalLibraryEntry,
     val sources: List<SourceRepresentation> = emptyList(),
+    val categories: List<Category> = emptyList(),
 ) {
     val id: String
         get() = title.id

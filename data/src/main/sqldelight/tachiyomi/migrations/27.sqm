@@ -1,0 +1,21 @@
+CREATE TABLE tsuzuki_library_categories(
+    canonical_title_id TEXT NOT NULL,
+    category_id INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, category_id),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE,
+    FOREIGN KEY(category_id) REFERENCES categories(_id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_library_categories_category_index
+ON tsuzuki_library_categories(category_id);
+
+INSERT OR IGNORE INTO tsuzuki_library_categories(
+    canonical_title_id,
+    category_id
+)
+SELECT DISTINCT
+    sm.canonical_title_id,
+    mc.category_id
+FROM tsuzuki_source_mappings sm
+JOIN mangas_categories mc ON mc.manga_id = sm.mihon_manga_id
+WHERE sm.mihon_manga_id IS NOT NULL;
