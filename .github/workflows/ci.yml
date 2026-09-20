@@ -1,22 +1,10 @@
-name: Fast CI
+name: Legacy Fast CI
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - 'tsuzuki/**'
-    paths:
-      - '**'
-      - '!**.md'
-      - '!fastlane/**'
-      - '!i18n/src/commonMain/moko-resources/**/strings.xml'
-      - '!i18n/src/commonMain/moko-resources/**/plurals.xml'
-      - 'i18n/src/commonMain/moko-resources/base/strings.xml'
-      - 'i18n/src/commonMain/moko-resources/base/plurals.xml'
 
 concurrency:
-  group: fast-ci-${{ github.ref }}
+  group: legacy-fast-ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
