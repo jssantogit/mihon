@@ -92,7 +92,7 @@ class AddTracks(
             trackerManager.loggedInTrackers()
                 .filterIsInstance<EnhancedTracker>()
                 .filter { it.accept(source) }
-                .filterNot { it.id in unavailableTrackerIds }
+                .filterNot { (it as Tracker).id in unavailableTrackerIds }
                 .forEach { service ->
                     try {
                         service.match(manga)?.let { track ->
