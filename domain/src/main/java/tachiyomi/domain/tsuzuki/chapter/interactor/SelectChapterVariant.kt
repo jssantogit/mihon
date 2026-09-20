@@ -199,7 +199,6 @@ class SelectChapterVariant(
     )
 }
 
-
 private object NoCanonicalDownloads : CanonicalDownloadGateway {
     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
 }
