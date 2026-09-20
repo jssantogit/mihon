@@ -297,6 +297,7 @@ class SyncReplicaMaterializerTest {
 
         result.conflicts shouldContainExactly emptyList()
         result.document.records.getValue("r").fields["name"] shouldBe JsonPrimitive("Same")
+        result.document.records.getValue("r").updatedAtEpochMillis shouldBe 20
     }
 
     @Test
