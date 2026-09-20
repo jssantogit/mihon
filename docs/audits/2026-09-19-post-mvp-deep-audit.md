@@ -3,11 +3,11 @@
 Date: 2026-09-20  
 Audit branch: `tsuzuki/post-mvp-deep-audit`  
 Frozen baseline: `7c09c17c35f352a2aa3021911636b51e00afeea8`  
-Last code HEAD before this ledger: `ef82c5fefc70e38cf47be87d6f06ca431f4f36b4`
+Final audited code HEAD before this ledger update: `c969428820edaaaa7d30910acc62ebe1a655ceb6`
 
 ## Status
 
-The sync/Drive correction wave is complete and has passed Fast CI.
+The sync/Drive correction wave is complete and has passed Fast CI on the final audited code HEAD.
 
 The original repository-wide audit mission was **not completed across every required A–J area** because the external Codex/Orchestra execution stopped repeatedly. This ledger therefore does not claim that the full foundation has received the planned repository-wide audit.
 
@@ -144,6 +144,21 @@ The first migration of a device with an empty accepted v2 frontier now preserves
 
 **Disposition:** FIXED.
 
+
+---
+
+### SYNC-P5 / P2 — equivalent concurrent values could regress adapter-visible record timestamp metadata
+
+**Invariant violated:** equivalent concurrent mutations may collapse semantically, but adapter-visible record metadata must still represent every contributing equivalent mutation rather than whichever deterministic contender happens to be used for canonical serialization.
+
+**Evidence:** focused regression in `328333fd18495e1612fb7cb403c9641308571cd1` showed that when concurrent mutations wrote the same semantic value with different `recordUpdatedAtEpochMillis`, the materializer collapsed them to one deterministic contender and retained only that contender's timestamp. This could make the materialized record timestamp older than an equivalent contributing mutation.
+
+**Fix:** `c969428820edaaaa7d30910acc62ebe1a655ceb6`.
+
+The materializer still uses deterministic contender ordering only for stable semantic serialization/revision identity, but computes the resulting record timestamp as the maximum timestamp across all equivalent contenders after causal winner selection. Timestamp still never chooses a semantic winner.
+
+**Disposition:** FIXED.
+
 ## Dismissed / challenged observations
 
 ### Remaining GET -> PATCH preflight on a local-owned shard
@@ -166,8 +181,8 @@ Under protocol v2, one file per owner is intentional replication rather than dup
 
 Latest accepted code checkpoint:
 
-- HEAD: `ef82c5fefc70e38cf47be87d6f06ca431f4f36b4`
-- Run: `35512565527`
+- HEAD: `c969428820edaaaa7d30910acc62ebe1a655ceb6`
+- Run: `35513813228`
 - Format: green
 - Kotlin Compile: green
 - Unit Tests: green
@@ -182,7 +197,7 @@ Earlier relevant accepted checkpoints include:
 
 ### Full Verify
 
-Pending at ledger creation. This ledger commit carries `[full-ci]` to request the required release verification.
+The previous Full Verify request on `3f7d038448383a7c54d87aa7ae0f26ff7c48a2db` was cancelled because further audit commits were pushed afterward. This ledger update carries `[full-ci]` and is the final verification checkpoint for the current code HEAD `c969428820edaaaa7d30910acc62ebe1a655ceb6`. No production-code commit should follow it unless the verification itself demonstrates a defect.
 
 ## Residual risks
 
@@ -213,7 +228,7 @@ These should not be silently marked as audited.
 
 ## Next
 
-If Full Verify succeeds, the sync P1 correction wave is automated-gate complete and is ready for the pending human MVP-V3 acceptance.
+If Full Verify succeeds, the sync correction wave (SYNC-P1 through SYNC-P5) is automated-gate complete and is ready for the pending human MVP-V3 acceptance.
 
 Do not merge automatically.  
 Do not start Milestone 13 before the agreed foundation/integration gate.
