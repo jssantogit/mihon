@@ -1,0 +1,187 @@
+package tachiyomi.domain.tsuzuki.sync
+
+import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.JsonPrimitive
+import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind
+import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
+import tachiyomi.domain.tsuzuki.sync.model.SyncFrontier
+import tachiyomi.domain.tsuzuki.sync.model.SyncMutation
+import tachiyomi.domain.tsuzuki.sync.model.SyncMutationBatch
+import tachiyomi.domain.tsuzuki.sync.model.SyncReplicaJournal
+import tachiyomi.domain.tsuzuki.sync.model.SyncReplicaMaterializationResult
+import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaMaterializer
+
+class SyncReplicaMaterializerTest {
+
+    private val materializer = SyncReplicaMaterializer()
+
+    @Test
+    fun `concurrent independent fields merge and causally later value supersedes stale value`() {
+        val a = journal(
+            "device:A",
+            batch(
+                "device:A",
+                1,
+                mutations = listOf(set("r", "name", "A", 10)),
+            ),
+            batch(
+                "device:A",
+                2,
+                observed = frontier("device:A" to 1, "device:B" to 1),
+                mutations = listOf(set("r", "name", "A2", 30)),
+            ),
+        )
+        val b = journal(
+            "device:B",
+            batch(
+                "device:B",
+                1,
+                mutations = listOf(set("r", "status", "reading", 20)),
+            ),
+        )
+
+        val result = success(materializer.materialize(kind, 1, listOf(a, b), 50))
+        result.conflicts shouldContainExactly emptyList()
+        result.document.records.getValue("r").fields["name"] shouldBe JsonPrimitive("A2")
+        result.document.records.getValue("r").fields["status"] shouldBe JsonPrimitive("reading")
+        result.frontier shouldBe frontier("device:A" to 2, "device:B" to 1)
+    }
+
+    @Test
+    fun `same field concurrent edits produce conflict without arbitrary winner`() {
+        val a = journal("device:A", batch("device:A", 1, mutations = listOf(set("r", "name", "A", 10))))
+        val b = journal("device:B", batch("device:B", 1, mutations = listOf(set("r", "name", "B", 20))))
+
+        val result = success(materializer.materialize(kind, 1, listOf(a, b), 50))
+
+        result.conflicts.size shouldBe 1
+        result.conflicts.single().kind shouldBe SyncConflictKind.FIELD_DIVERGENCE
+        result.conflicts.single().recordId shouldBe "r"
+        result.conflicts.single().propertyPath shouldBe listOf("name")
+    }
+
+    @Test
+    fun `three concurrent values expose every contender deterministically independent of listing order`() {
+        val journals = listOf(
+            journal("device:C", batch("device:C", 1, mutations = listOf(set("r", "name", "C", 30)))),
+            journal("device:A", batch("device:A", 1, mutations = listOf(set("r", "name", "A", 10)))),
+            journal("device:B", batch("device:B", 1, mutations = listOf(set("r", "name", "B", 20)))),
+        )
+        val forward = success(materializer.materialize(kind, 1, journals, 50))
+        val reverse = success(materializer.materialize(kind, 1, journals.reversed(), 50))
+
+        forward.conflicts shouldBe reverse.conflicts
+        forward.conflicts.size shouldBe 2
+    }
+
+    @Test
+    fun `delete concurrent with edit conflicts while causal recreation becomes active`() {
+        val aDelete = batch(
+            "device:A",
+            1,
+            mutations = listOf(
+                SyncMutation.DeleteRecord("r", 20, 20),
+            ),
+        )
+        val bEdit = batch("device:B", 1, mutations = listOf(set("r", "name", "B", 20)))
+        val concurrent = success(
+            materializer.materialize(
+                kind,
+                1,
+                listOf(journal("device:A", aDelete), journal("device:B", bEdit)),
+                50,
+            ),
+        )
+        concurrent.conflicts.single().kind shouldBe SyncConflictKind.DELETE_EDIT
+
+        val recreate = batch(
+            "device:B",
+            2,
+            observed = frontier("device:A" to 1, "device:B" to 1),
+            mutations = listOf(set("r", "name", "Recreated", 30)),
+        )
+        val causal = success(
+            materializer.materialize(
+                kind,
+                1,
+                listOf(journal("device:A", aDelete), journal("device:B", bEdit, recreate)),
+                50,
+            ),
+        )
+        causal.conflicts shouldContainExactly emptyList()
+        causal.document.records.getValue("r").isTombstone shouldBe false
+        causal.document.records.getValue("r").fields["name"] shouldBe JsonPrimitive("Recreated")
+    }
+
+    @Test
+    fun `visible frontier reconstructs only causally observed history`() {
+        val a = journal(
+            "device:A",
+            batch("device:A", 1, mutations = listOf(set("r", "name", "A", 10))),
+        )
+        val b = journal(
+            "device:B",
+            batch("device:B", 1, mutations = listOf(set("r", "status", "remote", 20))),
+        )
+
+        val visible = success(
+            materializer.materialize(
+                kind = kind,
+                schemaVersion = 1,
+                journals = listOf(a, b),
+                materializedAtEpochMillis = 50,
+                visibleFrontier = frontier("device:A" to 1),
+            ),
+        )
+
+        visible.document.records.getValue("r").fields["name"] shouldBe JsonPrimitive("A")
+        visible.document.records.getValue("r").fields.containsKey("status") shouldBe false
+        visible.frontier shouldBe frontier("device:A" to 1)
+    }
+
+    private fun success(result: SyncReplicaMaterializationResult) =
+        result as SyncReplicaMaterializationResult.Success
+
+    private fun journal(
+        owner: String,
+        vararg batches: SyncMutationBatch,
+    ) = SyncReplicaJournal(
+        kind = kind,
+        ownerDeviceId = owner,
+        batches = batches.toList(),
+    )
+
+    private fun batch(
+        device: String,
+        sequence: Long,
+        observed: SyncFrontier = SyncFrontier(),
+        mutations: List<SyncMutation>,
+    ) = SyncMutationBatch(
+        revision = SyncRevision(device, sequence),
+        observed = observed,
+        generatedAtEpochMillis = sequence * 10,
+        mutations = mutations,
+    )
+
+    private fun set(
+        recordId: String,
+        property: String,
+        value: String,
+        updatedAt: Long,
+    ) = SyncMutation.SetField(
+        recordId = recordId,
+        propertyPath = listOf(property),
+        value = JsonPrimitive(value),
+        recordUpdatedAtEpochMillis = updatedAt,
+    )
+
+    private fun frontier(vararg values: Pair<String, Long>) =
+        SyncFrontier(linkedMapOf(*values))
+
+    private companion object {
+        val kind = SyncDocumentKind.LIBRARY
+    }
+}
