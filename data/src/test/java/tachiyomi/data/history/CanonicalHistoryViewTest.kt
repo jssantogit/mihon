@@ -109,7 +109,8 @@ class CanonicalHistoryViewTest {
     }
 
     @Test
-    fun `resetting visible history clears canonical last read even when legacy history id is used`() = runBlocking<Unit> {
+    fun `resetting visible history clears canonical last read even when legacy history id is used`() =
+        runBlocking<Unit> {
         database.historyQueries.upsert(
             chapterId = expectedChapterId,
             readAt = Date(3_000L),
