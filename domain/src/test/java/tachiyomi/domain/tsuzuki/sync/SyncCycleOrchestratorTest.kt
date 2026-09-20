@@ -25,25 +25,33 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncRecordEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteContent
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteFile
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteRevision
+import tachiyomi.domain.tsuzuki.sync.model.SyncReplicaState
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
 import tachiyomi.domain.tsuzuki.sync.model.SyncStoredState
 import tachiyomi.domain.tsuzuki.sync.model.SyncTransportResult
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
+import tachiyomi.domain.tsuzuki.sync.repository.SyncReplicaRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.DriveSyncTransport
 import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncDocumentCodec
-import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncManifestCodec
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
 import tachiyomi.domain.tsuzuki.sync.service.SyncCycleOrchestrator
 import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentAdapter
+import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentDiffer
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaBootstrap
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaJournalCodec
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaMaterializer
 import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 import tachiyomi.domain.tsuzuki.sync.service.ThreeWaySyncMerger
 
 class SyncCycleOrchestratorTest {
 
     private val codec = KotlinxSyncDocumentCodec(Json)
-    private val manifestCodec = KotlinxSyncManifestCodec(Json)
+    private val journalCodec = SyncReplicaJournalCodec(Json)
+    private val differ = SyncDocumentDiffer()
+    private val materializer = SyncReplicaMaterializer()
+    private val bootstrap = SyncReplicaBootstrap(codec)
 
     @Test
     fun `case 1 - missing remote document creates it and accepts base`() = runTest {
@@ -55,22 +63,14 @@ class SyncCycleOrchestratorTest {
         val report = engine(transport, stores, adapter).runOnce()
 
         report.hasFailures.shouldBeFalse()
-        transport.createdKinds shouldContainExactly
-            listOf(SyncDocumentKind.LIBRARY, SyncDocumentKind.MANIFEST)
-        val manifestFile = transport.files.single {
-            it.name == SyncDocumentKind.MANIFEST.fileName
+        val replicaFile = transport.files.single {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "merge-device"
         }
-        val manifest = when (
-            val decoded = manifestCodec.decode(
-                transport.contents.getValue(manifestFile.remoteId),
-            )
-        ) {
-            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Success -> decoded.value
-            is tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult.Failure -> error("manifest decode failed")
-        }
-        manifest.documents.keys shouldContainExactly listOf(SyncDocumentKind.LIBRARY)
-        manifest.documents.getValue(SyncDocumentKind.LIBRARY).contentDigest.length shouldBe 64
-        stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe local
+        transport.createdKinds shouldBe emptyList()
+        transport.contents.containsKey(replicaFile.remoteId).shouldBeTrue()
+        stores.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase?.records shouldBe local.records
         stores.outbox.get(SyncDocumentKind.LIBRARY) shouldBe null
     }
 
@@ -508,10 +508,14 @@ class SyncCycleOrchestratorTest {
         transport = transport,
         outboxRepository = stores.outbox,
         stateRepository = stores.state,
+        replicaRepository = stores.replica,
         conflictRepository = stores.conflicts,
         adapters = adapters.toList(),
         codec = codec,
-        manifestCodec = manifestCodec,
+        journalCodec = journalCodec,
+        differ = differ,
+        materializer = materializer,
+        bootstrap = bootstrap,
         merger = ThreeWaySyncMerger(),
         revisionSource = object : SyncRevisionSource {
             override val deviceId = deviceId
@@ -793,6 +797,7 @@ class SyncCycleOrchestratorTest {
     ) {
         val outbox = InMemoryOutbox(outboxEntries)
         val state = InMemoryState()
+        val replica = InMemoryReplica()
         val conflicts = InMemoryConflicts()
     }
 
@@ -849,6 +854,26 @@ class SyncCycleOrchestratorTest {
 
         override suspend fun clear(documentKind: SyncDocumentKind) {
             states.remove(documentKind)
+        }
+    }
+
+    private class InMemoryReplica : SyncReplicaRepository {
+        private val states = mutableMapOf<Pair<SyncDocumentKind, String>, SyncReplicaState>()
+
+        override suspend fun get(
+            documentKind: SyncDocumentKind,
+            ownerDeviceId: String,
+        ): SyncReplicaState? = states[documentKind to ownerDeviceId]
+
+        override suspend fun put(state: SyncReplicaState) {
+            states[state.documentKind to state.ownerDeviceId] = state
+        }
+
+        override suspend fun clear(
+            documentKind: SyncDocumentKind,
+            ownerDeviceId: String,
+        ) {
+            states.remove(documentKind to ownerDeviceId)
         }
     }
 
