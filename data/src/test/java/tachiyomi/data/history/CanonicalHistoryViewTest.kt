@@ -31,6 +31,8 @@ class CanonicalHistoryViewTest {
     private lateinit var database: Database
     private var originalNativeLibraryPath: String? = null
     private var nativeLibraryDirectory: java.nio.file.Path? = null
+    private var expectedMangaId: Long = -1L
+    private var expectedChapterId: Long = -1L
 
     @BeforeEach
     fun setUp() = runBlocking {
@@ -89,8 +91,8 @@ class CanonicalHistoryViewTest {
 
             rows shouldContainExactly listOf(
                 HistoryRow(
-                    mangaId = 10L,
-                    chapterId = 100L,
+                    mangaId = expectedMangaId,
+                    chapterId = expectedChapterId,
                     title = "Canonical Title",
                     sourceId = 1L,
                     readAt = 3_000L,
@@ -111,6 +113,8 @@ class CanonicalHistoryViewTest {
         val firstManga = insertManga(sourceId = 1L, url = "/one", title = "Source One")
         val secondManga = insertManga(sourceId = 2L, url = "/two", title = "Source Two")
         val firstChapter = insertChapter(firstManga, "/chapter/1", "Source One Chapter")
+        expectedMangaId = firstManga
+        expectedChapterId = firstChapter
         val secondChapter = insertChapter(secondManga, "/chapter/1", "Source Two Chapter")
 
         database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
