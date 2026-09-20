@@ -42,7 +42,7 @@ import mihon.icons.materialsymbols.rounded.MoreVert
 import mihon.icons.materialsymbols.rounded.Settings
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
-import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.model.SourceRepresentation
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
@@ -92,7 +92,6 @@ fun CanonicalLibraryScreen(
                     } else {
                         CanonicalLibraryList(
                             items = state.items,
-                            mappingsByCanonicalTitleId = state.mappingsByCanonicalTitleId,
                             onUpdateStatus = onUpdateStatus,
                             onRemoveItem = onRemoveItem,
                             onRead = onRead,
@@ -108,7 +107,6 @@ fun CanonicalLibraryScreen(
 @Composable
 private fun CanonicalLibraryList(
     items: List<CanonicalLibraryItem>,
-    mappingsByCanonicalTitleId: Map<String, List<SourceTitleMapping>>,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
     onRead: (CanonicalLibraryItem) -> Unit,
@@ -126,7 +124,7 @@ private fun CanonicalLibraryList(
         ) { item ->
             CanonicalLibraryItemCard(
                 item = item,
-                mappings = mappingsByCanonicalTitleId[item.title.id].orEmpty(),
+                sources = item.sources,
                 onUpdateStatus = { status -> onUpdateStatus(item.title.id, status) },
                 onRemove = { onRemoveItem(item.title.id) },
                 onRead = { onRead(item) },
@@ -140,7 +138,7 @@ private fun CanonicalLibraryList(
 @Composable
 private fun CanonicalLibraryItemCard(
     item: CanonicalLibraryItem,
-    mappings: List<SourceTitleMapping>,
+    sources: List<SourceRepresentation>,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
     onRead: () -> Unit,
@@ -189,9 +187,7 @@ private fun CanonicalLibraryItemCard(
                                 text = {
                                     Text(
                                         text = status.name.lowercase().replaceFirstChar { it.uppercase() },
-                                        fontWeight = if (status ==
-                                            item.entry.status
-                                        ) {
+                                        fontWeight = if (status == item.entry.status) {
                                             FontWeight.Bold
                                         } else {
                                             FontWeight.Normal
@@ -245,24 +241,24 @@ private fun CanonicalLibraryItemCard(
                 )
             }
 
-            val preferredMapping = mappings.firstOrNull { it.preferredOverride } ?: mappings.firstOrNull()
+            val preferredSource = sources.firstOrNull { it.preferredOverride } ?: sources.firstOrNull()
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
                     onClick = onRead,
-                    enabled = preferredMapping != null,
+                    enabled = preferredSource != null,
                 ) {
                     Text("Read / Continue")
                 }
 
                 TextButton(onClick = onResolveSource) {
-                    if (preferredMapping == null) {
+                    if (preferredSource == null) {
                         Text("Find reading source")
                     } else {
                         Text(
-                            "Reading source: #${preferredMapping.sourceId} · ${preferredMapping.language}",
+                            "Reading source: #${preferredSource.sourceId} · ${preferredSource.language}",
                         )
                     }
                 }
