@@ -84,13 +84,13 @@ class CanonicalUpdatesViewTest {
                 excludedEmpty = true,
                 includedCategories = emptyList(),
                 excludedCategories = emptyList(),
-                mapper = { mangaId, mangaTitle, chapterId, _, _, _, _, _, _, sourceId, _, _, _, _, _, _ ->
-                    Triple(mangaId, mangaTitle, chapterId to sourceId)
+                mapper = { _, mangaTitle, _, _, _, _, _, _, _, sourceId, _, _, _, _, _, _ ->
+                    mangaTitle to sourceId
                 },
             ).awaitAsList()
 
             rows shouldContainExactly listOf(
-                Triple(22L, "Canonical Title", 202L to 2L),
+                "Canonical Title" to 2L,
             )
         }
 
