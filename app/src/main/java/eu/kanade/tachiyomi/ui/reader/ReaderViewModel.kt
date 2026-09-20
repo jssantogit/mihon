@@ -90,6 +90,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
+import tachiyomi.domain.tsuzuki.chapter.interactor.RepairZeroPlaceholderChapterSemantics
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.interactor.GetAdjacentCanonicalChapter
@@ -130,6 +131,7 @@ class ReaderViewModel(
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val refreshCanonicalChapters: RefreshCanonicalChapters,
+    private val repairZeroPlaceholderChapterSemantics: RepairZeroPlaceholderChapterSemantics,
     private val prepareCanonicalChapterForReader: PrepareCanonicalChapterForReader,
     private val recordCanonicalReaderProgress: RecordCanonicalReaderProgress,
     private val getAdjacentCanonicalChapter: GetAdjacentCanonicalChapter,
@@ -430,6 +432,16 @@ class ReaderViewModel(
                     updatedAt = Clock.System.now().toEpochMilliseconds(),
                 )
                 sourceTitleMappingRepository.upsert(mapping)
+            }
+
+            try {
+                repairZeroPlaceholderChapterSemantics.execute(mapping.canonicalTitleId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                logcat(LogPriority.WARN, error) {
+                    "Failed to repair persisted canonical chapter semantics"
+                }
             }
 
             var variant = canonicalChapterRepository
