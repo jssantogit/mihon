@@ -1,0 +1,263 @@
+name: CI v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Verification scope
+        required: true
+        default: full
+        type: choice
+        options:
+          - affected
+          - full
+  push:
+    branches:
+      - main
+      - 'tsuzuki/**'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!fastlane/**'
+      - '!i18n/src/commonMain/moko-resources/**/strings.xml'
+      - '!i18n/src/commonMain/moko-resources/**/plurals.xml'
+      - 'i18n/src/commonMain/moko-resources/base/strings.xml'
+      - 'i18n/src/commonMain/moko-resources/base/plurals.xml'
+
+concurrency:
+  group: ci-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Change Planner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      run_tests: ${{ steps.plan.outputs.run_tests }}
+      run_format: ${{ steps.plan.outputs.run_format }}
+      run_database: ${{ steps.plan.outputs.run_database }}
+      selected: ${{ steps.plan.outputs.selected }}
+      mode: ${{ steps.scope.outputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Test planner
+        run: python3 .github/scripts/test_ci_v2_plan.py
+
+      - name: Resolve verification scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          mode="affected"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            mode="${REQUESTED_MODE:-full}"
+          fi
+
+          case "$REF_NAME" in
+            main|tsuzuki/bootstrap)
+              mode="full"
+              ;;
+          esac
+
+          if [[ "$COMMIT_MESSAGE" == *"[ci-full]"* ]]; then
+            mode="full"
+          fi
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Collect changed paths
+        id: changes
+        shell: bash
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          : > changed-paths.txt
+
+          if [ "$MODE" = "full" ]; then
+            echo "Full verification requested; diff planning is bypassed."
+            exit 0
+          fi
+
+          base="$BEFORE_SHA"
+          if [ "$EVENT_NAME" != "push" ] || [ -z "$base" ] || [[ "$base" =~ ^0+$ ]]; then
+            base="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "::warning::Unable to resolve a reliable base commit; planner will fail safe to full."
+            exit 0
+          fi
+
+          git diff --name-only "$base" "$GITHUB_SHA" > changed-paths.txt
+
+          echo "Changed paths:"
+          cat changed-paths.txt
+
+      - name: Build execution plan
+        id: plan
+        shell: bash
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+        run: |
+          python3 .github/scripts/ci_v2_plan.py             --mode "$MODE"             --paths-file changed-paths.txt             | tee -a "$GITHUB_OUTPUT"
+
+      - name: Summarize plan
+        shell: bash
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          SELECTED: ${{ steps.plan.outputs.selected }}
+          RUN_DATABASE: ${{ steps.plan.outputs.run_database }}
+        run: |
+          {
+            echo "## CI v2 plan"
+            echo
+            echo "- Mode: `$MODE`"
+            echo "- Test shards: `$SELECTED`"
+            echo "- SQLDelight migrations: `$RUN_DATABASE`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  format:
+    name: Format
+    needs: plan
+    if: needs.plan.outputs.run_format == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Check code format
+        run: ./gradlew spotlessCheck
+
+  tests:
+    name: Tests — ${{ matrix.name }}
+    needs: plan
+    if: needs.plan.outputs.run_tests == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          # Tsuzuki development branches are intentionally allowed to warm
+          # their own branch-scoped caches for subsequent commits.
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Run ${{ matrix.name }} tests
+        id: unit_tests
+        run: ./gradlew "${{ matrix.task }}"
+
+      - name: Upload failed test report
+        if: failure() && steps.unit_tests.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-report-${{ matrix.key }}-${{ github.sha }}
+          path: ${{ matrix.report }}
+          if-no-files-found: ignore
+          retention-days: 3
+
+  database:
+    name: SQLDelight Migrations
+    needs: plan
+    if: needs.plan.outputs.run_database == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Verify SQLDelight migrations
+        run: ./gradlew verifySqlDelightMigration
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - plan
+      - format
+      - tests
+      - database
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify required jobs
+        shell: bash
+        env:
+          PLAN: ${{ needs.plan.result }}
+          FORMAT: ${{ needs.format.result }}
+          TESTS: ${{ needs.tests.result }}
+          DATABASE: ${{ needs.database.result }}
+        run: |
+          failed=0
+
+          check_result() {
+            name="$1"
+            result="$2"
+            case "$result" in
+              success|skipped)
+                echo "$name: $result"
+                ;;
+              *)
+                echo "::error::$name finished with result '$result'"
+                failed=1
+                ;;
+            esac
+          }
+
+          check_result "Change Planner" "$PLAN"
+          check_result "Format" "$FORMAT"
+          check_result "Tests" "$TESTS"
+          check_result "SQLDelight Migrations" "$DATABASE"
+
+          exit "$failed"
