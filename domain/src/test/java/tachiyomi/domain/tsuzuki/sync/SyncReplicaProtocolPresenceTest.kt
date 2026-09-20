@@ -1,7 +1,6 @@
 package tachiyomi.domain.tsuzuki.sync
 
 import org.junit.jupiter.api.Test
-import kotlin.test.assertFailsWith
 
 class SyncReplicaProtocolPresenceTest {
 
