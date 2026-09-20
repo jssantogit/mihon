@@ -197,7 +197,12 @@ Earlier relevant accepted checkpoints include:
 
 ### Full Verify
 
-The previous Full Verify request on `3f7d038448383a7c54d87aa7ae0f26ff7c48a2db` was cancelled because further audit commits were pushed afterward. This ledger update carries `[full-ci]` and is the final verification checkpoint for the current code HEAD `c969428820edaaaa7d30910acc62ebe1a655ceb6`. No production-code commit should follow it unless the verification itself demonstrates a defect.
+- Verified checkpoint commit: `67d5a2b58b40f2b0b49f2203418284359968d868`
+- Audited production-code HEAD contained by that checkpoint: `c969428820edaaaa7d30910acc62ebe1a655ceb6`
+- Run: `35515091857`
+- Release Compile / Verify release build: green
+
+The earlier Full Verify request on `3f7d038448383a7c54d87aa7ae0f26ff7c48a2db` was cancelled because further audit commits were pushed afterward. The final checkpoint above contains the final audited code and passed release verification.
 
 ## Residual risks
 
@@ -228,7 +233,7 @@ These should not be silently marked as audited.
 
 ## Next
 
-If Full Verify succeeds, the sync correction wave (SYNC-P1 through SYNC-P5) is automated-gate complete and is ready for the pending human MVP-V3 acceptance.
+The sync correction wave (SYNC-P1 through SYNC-P5) is automated-gate complete and is ready for the pending human MVP-V3 acceptance.
 
 Do not merge automatically.  
 Do not start Milestone 13 before the agreed foundation/integration gate.
