@@ -838,25 +838,27 @@ class ReaderViewModel(
                 updateChapterProgressOnComplete(readerChapter)
             }
 
-            updateChapter.await(
-                ChapterUpdate(
-                    id = readerChapter.chapter.id!!,
-                    read = readerChapter.chapter.read,
-                    lastPageRead = readerChapter.chapter.last_page_read.toLong(),
-                ),
-            )
-
-            canonicalSessionFor(readerChapter)?.let { session ->
+            val canonicalSession = canonicalSessionFor(readerChapter)
+            if (canonicalSession != null) {
                 try {
                     recordCanonicalReaderProgress.recordPage(
-                        canonicalChapterId = session.canonicalChapterId,
-                        variantId = session.variantId,
+                        canonicalChapterId = canonicalSession.canonicalChapterId,
+                        variantId = canonicalSession.variantId,
                         pageIndex = pageIndex,
                         completed = readerChapter.pages?.lastIndex == pageIndex,
+                        mihonChapterId = readerChapter.chapter.id!!,
                     )
                 } catch (error: Throwable) {
                     logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader progress" }
                 }
+            } else {
+                updateChapter.await(
+                    ChapterUpdate(
+                        id = readerChapter.chapter.id!!,
+                        read = readerChapter.chapter.read,
+                        lastPageRead = readerChapter.chapter.last_page_read.toLong(),
+                    ),
+                )
             }
         }
     }
@@ -909,17 +911,20 @@ class ReaderViewModel(
             val endTime = Date()
             val sessionReadDuration = chapterReadStartTime?.let { endTime.time - it } ?: 0
 
-            upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
-            canonicalSessionFor(readerChapter)?.let { session ->
+            val canonicalSession = canonicalSessionFor(readerChapter)
+            if (canonicalSession != null) {
                 try {
                     recordCanonicalReaderProgress.recordHistory(
-                        canonicalChapterId = session.canonicalChapterId,
-                        variantId = session.variantId,
+                        canonicalChapterId = canonicalSession.canonicalChapterId,
+                        variantId = canonicalSession.variantId,
                         sessionReadDuration = sessionReadDuration,
+                        mihonChapterId = chapterId,
                     )
                 } catch (error: Throwable) {
                     logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader history" }
                 }
+            } else {
+                upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
             }
             chapterReadStartTime = null
         }
