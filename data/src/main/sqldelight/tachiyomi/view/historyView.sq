@@ -35,7 +35,7 @@ SELECT
     titles.display_title AS title,
     mangas.thumbnail_url AS thumbnailUrl,
     selectedVariants.source_id AS source,
-    COALESCE(library.favorite, 0) AS favorite,
+    library.favorite AS favorite,
     mangas.cover_last_modified,
     chapters.chapter_number AS chapterNumber,
     canonicalHistory.last_read_at AS readAt,
