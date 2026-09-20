@@ -68,6 +68,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.library.interactor.GetLibraryTitlesForUpdate
+import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
 import tachiyomi.domain.tsuzuki.library.interactor.RefreshLibraryTitleForUpdate
 import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
@@ -300,11 +301,17 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
                                 withUpdateNotification(currentlyUpdatingManga, progressCount, manga) {
                                     try {
-                                        val canonicalRefresh = refreshLibraryTitleForUpdate
-                                            .execute(target.libraryTitle)
-                                            .getOrThrow()
-                                        val newChapters = updateManga(manga, fetchWindow)
-                                            .sortedByDescending { it.sourceOrder }
+                                        val cycle = runCanonicalUpdateCycle(
+                                            updateOperational = {
+                                                updateManga(manga, fetchWindow)
+                                                    .sortedByDescending { it.sourceOrder }
+                                            },
+                                            refreshCanonical = {
+                                                refreshLibraryTitleForUpdate.execute(target.libraryTitle)
+                                            },
+                                        )
+                                        val canonicalRefresh = cycle.canonicalRefresh
+                                        val newChapters = cycle.newOperationalChapters
 
                                         val canonicalNewCount = canonicalRefresh
                                             ?.createdCanonicalChapterIds
@@ -555,6 +562,23 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                 }
         }
     }
+}
+
+internal data class CanonicalUpdateCycleResult(
+    val newOperationalChapters: List<Chapter>,
+    val canonicalRefresh: ChapterReconciliationReport?,
+)
+
+internal suspend fun runCanonicalUpdateCycle(
+    updateOperational: suspend () -> List<Chapter>,
+    refreshCanonical: suspend () -> Result<ChapterReconciliationReport?>,
+): CanonicalUpdateCycleResult {
+    val newOperationalChapters = updateOperational()
+    val canonicalRefresh = refreshCanonical().getOrThrow()
+    return CanonicalUpdateCycleResult(
+        newOperationalChapters = newOperationalChapters,
+        canonicalRefresh = canonicalRefresh,
+    )
 }
 
 internal fun selectOperationalSourceRepresentations(
