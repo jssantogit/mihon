@@ -47,13 +47,18 @@ class MihonCanonicalDownloadGatewayTest {
     @Test
     fun `unmaterialized variant cannot claim a physical mihon download`() = runTest {
         var mangaLookupCalled = false
+        var sourceLookupCalled = false
         var downloadLookupCalled = false
         val gateway = MihonCanonicalDownloadGateway(
             mangaTitleProvider = {
                 mangaLookupCalled = true
                 "Title"
             },
-            downloadLookup = { _, _ ->
+            sourceProvider = {
+                sourceLookupCalled = true
+                StubSource(it, "en", "Source")
+            },
+            downloadLookup = { _, _, _ ->
                 downloadLookupCalled = true
                 true
             },
@@ -61,21 +66,28 @@ class MihonCanonicalDownloadGatewayTest {
 
         gateway.isDownloaded(variant(mihonMangaId = null)) shouldBe false
         mangaLookupCalled shouldBe false
+        sourceLookupCalled shouldBe false
         downloadLookupCalled shouldBe false
     }
 
     @Test
     fun `variant without source chapter url cannot claim a physical mihon download`() = runTest {
+        var sourceLookupCalled = false
         var downloadLookupCalled = false
         val gateway = MihonCanonicalDownloadGateway(
             mangaTitleProvider = { "Title" },
-            downloadLookup = { _, _ ->
+            sourceProvider = {
+                sourceLookupCalled = true
+                StubSource(it, "en", "Source")
+            },
+            downloadLookup = { _, _, _ ->
                 downloadLookupCalled = true
                 true
             },
         )
 
         gateway.isDownloaded(variant(sourceChapterUrl = null)) shouldBe false
+        sourceLookupCalled shouldBe false
         downloadLookupCalled shouldBe false
     }
 
