@@ -541,7 +541,7 @@ class SyncCycleOrchestrator(
         val reconciled = existing?.copy(
             reservedRemoteId = localReplica?.file?.remoteId ?: existing.reservedRemoteId,
             lastRemoteRevisionToken =
-                localReplica?.file?.revision?.revisionToken ?: existing.lastRemoteRevisionToken,
+            localReplica?.file?.revision?.revisionToken ?: existing.lastRemoteRevisionToken,
             nextSequence = maxOf(existing.nextSequence, nextFromRemote),
         )
             ?: SyncReplicaState(
