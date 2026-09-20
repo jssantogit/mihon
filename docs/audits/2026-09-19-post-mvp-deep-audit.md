@@ -204,11 +204,36 @@ Earlier relevant accepted checkpoints include:
 
 The earlier Full Verify request on `3f7d038448383a7c54d87aa7ae0f26ff7c48a2db` was cancelled because further audit commits were pushed afterward. The final checkpoint above contains the final audited code and passed release verification.
 
+## Physical single-device acceptance
+
+Human acceptance was completed on 2026-09-20 using the audited protocol-v2 Dev C APK built from `tsuzuki/mvp-v3-audit-test` at `a40a9fe7c97de7492b604d220f1cf6f1fcd90703` (APK Build run `35516269536`).
+
+Validated on one physical Android device:
+
+- installed the audited build over the previous build with no local data loss;
+- Google connection remained usable and manual `Sync now` completed successfully;
+- repeated sync with no new local changes completed successfully and returned faster once already synchronized;
+- local Library / Collection / synced-preference changes survived sync and normal app use;
+- offline local changes were preserved; attempting manual sync without connectivity did not crash or discard local state, and normal sync resumed after connectivity returned;
+- force-stop / reopen and device restart preserved local state and Google connection;
+- disconnecting the Google account from Tsuzuki preserved local data, required reconnection for further sync, and reconnection succeeded;
+- externally revoking Google access caused the next sync attempt to require Google reconnection rather than continuing with stale authorization;
+- normal manga/library/collection usage after sync remained functional.
+
+Observed non-blocking UX debt:
+
+- `Sync now` provides weak progress/success feedback;
+- an offline manual-sync attempt provides no explicit user-facing connectivity error.
+
+Multi-device A↔B convergence was **not physically tested** because a second test device was not available. This is recorded as deferred validation, not as a known failure. The protocol-v2 multi-replica/concurrency behavior remains covered by the automated adversarial tests documented above.
+
+**Single-device physical acceptance disposition:** PASSED.
+
 ## Residual risks
 
 - Replica journals are append-only at this MVP stage. Safe causal compaction/garbage collection is intentionally deferred; long-lived accounts can accumulate journal history.
 - Old protocol-v1 clients must not continue indefinitely mutating the shared legacy file after v2 migration. A changed legacy file conflicting with embedded v2 genesis fails closed instead of being silently merged.
-- Physical Google Drive/device behavior still requires the existing MVP-V3 human acceptance gate.
+- Multi-device physical convergence remains deferred until a second Android test device is available.
 - Tracker/local/Drive reconciliation remains Milestone 12 work where not already covered by the current MVP-V3 scope.
 
 ## Audit coverage not completed
@@ -227,13 +252,12 @@ These should not be silently marked as audited.
 
 ## Human gates remaining
 
-- final physical MVP-V3 acceptance on device;
-- verify Google connection/sync behavior with the integrated protocol-v2 build;
-- normal integrated app smoke flows required before declaring the foundational phase closed.
+- multi-device A↔B physical convergence remains deferred until a second Android test device is available.
+
+The required single-device MVP-V3 physical acceptance, Google connect/disconnect/revoke behavior, offline preservation, restart persistence, repeated manual sync, and normal integrated app smoke flows are complete.
 
 ## Next
 
-The sync correction wave (SYNC-P1 through SYNC-P5) is automated-gate complete and is ready for the pending human MVP-V3 acceptance.
+The sync correction wave (SYNC-P1 through SYNC-P5) is automated-gate complete and the single-device physical MVP-V3 acceptance has passed. The corrected MVP-V3 is ready to merge into the integration branch.
 
-Do not merge automatically.  
 Do not start Milestone 13 before the agreed foundation/integration gate.
