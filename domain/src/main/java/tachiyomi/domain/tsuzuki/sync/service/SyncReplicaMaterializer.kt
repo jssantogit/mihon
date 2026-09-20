@@ -143,7 +143,7 @@ class SyncReplicaMaterializer {
 
         val activeEvents = events.filter { it.mutation !is SyncMutation.DeleteRecord }
         val maximalFieldsByPath = activeEvents
-            .groupBy { it.mutation.propertyPath() }
+            .groupBy { it.mutation.mutationPath() }
             .mapValues { (_, values) ->
                 values.filter { candidate ->
                     values.none { other -> happensBefore(candidate, other) }
@@ -298,12 +298,6 @@ class SyncReplicaMaterializer {
         return SyncConflictValue.Present(current)
     }
 
-    private fun SyncMutation.propertyPath(): List<String> = when (this) {
-        is SyncMutation.SetField -> propertyPath
-        is SyncMutation.RemoveField -> propertyPath
-        is SyncMutation.DeleteRecord -> emptyList()
-    }
-
     private fun failure(reason: SyncFailureReason) =
         SyncReplicaMaterializationResult.Failure(SyncFailure(reason))
 
@@ -323,10 +317,17 @@ class SyncReplicaMaterializer {
             { it.revision.deviceId },
             { it.revision.sequence },
             { it.mutation.recordId },
-            { it.mutation.propertyPath().joinToString("\u0000") },
+            { it.mutation.mutationPath().joinToString("\u0000") },
         )
         val pathComparator = Comparator<List<String>> { left, right ->
             left.joinToString("\u0000").compareTo(right.joinToString("\u0000"))
         }
     }
+}
+
+
+private fun SyncMutation.mutationPath(): List<String> = when (this) {
+    is SyncMutation.SetField -> propertyPath
+    is SyncMutation.RemoveField -> propertyPath
+    is SyncMutation.DeleteRecord -> emptyList()
 }
