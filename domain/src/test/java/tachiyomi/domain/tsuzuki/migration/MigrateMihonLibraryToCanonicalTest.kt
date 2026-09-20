@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
@@ -18,6 +19,7 @@ import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
+import tachiyomi.domain.tsuzuki.repository.LibraryTitleCategoryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
@@ -73,6 +75,29 @@ class MigrateMihonLibraryToCanonicalTest {
             addedAt = 500L,
             updatedAt = 1000L,
         )
+    }
+
+    @Test
+    fun `initial bootstrap preserves existing mihon category associations`() = runTest {
+        val fixture = TestFixture()
+        fixture.gateway.snapshots = listOf(
+            MihonLibrarySnapshot(
+                mihonMangaId = 1L,
+                sourceId = 100L,
+                sourceUrl = "/manga/1",
+                sourceLanguage = "en",
+                sourceAvailable = true,
+                title = "Chainsaw Man",
+                dateAdded = 500L,
+                hasStarted = false,
+                categoryIds = listOf(2L, 5L),
+            ),
+        )
+
+        fixture.interactor.execute()
+
+        val title = fixture.titleRepository.titles.values.single()
+        fixture.categoryRepository.assignments[title.id] shouldBe listOf(2L, 5L)
     }
 
     @Test
@@ -281,6 +306,7 @@ class MigrateMihonLibraryToCanonicalTest {
         val mappingRepository = FakeSourceTitleMappingRepository()
         val titleRepository = FakeCanonicalTitleRepository()
         val libraryRepository = FakeCanonicalLibraryRepository()
+        val categoryRepository = FakeLibraryTitleCategoryRepository()
 
         private var titleCounter = 0
         private var mappingCounter = 0
@@ -293,6 +319,7 @@ class MigrateMihonLibraryToCanonicalTest {
                 clock = { 1000L },
             ),
             canonicalLibraryRepository = libraryRepository,
+            libraryTitleCategoryRepository = categoryRepository,
             idFactory = { "mapping-${++mappingCounter}" },
             clock = { 1000L },
         )
@@ -333,6 +360,27 @@ class MigrateMihonLibraryToCanonicalTest {
                     updatedAt = updatedAt,
                 )
             }
+        }
+    }
+
+    private class FakeLibraryTitleCategoryRepository : LibraryTitleCategoryRepository {
+        val assignments = mutableMapOf<String, List<Long>>()
+
+        override fun getAllAsFlow(): Flow<List<tachiyomi.domain.tsuzuki.library.model.LibraryTitleCategory>> =
+            MutableStateFlow(emptyList())
+
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<Category> {
+            return assignments[canonicalTitleId].orEmpty().map { id ->
+                Category(id = id, name = "Category $id", order = id, flags = 0L)
+            }
+        }
+
+        override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<Category>> {
+            return MutableStateFlow(emptyList())
+        }
+
+        override suspend fun setCategories(canonicalTitleId: String, categoryIds: List<Long>) {
+            assignments[canonicalTitleId] = categoryIds
         }
     }
 
