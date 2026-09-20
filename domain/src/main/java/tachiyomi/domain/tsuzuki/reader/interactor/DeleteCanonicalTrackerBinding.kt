@@ -10,6 +10,20 @@ class DeleteCanonicalTrackerBinding(
     private val trackRepository: TrackRepository,
 ) {
 
+    suspend fun executeForManga(
+        mangaId: Long,
+        trackerId: Long,
+    ): Boolean {
+        val canonicalTitleId = sourceTitleMappingRepository
+            .getAll()
+            .firstOrNull { it.mihonMangaId == mangaId }
+            ?.canonicalTitleId
+            ?: return false
+
+        execute(canonicalTitleId, trackerId)
+        return true
+    }
+
     suspend fun execute(
         canonicalTitleId: String,
         trackerId: Long,
