@@ -8,6 +8,8 @@ interface SourceTitleMappingRepository {
         throw UnsupportedOperationException("Listing all source mappings is not supported")
     }
 
+    fun getAllAsFlow(): Flow<List<SourceTitleMapping>>
+
     suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping>
     fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>>
     suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping?

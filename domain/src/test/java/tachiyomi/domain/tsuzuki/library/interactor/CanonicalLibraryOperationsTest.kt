@@ -11,14 +11,14 @@ import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
-import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
+import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository\nimport tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository\nimport tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 
 class CanonicalLibraryOperationsTest {
 
     @Test
     fun `ObserveCanonicalLibrary returns flow of joined items`() = runTest {
         val repository = FakeCanonicalLibraryRepository()
-        val observeCanonicalLibrary = ObserveCanonicalLibrary(repository)
+        val observeCanonicalLibrary = ObserveCanonicalLibrary(repository, FakeSourceTitleMappingRepository())
 
         val item1 = CanonicalLibraryItem(
             title = CanonicalTitle("t1", "Title 1", CanonicalIdentityState.RESOLVED, 100L, 100L),
