@@ -429,6 +429,7 @@ class SyncCycleOrchestratorTest {
         manifestCodec = manifestCodec,
         merger = ThreeWaySyncMerger(),
         revisionSource = object : SyncRevisionSource {
+            override val deviceId = "merge-device"
             private var sequence = 10L
 
             override fun nextRevision() = SyncRevision(

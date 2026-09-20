@@ -114,8 +114,9 @@ class CollectionsSyncAdapterTest {
     private fun adapter(store: CollectionStore) = CollectionsSyncAdapter(
         store = store,
         revisionSource = object : SyncRevisionSource {
+            override val deviceId = "test-device"
             private var sequence = 0L
-            override fun nextRevision() = SyncRevision("test-device", ++sequence)
+            override fun nextRevision() = SyncRevision(deviceId, ++sequence)
         },
         clock = object : SyncClock {
             override fun nowEpochMillis(): Long = 1_000L

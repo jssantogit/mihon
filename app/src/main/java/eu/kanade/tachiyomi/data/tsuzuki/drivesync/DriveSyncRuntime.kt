@@ -112,7 +112,7 @@ private class AndroidSyncRevisionSource(
     context: Context,
 ) : SyncRevisionSource {
 
-    private val deviceId = loadOrCreateSyncDeviceId(context)
+    override val deviceId = loadOrCreateSyncDeviceId(context)
 
     private val sequence = AtomicLong(
         Clock.System.now().toEpochMilliseconds().coerceAtLeast(0L),

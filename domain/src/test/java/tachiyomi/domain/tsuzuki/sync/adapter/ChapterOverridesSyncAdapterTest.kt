@@ -111,8 +111,9 @@ class ChapterOverridesSyncAdapterTest {
         overrideRepository = overrides,
         readerPreferenceRepository = preferences,
         revisionSource = object : SyncRevisionSource {
+            override val deviceId = "test-device"
             private var sequence = 1L
-            override fun nextRevision() = SyncRevision("test-device", sequence++)
+            override fun nextRevision() = SyncRevision(deviceId, sequence++)
         },
         clock = object : SyncClock {
             override fun nowEpochMillis(): Long = 100L
