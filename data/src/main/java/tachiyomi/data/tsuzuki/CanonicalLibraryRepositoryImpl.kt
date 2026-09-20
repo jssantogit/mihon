@@ -8,7 +8,7 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
-import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
+import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -34,7 +34,7 @@ class CanonicalLibraryRepositoryImpl(
             .subscribeToList()
     }
 
-    override fun getAllItemsAsFlow(): Flow<List<CanonicalLibraryItem>> {
+    override fun getAllItemsAsFlow(): Flow<List<LibraryTitle>> {
         return database.tsuzuki_library_entriesQueries
             .getAllTsuzukiLibraryItems(::mapItem)
             .subscribeToList()
@@ -78,7 +78,7 @@ class CanonicalLibraryRepositoryImpl(
         identityState: String,
         titleCreatedAt: Long,
         titleUpdatedAt: Long,
-    ): CanonicalLibraryItem {
+    ): LibraryTitle {
         val title = CanonicalTitle(
             id = canonicalTitleId,
             displayTitle = displayTitle,
@@ -93,7 +93,7 @@ class CanonicalLibraryRepositoryImpl(
             addedAt = addedAt,
             updatedAt = updatedAt,
         )
-        return CanonicalLibraryItem(
+        return LibraryTitle(
             title = title,
             entry = entry,
         )

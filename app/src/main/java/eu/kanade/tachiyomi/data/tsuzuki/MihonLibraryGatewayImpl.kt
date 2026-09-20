@@ -4,6 +4,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import tachiyomi.domain.category.repository.CategoryRepository
 import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
@@ -16,6 +17,7 @@ import tachiyomi.domain.tsuzuki.migration.service.MihonLibraryGateway
 class MihonLibraryGatewayImpl(
     private val getLibraryManga: GetLibraryManga,
     private val sourceManager: SourceManager,
+    private val categoryRepository: CategoryRepository,
 ) : MihonLibraryGateway {
 
     override suspend fun snapshot(): List<MihonLibrarySnapshot> {
@@ -33,6 +35,9 @@ class MihonLibraryGatewayImpl(
                 title = item.manga.title,
                 dateAdded = item.manga.dateAdded,
                 hasStarted = item.hasStarted,
+                categoryIds = categoryRepository
+                    .getCategoriesByMangaId(item.manga.id)
+                    .map { it.id },
             )
         }
     }

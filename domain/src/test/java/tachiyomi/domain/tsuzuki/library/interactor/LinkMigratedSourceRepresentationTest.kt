@@ -144,6 +144,7 @@ class LinkMigratedSourceRepresentationTest {
         var preferred: String? = null
 
         override suspend fun getAll(): List<SourceTitleMapping> = mappings.values.toList()
+        override fun getAllAsFlow(): Flow<List<SourceTitleMapping>> = MutableStateFlow(mappings.values.toList())
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String) =
             mappings.values.filter { it.canonicalTitleId == canonicalTitleId }
         override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String) =
