@@ -89,6 +89,8 @@ class DeleteCanonicalTrackerBindingTest {
     private class FakeMappings(
         private val mappings: List<SourceTitleMapping>,
     ) : SourceTitleMappingRepository {
+        override suspend fun getAll(): List<SourceTitleMapping> = mappings
+
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> =
             mappings.filter { it.canonicalTitleId == canonicalTitleId }
 
