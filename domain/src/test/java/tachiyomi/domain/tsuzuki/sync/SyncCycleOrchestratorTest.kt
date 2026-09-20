@@ -534,6 +534,55 @@ class SyncCycleOrchestratorTest {
             )
         }
 
+        override suspend fun generateFileId(): SyncTransportResult<String> =
+            SyncTransportResult.Success("reserved-${files.size + 1}")
+
+        override suspend fun createReplica(
+            remoteId: String,
+            documentKind: SyncDocumentKind,
+            ownerDeviceId: String,
+            content: String,
+        ): SyncTransportResult<SyncRemoteFile> {
+            createCount += 1
+            createFailure?.let { return SyncTransportResult.Failure(it) }
+            val file = SyncRemoteFile(
+                remoteId = remoteId,
+                name = "tsuzuki-v2-${documentKind.name.lowercase()}-$ownerDeviceId.json",
+                mimeType = "application/json",
+                revision = SyncRemoteRevision(
+                    remoteId = remoteId,
+                    revisionToken = "1",
+                ),
+                protocolVersion = 2,
+                logicalKind = documentKind,
+                ownerDeviceId = ownerDeviceId,
+            )
+            files += file
+            contents[file.remoteId] = content
+            return SyncTransportResult.Success(file)
+        }
+
+        override suspend fun updateOwnedReplica(
+            file: SyncRemoteFile,
+            ownerDeviceId: String,
+            content: String,
+        ): SyncTransportResult<SyncRemoteFile> {
+            if (file.ownerDeviceId != ownerDeviceId) {
+                return SyncTransportResult.Failure(
+                    SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                )
+            }
+            return update(file, content)
+        }
+
+        override suspend fun getFile(remoteId: String): SyncTransportResult<SyncRemoteFile> {
+            val file = files.singleOrNull { it.remoteId == remoteId }
+                ?: return SyncTransportResult.Failure(
+                    SyncFailure(SyncFailureReason.REMOTE_NOT_FOUND),
+                )
+            return SyncTransportResult.Success(file)
+        }
+
         override suspend fun create(
             documentKind: SyncDocumentKind,
             content: String,
@@ -591,6 +640,25 @@ class SyncCycleOrchestratorTest {
         }
 
         override suspend fun download(file: SyncRemoteFile) =
+            error("not used")
+
+        override suspend fun generateFileId(): SyncTransportResult<String> =
+            error("not used")
+
+        override suspend fun createReplica(
+            remoteId: String,
+            documentKind: SyncDocumentKind,
+            ownerDeviceId: String,
+            content: String,
+        ): SyncTransportResult<SyncRemoteFile> = error("not used")
+
+        override suspend fun updateOwnedReplica(
+            file: SyncRemoteFile,
+            ownerDeviceId: String,
+            content: String,
+        ): SyncTransportResult<SyncRemoteFile> = error("not used")
+
+        override suspend fun getFile(remoteId: String): SyncTransportResult<SyncRemoteFile> =
             error("not used")
 
         override suspend fun create(
