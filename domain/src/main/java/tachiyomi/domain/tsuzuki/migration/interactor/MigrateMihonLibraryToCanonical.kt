@@ -117,7 +117,6 @@ open class MigrateMihonLibraryToCanonical internal constructor(
     }
 }
 
-
 private object AlwaysPendingCanonicalLibraryMigrationStateRepository :
     CanonicalLibraryMigrationStateRepository {
 

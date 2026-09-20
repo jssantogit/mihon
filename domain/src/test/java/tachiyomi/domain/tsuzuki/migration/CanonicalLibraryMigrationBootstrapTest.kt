@@ -104,7 +104,9 @@ class CanonicalLibraryMigrationBootstrapTest {
         override suspend fun getAll(): List<SourceTitleMapping> = emptyList()
         override fun getAllAsFlow(): Flow<List<SourceTitleMapping>> = MutableStateFlow(emptyList())
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String) = emptyList<SourceTitleMapping>()
-        override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String) = MutableStateFlow(emptyList<SourceTitleMapping>())
+        override fun getByCanonicalTitleIdAsFlow(
+            canonicalTitleId: String,
+        ) = MutableStateFlow(emptyList<SourceTitleMapping>())
         override suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping? = null
         override suspend fun upsert(mapping: SourceTitleMapping) = Unit
         override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) = Unit

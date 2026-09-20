@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
+import tachiyomi.domain.tsuzuki.library.model.SourceLibraryRepresentation
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -179,7 +180,9 @@ class SetSourceLibraryMembershipTest {
 
         override suspend fun get(canonicalTitleId: String): CanonicalLibraryEntry? = entries[canonicalTitleId]
         override fun getAllAsFlow(): Flow<List<CanonicalLibraryEntry>> = MutableStateFlow(entries.values.toList())
-        override fun getAllItemsAsFlow() = MutableStateFlow(emptyList<tachiyomi.domain.tsuzuki.library.model.LibraryTitle>())
+        override fun getAllItemsAsFlow() = MutableStateFlow(
+            emptyList<tachiyomi.domain.tsuzuki.library.model.LibraryTitle>(),
+        )
         override suspend fun upsert(entry: CanonicalLibraryEntry) {
             entries[entry.canonicalTitleId] = entry
         }
