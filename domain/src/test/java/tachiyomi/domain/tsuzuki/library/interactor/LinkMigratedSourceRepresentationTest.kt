@@ -86,6 +86,7 @@ class LinkMigratedSourceRepresentationTest {
 
         mappings.getBySource(2L, "/b")?.id shouldBe "source-b"
         mappings.getBySource(2L, "/b")?.canonicalTitleId shouldBe "canonical-a"
+        mappings.removedIds shouldBe listOf("source-b")
         library.entries.keys shouldBe setOf("canonical-a")
     }
 
@@ -139,6 +140,7 @@ class LinkMigratedSourceRepresentationTest {
         vararg initial: SourceTitleMapping,
     ) : SourceTitleMappingRepository {
         private val mappings = initial.associateBy { it.id }.toMutableMap()
+        val removedIds = mutableListOf<String>()
         var preferred: String? = null
 
         override suspend fun getAll(): List<SourceTitleMapping> = mappings.values.toList()
@@ -153,6 +155,7 @@ class LinkMigratedSourceRepresentationTest {
             mappings[mapping.id] = mapping
         }
         override suspend fun remove(id: String) {
+            removedIds += id
             mappings.remove(id)
         }
         override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) {
