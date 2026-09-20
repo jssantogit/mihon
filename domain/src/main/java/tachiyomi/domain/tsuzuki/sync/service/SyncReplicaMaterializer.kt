@@ -43,15 +43,17 @@ class SyncReplicaMaterializer {
             }
         }
 
-        val available = allBatches.keys
-            .groupBy(SyncRevision::deviceId)
-            .mapValues { (_, revisions) -> revisions.maxOf(SyncRevision::sequence) }
-        allBatches.values.forEach { batch ->
-            batch.observed.entries.forEach { (deviceId, sequence) ->
-                if (sequence > (available[deviceId] ?: -1L)) {
-                    return failure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT)
-                }
+        val availableRevisions = allBatches.keys.toSet()
+        fun frontierReferencesPublishedHistory(frontier: SyncFrontier): Boolean =
+            frontier.entries.all { (deviceId, sequence) ->
+                SyncRevision(deviceId, sequence) in availableRevisions
             }
+
+        if (allBatches.values.any { !frontierReferencesPublishedHistory(it.observed) }) {
+            return failure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT)
+        }
+        if (visibleFrontier != null && !frontierReferencesPublishedHistory(visibleFrontier)) {
+            return failure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT)
         }
 
         val selected = allBatches.values
@@ -110,14 +112,18 @@ class SyncReplicaMaterializer {
         journals: List<SyncReplicaJournal>,
     ): SyncFailureReason? {
         if (journals.any { it.kind != kind }) return SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
-        val genesisValues = journals.mapNotNull { it.genesis }
-        if (genesisValues.any {
+        val genesisValues = journals.map { it.genesis }
+        if (genesisValues.any { it != null } && genesisValues.any { it == null }) {
+            return SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
+        }
+        val nonNullGenesis = genesisValues.filterNotNull()
+        if (nonNullGenesis.any {
                 it.document.kind != kind || it.document.schemaVersion != schemaVersion
             }
         ) {
             return SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
         }
-        if (genesisValues.isNotEmpty() && genesisValues.any { it != genesisValues.first() }) {
+        if (nonNullGenesis.isNotEmpty() && nonNullGenesis.any { it != nonNullGenesis.first() }) {
             return SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
         }
         val owners = mutableSetOf<String>()
