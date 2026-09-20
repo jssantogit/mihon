@@ -5,6 +5,7 @@ data class SyncStoredState(
     val acceptedBase: SyncDocumentEnvelope?,
     val remoteRevision: SyncRemoteRevision?,
     val lastSuccessfulSyncAtEpochMillis: Long?,
+    val acceptedFrontier: SyncFrontier = SyncFrontier(),
 ) {
     init {
         require(acceptedBase == null || acceptedBase.kind == documentKind) {
