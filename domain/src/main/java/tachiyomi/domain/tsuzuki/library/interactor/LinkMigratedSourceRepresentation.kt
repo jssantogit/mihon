@@ -48,6 +48,12 @@ class LinkMigratedSourceRepresentation internal constructor(
             ?.canonicalTitleId
             ?.takeIf { it != origin.canonicalTitleId }
 
+        if (duplicateCanonicalTitleId != null && existingTarget != null) {
+            // Drop stale operational variants tied to the duplicate canonical graph.
+            // The mapping ID is reused below so the representation keeps stable local identity.
+            sourceTitleMappingRepository.remove(existingTarget.id)
+        }
+
         val targetMapping = if (existingTarget != null) {
             existingTarget.copy(
                 canonicalTitleId = origin.canonicalTitleId,
