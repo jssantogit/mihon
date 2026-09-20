@@ -201,7 +201,6 @@ class SyncCycleOrchestratorTest {
             )
     }
 
-
     @Test
     fun `protocol v2 concurrent bootstrap creates one valid shard per device`() = runTest {
         val shared = FakeTransport()
@@ -221,7 +220,7 @@ class SyncCycleOrchestratorTest {
 
         shared.files
             .filter { it.protocolVersion == 2 && it.logicalKind == SyncDocumentKind.LIBRARY }
-            .map { it.ownerDeviceId }
+            .mapNotNull { it.ownerDeviceId }
             .sorted() shouldContainExactly listOf("device:A", "device:B")
         shared.createdKinds.contains(SyncDocumentKind.MANIFEST).shouldBeFalse()
     }
@@ -267,8 +266,10 @@ class SyncCycleOrchestratorTest {
         val transport = FakeTransport(
             files = mutableListOf(first, second),
             contents = mutableMapOf(
-                first.remoteId to """{"protocolVersion":2,"kind":"LIBRARY","ownerDeviceId":"device:A","genesis":null,"batches":[]}""",
-                second.remoteId to """{"protocolVersion":2,"kind":"LIBRARY","ownerDeviceId":"device:A","genesis":null,"batches":[]}""",
+                first.remoteId to
+                    """{"protocolVersion":2,"kind":"LIBRARY","ownerDeviceId":"device:A","genesis":null,"batches":[]}""",
+                second.remoteId to
+                    """{"protocolVersion":2,"kind":"LIBRARY","ownerDeviceId":"device:A","genesis":null,"batches":[]}""",
             ),
         )
 
