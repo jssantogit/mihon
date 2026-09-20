@@ -27,7 +27,13 @@ class SyncDocumentDifferTest {
                 updatedAt = 10,
                 fields = buildJsonObject {
                     put("name", "Base")
-                    put("nested", buildJsonObject { put("a", 1); put("b", 2) })
+                    put(
+                        "nested",
+                        buildJsonObject {
+                            put("a", 1)
+                            put("b", 2)
+                        },
+                    )
                     put("tags", JsonArray(listOf(JsonPrimitive("x"))))
                 },
             ),
@@ -51,7 +57,13 @@ class SyncDocumentDifferTest {
                 updatedAt = 20,
                 fields = buildJsonObject {
                     put("name", "Changed")
-                    put("nested", buildJsonObject { put("a", 1); put("c", 3) })
+                    put(
+                        "nested",
+                        buildJsonObject {
+                            put("a", 1)
+                            put("c", 3)
+                        },
+                    )
                     put("tags", JsonArray(listOf(JsonPrimitive("x"), JsonPrimitive("y"))))
                 },
             ),

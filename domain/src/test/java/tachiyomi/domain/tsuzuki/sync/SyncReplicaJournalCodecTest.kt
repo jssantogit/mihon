@@ -1,7 +1,7 @@
 package tachiyomi.domain.tsuzuki.sync
 
-import io.kotest.matchers.shouldBe
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
