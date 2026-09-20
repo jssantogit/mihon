@@ -222,7 +222,10 @@ class SyncReplicaMaterializer {
             val winner = distinct.singleOrNull() ?: return@forEach
             fields = applyField(fields, path, winner.mutation)
             revision = winner.revision
-            updatedAt = maxOf(updatedAt, winner.mutation.recordUpdatedAtEpochMillis)
+            updatedAt = maxOf(
+                updatedAt,
+                contenders.maxOf { it.mutation.recordUpdatedAtEpochMillis },
+            )
         }
 
         return RecordReduction(
