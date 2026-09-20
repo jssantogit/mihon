@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
+import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
@@ -61,6 +64,7 @@ fun CanonicalLibraryScreen(
     categories: List<Category> = emptyList(),
     onSetCategories: (String, List<Long>) -> Unit = { _, _ -> },
     onEditCategories: () -> Unit = {},
+    onCategoryFilterChange: (Long?) -> Unit = {},
     onRead: (CanonicalLibraryItem) -> Unit = {},
     onResolveSource: (CanonicalLibraryItem) -> Unit = {},
     onOpenSourcePreferences: () -> Unit = {},
@@ -97,19 +101,33 @@ fun CanonicalLibraryScreen(
                     LoadingScreen()
                 }
                 is CanonicalLibraryScreenState.Success -> {
-                    if (state.items.isEmpty()) {
-                        EmptyScreen(
-                            message = "No canonical titles in library",
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        CanonicalLibraryCategoryFilters(
+                            categories = categories,
+                            selectedCategoryId = state.selectedCategoryId,
+                            onCategoryFilterChange = onCategoryFilterChange,
                         )
-                    } else {
-                        CanonicalLibraryList(
-                            items = state.items,
-                            onUpdateStatus = onUpdateStatus,
-                            onRemoveItem = onRemoveItem,
-                            onChangeCategories = { categoryDialogItem = it },
-                            onRead = onRead,
-                            onResolveSource = onResolveSource,
-                        )
+                        if (state.items.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                            ) {
+                                EmptyScreen(
+                                    message = "No canonical titles in library",
+                                )
+                            }
+                        } else {
+                            CanonicalLibraryList(
+                                items = state.items,
+                                onUpdateStatus = onUpdateStatus,
+                                onRemoveItem = onRemoveItem,
+                                onChangeCategories = { categoryDialogItem = it },
+                                onRead = onRead,
+                                onResolveSource = onResolveSource,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
@@ -137,6 +155,33 @@ fun CanonicalLibraryScreen(
                 onSetCategories(item.title.id, include)
             },
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CanonicalLibraryCategoryFilters(
+    categories: List<Category>,
+    selectedCategoryId: Long?,
+    onCategoryFilterChange: (Long?) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        FilterChip(
+            selected = selectedCategoryId == null,
+            onClick = { onCategoryFilterChange(null) },
+            label = { Text("All") },
+        )
+        categories.forEach { category ->
+            FilterChip(
+                selected = selectedCategoryId == category.id,
+                onClick = { onCategoryFilterChange(category.id) },
+                label = { Text(category.visualName) },
+            )
+        }
     }
 }
 

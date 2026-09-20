@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
@@ -36,6 +37,7 @@ sealed interface CanonicalLibraryScreenState {
     data class Success(
         val items: List<CanonicalLibraryItem>,
         val searchQuery: String? = null,
+        val selectedCategoryId: Long? = null,
     ) : CanonicalLibraryScreenState
 }
 
@@ -62,6 +64,7 @@ class CanonicalLibraryScreenModel(
     val events = eventChannel.receiveAsFlow()
 
     private val searchQuery = MutableStateFlow<String?>(null)
+    private val selectedCategoryId = MutableStateFlow<Long?>(null)
 
     val state: StateFlow<CanonicalLibraryScreenState> = flow<CanonicalLibraryScreenState> {
         try {
@@ -76,18 +79,27 @@ class CanonicalLibraryScreenModel(
             combine(
                 observeCanonicalLibrary.subscribe(),
                 searchQuery,
-            ) { items, query ->
+                selectedCategoryId,
+            ) { items, query, categoryId ->
+                val categoryFilteredItems = when (categoryId) {
+                    null -> items
+                    Category.UNCATEGORIZED_ID -> items.filter { it.categories.isEmpty() }
+                    else -> items.filter { item ->
+                        item.categories.any { it.id == categoryId }
+                    }
+                }
                 val normalizedQuery = query?.trim().orEmpty()
                 val filteredItems = if (normalizedQuery.isEmpty()) {
-                    items
+                    categoryFilteredItems
                 } else {
-                    items.filter {
+                    categoryFilteredItems.filter {
                         it.title.displayTitle.contains(normalizedQuery, ignoreCase = true)
                     }
                 }
                 CanonicalLibraryScreenState.Success(
                     items = filteredItems,
                     searchQuery = query,
+                    selectedCategoryId = categoryId,
                 )
             },
         )
@@ -99,6 +111,10 @@ class CanonicalLibraryScreenModel(
 
     fun search(query: String?) {
         searchQuery.value = query
+    }
+
+    fun selectCategory(categoryId: Long?) {
+        selectedCategoryId.value = categoryId
     }
 
     fun setStatus(canonicalTitleId: String, status: LibraryStatus) {

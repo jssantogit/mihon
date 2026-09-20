@@ -58,6 +58,7 @@ class CanonicalLibraryScreen : Screen() {
             categories = categories,
             onSetCategories = categoriesViewModel::setCategories,
             onEditCategories = { navigator.push(CategoryScreen()) },
+            onCategoryFilterChange = screenModel::selectCategory,
             onRead = { item ->
                 screenModel.readOrContinue(
                     canonicalTitleId = item.title.id,
