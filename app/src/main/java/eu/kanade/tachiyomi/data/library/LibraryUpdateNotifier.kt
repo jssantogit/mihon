@@ -140,6 +140,7 @@ class LibraryUpdateNotifier(
             setContentIntent(NotificationHandler.openUrl(context, HELP_WARNING_URL))
         }
     }
+
     /**
      * Shows notification containing update entries that failed with action to open full log.
      *
