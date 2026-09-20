@@ -272,3 +272,22 @@ Code checkpoint before physical validation:
 - Tracker/Drive progress arbitration remains excluded for Milestone 12.
 
 This checkpoint requests final Release Compile and signed Dev C APK generation. Physical Drive validation remains the final Milestone 11 gate.
+
+
+## Final implementation checkpoint — 11.9
+
+Code checkpoint validated by Fast CI before final artifact gates:
+
+- Drive appDataFolder transport and three-way merge engine wired into runtime;
+- durable sync state/outbox/conflict persistence;
+- Library, source mappings/preferences, Collections and chapter overrides adapters;
+- `tsuzuki_chapter_overrides` durable schema + migration 24;
+- portable override identity (no device-local mapping/variant IDs in synced records);
+- dependency-aware document application order;
+- WorkManager background sync + manual sync diagnostics UI;
+- external authorization failure remains explicit and recoverable;
+- chapter override outbox triggers use guarded `WHERE NOT EXISTS` inserts so outer SQLite UPSERT conflict policies cannot reintroduce duplicate-key failures.
+
+Fast CI gate immediately before this checkpoint: `35478254749` — Format, Kotlin Compile, Unit Tests and SQLDelight Migrations all green.
+
+This documentation-only commit intentionally triggers the final Release Compile and signed Dev C APK gates without changing validated runtime code.
