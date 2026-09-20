@@ -117,7 +117,6 @@ class AddTracks(
     }
 }
 
-
 internal fun canonicalTrackerIdsUnavailableForAutoBind(
     resolution: CanonicalTrackerBindingResolution,
 ): Set<Long> = buildSet {
