@@ -26,8 +26,8 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.DriveSyncTransport
 import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncDocumentCodec
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
-import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentDiffer
 import tachiyomi.domain.tsuzuki.sync.service.SyncCycleOrchestrator
+import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentDiffer
 import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaBootstrap
 import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaJournalCodec
 import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaMaterializer
