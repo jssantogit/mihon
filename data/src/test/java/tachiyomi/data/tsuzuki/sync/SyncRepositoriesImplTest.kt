@@ -236,7 +236,7 @@ class SyncRepositoriesImplTest {
                     enqueuedAtEpochMillis = 100L,
                 ),
             )
-    }
+        }
 
     @Test
     fun `repeated collection upsert resets retry state without duplicating its outbox document`() = runBlocking<Unit> {
