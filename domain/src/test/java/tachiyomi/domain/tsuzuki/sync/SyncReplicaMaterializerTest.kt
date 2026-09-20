@@ -265,7 +265,6 @@ class SyncReplicaMaterializerTest {
         results.drop(1).forEach { it shouldBe results.first() }
     }
 
-
     @Test
     fun `fresh replicas with different records both survive`() {
         val a = journal(
