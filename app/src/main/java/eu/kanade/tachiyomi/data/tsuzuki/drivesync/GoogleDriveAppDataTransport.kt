@@ -257,7 +257,7 @@ class GoogleDriveAppDataTransport internal constructor(
         }
         return when (val current = getMetadata(remoteId)) {
             is DriveCallResult.Success -> current.value.toRemoteFile()
-                ?.let(SyncTransportResult::Success)
+                ?.let { SyncTransportResult.Success(it) }
                 ?: SyncTransportResult.Failure(
                     SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
                 )
