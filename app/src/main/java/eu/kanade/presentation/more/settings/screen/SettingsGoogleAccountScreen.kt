@@ -18,9 +18,12 @@ import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthConnectResult
 import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthorizationOperationResult
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import mihon.app.di.appGraph
 import tachiyomi.domain.tsuzuki.googleauth.model.GoogleAuthState
+import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
+import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
@@ -37,8 +40,10 @@ object SettingsGoogleAccountScreen : SearchableSettings {
     override fun getPreferences(): List<Preference> {
         val context = LocalContext.current
         val coordinator = remember { context.appGraph.googleAuthInteractiveCoordinator }
+        val syncRuntime = remember { context.appGraph.driveSyncRuntime }
         val scope = rememberCoroutineScope()
         val state by coordinator.state.collectAsState()
+        val syncState by syncRuntime.state.collectAsState()
 
         var pendingRequest by remember { mutableStateOf<IntentSenderRequest?>(null) }
         var accountSelectionRequested by remember { mutableStateOf(false) }
@@ -126,6 +131,35 @@ object SettingsGoogleAccountScreen : SearchableSettings {
             -> null
         }
 
+        val syncStatusTitle = when (val current = syncState) {
+            SyncRuntimeState.Idle -> stringResource(MR.strings.drive_sync_ready)
+            is SyncRuntimeState.Running -> stringResource(MR.strings.drive_sync_running)
+            is SyncRuntimeState.Completed -> {
+                if (current.report.hasConflicts || current.report.hasFailures) {
+                    stringResource(MR.strings.drive_sync_complete_with_issues)
+                } else {
+                    stringResource(MR.strings.drive_sync_complete)
+                }
+            }
+            is SyncRuntimeState.Failed -> stringResource(MR.strings.drive_sync_failed)
+        }
+
+        val syncAction = Preference.PreferenceItem.TextPreference(
+            title = stringResource(MR.strings.drive_sync_now),
+            enabled = state is GoogleAuthState.Connected && syncState !is SyncRuntimeState.Running,
+            onClick = {
+                scope.launch {
+                    try {
+                        syncRuntime.run(SyncTrigger.MANUAL)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        context.toast(MR.strings.drive_sync_failed_to_start)
+                    }
+                }
+            },
+        )
+
         val action = when (state) {
             GoogleAuthState.Restoring,
             GoogleAuthState.Connecting,
@@ -186,6 +220,19 @@ object SettingsGoogleAccountScreen : SearchableSettings {
                     ),
                     action,
                 ),
+            ),
+            Preference.PreferenceGroup(
+                title = stringResource(MR.strings.drive_sync_status),
+                preferenceItems = listOf(
+                    Preference.PreferenceItem.TextPreference(
+                        title = syncStatusTitle,
+                        enabled = false,
+                    ),
+                    syncAction,
+                ),
+            ),
+            Preference.PreferenceItem.InfoPreference(
+                stringResource(MR.strings.drive_sync_info),
             ),
             Preference.PreferenceItem.InfoPreference(
                 stringResource(MR.strings.google_auth_scope_info),

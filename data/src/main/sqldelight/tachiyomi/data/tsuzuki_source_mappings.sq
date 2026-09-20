@@ -102,3 +102,11 @@ SET preferred_override = 1,
 WHERE id = :id
 AND canonical_title_id = :canonicalTitleId;
 
+getAllTsuzukiSourceMappings:
+SELECT *
+FROM tsuzuki_source_mappings
+ORDER BY created_at ASC, id ASC;
+
+deleteTsuzukiSourceMappingById:
+DELETE FROM tsuzuki_source_mappings
+WHERE id = :id;

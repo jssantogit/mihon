@@ -1,0 +1,135 @@
+CREATE TABLE tsuzuki_chapter_overrides(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    canonical_chapter_key TEXT,
+    source_id INTEGER,
+    source_title_url TEXT,
+    source_chapter_id TEXT,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    CHECK((source_id IS NULL) = (source_title_url IS NULL)),
+    CHECK(source_chapter_id IS NULL OR source_id IS NOT NULL)
+);
+
+CREATE INDEX tsuzuki_chapter_override_title_index
+ON tsuzuki_chapter_overrides(canonical_title_id);
+
+CREATE INDEX tsuzuki_chapter_override_chapter_key_index
+ON tsuzuki_chapter_overrides(canonical_title_id, canonical_chapter_key);
+
+CREATE INDEX tsuzuki_chapter_override_source_index
+ON tsuzuki_chapter_overrides(source_id, source_title_url, source_chapter_id);
+
+
+CREATE TRIGGER tsuzuki_reader_preferences_sync_dirty_insert
+AFTER INSERT ON tsuzuki_reader_preferences
+BEGIN
+    -- Do not use OR IGNORE / ON CONFLICT here. SQLite propagates the
+    -- conflict policy of an outer UPSERT into trigger statements.
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    SELECT 'CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tsuzuki_sync_outbox
+        WHERE document_kind = 'CHAPTER_OVERRIDES'
+    );
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'CHAPTER_OVERRIDES';
+END;
+
+CREATE TRIGGER tsuzuki_reader_preferences_sync_dirty_update
+AFTER UPDATE ON tsuzuki_reader_preferences
+BEGIN
+    -- Do not use OR IGNORE / ON CONFLICT here. SQLite propagates the
+    -- conflict policy of an outer UPSERT into trigger statements.
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    SELECT 'CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tsuzuki_sync_outbox
+        WHERE document_kind = 'CHAPTER_OVERRIDES'
+    );
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'CHAPTER_OVERRIDES';
+END;
+
+CREATE TRIGGER tsuzuki_reader_preferences_sync_dirty_delete
+AFTER DELETE ON tsuzuki_reader_preferences
+BEGIN
+    -- Do not use OR IGNORE / ON CONFLICT here. SQLite propagates the
+    -- conflict policy of an outer UPSERT into trigger statements.
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    SELECT 'CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tsuzuki_sync_outbox
+        WHERE document_kind = 'CHAPTER_OVERRIDES'
+    );
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'CHAPTER_OVERRIDES';
+END;
+
+CREATE TRIGGER tsuzuki_chapter_overrides_sync_dirty_insert
+AFTER INSERT ON tsuzuki_chapter_overrides
+BEGIN
+    -- Do not use OR IGNORE / ON CONFLICT here. SQLite propagates the
+    -- conflict policy of an outer UPSERT into trigger statements.
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    SELECT 'CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tsuzuki_sync_outbox
+        WHERE document_kind = 'CHAPTER_OVERRIDES'
+    );
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'CHAPTER_OVERRIDES';
+END;
+
+CREATE TRIGGER tsuzuki_chapter_overrides_sync_dirty_update
+AFTER UPDATE ON tsuzuki_chapter_overrides
+BEGIN
+    -- Do not use OR IGNORE / ON CONFLICT here. SQLite propagates the
+    -- conflict policy of an outer UPSERT into trigger statements.
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    SELECT 'CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tsuzuki_sync_outbox
+        WHERE document_kind = 'CHAPTER_OVERRIDES'
+    );
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'CHAPTER_OVERRIDES';
+END;
+
+CREATE TRIGGER tsuzuki_chapter_overrides_sync_dirty_delete
+AFTER DELETE ON tsuzuki_chapter_overrides
+BEGIN
+    -- Do not use OR IGNORE / ON CONFLICT here. SQLite propagates the
+    -- conflict policy of an outer UPSERT into trigger statements.
+    INSERT INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    SELECT 'CHAPTER_OVERRIDES', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tsuzuki_sync_outbox
+        WHERE document_kind = 'CHAPTER_OVERRIDES'
+    );
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'CHAPTER_OVERRIDES';
+END;

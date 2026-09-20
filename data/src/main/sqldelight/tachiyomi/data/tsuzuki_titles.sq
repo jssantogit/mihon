@@ -26,3 +26,23 @@ VALUES (
     :createdAt,
     :updatedAt
 );
+
+upsertTsuzukiTitle:
+INSERT INTO tsuzuki_titles(
+    id,
+    display_title,
+    identity_state,
+    created_at,
+    updated_at
+)
+VALUES (
+    :id,
+    :displayTitle,
+    :identityState,
+    :createdAt,
+    :updatedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    display_title = excluded.display_title,
+    identity_state = excluded.identity_state,
+    updated_at = excluded.updated_at;

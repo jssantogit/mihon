@@ -93,6 +93,16 @@ class CanonicalTitleRepositoryImpl(
         )
     }
 
+    override suspend fun upsert(title: CanonicalTitle) {
+        database.tsuzuki_titlesQueries.upsertTsuzukiTitle(
+            id = title.id,
+            displayTitle = title.displayTitle,
+            identityState = title.identityState.name,
+            createdAt = title.createdAt,
+            updatedAt = title.updatedAt,
+        )
+    }
+
     override suspend fun addExternalIdentity(identity: ExternalIdentity) {
         database.tsuzuki_external_identitiesQueries.insertTsuzukiExternalIdentity(
             canonicalTitleId = identity.canonicalTitleId,

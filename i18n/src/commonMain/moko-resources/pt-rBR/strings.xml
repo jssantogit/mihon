@@ -933,5 +933,14 @@
     <string name="google_auth_scope_info">O Tsuzuki solicita acesso apenas à área privada de dados do app no Google Drive. Os arquivos comuns do Drive não ficam expostos ao Tsuzuki, e os tokens de acesso são mantidos somente em memória.</string>
     <string name="google_auth_launch_failed">Não foi possível abrir a autorização do Google.</string>
     <string name="google_auth_remote_disconnect_failed">A conta foi desconectada localmente, mas o acesso no Google não pôde ser revogado agora.</string>
+    <string name="drive_sync_status">Sincronização privada do Drive</string>
+    <string name="drive_sync_ready">Pronto</string>
+    <string name="drive_sync_running">Sincronizando…</string>
+    <string name="drive_sync_complete">Sincronização concluída</string>
+    <string name="drive_sync_complete_with_issues">Sincronização concluída com pendências</string>
+    <string name="drive_sync_failed">Falha na sincronização</string>
+    <string name="drive_sync_now">Sincronizar agora</string>
+    <string name="drive_sync_info">A sincronização privada inclui atualmente Biblioteca, Coleções e mapeamentos/preferências lógicas de fontes. Downloads, cache de páginas e credenciais de trackers nunca são sincronizados.</string>
+    <string name="drive_sync_failed_to_start">Não foi possível executar a sincronização do Drive.</string>
 
 </resources>
