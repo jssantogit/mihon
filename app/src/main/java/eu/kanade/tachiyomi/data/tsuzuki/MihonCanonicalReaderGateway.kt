@@ -142,7 +142,6 @@ class MihonCanonicalReaderGateway(
     }
 }
 
-
 private object NoCanonicalReaderDownloads : CanonicalDownloadGateway {
     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
 }
