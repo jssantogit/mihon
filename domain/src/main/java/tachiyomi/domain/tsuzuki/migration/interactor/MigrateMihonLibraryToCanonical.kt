@@ -136,7 +136,6 @@ private object AlwaysPendingCanonicalLibraryMigrationStateRepository :
     override suspend fun markCompleted() = Unit
 }
 
-
 private object EmptyLibraryTitleCategoryRepository : LibraryTitleCategoryRepository {
     override fun getAllAsFlow() =
         kotlinx.coroutines.flow.flowOf(

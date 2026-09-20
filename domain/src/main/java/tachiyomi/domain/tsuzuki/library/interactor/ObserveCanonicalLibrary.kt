@@ -27,8 +27,10 @@ class ObserveCanonicalLibrary(
             val categoriesByTitle = categoryAssignments.groupBy { it.canonicalTitleId }
             items.map { item ->
                 item.copy(
-                    sources = mappingsByTitle[item.id].orEmpty(),
-                    categories = categoriesByTitle[item.id].orEmpty().map { it.category },
+                    sources = mappingsByTitle[item.id] ?: item.sources,
+                    categories = categoriesByTitle[item.id]
+                        ?.map { it.category }
+                        ?: item.categories,
                 )
             }
         }
