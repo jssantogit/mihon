@@ -361,8 +361,6 @@ class CanonicalLibraryScreenModelTest {
     }
 
     private class FakeSourceTitleMappingRepository : SourceTitleMappingRepository {
-        override fun getAllAsFlow(): Flow<List<SourceTitleMapping>> = MutableStateFlow(emptyList())
-
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> = emptyList()
         override fun getByCanonicalTitleIdAsFlow(
             canonicalTitleId: String,
