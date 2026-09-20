@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.reader.interactor
 
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -12,6 +13,36 @@ import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 class DeleteCanonicalTrackerBindingTest {
+
+    @Test
+    fun `deleting by operational manga resolves the canonical title and removes every representation`() = runTest {
+        val mappings = FakeMappings(
+            listOf(
+                mapping("one", "title-1", 11L),
+                mapping("two", "title-1", 22L),
+                mapping("other", "title-2", 33L),
+            ),
+        )
+        val tracks = FakeTracks()
+        val interactor = DeleteCanonicalTrackerBinding(mappings, tracks)
+
+        interactor.executeForManga(mangaId = 22L, trackerId = 100L) shouldBe true
+
+        tracks.deleted shouldContainExactly listOf(
+            11L to 100L,
+            22L to 100L,
+        )
+    }
+
+    @Test
+    fun `unmapped operational manga does not delete tracker bindings`() = runTest {
+        val tracks = FakeTracks()
+        val interactor = DeleteCanonicalTrackerBinding(FakeMappings(emptyList()), tracks)
+
+        interactor.executeForManga(mangaId = 999L, trackerId = 100L) shouldBe false
+
+        tracks.deleted shouldBe emptyList()
+    }
 
     @Test
     fun `deleting canonical tracker removes it from every materialized representation only`() = runTest {
