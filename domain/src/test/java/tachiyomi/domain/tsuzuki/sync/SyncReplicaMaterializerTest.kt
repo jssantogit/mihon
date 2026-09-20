@@ -188,9 +188,9 @@ class SyncReplicaMaterializerTest {
     @Test
     fun `legacy genesis must be copied identically by every participating replica`() {
         val genesis = legacyGenesis()
-        val withGenesis = journal(
-            owner = "device:A",
-            genesis = genesis,
+        val withGenesis = journalWithGenesis(
+            "device:A",
+            genesis,
             batch("device:A", 1, mutations = listOf(set("r", "status", "reading", 20))),
         )
         val withoutGenesis = journal(
@@ -207,14 +207,14 @@ class SyncReplicaMaterializerTest {
     @Test
     fun `identical legacy genesis supports independent replica deltas without false conflict`() {
         val genesis = legacyGenesis()
-        val a = journal(
-            owner = "device:A",
-            genesis = genesis,
+        val a = journalWithGenesis(
+            "device:A",
+            genesis,
             batch("device:A", 1, mutations = listOf(set("r", "status", "reading", 20))),
         )
-        val b = journal(
-            owner = "device:B",
-            genesis = genesis,
+        val b = journalWithGenesis(
+            "device:B",
+            genesis,
             batch("device:B", 1, mutations = listOf(set("r", "favorite", "true", 30))),
         )
 
@@ -272,7 +272,16 @@ class SyncReplicaMaterializerTest {
     private fun journal(
         owner: String,
         vararg batches: SyncMutationBatch,
-        genesis: SyncReplicaGenesis? = null,
+    ) = SyncReplicaJournal(
+        kind = kind,
+        ownerDeviceId = owner,
+        batches = batches.toList(),
+    )
+
+    private fun journalWithGenesis(
+        owner: String,
+        genesis: SyncReplicaGenesis,
+        vararg batches: SyncMutationBatch,
     ) = SyncReplicaJournal(
         kind = kind,
         ownerDeviceId = owner,
