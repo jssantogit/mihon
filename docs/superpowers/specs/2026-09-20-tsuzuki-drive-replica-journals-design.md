@@ -119,14 +119,15 @@ Conceptually:
 
 ```text
 tsuzuki_sync_replicas
-- document_kind             PRIMARY KEY
+- document_kind
 - owner_device_id
 - reserved_remote_id
 - last_remote_revision
 - next_sequence
+PRIMARY KEY(document_kind, owner_device_id)
 ```
 
-The table is device-local operational metadata. It is not synchronized.
+The table is device-local operational metadata. It is not synchronized. Replica ownership is keyed by both logical kind and owner device ID so a restored database paired with a new `noBackupFilesDir` device identity cannot accidentally resume writing the old device's remote shard. Old-owner rows may remain inert; the current device only queries its own key.
 
 `next_sequence` is monotonic for that local document journal. Sequence gaps are valid. On startup/sync, a remote local-owned journal with a higher sequence than local metadata advances the local counter before any new batch is created.
 
@@ -276,7 +277,9 @@ For each logical document:
 
 Publishing a conflict-causing local batch is permitted because it is append-only logical evidence and cannot overwrite another replica. The sync engine must still never silently choose a winner for the materialized accepted state.
 
-A failed network write keeps the outbox dirty. An ambiguous write is resolved on the next pull because batch identity is stable inside the local journal.
+A failed network write keeps the outbox dirty. Sequence allocation is persisted before the remote write; gaps are allowed.
+
+If a write outcome is ambiguous, the next pull first inspects the current device's owned journal for batches beyond the last accepted frontier. Those already-published batches are treated as the device's causal published state, not emitted again. The engine materializes history only through the newest such local batch's observed frontier plus that batch to reconstruct the local causal base, diffs that base against current local domain state, and creates a new batch only for genuinely newer local changes. This prevents duplicate publication without falsely marking unseen remote batches as observed.
 
 ## Why SYNC-P2 is eliminated
 
