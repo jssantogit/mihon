@@ -23,8 +23,10 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictValue
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
+import tachiyomi.domain.tsuzuki.sync.model.SyncFrontier
 import tachiyomi.domain.tsuzuki.sync.model.SyncOutboxEntry
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteRevision
+import tachiyomi.domain.tsuzuki.sync.model.SyncReplicaState
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
 import tachiyomi.domain.tsuzuki.sync.model.SyncStoredState
 import java.nio.file.Files
@@ -35,6 +37,7 @@ class SyncRepositoriesImplTest {
     private lateinit var database: Database
     private lateinit var outbox: SyncOutboxRepositoryImpl
     private lateinit var state: SyncStateRepositoryImpl
+    private lateinit var replica: SyncReplicaRepositoryImpl
     private lateinit var conflicts: SyncConflictRepositoryImpl
     private var originalNativeLibraryPath: String? = null
     private var nativeLibraryDirectory: java.nio.file.Path? = null
@@ -65,6 +68,7 @@ class SyncRepositoriesImplTest {
 
         outbox = SyncOutboxRepositoryImpl(database)
         state = SyncStateRepositoryImpl(database)
+        replica = SyncReplicaRepositoryImpl(database)
         conflicts = SyncConflictRepositoryImpl(database)
     }
 
@@ -338,6 +342,12 @@ class SyncRepositoriesImplTest {
                 modifiedAtEpochMillis = 1_100L,
             ),
             lastSuccessfulSyncAtEpochMillis = 1_200L,
+            acceptedFrontier = SyncFrontier(
+                mapOf(
+                    "device-a" to 7L,
+                    "device-b" to 3L,
+                ),
+            ),
         )
 
         state.put(stored)
@@ -346,6 +356,51 @@ class SyncRepositoriesImplTest {
 
         state.clear(SyncDocumentKind.SOURCE_MAPPINGS)
         state.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe null
+    }
+
+
+    @Test
+    fun `replica ownership and reserved remote id round trip by device identity`() = runBlocking<Unit> {
+        val stored = SyncReplicaState(
+            documentKind = SyncDocumentKind.LIBRARY,
+            ownerDeviceId = "device:A",
+            reservedRemoteId = "reserved-file",
+            lastRemoteRevisionToken = "12",
+            nextSequence = 13L,
+        )
+
+        replica.put(stored)
+
+        replica.get(SyncDocumentKind.LIBRARY, "device:A") shouldBe stored
+        replica.get(SyncDocumentKind.LIBRARY, "device:B") shouldBe null
+    }
+
+    @Test
+    fun `replica sequence survives repository recreation and clear is owner scoped`() = runBlocking<Unit> {
+        val ownerA = SyncReplicaState(
+            documentKind = SyncDocumentKind.COLLECTIONS,
+            ownerDeviceId = "device:A",
+            reservedRemoteId = "remote-a",
+            lastRemoteRevisionToken = null,
+            nextSequence = 9L,
+        )
+        val ownerB = SyncReplicaState(
+            documentKind = SyncDocumentKind.COLLECTIONS,
+            ownerDeviceId = "device:B",
+            reservedRemoteId = "remote-b",
+            lastRemoteRevisionToken = "4",
+            nextSequence = 5L,
+        )
+        replica.put(ownerA)
+        replica.put(ownerB)
+
+        val recreated = SyncReplicaRepositoryImpl(database)
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:A") shouldBe ownerA
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:B") shouldBe ownerB
+
+        recreated.clear(SyncDocumentKind.COLLECTIONS, "device:A")
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:A") shouldBe null
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:B") shouldBe ownerB
     }
 
     @Test
