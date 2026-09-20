@@ -21,12 +21,16 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
+import tachiyomi.domain.tsuzuki.sync.repository.SyncReplicaRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.DriveSyncTransport
 import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncDocumentCodec
-import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncManifestCodec
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
+import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentDiffer
 import tachiyomi.domain.tsuzuki.sync.service.SyncCycleOrchestrator
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaBootstrap
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaJournalCodec
+import tachiyomi.domain.tsuzuki.sync.service.SyncReplicaMaterializer
 import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeController
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
@@ -44,6 +48,7 @@ class DriveSyncRuntime(
     transport: DriveSyncTransport,
     outboxRepository: SyncOutboxRepository,
     stateRepository: SyncStateRepository,
+    replicaRepository: SyncReplicaRepository,
     conflictRepository: SyncConflictRepository,
     libraryRepository: CanonicalLibraryRepository,
     titleRepository: CanonicalTitleRepository,
@@ -57,11 +62,17 @@ class DriveSyncRuntime(
 
     private val clock: SyncClock = AndroidSyncClock
     private val revisionSource: SyncRevisionSource = AndroidSyncRevisionSource(context)
+    private val documentCodec = KotlinxSyncDocumentCodec(json)
+    private val journalCodec = SyncReplicaJournalCodec(json)
+    private val differ = SyncDocumentDiffer()
+    private val materializer = SyncReplicaMaterializer()
+    private val bootstrap = SyncReplicaBootstrap(documentCodec)
     private val controller = SyncRuntimeController(
         runner = SyncCycleOrchestrator(
             transport = transport,
             outboxRepository = outboxRepository,
             stateRepository = stateRepository,
+            replicaRepository = replicaRepository,
             conflictRepository = conflictRepository,
             adapters = listOf(
                 CanonicalLibrarySyncAdapter(
@@ -89,8 +100,11 @@ class DriveSyncRuntime(
                     clock = clock,
                 ),
             ),
-            codec = KotlinxSyncDocumentCodec(json),
-            manifestCodec = KotlinxSyncManifestCodec(json),
+            codec = documentCodec,
+            journalCodec = journalCodec,
+            differ = differ,
+            materializer = materializer,
+            bootstrap = bootstrap,
             merger = ThreeWaySyncMerger(),
             revisionSource = revisionSource,
             clock = clock,
