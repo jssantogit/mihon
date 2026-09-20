@@ -188,12 +188,14 @@ The journal records user-state deltas, not full-document replacements.
 Mutations are expressed at record/property granularity so independent edits can merge without a common three-way base:
 
 ```text
-SetField(recordId, propertyPath, JSON value)
-RemoveField(recordId, propertyPath)
-DeleteRecord(recordId)
+SetField(recordId, propertyPath, JSON value, recordUpdatedAtEpochMillis)
+RemoveField(recordId, propertyPath, recordUpdatedAtEpochMillis)
+DeleteRecord(recordId, recordUpdatedAtEpochMillis, deletedAtEpochMillis)
 ```
 
 Arrays and primitive values are atomic field values. JSON objects may be diffed recursively to leaf property paths.
+
+Every mutation carries the source record's `updatedAtEpochMillis`; deletes also carry `deletedAtEpochMillis`. These timestamps reconstruct adapter-visible record metadata only. They never establish causal order and never choose a winner. When independent concurrent field mutations contribute to one active materialized record, its diagnostic `updatedAtEpochMillis` is the maximum contributing record timestamp after the causal winner set has already been determined.
 
 A newly created record is represented by `SetField` mutations from a missing record. A local record removal is represented by `DeleteRecord`.
 
