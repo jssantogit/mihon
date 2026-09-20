@@ -8,9 +8,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.launch
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -26,6 +23,9 @@ import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
 import eu.kanade.tachiyomi.ui.tsuzuki.source.ReadingSourcePreferencesScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.source.SourceResolverScreen
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import eu.kanade.presentation.tsuzuki.library.CanonicalLibraryScreen as CanonicalLibraryScreenContent
