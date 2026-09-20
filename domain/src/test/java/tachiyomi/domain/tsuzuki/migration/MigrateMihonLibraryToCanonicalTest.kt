@@ -19,8 +19,8 @@ import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
-import tachiyomi.domain.tsuzuki.repository.LibraryTitleCategoryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.repository.LibraryTitleCategoryRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 class MigrateMihonLibraryToCanonicalTest {

@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
+import tachiyomi.domain.tsuzuki.repository.LibraryTitleCategoryRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import java.util.UUID
 import kotlin.time.Clock
@@ -19,6 +20,8 @@ open class MigrateMihonLibraryToCanonical internal constructor(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val materializeCanonicalTitle: MaterializeCanonicalTitle,
     private val canonicalLibraryRepository: CanonicalLibraryRepository,
+    private val libraryTitleCategoryRepository: LibraryTitleCategoryRepository =
+        EmptyLibraryTitleCategoryRepository,
     private val migrationStateRepository: CanonicalLibraryMigrationStateRepository =
         AlwaysPendingCanonicalLibraryMigrationStateRepository,
     private val idFactory: () -> String,
@@ -31,6 +34,8 @@ open class MigrateMihonLibraryToCanonical internal constructor(
         sourceTitleMappingRepository: SourceTitleMappingRepository,
         materializeCanonicalTitle: MaterializeCanonicalTitle,
         canonicalLibraryRepository: CanonicalLibraryRepository,
+        libraryTitleCategoryRepository: LibraryTitleCategoryRepository =
+            EmptyLibraryTitleCategoryRepository,
         migrationStateRepository: CanonicalLibraryMigrationStateRepository =
             AlwaysPendingCanonicalLibraryMigrationStateRepository,
     ) : this(
@@ -38,6 +43,7 @@ open class MigrateMihonLibraryToCanonical internal constructor(
         sourceTitleMappingRepository = sourceTitleMappingRepository,
         materializeCanonicalTitle = materializeCanonicalTitle,
         canonicalLibraryRepository = canonicalLibraryRepository,
+        libraryTitleCategoryRepository = libraryTitleCategoryRepository,
         migrationStateRepository = migrationStateRepository,
         idFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
@@ -106,6 +112,10 @@ open class MigrateMihonLibraryToCanonical internal constructor(
                 updatedAt = existingEntry?.updatedAt ?: now,
             )
             canonicalLibraryRepository.upsert(entry)
+            libraryTitleCategoryRepository.setCategories(
+                canonicalTitleId = canonicalTitleId,
+                categoryIds = snapshot.categoryIds,
+            )
         }
 
         migrationStateRepository.markCompleted()
@@ -124,4 +134,20 @@ private object AlwaysPendingCanonicalLibraryMigrationStateRepository :
     override suspend fun isCompleted(): Boolean = false
 
     override suspend fun markCompleted() = Unit
+}
+
+
+private object EmptyLibraryTitleCategoryRepository : LibraryTitleCategoryRepository {
+    override fun getAllAsFlow() =
+        kotlinx.coroutines.flow.flowOf(
+            emptyList<tachiyomi.domain.tsuzuki.library.model.LibraryTitleCategory>(),
+        )
+
+    override suspend fun getByCanonicalTitleId(canonicalTitleId: String) =
+        emptyList<tachiyomi.domain.category.model.Category>()
+
+    override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String) =
+        kotlinx.coroutines.flow.flowOf(emptyList<tachiyomi.domain.category.model.Category>())
+
+    override suspend fun setCategories(canonicalTitleId: String, categoryIds: List<Long>) = Unit
 }
