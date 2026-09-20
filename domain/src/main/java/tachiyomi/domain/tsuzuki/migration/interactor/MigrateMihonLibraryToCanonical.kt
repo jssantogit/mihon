@@ -31,7 +31,8 @@ open class MigrateMihonLibraryToCanonical internal constructor(
         sourceTitleMappingRepository: SourceTitleMappingRepository,
         materializeCanonicalTitle: MaterializeCanonicalTitle,
         canonicalLibraryRepository: CanonicalLibraryRepository,
-        migrationStateRepository: CanonicalLibraryMigrationStateRepository,
+        migrationStateRepository: CanonicalLibraryMigrationStateRepository =
+            AlwaysPendingCanonicalLibraryMigrationStateRepository,
     ) : this(
         gateway = gateway,
         sourceTitleMappingRepository = sourceTitleMappingRepository,
