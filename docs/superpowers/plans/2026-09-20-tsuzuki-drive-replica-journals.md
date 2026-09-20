@@ -141,7 +141,7 @@ sealed interface SyncReplicaMaterializationResult {
 }
 ```
 - `SyncDocumentDiffer.diff(base, current)` compares record content/tombstone state only; export-generated record/document revisions must not create mutations.
-- `SyncReplicaMaterializer.materialize(kind, schemaVersion, journals, materializedAtEpochMillis)` is pure and listing-order independent.
+- `SyncReplicaMaterializer.materialize(kind, schemaVersion, journals, materializedAtEpochMillis, visibleFrontier = null)` is pure and listing-order independent. When `visibleFrontier` is non-null it materializes only batches causally visible through that frontier; this is used to reconstruct the local device's already-published causal state after an ambiguous write.
 
 - [ ] **Step 1: Write RED tests for frontier and journal validation**
 
@@ -260,9 +260,15 @@ data class SyncReplicaState(
 )
 
 interface SyncReplicaRepository {
-    suspend fun get(documentKind: SyncDocumentKind): SyncReplicaState?
+    suspend fun get(
+        documentKind: SyncDocumentKind,
+        ownerDeviceId: String,
+    ): SyncReplicaState?
     suspend fun put(state: SyncReplicaState)
-    suspend fun clear(documentKind: SyncDocumentKind)
+    suspend fun clear(
+        documentKind: SyncDocumentKind,
+        ownerDeviceId: String,
+    )
 }
 ```
 
@@ -283,11 +289,12 @@ ALTER TABLE tsuzuki_sync_state
 ADD COLUMN accepted_frontier_json TEXT;
 
 CREATE TABLE tsuzuki_sync_replicas(
-    document_kind TEXT NOT NULL PRIMARY KEY,
+    document_kind TEXT NOT NULL,
     owner_device_id TEXT NOT NULL,
     reserved_remote_id TEXT,
     last_remote_revision_token TEXT,
-    next_sequence INTEGER NOT NULL
+    next_sequence INTEGER NOT NULL,
+    PRIMARY KEY(document_kind, owner_device_id)
 );
 ```
 
@@ -298,7 +305,7 @@ Add tests for:
 - replica state round-trip;
 - reserved ID persists before any remote create;
 - next sequence survives repository recreation;
-- owner device mismatch is rejected by model/consumer;
+- a different current device ID does not load or reuse the old owner's replica row;
 - migration 26 preserves existing v1 state rows and leaves frontier empty/null-compatible;
 - P1 repeated-upsert regressions from migration 25 remain green.
 
@@ -317,7 +324,7 @@ Run/push Fast CI. SQLDelight migration verification must be green.
 
 - [ ] **Step 3: Implement `SyncReplicaRepositoryImpl` and state frontier persistence**
 
-Use one transaction for each logical state write. Validate `nextSequence >= 0`, nonblank owner, and nonblank optional remote/revision IDs.
+Use one transaction for each logical state write. Validate `nextSequence >= 1`, nonblank owner, and nonblank optional remote/revision IDs. A restored database with a new `noBackupFilesDir` device ID gets a new row and must never resume the stale owner's reserved remote ID.
 
 Run/push Fast CI and commit:
 ```text
@@ -489,11 +496,13 @@ Cover:
 - existing v2 journal with copied genesis + unchanged visible v1 -> accepted;
 - existing v2 genesis + changed v1 revision/content -> `MIXED_PROTOCOL`;
 - v2 journals reconstruct state when legacy file is absent;
+- two devices migrating the same unchanged legacy genesis with independent local edits merge without false conflicts;
+- one device unchanged from legacy and another changing a legacy field accepts the real change rather than reporting a false concurrent edit;
 - no shared `manifest.json` write occurs.
 
 - [ ] **Step 3: Implement `SyncReplicaBootstrap`**
 
-Use exact legacy filenames only for v1 discovery. V2 correctness uses appProperties and decoded journal metadata.
+Use exact legacy filenames only for v1 discovery. V2 correctness uses appProperties and decoded journal metadata. When migrating a device that already has v1 `SyncStoredState`, run the existing `ThreeWaySyncMerger` once with `base = stored acceptedBase`, `local = adapter export`, and `remote = legacy genesis`; if conflict-free, encode only `legacy genesis -> merged result` as the first v2 local delta. With no stored v1 base, `base = null` remains conservative. This prevents unchanged legacy values from becoming false concurrent edits during two-device migration.
 
 Run/push Fast CI.
 
@@ -533,7 +542,10 @@ Cover:
 - batch revision uses local device ID and persisted next sequence;
 - successful create/update advances persisted replica sequence/revision;
 - failed write leaves outbox dirty and does not advance accepted state;
-- retry reuses same logical batch identity when prior outcome is ambiguous (derive/persist sequence before remote write and reconcile against pulled local-owned journal before appending another batch);
+- sequence allocation is persisted before remote write and gaps are allowed;
+- after an ambiguous prior write, pulled local-owned batches beyond the accepted frontier are recognized as already-published local history and are not emitted again;
+- reconstructing that already-published local causal state uses the newest local batch's observed frontier plus its own revision, excluding remote batches the device had not observed when the local edit occurred;
+- only a semantic diff between that reconstructed local causal state and the current domain export may create a newer batch;
 - conflict materialization persists conflict ledger and does not silently apply a winner;
 - conflict-free remote changes apply through adapter;
 - adapter-triggered outbox dirtiness is cleared only after accepted v2 state is persisted;
@@ -547,18 +559,20 @@ Per document:
 3. download/decode all relevant journals;
 4. resolve/validate genesis;
 5. materialize remote v2 state;
-6. load accepted state/frontier and local replica state;
-7. reconcile local `nextSequence` against the pulled local-owned journal;
-8. export current adapter document;
-9. if dirty, diff accepted materialized document -> local export;
-10. construct one stable local batch using persisted/reserved sequence and accepted frontier;
-11. materialize remote journals + candidate local batch;
-12. if no local journal exists, reserve/persist Drive ID before create;
-13. write only the local-owned journal, or skip write when no new local batch exists;
-14. on create 409, fetch/adopt only if protocol/kind/owner metadata match the reserved ID;
-15. persist conflicts when present; never choose a conflicting winner;
-16. when conflict-free, apply materialized state locally if content differs, persist accepted state/frontier, clear conflicts and outbox;
-17. never write shared v1 files or shared manifest.
+6. load accepted state/frontier and the current owner's replica state;
+7. reconcile local `nextSequence` to at least one greater than the max sequence already present in the pulled local-owned journal;
+8. if the local-owned journal contains batches beyond the accepted frontier, reconstruct the local causal published state by materializing only history visible through the newest such batch's observed frontier plus that batch revision;
+9. export current adapter document;
+10. choose the local causal diff base: reconstructed already-published local state when present, otherwise accepted base; for first v2 migration use the resolved genesis/legacy merge rules below;
+11. create a new local batch only when the outbox/first-sync rules say local state is dirty and the semantic diff from that causal base is non-empty; its `observed` frontier is the causal base frontier, not the full freshly pulled remote frontier;
+12. persist sequence allocation before attempting a new remote write; sequence gaps are valid;
+13. materialize remote journals + candidate local batch;
+14. if no local journal exists, reserve and persist a Drive ID before create;
+15. write only the local-owned journal, or skip write when no new local batch exists;
+16. on create 409, fetch/adopt only if protocol/kind/owner metadata match the reserved ID;
+17. persist conflicts when present; never choose a conflicting winner;
+18. when conflict-free, apply materialized state locally if content differs, persist accepted state/frontier, clear conflicts and outbox;
+19. never write shared v1 files or shared manifest.
 
 Keep the outer `Mutex`, retry policy, cycle-wide failure classification, and cancellation handling.
 
