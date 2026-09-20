@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.tsuzuki
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 
 class MihonCanonicalDownloadGatewayTest {
@@ -15,7 +16,13 @@ class MihonCanonicalDownloadGatewayTest {
                 mangaId shouldBe 55L
                 "Local Manga Title"
             },
-            downloadLookup = { variant, mangaTitle ->
+            sourceProvider = { sourceId ->
+                sourceId shouldBe 7L
+                StubSource(sourceId, "en", "Removed Source")
+            },
+            downloadLookup = { variant, mangaTitle, source ->
+                source.id shouldBe 7L
+                source.name shouldBe "Removed Source"
                 lookup = Lookup(
                     chapterName = variant.rawName,
                     scanlator = variant.scanlationGroup,
