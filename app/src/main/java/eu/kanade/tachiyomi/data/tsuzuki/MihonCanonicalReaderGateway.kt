@@ -10,6 +10,7 @@ import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.model.OperationalReaderChapter
@@ -23,6 +24,7 @@ class MihonCanonicalReaderGateway(
     private val chapterRepository: ChapterRepository,
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
+    private val canonicalDownloadGateway: CanonicalDownloadGateway = NoCanonicalReaderDownloads,
 ) : CanonicalReaderGateway {
 
     override suspend fun materialize(
@@ -44,8 +46,15 @@ class MihonCanonicalReaderGateway(
             require(mapping.sourceId == variant.sourceId) {
                 "Variant source does not match its source mapping"
             }
-            require(mapping.availability != SourceMappingAvailability.UNAVAILABLE) {
-                "Source mapping ${mapping.id} is unavailable"
+            val downloadVariant = if (variant.mihonMangaId == null && mapping.mihonMangaId != null) {
+                variant.copy(mihonMangaId = mapping.mihonMangaId)
+            } else {
+                variant
+            }
+            val isReadableOffline = mapping.availability == SourceMappingAvailability.UNAVAILABLE &&
+                canonicalDownloadGateway.isDownloaded(downloadVariant)
+            require(mapping.availability != SourceMappingAvailability.UNAVAILABLE || isReadableOffline) {
+                "Source mapping ${mapping.id} is unavailable and variant is not downloaded"
             }
             if (variant.mihonMangaId != null && mapping.mihonMangaId != null) {
                 require(variant.mihonMangaId == mapping.mihonMangaId) {
@@ -131,4 +140,9 @@ class MihonCanonicalReaderGateway(
             Result.failure(error)
         }
     }
+}
+
+
+private object NoCanonicalReaderDownloads : CanonicalDownloadGateway {
+    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
 }
