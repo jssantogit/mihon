@@ -111,19 +111,19 @@ class CanonicalHistoryViewTest {
     @Test
     fun `resetting visible history clears canonical last read even when legacy history id is used`() =
         runBlocking<Unit> {
-        database.historyQueries.upsert(
-            chapterId = expectedChapterId,
-            readAt = Date(3_000L),
-            time_read = 5L,
-        )
-        val historyId = database.historyViewQueries.getLatestHistory(
-            mapper = { id, _, _, _, _, _, _, _, _, _, _ -> id },
-        ).awaitAsOne()
+            database.historyQueries.upsert(
+                chapterId = expectedChapterId,
+                readAt = Date(3_000L),
+                time_read = 5L,
+            )
+            val historyId = database.historyViewQueries.getLatestHistory(
+                mapper = { id, _, _, _, _, _, _, _, _, _, _ -> id },
+            ).awaitAsOne()
 
-        HistoryRepositoryImpl(database).resetHistory(historyId)
+            HistoryRepositoryImpl(database).resetHistory(historyId)
 
-        visibleHistoryRows() shouldBe emptyList()
-    }
+            visibleHistoryRows() shouldBe emptyList()
+        }
 
     @Test
     fun `resetting history by operational manga clears the canonical title history`() = runBlocking<Unit> {
