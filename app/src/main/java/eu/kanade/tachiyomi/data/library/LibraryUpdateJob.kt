@@ -175,7 +175,9 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
      */
     private suspend fun addMangaToQueue(categoryId: Long) {
         val libraryTitles = getLibraryTitlesForUpdate.await()
-        val materializedTargets = libraryTitles.mapNotNull(::resolveUpdateTarget)
+        val materializedTargets = libraryTitles.mapNotNull { title ->
+            resolveUpdateTarget(title)
+        }
 
         val listToUpdate = if (categoryId != -1L) {
             materializedTargets.filter { categoryId in it.categories }
