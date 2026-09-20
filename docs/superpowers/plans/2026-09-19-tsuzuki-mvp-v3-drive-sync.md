@@ -256,3 +256,19 @@ Fast CI after each meaningful implementation block.
 Use `[full-ci]` only at the Drive transport integration checkpoint and final milestone checkpoint.
 
 Use `[apk]` only once a runtime Drive flow is ready for physical validation.
+
+
+## Final implementation checkpoint
+
+Code checkpoint before physical validation:
+
+- Fast CI `35477501573`: Format, Kotlin Compile, Unit Tests, and SQLDelight Migrations all green.
+- 11.3 local SQL sync state/outbox is implemented.
+- 11.7 Collections and durable `chapter-overrides.json` adapters are implemented against the integrated authoritative schemas.
+- `tsuzuki_chapter_overrides` is durable, portable across devices, tombstone-capable, and migration-backed by migration 24.
+- Chapter override outbox triggers use explicit UPSERT coalescing so repeated domain writes do not violate the logical-document primary key.
+- Sync document application follows dependency order so title materialization precedes title-dependent chapter preferences.
+- WorkManager scheduling, manual sync diagnostics/UI, retry/backoff, manifest, Drive appDataFolder transport, and authorization hardening are wired.
+- Tracker/Drive progress arbitration remains excluded for Milestone 12.
+
+This checkpoint requests final Release Compile and signed Dev C APK generation. Physical Drive validation remains the final Milestone 11 gate.
