@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
@@ -132,6 +133,59 @@ class CanonicalLibraryScreenModelTest {
         val restored = screenModel.state.value
         restored.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
         restored.items.map { it.title.displayTitle } shouldBe listOf("Frieren", "Dungeon Meshi")
+    }
+
+    @Test
+    fun `category filter uses canonical title categories and supports uncategorized`() = runTest(testDispatcher) {
+        val fakeRepo = FakeCanonicalLibraryRepository()
+        val screenModel = CanonicalLibraryScreenModel(
+            observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
+            setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
+            migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
+        )
+        fakeRepo.emitItems(
+            listOf(
+                canonicalItem(
+                    id = "title-1",
+                    title = "Frieren",
+                    categories = listOf(category(1L, "Reading")),
+                ),
+                canonicalItem(
+                    id = "title-2",
+                    title = "Dungeon Meshi",
+                    categories = emptyList(),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        screenModel.selectCategory(1L)
+        advanceUntilIdle()
+
+        val categorized = screenModel.state.value
+        categorized.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
+        categorized.selectedCategoryId shouldBe 1L
+        categorized.items.map { it.title.id } shouldBe listOf("title-1")
+
+        screenModel.selectCategory(Category.UNCATEGORIZED_ID)
+        advanceUntilIdle()
+
+        val uncategorized = screenModel.state.value
+        uncategorized.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
+        uncategorized.items.map { it.title.id } shouldBe listOf("title-2")
+
+        screenModel.selectCategory(null)
+        advanceUntilIdle()
+
+        val all = screenModel.state.value
+        all.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
+        all.items.map { it.title.id } shouldBe listOf("title-1", "title-2")
     }
 
     @Test
@@ -348,7 +402,18 @@ class CanonicalLibraryScreenModelTest {
         resolver.lastCanonicalTitleId shouldBe "title-42"
     }
 
-    private fun canonicalItem(id: String, title: String) = CanonicalLibraryItem(
+    private fun category(id: Long, name: String) = Category(
+        id = id,
+        name = name,
+        order = id,
+        flags = 0L,
+    )
+
+    private fun canonicalItem(
+        id: String,
+        title: String,
+        categories: List<Category> = emptyList(),
+    ) = CanonicalLibraryItem(
         title = CanonicalTitle(
             id = id,
             displayTitle = title,
@@ -363,6 +428,7 @@ class CanonicalLibraryScreenModelTest {
             addedAt = 1000L,
             updatedAt = 1000L,
         ),
+        categories = categories,
     )
 
     private class FakeMigrateMihonLibraryToCanonical(
