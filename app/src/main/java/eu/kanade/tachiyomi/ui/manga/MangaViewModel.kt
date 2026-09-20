@@ -87,6 +87,7 @@ import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
+import tachiyomi.domain.tsuzuki.reader.interactor.ObserveCanonicalTrackerBindingsForManga
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.isLocal
 import kotlin.math.floor
@@ -115,6 +116,7 @@ class MangaViewModel(
     private val updateManga: UpdateManga,
     private val getCategories: GetCategories,
     private val getTracks: GetTracks,
+    private val observeCanonicalTrackerBindingsForManga: ObserveCanonicalTrackerBindingsForManga,
     private val addTracks: AddTracks,
     private val setMangaCategories: SetMangaCategories,
     private val mangaRepository: MangaRepository,
@@ -1041,14 +1043,19 @@ class MangaViewModel(
 
         viewModelScope.launchIO {
             combine(
-                getTracks.subscribe(manga.id).catch { logcat(LogPriority.ERROR, it) },
+                observeCanonicalTrackerBindingsForManga.execute(manga.id)
+                    .catch { logcat(LogPriority.ERROR, it) },
                 trackerManager.loggedInTrackersFlow(),
-            ) { mangaTracks, loggedInTrackers ->
-                // Show only if the service supports this manga's source
-                val supportedTrackers = loggedInTrackers.filter { (it as? EnhancedTracker)?.accept(source!!) ?: true }
-                val supportedTrackerIds = supportedTrackers.map { it.id }.toHashSet()
-                val supportedTrackerTracks = mangaTracks.filter { it.trackerId in supportedTrackerIds }
-                supportedTrackerTracks.size to supportedTrackers.isNotEmpty()
+            ) { resolution, loggedInTrackers ->
+                // Existing bindings belong to the canonical title and count from every representation.
+                val loggedInTrackerIds = loggedInTrackers.mapTo(hashSetOf()) { it.id }
+                val trackingCount = resolution.tracks.count { it.trackerId in loggedInTrackerIds }
+
+                // Availability for adding a new enhanced tracker still depends on the current source.
+                val supportedTrackers = loggedInTrackers.filter {
+                    (it as? EnhancedTracker)?.accept(source!!) ?: true
+                }
+                trackingCount to supportedTrackers.isNotEmpty()
             }
                 .distinctUntilChanged()
                 .collectLatest { (trackingCount, hasLoggedInTrackers) ->
