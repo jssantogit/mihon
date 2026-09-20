@@ -251,17 +251,24 @@ class SyncCycleOrchestrator(
                 )
             }
 
+            val localReplica = replicaDocuments.singleOrNull {
+                it.journal.ownerDeviceId == revisionSource.deviceId
+            }
+            val firstLegacyMigration = bootstrapState.genesis != null &&
+                localReplica == null &&
+                (stored == null || stored.acceptedFrontier.entries.isEmpty())
+
             var targetLocal = exported
             var diffBase = stored?.acceptedBase
             var observedFrontier = stored?.acceptedFrontier ?: SyncFrontier()
-            var forceReplicaCreate = replicaDocuments.isEmpty()
+            val forceReplicaCreate = replicaDocuments.isEmpty()
 
-            if (replicaDocuments.isEmpty() && bootstrapState.genesis != null) {
+            if (firstLegacyMigration) {
                 val legacyMerge = mergeLegacyBootstrap(
                     adapter = adapter,
                     stored = stored,
                     exported = exported,
-                    legacy = bootstrapState.genesis.document,
+                    legacy = checkNotNull(bootstrapState.genesis).document,
                     nowEpochMillis = nowEpochMillis,
                 )
                 when (legacyMerge) {
@@ -280,14 +287,10 @@ class SyncCycleOrchestrator(
                         targetLocal = legacyMerge.document
                         diffBase = bootstrapState.genesis.document
                         observedFrontier = SyncFrontier()
-                        forceReplicaCreate = true
                     }
                 }
             }
 
-            val localReplica = replicaDocuments.singleOrNull {
-                it.journal.ownerDeviceId == revisionSource.deviceId
-            }
             val localReplicaState = reconcileReplicaState(
                 kind = kind,
                 localReplica = localReplica,
@@ -329,7 +332,8 @@ class SyncCycleOrchestrator(
 
             val shouldConsiderLocal = pending != null ||
                 stored == null ||
-                forceReplicaCreate
+                forceReplicaCreate ||
+                firstLegacyMigration
             val mutations = if (shouldConsiderLocal) {
                 differ.diff(diffBase, targetLocal)
             } else {
