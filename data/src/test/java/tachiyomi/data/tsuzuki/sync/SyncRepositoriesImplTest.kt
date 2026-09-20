@@ -191,7 +191,8 @@ class SyncRepositoriesImplTest {
     }
 
     @Test
-    fun `repeated source mapping upsert resets retry state without duplicating its outbox document`() = runBlocking<Unit> {
+    fun `repeated source mapping upsert resets retry state without duplicating its outbox document`() =
+        runBlocking<Unit> {
         seedTitleWithoutPendingOutbox()
         outbox.markDirty(SyncDocumentKind.SOURCE_MAPPINGS, 100L)
         outbox.recordFailure(SyncDocumentKind.SOURCE_MAPPINGS, 500L)
