@@ -9,6 +9,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.tsuzuki.source.ReadingSourcePreferencesScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.source.SourceResolverScreen
@@ -21,7 +22,9 @@ class CanonicalLibraryScreen : Screen() {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
         val screenModel = metroViewModel<CanonicalLibraryScreenModel>()
+        val categoriesViewModel = metroViewModel<CanonicalLibraryCategoriesViewModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
+        val categories by categoriesViewModel.categories.collectAsStateWithLifecycle()
 
         LaunchedEffect(screenModel) {
             screenModel.events.collect { event ->
@@ -52,6 +55,9 @@ class CanonicalLibraryScreen : Screen() {
             onUpdateStatus = screenModel::setStatus,
             onRemoveItem = screenModel::removeItem,
             onSearchQueryChange = screenModel::search,
+            categories = categories,
+            onSetCategories = categoriesViewModel::setCategories,
+            onEditCategories = { navigator.push(CategoryScreen()) },
             onRead = { item ->
                 screenModel.readOrContinue(
                     canonicalTitleId = item.title.id,

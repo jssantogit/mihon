@@ -34,8 +34,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBarTitle
+import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
+import tachiyomi.core.common.preference.CheckboxState
+import tachiyomi.domain.category.model.Category
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Delete
 import mihon.icons.materialsymbols.rounded.MoreVert
@@ -55,11 +58,16 @@ fun CanonicalLibraryScreen(
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
     onSearchQueryChange: (String?) -> Unit = {},
+    categories: List<Category> = emptyList(),
+    onSetCategories: (String, List<Long>) -> Unit = { _, _ -> },
+    onEditCategories: () -> Unit = {},
     onRead: (CanonicalLibraryItem) -> Unit = {},
     onResolveSource: (CanonicalLibraryItem) -> Unit = {},
     onOpenSourcePreferences: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var categoryDialogItem by remember { mutableStateOf<CanonicalLibraryItem?>(null) }
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -98,6 +106,7 @@ fun CanonicalLibraryScreen(
                             items = state.items,
                             onUpdateStatus = onUpdateStatus,
                             onRemoveItem = onRemoveItem,
+                            onChangeCategories = { categoryDialogItem = it },
                             onRead = onRead,
                             onResolveSource = onResolveSource,
                         )
@@ -106,6 +115,29 @@ fun CanonicalLibraryScreen(
             }
         }
     }
+
+    categoryDialogItem?.let { item ->
+        ChangeCategoryDialog(
+            initialSelection = categories
+                .filter { it.id != Category.UNCATEGORIZED_ID }
+                .map { category ->
+                    if (item.categories.any { it.id == category.id }) {
+                        CheckboxState.State.Checked(category)
+                    } else {
+                        CheckboxState.State.None(category)
+                    }
+                },
+            onDismissRequest = { categoryDialogItem = null },
+            onEditCategories = {
+                categoryDialogItem = null
+                onEditCategories()
+            },
+            onConfirm = { include, _ ->
+                categoryDialogItem = null
+                onSetCategories(item.title.id, include)
+            },
+        )
+    }
 }
 
 @Composable
@@ -113,6 +145,7 @@ private fun CanonicalLibraryList(
     items: List<CanonicalLibraryItem>,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
+    onChangeCategories: (CanonicalLibraryItem) -> Unit,
     onRead: (CanonicalLibraryItem) -> Unit,
     onResolveSource: (CanonicalLibraryItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -131,6 +164,7 @@ private fun CanonicalLibraryList(
                 sources = item.sources,
                 onUpdateStatus = { status -> onUpdateStatus(item.title.id, status) },
                 onRemove = { onRemoveItem(item.title.id) },
+                onChangeCategories = { onChangeCategories(item) },
                 onRead = { onRead(item) },
                 onResolveSource = { onResolveSource(item) },
             )
@@ -145,6 +179,7 @@ private fun CanonicalLibraryItemCard(
     sources: List<SourceRepresentation>,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
+    onChangeCategories: () -> Unit,
     onRead: () -> Unit,
     onResolveSource: () -> Unit,
     modifier: Modifier = Modifier,
@@ -239,6 +274,20 @@ private fun CanonicalLibraryItemCard(
                             text = "Identity: ${item.title.identityState.name.lowercase().replaceFirstChar {
                                 it.uppercase()
                             }}",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                )
+
+                SuggestionChip(
+                    onClick = onChangeCategories,
+                    label = {
+                        Text(
+                            text = if (item.categories.isEmpty()) {
+                                "Categories: Uncategorized"
+                            } else {
+                                "Categories: ${item.categories.joinToString { it.name }}"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                         )
                     },

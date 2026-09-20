@@ -16,8 +16,10 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCategoriesViewModel
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryEvent
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
@@ -51,7 +53,9 @@ data object LibraryTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
         val screenModel = metroViewModel<CanonicalLibraryScreenModel>()
+        val categoriesViewModel = metroViewModel<CanonicalLibraryCategoriesViewModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
+        val categories by categoriesViewModel.categories.collectAsStateWithLifecycle()
 
         LaunchedEffect(screenModel) {
             screenModel.events.collect { event ->
@@ -83,6 +87,9 @@ data object LibraryTab : Tab {
             onUpdateStatus = screenModel::setStatus,
             onRemoveItem = screenModel::removeItem,
             onSearchQueryChange = screenModel::search,
+            categories = categories,
+            onSetCategories = categoriesViewModel::setCategories,
+            onEditCategories = { navigator.push(CategoryScreen()) },
             onRead = { item ->
                 screenModel.readOrContinue(
                     canonicalTitleId = item.title.id,
