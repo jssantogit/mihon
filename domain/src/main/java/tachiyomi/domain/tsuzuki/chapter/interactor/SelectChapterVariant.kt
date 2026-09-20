@@ -4,6 +4,7 @@ import dev.zacsweers.metro.Inject
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariantSelection
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
@@ -15,6 +16,7 @@ class SelectChapterVariant(
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val getPreferredReadingSources: GetPreferredReadingSources,
+    private val canonicalDownloadGateway: CanonicalDownloadGateway = NoCanonicalDownloads,
 ) {
 
     suspend fun execute(
@@ -29,18 +31,29 @@ class SelectChapterVariant(
             .getByCanonicalTitleId(chapter.canonicalTitleId)
         val mappings = mappingList.associateBy { it.id }
 
-        val candidates = canonicalChapterRepository
-            .getVariantsByCanonicalChapterId(canonicalChapterId)
-            .filterNot { it.id in excludedVariantIds || it.sourceMappingId in excludedSourceMappingIds }
-            .mapNotNull { variant ->
-                val mapping = mappings[variant.sourceMappingId] ?: return@mapNotNull null
-                if (mapping.availability == SourceMappingAvailability.UNAVAILABLE) return@mapNotNull null
-                RankedCandidate(
-                    variant = variant,
-                    mapping = mapping,
-                    effectiveLanguage = effectiveLanguage(variant, mapping),
-                )
-            }
+        val candidates = buildList {
+            canonicalChapterRepository
+                .getVariantsByCanonicalChapterId(canonicalChapterId)
+                .forEach { variant ->
+                    if (variant.id in excludedVariantIds || variant.sourceMappingId in excludedSourceMappingIds) {
+                        return@forEach
+                    }
+                    val mapping = mappings[variant.sourceMappingId] ?: return@forEach
+                    if (
+                        mapping.availability == SourceMappingAvailability.UNAVAILABLE &&
+                        !canonicalDownloadGateway.isDownloaded(variant)
+                    ) {
+                        return@forEach
+                    }
+                    add(
+                        RankedCandidate(
+                            variant = variant,
+                            mapping = mapping,
+                            effectiveLanguage = effectiveLanguage(variant, mapping),
+                        ),
+                    )
+                }
+        }
 
         val normalizedPreferredLanguage = normalizeLanguage(preferredLanguage)
         val relevantLanguages = buildSet {
@@ -53,6 +66,9 @@ class SelectChapterVariant(
             mappings = mappingList,
             normalizedPreferredLanguage = normalizedPreferredLanguage,
             preferenceRanks = preferenceRanks,
+            locallyReadableMappingIds = candidates
+                .filter { it.mapping.availability == SourceMappingAvailability.UNAVAILABLE }
+                .mapTo(mutableSetOf()) { it.mapping.id },
         )
 
         if (candidates.isEmpty()) {
@@ -121,9 +137,11 @@ class SelectChapterVariant(
         mappings: List<SourceTitleMapping>,
         normalizedPreferredLanguage: String?,
         preferenceRanks: Map<String?, Map<Long, Int>>,
+        locallyReadableMappingIds: Set<String>,
     ): String? {
         val eligible = mappings.filter {
-            it.availability != SourceMappingAvailability.UNAVAILABLE
+            it.availability != SourceMappingAvailability.UNAVAILABLE ||
+                it.id in locallyReadableMappingIds
         }
         if (eligible.isEmpty()) return null
 
@@ -179,4 +197,9 @@ class SelectChapterVariant(
         val mapping: SourceTitleMapping,
         val effectiveLanguage: String,
     )
+}
+
+
+private object NoCanonicalDownloads : CanonicalDownloadGateway {
+    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
 }
