@@ -57,6 +57,7 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.updates.interactor.ProjectCanonicalUpdateReadStatus
 import tachiyomi.domain.updates.interactor.GetUpdates
 import tachiyomi.domain.updates.model.UpdatesWithRelations
 import tachiyomi.domain.updates.service.UpdatesPreferences
@@ -73,6 +74,7 @@ class UpdatesViewModel(
     private val downloadCache: DownloadCache,
     private val updateChapter: UpdateChapter,
     private val setReadStatus: SetReadStatus,
+    private val projectCanonicalUpdateReadStatus: ProjectCanonicalUpdateReadStatus,
     private val getUpdates: GetUpdates,
     private val getManga: GetManga,
     private val getChapter: GetChapter,
@@ -285,11 +287,20 @@ class UpdatesViewModel(
      */
     fun markUpdatesRead(updates: List<UpdatesItem>, read: Boolean) {
         viewModelScope.launchIO {
-            setReadStatus.await(
+            val operationalResult = setReadStatus.await(
                 read = read,
                 chapters = updates
                     .mapNotNull { getChapter.await(it.update.chapterId) }
                     .toTypedArray(),
+            )
+            if (operationalResult is SetReadStatus.Result.InternalError) {
+                return@launchIO
+            }
+
+            projectCanonicalReadStatusForUpdates(
+                updates = updates.map(UpdatesItem::update),
+                read = read,
+                project = projectCanonicalUpdateReadStatus::execute,
             )
         }
         toggleAllSelection(false)
@@ -527,3 +538,13 @@ data class UpdatesItem(
     val downloadProgressProvider: () -> Int,
     val selected: Boolean = false,
 )
+
+internal suspend fun projectCanonicalReadStatusForUpdates(
+    updates: List<UpdatesWithRelations>,
+    read: Boolean,
+    project: suspend (sourceId: Long, sourceChapterId: String, read: Boolean) -> Boolean,
+) {
+    updates.forEach { update ->
+        project(update.sourceId, update.chapterUrl, read)
+    }
+}

@@ -80,9 +80,9 @@ import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.source.service.SourceManager
-import tachiyomi.domain.track.interactor.DeleteTrack
-import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.domain.track.model.Track
+import tachiyomi.domain.tsuzuki.reader.interactor.DeleteCanonicalTrackerBinding
+import tachiyomi.domain.tsuzuki.reader.interactor.ObserveCanonicalTrackerBindingsForManga
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.LabeledCheckbox
 import tachiyomi.presentation.core.components.material.AlertDialogContent
@@ -157,7 +157,7 @@ data class TrackInfoDialogHomeScreen(
                 } else {
                     navigator.push(
                         TrackerSearchScreen(
-                            mangaId = mangaId,
+                            mangaId = it.track?.mangaId ?: mangaId,
                             initialQuery = it.track?.title ?: mangaTitle,
                             currentUrl = it.track?.remoteUrl,
                             serviceId = it.tracker.id,
@@ -202,7 +202,7 @@ data class TrackInfoDialogHomeScreen(
         @Assisted private val mangaId: Long,
         @Assisted private val sourceId: Long,
         private val context: Context,
-        private val getTracks: GetTracks,
+        private val observeCanonicalTrackerBindingsForManga: ObserveCanonicalTrackerBindingsForManga,
         private val getManga: GetManga,
         private val trackerManager: TrackerManager,
         private val sourceManager: SourceManager,
@@ -225,10 +225,17 @@ data class TrackInfoDialogHomeScreen(
             }
 
             viewModelScope.launch {
-                getTracks.subscribe(mangaId)
+                observeCanonicalTrackerBindingsForManga.execute(mangaId)
                     .catch { logcat(LogPriority.ERROR, it) }
                     .distinctUntilChanged()
-                    .map { it.mapToTrackItem() }
+                    .map { resolution ->
+                        resolution.conflictingTrackerIds.forEach { trackerId ->
+                            logcat(LogPriority.WARN) {
+                                "Canonical tracker conflict for mangaId=$mangaId trackerId=$trackerId"
+                            }
+                        }
+                        resolution.tracks.mapToTrackItem(resolution.conflictingTrackerIds)
+                    }
                     .collectLatest { trackItems -> state.update { it.copy(trackItems = trackItems) } }
             }
         }
@@ -273,14 +280,20 @@ data class TrackInfoDialogHomeScreen(
             }
         }
 
-        private suspend fun List<Track>.mapToTrackItem(): List<TrackItem> {
+        private suspend fun List<Track>.mapToTrackItem(
+            conflictingTrackerIds: Set<Long>,
+        ): List<TrackItem> {
             val loggedInTrackers = trackerManager.loggedInTrackers()
             val source = sourceManager.getOrStub(sourceId)
             return loggedInTrackers
-                // Map to TrackItem
+                .filterNot { it.id in conflictingTrackerIds }
                 .map { service -> TrackItem(find { it.trackerId == service.id }, service) }
-                // Show only if the service supports this manga's source
-                .filter { (it.tracker as? EnhancedTracker)?.accept(source) ?: true }
+                // Existing canonical bindings stay visible from every representation.
+                // Unbound enhanced trackers are only offered when the current source is supported.
+                .filter { item ->
+                    item.track != null ||
+                        (item.tracker as? EnhancedTracker)?.accept(source) != false
+                }
         }
 
         @Immutable
@@ -897,7 +910,7 @@ data class TrackerRemoveScreen(
         @Assisted private val mangaId: Long,
         @Assisted private val track: Track,
         @Assisted private val trackerId: Long,
-        private val deleteTrack: DeleteTrack,
+        private val deleteCanonicalTrackerBinding: DeleteCanonicalTrackerBinding,
         trackerManager: TrackerManager,
     ) : ViewModel() {
 
@@ -925,7 +938,12 @@ data class TrackerRemoveScreen(
         }
 
         fun unregisterTracking(serviceId: Long) {
-            viewModelScope.launchNonCancellable { deleteTrack.await(mangaId, serviceId) }
+            viewModelScope.launchNonCancellable {
+                deleteCanonicalTrackerBinding.executeForManga(
+                    mangaId = mangaId,
+                    trackerId = serviceId,
+                )
+            }
         }
     }
 }
