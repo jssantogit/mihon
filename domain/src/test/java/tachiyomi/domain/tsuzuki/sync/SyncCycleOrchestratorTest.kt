@@ -360,6 +360,84 @@ class SyncCycleOrchestratorTest {
         transport.replicaUpdateOwners shouldBe emptyList()
     }
 
+
+    @Test
+    fun `second v1 device migration detects stale same field conflict after v2 exists`() = runTest {
+        val legacyBase = document(record("a", "name" to "Base"))
+        val legacyCurrent = document(
+            record(
+                "a",
+                "name" to "Remote",
+                device = "legacy-remote",
+                sequence = 2,
+            ),
+        )
+        val legacyFile = remoteFile()
+        val transport = FakeTransport(
+            files = mutableListOf(legacyFile),
+            contents = mutableMapOf(legacyFile.remoteId to encode(legacyCurrent)),
+        )
+
+        val firstDevice = Stores()
+        val firstAdapter = FakeAdapter(SyncDocumentKind.LIBRARY, legacyCurrent)
+        val firstReport = engine(
+            transport,
+            firstDevice,
+            firstAdapter,
+            deviceId = "device:A",
+        ).runOnce()
+        firstReport.hasFailures.shouldBeFalse()
+        transport.files.count {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "device:A"
+        } shouldBe 1
+
+        val secondDevice = Stores(
+            outboxEntries = mutableMapOf(
+                SyncDocumentKind.LIBRARY to SyncOutboxEntry(
+                    documentKind = SyncDocumentKind.LIBRARY,
+                    enqueuedAtEpochMillis = 90,
+                ),
+            ),
+        )
+        secondDevice.state.put(
+            SyncStoredState(
+                documentKind = SyncDocumentKind.LIBRARY,
+                acceptedBase = legacyBase,
+                remoteRevision = legacyFile.revision,
+                lastSuccessfulSyncAtEpochMillis = 50,
+            ),
+        )
+        val secondAdapter = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(
+                record(
+                    "a",
+                    "name" to "Local",
+                    device = "device:B",
+                    sequence = 2,
+                ),
+            ),
+        )
+
+        val report = engine(
+            transport,
+            secondDevice,
+            secondAdapter,
+            deviceId = "device:B",
+        ).runOnce()
+
+        val result = report.documentResults.single() as SyncDocumentResult.Conflict
+        result.conflictCount shouldBe 1
+        transport.files.none {
+            it.protocolVersion == 2 &&
+                it.logicalKind == SyncDocumentKind.LIBRARY &&
+                it.ownerDeviceId == "device:B"
+        }.shouldBeTrue()
+        secondDevice.state.get(SyncDocumentKind.LIBRARY)?.acceptedBase shouldBe legacyBase
+    }
+
     @Test
     fun `case 5 - transport failure leaves local state and pending work intact`() = runTest {
         val local = document(record("a", "name" to "Local"))
