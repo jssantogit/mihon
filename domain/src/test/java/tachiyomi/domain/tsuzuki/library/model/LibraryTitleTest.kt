@@ -82,7 +82,7 @@ class LibraryTitleTest {
     ) = SourceRepresentation(
         id = "mapping-1",
         canonicalTitleId = canonicalTitleId,
-        localMihonMangaId = localMihonMangaId,
+        mihonMangaId = localMihonMangaId,
         sourceId = 123L,
         sourceUrl = "/manga/title",
         language = "en",
