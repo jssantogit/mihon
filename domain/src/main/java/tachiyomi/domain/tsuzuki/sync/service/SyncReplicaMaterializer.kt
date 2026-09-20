@@ -325,7 +325,6 @@ class SyncReplicaMaterializer {
     }
 }
 
-
 private fun SyncMutation.mutationPath(): List<String> = when (this) {
     is SyncMutation.SetField -> propertyPath
     is SyncMutation.RemoveField -> propertyPath

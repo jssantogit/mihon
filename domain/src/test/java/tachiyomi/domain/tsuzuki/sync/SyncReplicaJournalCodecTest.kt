@@ -145,7 +145,7 @@ class SyncReplicaJournalCodecTest {
                 revision = SyncRevision("legacy", 1),
                 updatedAtEpochMillis = 1,
                 fields = kotlinx.serialization.json.buildJsonObject {
-                    put("name", "Base")
+                    put("name", JsonPrimitive("Base"))
                 },
             ),
         ),
