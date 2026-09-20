@@ -201,6 +201,89 @@ class SyncCycleOrchestratorTest {
             )
     }
 
+
+    @Test
+    fun `protocol v2 concurrent bootstrap creates one valid shard per device`() = runTest {
+        val shared = FakeTransport()
+        val storesA = Stores()
+        val storesB = Stores()
+        val adapterA = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(record("a", "name" to "A")),
+        )
+        val adapterB = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(record("b", "name" to "B")),
+        )
+
+        engine(shared, storesA, adapterA, deviceId = "device:A").runOnce()
+        engine(shared, storesB, adapterB, deviceId = "device:B").runOnce()
+
+        shared.files
+            .filter { it.protocolVersion == 2 && it.logicalKind == SyncDocumentKind.LIBRARY }
+            .map { it.ownerDeviceId }
+            .sorted() shouldContainExactly listOf("device:A", "device:B")
+        shared.createdKinds.contains(SyncDocumentKind.MANIFEST).shouldBeFalse()
+    }
+
+    @Test
+    fun `protocol v2 never updates a foreign owned shard`() = runTest {
+        val shared = FakeTransport()
+        val storesA = Stores()
+        val storesB = Stores()
+        val adapterA = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(record("a", "name" to "A")),
+        )
+        val adapterB = FakeAdapter(
+            SyncDocumentKind.LIBRARY,
+            document(record("b", "name" to "B")),
+        )
+
+        engine(shared, storesA, adapterA, deviceId = "device:A").runOnce()
+        engine(shared, storesB, adapterB, deviceId = "device:B").runOnce()
+
+        storesA.outbox.markDirty(SyncDocumentKind.LIBRARY, 200)
+        adapterA.applyDocument(
+            document(
+                record("a", "name" to "A2", device = "device:A", sequence = 2),
+                record("b", "name" to "B"),
+            ),
+        )
+        engine(shared, storesA, adapterA, deviceId = "device:A").runOnce()
+
+        shared.replicaUpdateOwners.all { (fileOwner, requestedOwner) ->
+            fileOwner == requestedOwner
+        }.shouldBeTrue()
+        shared.replicaUpdateOwners.none { (fileOwner, requestedOwner) ->
+            fileOwner == "device:B" && requestedOwner == "device:A"
+        }.shouldBeTrue()
+    }
+
+    @Test
+    fun `protocol v2 rejects duplicate shards for the same owner`() = runTest {
+        val first = replicaRemoteFile("one", "device:A")
+        val second = replicaRemoteFile("two", "device:A")
+        val transport = FakeTransport(
+            files = mutableListOf(first, second),
+            contents = mutableMapOf(
+                first.remoteId to """{"protocolVersion":2,"kind":"LIBRARY","ownerDeviceId":"device:A","genesis":null,"batches":[]}""",
+                second.remoteId to """{"protocolVersion":2,"kind":"LIBRARY","ownerDeviceId":"device:A","genesis":null,"batches":[]}""",
+            ),
+        )
+
+        val report = engine(
+            transport,
+            Stores(),
+            FakeAdapter(SyncDocumentKind.LIBRARY, document()),
+            deviceId = "device:B",
+        ).runOnce()
+
+        (report.documentResults.single() as SyncDocumentResult.Failed)
+            .failure.reason shouldBe SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
+        transport.replicaUpdateOwners shouldBe emptyList()
+    }
+
     @Test
     fun `case 5 - transport failure leaves local state and pending work intact`() = runTest {
         val local = document(record("a", "name" to "Local"))
@@ -419,6 +502,7 @@ class SyncCycleOrchestratorTest {
         transport: DriveSyncTransport,
         stores: Stores,
         vararg adapters: SyncDocumentAdapter,
+        deviceId: String = "merge-device",
     ) = SyncCycleOrchestrator(
         transport = transport,
         outboxRepository = stores.outbox,
@@ -429,11 +513,11 @@ class SyncCycleOrchestratorTest {
         manifestCodec = manifestCodec,
         merger = ThreeWaySyncMerger(),
         revisionSource = object : SyncRevisionSource {
-            override val deviceId = "merge-device"
+            override val deviceId = deviceId
             private var sequence = 10L
 
             override fun nextRevision() = SyncRevision(
-                deviceId = "merge-device",
+                deviceId = deviceId,
                 sequence = sequence++,
             )
         },
@@ -472,6 +556,23 @@ class SyncCycleOrchestratorTest {
         fields = buildJsonObject {
             fields.forEach { (key, value) -> put(key, value) }
         },
+    )
+
+    private fun replicaRemoteFile(
+        id: String,
+        ownerDeviceId: String,
+        version: String = "1",
+    ) = SyncRemoteFile(
+        remoteId = id,
+        name = "tsuzuki-v2-library-$ownerDeviceId.json",
+        mimeType = "application/json",
+        revision = SyncRemoteRevision(
+            remoteId = id,
+            revisionToken = version,
+        ),
+        protocolVersion = 2,
+        logicalKind = SyncDocumentKind.LIBRARY,
+        ownerDeviceId = ownerDeviceId,
     )
 
     private fun remoteFile(
@@ -515,6 +616,7 @@ class SyncCycleOrchestratorTest {
         var createCount = 0
         var updateCount = 0
         var downloadCount = 0
+        val replicaUpdateOwners = mutableListOf<Pair<String?, String>>()
 
         override suspend fun listFiles(): SyncTransportResult<List<SyncRemoteFile>> {
             return SyncTransportResult.Success(files.toList())
@@ -567,6 +669,7 @@ class SyncCycleOrchestratorTest {
             ownerDeviceId: String,
             content: String,
         ): SyncTransportResult<SyncRemoteFile> {
+            replicaUpdateOwners += file.ownerDeviceId to ownerDeviceId
             if (file.ownerDeviceId != ownerDeviceId) {
                 return SyncTransportResult.Failure(
                     SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
