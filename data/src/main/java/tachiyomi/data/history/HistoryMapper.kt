@@ -28,7 +28,7 @@ object HistoryMapper {
         isFavorite: Boolean,
         coverLastModified: Long,
         chapterNumber: Double,
-        readAt: Date?,
+        readAt: Long?,
         readDuration: Long,
     ): HistoryWithRelations = HistoryWithRelations(
         id = historyId,
@@ -36,7 +36,7 @@ object HistoryMapper {
         mangaId = mangaId,
         title = title,
         chapterNumber = chapterNumber,
-        readAt = readAt,
+        readAt = readAt?.let(::Date),
         readDuration = readDuration,
         coverData = MangaCover(
             mangaId = mangaId,

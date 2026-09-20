@@ -1,3 +1,5 @@
+DROP VIEW historyView;
+
 CREATE VIEW historyView AS
 WITH rankedVariants AS (
     SELECT
@@ -64,40 +66,3 @@ LEFT JOIN tsuzuki_library_entries library
 ON library.canonical_title_id = canonicalChapters.canonical_title_id
 LEFT JOIN history legacyHistory
 ON legacyHistory.chapter_id = selectedVariants.mihon_chapter_id;
-
-history:
-SELECT
-id,
-mangaId,
-chapterId,
-title,
-thumbnailUrl,
-source,
-favorite,
-cover_last_modified,
-chapterNumber,
-readAt,
-readDuration
-FROM historyView
-WHERE historyView.readAt > 0
-AND maxReadAtChapterId = historyView.chapterId
-AND lower(historyView.title) LIKE ('%' || :query || '%')
-ORDER BY readAt DESC;
-
-getLatestHistory:
-SELECT
-id,
-mangaId,
-chapterId,
-title,
-thumbnailUrl,
-source,
-favorite,
-cover_last_modified,
-chapterNumber,
-readAt,
-readDuration
-FROM historyView
-WHERE historyView.readAt > 0
-ORDER BY readAt DESC
-LIMIT 1;

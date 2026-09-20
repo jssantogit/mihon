@@ -81,7 +81,7 @@ class CanonicalHistoryViewTest {
                         chapterId = chapterId,
                         title = title,
                         sourceId = sourceId,
-                        readAt = readAt?.time,
+                        readAt = readAt,
                         readDuration = readDuration,
                     )
                 },
