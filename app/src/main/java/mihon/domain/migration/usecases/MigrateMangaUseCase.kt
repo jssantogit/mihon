@@ -21,6 +21,7 @@ import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.domain.track.interactor.InsertTrack
+import tachiyomi.domain.tsuzuki.library.interactor.LinkMigratedSourceRepresentation
 import kotlin.time.Clock
 
 @Inject
@@ -38,6 +39,7 @@ class MigrateMangaUseCase(
     private val insertTrack: InsertTrack,
     private val coverCache: CoverCache,
     private val updateMangaFromRemote: UpdateMangaFromRemote,
+    private val linkMigratedSourceRepresentation: LinkMigratedSourceRepresentation,
 ) {
     private val enhancedServices by lazy { trackerManager.trackers.filterIsInstance<EnhancedTracker>() }
 
@@ -48,6 +50,19 @@ class MigrateMangaUseCase(
 
         try {
             updateMangaFromRemote(target, fetchChapters = true).getOrThrow()
+
+            checkNotNull(
+                linkMigratedSourceRepresentation.execute(
+                    originSourceId = current.source,
+                    originSourceUrl = current.url,
+                    targetMihonMangaId = target.id,
+                    targetSourceId = target.source,
+                    targetSourceUrl = target.url,
+                    targetLanguage = targetSource.lang,
+                ),
+            ) {
+                "Cannot migrate source representation without an origin canonical mapping"
+            }
 
             // Update chapters read, bookmark and dateFetch
             if (MigrationFlag.CHAPTER in flags) {
