@@ -52,8 +52,8 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.model.Chapter
-import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.model.NoChaptersException
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_CHARGING
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_NETWORK_NOT_METERED
@@ -268,6 +268,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             readCount = chapters.count { it.read }.toLong(),
         )
     }
+
     /**
      * Method that updates canonical library titles through their operational representation. It's called in a background thread, so it's safe
      * to do heavy operations or network calls here.
@@ -321,7 +322,9 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                         }
                                     } catch (e: Throwable) {
                                         val errorMessage = when (e) {
-                                            is NoChaptersException -> context.stringResource(MR.strings.no_chapters_error)
+                                            is NoChaptersException -> context.stringResource(
+                                                MR.strings.no_chapters_error,
+                                            )
                                             is SourceNotInstalledException -> context.stringResource(
                                                 MR.strings.loader_not_implemented_error,
                                             )
