@@ -23,8 +23,10 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictValue
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
+import tachiyomi.domain.tsuzuki.sync.model.SyncFrontier
 import tachiyomi.domain.tsuzuki.sync.model.SyncOutboxEntry
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteRevision
+import tachiyomi.domain.tsuzuki.sync.model.SyncReplicaState
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
 import tachiyomi.domain.tsuzuki.sync.model.SyncStoredState
 import java.nio.file.Files
@@ -35,6 +37,7 @@ class SyncRepositoriesImplTest {
     private lateinit var database: Database
     private lateinit var outbox: SyncOutboxRepositoryImpl
     private lateinit var state: SyncStateRepositoryImpl
+    private lateinit var replica: SyncReplicaRepositoryImpl
     private lateinit var conflicts: SyncConflictRepositoryImpl
     private var originalNativeLibraryPath: String? = null
     private var nativeLibraryDirectory: java.nio.file.Path? = null
@@ -65,6 +68,7 @@ class SyncRepositoriesImplTest {
 
         outbox = SyncOutboxRepositoryImpl(database)
         state = SyncStateRepositoryImpl(database)
+        replica = SyncReplicaRepositoryImpl(database)
         conflicts = SyncConflictRepositoryImpl(database)
     }
 
@@ -158,6 +162,169 @@ class SyncRepositoriesImplTest {
     }
 
     @Test
+    fun `repeated library upsert resets retry state without duplicating its outbox document`() = runBlocking<Unit> {
+        seedTitleWithoutPendingOutbox()
+        outbox.markDirty(SyncDocumentKind.LIBRARY, 100L)
+        outbox.recordFailure(SyncDocumentKind.LIBRARY, 500L)
+
+        database.tsuzuki_library_entriesQueries.upsertTsuzukiLibraryEntry(
+            canonicalTitleId = "title-1",
+            status = "READING",
+            favorite = true,
+            addedAt = 10L,
+            updatedAt = 20L,
+        )
+        database.tsuzuki_library_entriesQueries.upsertTsuzukiLibraryEntry(
+            canonicalTitleId = "title-1",
+            status = "COMPLETED",
+            favorite = false,
+            addedAt = 10L,
+            updatedAt = 30L,
+        )
+
+        outbox.get(SyncDocumentKind.LIBRARY) shouldBe SyncOutboxEntry(
+            documentKind = SyncDocumentKind.LIBRARY,
+            enqueuedAtEpochMillis = 100L,
+        )
+        outbox.getPending(nowEpochMillis = 0L, limit = 10) shouldContainExactly listOf(
+            SyncOutboxEntry(
+                documentKind = SyncDocumentKind.LIBRARY,
+                enqueuedAtEpochMillis = 100L,
+            ),
+        )
+    }
+
+    @Test
+    fun `repeated source mapping upsert resets retry state without duplicating its outbox document`() =
+        runBlocking<Unit> {
+            seedTitleWithoutPendingOutbox()
+            outbox.markDirty(SyncDocumentKind.SOURCE_MAPPINGS, 100L)
+            outbox.recordFailure(SyncDocumentKind.SOURCE_MAPPINGS, 500L)
+
+            database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
+                id = "mapping-1",
+                canonicalTitleId = "title-1",
+                mihonMangaId = null,
+                sourceId = 7L,
+                sourceUrl = "/title",
+                language = "en",
+                matchConfidence = null,
+                verifiedByUser = false,
+                availability = "AVAILABLE",
+                preferredOverride = false,
+                createdAt = 10L,
+                updatedAt = 20L,
+            )
+            database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
+                id = "mapping-1",
+                canonicalTitleId = "title-1",
+                mihonMangaId = 42L,
+                sourceId = 7L,
+                sourceUrl = "/title",
+                language = "en",
+                matchConfidence = 1.0,
+                verifiedByUser = true,
+                availability = "AVAILABLE",
+                preferredOverride = true,
+                createdAt = 10L,
+                updatedAt = 30L,
+            )
+
+            outbox.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe SyncOutboxEntry(
+                documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
+                enqueuedAtEpochMillis = 100L,
+            )
+            outbox.getPending(nowEpochMillis = 0L, limit = 10) shouldContainExactly listOf(
+                SyncOutboxEntry(
+                    documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
+                    enqueuedAtEpochMillis = 100L,
+                ),
+            )
+        }
+
+    @Test
+    fun `repeated collection upsert resets retry state without duplicating its outbox document`() = runBlocking<Unit> {
+        outbox.markDirty(SyncDocumentKind.COLLECTIONS, 100L)
+        outbox.recordFailure(SyncDocumentKind.COLLECTIONS, 500L)
+
+        database.tsuzuki_collectionsQueries.upsertTsuzukiCollection(
+            id = "collection-1",
+            title = "Favorites",
+            origin = "USER",
+            sortOrder = 0L,
+            schemaVersion = 1L,
+            revision = 0L,
+            createdAt = 10L,
+            updatedAt = 20L,
+            deletedAt = null,
+        )
+        database.tsuzuki_collectionsQueries.upsertTsuzukiCollection(
+            id = "collection-1",
+            title = "Reading",
+            origin = "USER",
+            sortOrder = 1L,
+            schemaVersion = 1L,
+            revision = 1L,
+            createdAt = 10L,
+            updatedAt = 30L,
+            deletedAt = null,
+        )
+
+        outbox.get(SyncDocumentKind.COLLECTIONS) shouldBe SyncOutboxEntry(
+            documentKind = SyncDocumentKind.COLLECTIONS,
+            enqueuedAtEpochMillis = 100L,
+        )
+        outbox.getPending(nowEpochMillis = 0L, limit = 10) shouldContainExactly listOf(
+            SyncOutboxEntry(
+                documentKind = SyncDocumentKind.COLLECTIONS,
+                enqueuedAtEpochMillis = 100L,
+            ),
+        )
+    }
+
+    @Test
+    fun `repeated title upsert resets both retry states and keeps one outbox document per kind`() = runBlocking<Unit> {
+        outbox.markDirty(SyncDocumentKind.LIBRARY, 100L)
+        outbox.recordFailure(SyncDocumentKind.LIBRARY, 500L)
+        outbox.markDirty(SyncDocumentKind.SOURCE_MAPPINGS, 100L)
+        outbox.recordFailure(SyncDocumentKind.SOURCE_MAPPINGS, 500L)
+
+        database.tsuzuki_titlesQueries.upsertTsuzukiTitle(
+            id = "title-1",
+            displayTitle = "Tsuzuki",
+            identityState = "SOURCE_ONLY",
+            createdAt = 10L,
+            updatedAt = 20L,
+        )
+        database.tsuzuki_titlesQueries.upsertTsuzukiTitle(
+            id = "title-1",
+            displayTitle = "Tsuzuki Updated",
+            identityState = "VERIFIED",
+            createdAt = 10L,
+            updatedAt = 30L,
+        )
+
+        outbox.get(SyncDocumentKind.LIBRARY) shouldBe SyncOutboxEntry(
+            documentKind = SyncDocumentKind.LIBRARY,
+            enqueuedAtEpochMillis = 100L,
+        )
+        outbox.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe SyncOutboxEntry(
+            documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
+            enqueuedAtEpochMillis = 100L,
+        )
+        outbox.getPending(nowEpochMillis = 0L, limit = 10) shouldContainExactly listOf(
+            SyncOutboxEntry(
+                documentKind = SyncDocumentKind.LIBRARY,
+                enqueuedAtEpochMillis = 100L,
+            ),
+            SyncOutboxEntry(
+                documentKind = SyncDocumentKind.SOURCE_MAPPINGS,
+                enqueuedAtEpochMillis = 100L,
+            ),
+        )
+    }
+
+    @Test
     fun `accepted base and remote revision round trip without becoming domain authority`() = runBlocking<Unit> {
         val document = SyncDocumentEnvelope(
             schemaVersion = 1,
@@ -175,6 +342,12 @@ class SyncRepositoriesImplTest {
                 modifiedAtEpochMillis = 1_100L,
             ),
             lastSuccessfulSyncAtEpochMillis = 1_200L,
+            acceptedFrontier = SyncFrontier(
+                mapOf(
+                    "device-a" to 7L,
+                    "device-b" to 3L,
+                ),
+            ),
         )
 
         state.put(stored)
@@ -183,6 +356,50 @@ class SyncRepositoriesImplTest {
 
         state.clear(SyncDocumentKind.SOURCE_MAPPINGS)
         state.get(SyncDocumentKind.SOURCE_MAPPINGS) shouldBe null
+    }
+
+    @Test
+    fun `replica ownership and reserved remote id round trip by device identity`() = runBlocking<Unit> {
+        val stored = SyncReplicaState(
+            documentKind = SyncDocumentKind.LIBRARY,
+            ownerDeviceId = "device:A",
+            reservedRemoteId = "reserved-file",
+            lastRemoteRevisionToken = "12",
+            nextSequence = 13L,
+        )
+
+        replica.put(stored)
+
+        replica.get(SyncDocumentKind.LIBRARY, "device:A") shouldBe stored
+        replica.get(SyncDocumentKind.LIBRARY, "device:B") shouldBe null
+    }
+
+    @Test
+    fun `replica sequence survives repository recreation and clear is owner scoped`() = runBlocking<Unit> {
+        val ownerA = SyncReplicaState(
+            documentKind = SyncDocumentKind.COLLECTIONS,
+            ownerDeviceId = "device:A",
+            reservedRemoteId = "remote-a",
+            lastRemoteRevisionToken = null,
+            nextSequence = 9L,
+        )
+        val ownerB = SyncReplicaState(
+            documentKind = SyncDocumentKind.COLLECTIONS,
+            ownerDeviceId = "device:B",
+            reservedRemoteId = "remote-b",
+            lastRemoteRevisionToken = "4",
+            nextSequence = 5L,
+        )
+        replica.put(ownerA)
+        replica.put(ownerB)
+
+        val recreated = SyncReplicaRepositoryImpl(database)
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:A") shouldBe ownerA
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:B") shouldBe ownerB
+
+        recreated.clear(SyncDocumentKind.COLLECTIONS, "device:A")
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:A") shouldBe null
+        recreated.get(SyncDocumentKind.COLLECTIONS, "device:B") shouldBe ownerB
     }
 
     @Test
@@ -228,6 +445,18 @@ class SyncRepositoriesImplTest {
         local = SyncConflictValue.Present(JsonPrimitive(local)),
         remote = SyncConflictValue.Present(JsonPrimitive(remote)),
     )
+
+    private suspend fun seedTitleWithoutPendingOutbox() {
+        database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+            id = "title-1",
+            displayTitle = "Tsuzuki",
+            identityState = "SOURCE_ONLY",
+            createdAt = 10L,
+            updatedAt = 10L,
+        )
+        outbox.clear(SyncDocumentKind.LIBRARY)
+        outbox.clear(SyncDocumentKind.SOURCE_MAPPINGS)
+    }
 
     private fun nativeLibraryArchitecture(): String = when (System.getProperty("os.arch").orEmpty().lowercase()) {
         "aarch64", "arm64" -> "aarch64"

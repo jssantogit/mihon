@@ -145,6 +145,95 @@ class GoogleDriveAppDataTransportTest {
         }
 
     @Test
+    fun `v2 list exposes private replica metadata`() = kotlinx.coroutines.test.runTest {
+        val client = fakeClient { request, _ ->
+            response(
+                request,
+                200,
+                """{"files":[{"id":"1","name":"diag.json","mimeType":"application/json","version":"7","appProperties":{"tsuzukiProtocol":"2","logicalKind":"LIBRARY","ownerDeviceId":"device:A"}}]}""",
+            )
+        }
+
+        val result = transport(client).listFiles() as SyncTransportResult.Success
+        val file = result.value.single()
+
+        file.protocolVersion shouldBe 2
+        file.logicalKind shouldBe SyncDocumentKind.LIBRARY
+        file.ownerDeviceId shouldBe "device:A"
+    }
+
+    @Test
+    fun `generate id targets appDataFolder and returns exactly one id`() = kotlinx.coroutines.test.runTest {
+        lateinit var captured: Request
+        val client = fakeClient { request, _ ->
+            captured = request
+            response(request, 200, """{"ids":["reserved-1"],"space":"appDataFolder"}""")
+        }
+
+        val result = transport(client).generateFileId() as SyncTransportResult.Success
+
+        result.value shouldBe "reserved-1"
+        captured.method shouldBe "GET"
+        captured.url.encodedPath shouldContain "generateIds"
+        captured.url.queryParameter("count") shouldBe "1"
+        captured.url.queryParameter("space") shouldBe "appDataFolder"
+    }
+
+    @Test
+    fun `create replica uses reserved id and appProperties`() = kotlinx.coroutines.test.runTest {
+        lateinit var captured: Request
+        val client = fakeClient { request, _ ->
+            captured = request
+            response(
+                request,
+                200,
+                """{"id":"reserved-1","name":"tsuzuki-v2-library-device-A.json","mimeType":"application/json","version":"1","appProperties":{"tsuzukiProtocol":"2","logicalKind":"LIBRARY","ownerDeviceId":"device:A"}}""",
+            )
+        }
+
+        val result = transport(client).createReplica(
+            remoteId = "reserved-1",
+            documentKind = SyncDocumentKind.LIBRARY,
+            ownerDeviceId = "device:A",
+            content = """{"protocolVersion":2}""",
+        ) as SyncTransportResult.Success
+
+        result.value.remoteId shouldBe "reserved-1"
+        val buffer = okio.Buffer()
+        captured.body!!.writeTo(buffer)
+        val body = buffer.readUtf8()
+        body shouldContain """"id":"reserved-1""""
+        body shouldContain """"tsuzukiProtocol":"2""""
+        body shouldContain """"logicalKind":"LIBRARY""""
+        body shouldContain """"ownerDeviceId":"device:A""""
+        body shouldContain """"parents":["appDataFolder"]"""
+        body shouldNotContain "test-token"
+    }
+
+    @Test
+    fun `owned update refuses foreign replica before network request`() = kotlinx.coroutines.test.runTest {
+        var requested = false
+        val client = fakeClient { request, _ ->
+            requested = true
+            response(request, 500, "{}")
+        }
+
+        val result = transport(client).updateOwnedReplica(
+            file = remoteFile(
+                version = "7",
+                protocolVersion = 2,
+                logicalKind = SyncDocumentKind.LIBRARY,
+                ownerDeviceId = "device:B",
+            ),
+            ownerDeviceId = "device:A",
+            content = "{}",
+        ) as SyncTransportResult.Failure
+
+        result.failure.reason shouldBe SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
+        requested.shouldBeFalse()
+    }
+
+    @Test
     fun `case 5 - 401 invalidates transient Google access and requires reauthorization`() =
         kotlinx.coroutines.test.runTest {
             val access = FakeAuthorizedAccess()
@@ -239,14 +328,22 @@ class GoogleDriveAppDataTransportTest {
         uploadBaseUrl = "https://example.test/upload/drive/v3/files".toHttpUrl(),
     )
 
-    private fun remoteFile(version: String) = SyncRemoteFile(
+    private fun remoteFile(
+        version: String,
+        protocolVersion: Int? = null,
+        logicalKind: SyncDocumentKind? = null,
+        ownerDeviceId: String? = null,
+    ) = SyncRemoteFile(
         remoteId = "1",
-        name = "library.json",
+        name = if (protocolVersion == 2) "tsuzuki-v2-library-device.json" else "library.json",
         mimeType = "application/json",
         revision = SyncRemoteRevision(
             remoteId = "1",
             revisionToken = version,
         ),
+        protocolVersion = protocolVersion,
+        logicalKind = logicalKind,
+        ownerDeviceId = ownerDeviceId,
     )
 
     private fun fakeClient(

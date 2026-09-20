@@ -13,11 +13,14 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncCodecResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
+import tachiyomi.domain.tsuzuki.sync.model.SyncFrontier
 import tachiyomi.domain.tsuzuki.sync.model.SyncOutboxEntry
 import tachiyomi.domain.tsuzuki.sync.model.SyncRemoteRevision
+import tachiyomi.domain.tsuzuki.sync.model.SyncReplicaState
 import tachiyomi.domain.tsuzuki.sync.model.SyncStoredState
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
+import tachiyomi.domain.tsuzuki.sync.repository.SyncReplicaRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.KotlinxSyncDocumentCodec
 import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentCodec
@@ -135,6 +138,7 @@ class SyncStateRepositoryImpl(
             remoteRevisionToken = remote?.revisionToken,
             remoteModifiedAt = remote?.modifiedAtEpochMillis,
             lastSuccessfulSyncAt = state.lastSuccessfulSyncAtEpochMillis,
+            acceptedFrontierJson = encodeFrontier(state.acceptedFrontier),
         )
     }
 
@@ -149,6 +153,7 @@ class SyncStateRepositoryImpl(
         remoteRevisionToken: String?,
         remoteModifiedAt: Long?,
         lastSuccessfulSyncAt: Long?,
+        acceptedFrontierJson: String?,
     ): SyncStoredState {
         val kind = SyncDocumentKind.valueOf(documentKind)
         return SyncStoredState(
@@ -162,7 +167,19 @@ class SyncStateRepositoryImpl(
                 )
             },
             lastSuccessfulSyncAtEpochMillis = lastSuccessfulSyncAt,
+            acceptedFrontier = acceptedFrontierJson?.let(::decodeFrontier) ?: SyncFrontier(),
         )
+    }
+
+    private fun encodeFrontier(frontier: SyncFrontier): String {
+        return SYNC_JSON.encodeToString(
+            SyncFrontier.serializer(),
+            frontier.copy(entries = frontier.entries.toSortedMap()),
+        )
+    }
+
+    private fun decodeFrontier(content: String): SyncFrontier {
+        return SYNC_JSON.decodeFromString(SyncFrontier.serializer(), content)
     }
 
     private fun encodeDocument(document: SyncDocumentEnvelope): String {
@@ -182,6 +199,63 @@ class SyncStateRepositoryImpl(
             )
         }
     }
+}
+
+@Inject
+@SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
+class SyncReplicaRepositoryImpl(
+    private val database: Database,
+) : SyncReplicaRepository {
+
+    override suspend fun get(
+        documentKind: SyncDocumentKind,
+        ownerDeviceId: String,
+    ): SyncReplicaState? {
+        require(ownerDeviceId.isNotBlank()) { "Sync replica owner device ID must not be blank" }
+        return database.tsuzuki_syncQueries
+            .getTsuzukiSyncReplica(
+                documentKind = documentKind.name,
+                ownerDeviceId = ownerDeviceId,
+                mapper = ::mapReplica,
+            )
+            .awaitAsOneOrNull()
+    }
+
+    override suspend fun put(state: SyncReplicaState) {
+        database.tsuzuki_syncQueries.upsertTsuzukiSyncReplica(
+            documentKind = state.documentKind.name,
+            ownerDeviceId = state.ownerDeviceId,
+            reservedRemoteId = state.reservedRemoteId,
+            lastRemoteRevisionToken = state.lastRemoteRevisionToken,
+            nextSequence = state.nextSequence,
+        )
+    }
+
+    override suspend fun clear(
+        documentKind: SyncDocumentKind,
+        ownerDeviceId: String,
+    ) {
+        require(ownerDeviceId.isNotBlank()) { "Sync replica owner device ID must not be blank" }
+        database.tsuzuki_syncQueries.deleteTsuzukiSyncReplica(
+            documentKind = documentKind.name,
+            ownerDeviceId = ownerDeviceId,
+        )
+    }
+
+    private fun mapReplica(
+        documentKind: String,
+        ownerDeviceId: String,
+        reservedRemoteId: String?,
+        lastRemoteRevisionToken: String?,
+        nextSequence: Long,
+    ) = SyncReplicaState(
+        documentKind = SyncDocumentKind.valueOf(documentKind),
+        ownerDeviceId = ownerDeviceId,
+        reservedRemoteId = reservedRemoteId,
+        lastRemoteRevisionToken = lastRemoteRevisionToken,
+        nextSequence = nextSequence,
+    )
 }
 
 @Inject
