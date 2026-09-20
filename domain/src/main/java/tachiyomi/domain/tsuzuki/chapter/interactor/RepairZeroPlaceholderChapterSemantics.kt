@@ -22,7 +22,8 @@ import kotlin.time.Clock
  *
  * When existing canonical progress/history points at one of the affected
  * variants, that semantic group keeps the old canonical chapter ID so reading
- * state remains attached without rewriting progress or history.
+ * state remains attached without rewriting progress or history. The operation
+ * is idempotent and never broadens into title-name identity inference.
  */
 class RepairZeroPlaceholderChapterSemantics internal constructor(
     private val parser: ParseCanonicalChapterLabel,
