@@ -145,7 +145,6 @@ class SyncReplicaMaterializerTest {
         visible.frontier shouldBe frontier("device:A" to 1)
     }
 
-
     @Test
     fun `frontier referencing an unpublished sequence fails closed`() {
         val a = journal(
@@ -264,6 +263,87 @@ class SyncReplicaMaterializerTest {
         }
 
         results.drop(1).forEach { it shouldBe results.first() }
+    }
+
+
+    @Test
+    fun `fresh replicas with different records both survive`() {
+        val a = journal(
+            "device:A",
+            batch("device:A", 1, mutations = listOf(set("a", "name", "A", 10))),
+        )
+        val b = journal(
+            "device:B",
+            batch("device:B", 1, mutations = listOf(set("b", "name", "B", 20))),
+        )
+
+        val result = success(materializer.materialize(kind, 1, listOf(a, b), 50))
+
+        result.conflicts shouldContainExactly emptyList()
+        result.document.records.keys.toList() shouldContainExactly listOf("a", "b")
+    }
+
+    @Test
+    fun `equivalent concurrent values collapse without conflict`() {
+        val a = journal(
+            "device:A",
+            batch("device:A", 1, mutations = listOf(set("r", "name", "Same", 10))),
+        )
+        val b = journal(
+            "device:B",
+            batch("device:B", 1, mutations = listOf(set("r", "name", "Same", 20))),
+        )
+
+        val result = success(materializer.materialize(kind, 1, listOf(a, b), 50))
+
+        result.conflicts shouldContainExactly emptyList()
+        result.document.records.getValue("r").fields["name"] shouldBe JsonPrimitive("Same")
+    }
+
+    @Test
+    fun `causally later delete wins over earlier active value`() {
+        val active = batch(
+            "device:A",
+            1,
+            mutations = listOf(set("r", "name", "Alive", 10)),
+        )
+        val deletion = batch(
+            "device:B",
+            1,
+            observed = frontier("device:A" to 1),
+            mutations = listOf(SyncMutation.DeleteRecord("r", 20, 20)),
+        )
+
+        val result = success(
+            materializer.materialize(
+                kind,
+                1,
+                listOf(journal("device:A", active), journal("device:B", deletion)),
+                50,
+            ),
+        )
+
+        result.conflicts shouldContainExactly emptyList()
+        result.document.records.getValue("r").isTombstone shouldBe true
+    }
+
+    @Test
+    fun `different non null legacy genesis values fail closed`() {
+        val first = legacyGenesis()
+        val second = first.copy(sourceRevisionToken = "8")
+
+        val result = materializer.materialize(
+            kind,
+            1,
+            listOf(
+                journalWithGenesis("device:A", first),
+                journalWithGenesis("device:B", second),
+            ),
+            50,
+        )
+
+        (result as SyncReplicaMaterializationResult.Failure).failure.reason shouldBe
+            tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason.MALFORMED_REMOTE_DOCUMENT
     }
 
     private fun success(result: SyncReplicaMaterializationResult) =
