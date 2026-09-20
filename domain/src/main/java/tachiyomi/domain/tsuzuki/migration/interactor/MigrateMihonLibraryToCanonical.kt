@@ -3,6 +3,7 @@ package tachiyomi.domain.tsuzuki.migration.interactor
 import dev.zacsweers.metro.Inject
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.migration.model.CanonicalMigrationReport
+import tachiyomi.domain.tsuzuki.migration.repository.CanonicalLibraryMigrationStateRepository
 import tachiyomi.domain.tsuzuki.migration.service.MihonLibraryGateway
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
@@ -18,6 +19,8 @@ open class MigrateMihonLibraryToCanonical internal constructor(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val materializeCanonicalTitle: MaterializeCanonicalTitle,
     private val canonicalLibraryRepository: CanonicalLibraryRepository,
+    private val migrationStateRepository: CanonicalLibraryMigrationStateRepository =
+        AlwaysPendingCanonicalLibraryMigrationStateRepository,
     private val idFactory: () -> String,
     private val clock: () -> Long,
 ) {
@@ -28,16 +31,26 @@ open class MigrateMihonLibraryToCanonical internal constructor(
         sourceTitleMappingRepository: SourceTitleMappingRepository,
         materializeCanonicalTitle: MaterializeCanonicalTitle,
         canonicalLibraryRepository: CanonicalLibraryRepository,
+        migrationStateRepository: CanonicalLibraryMigrationStateRepository,
     ) : this(
         gateway = gateway,
         sourceTitleMappingRepository = sourceTitleMappingRepository,
         materializeCanonicalTitle = materializeCanonicalTitle,
         canonicalLibraryRepository = canonicalLibraryRepository,
+        migrationStateRepository = migrationStateRepository,
         idFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
     )
 
     open suspend fun execute(): CanonicalMigrationReport {
+        if (migrationStateRepository.isCompleted()) {
+            return CanonicalMigrationReport(
+                totalProcessed = 0,
+                newlyImported = 0,
+                alreadyMapped = 0,
+            )
+        }
+
         val snapshots = gateway.snapshot()
         var newlyImported = 0
         var alreadyMapped = 0
@@ -94,10 +107,21 @@ open class MigrateMihonLibraryToCanonical internal constructor(
             canonicalLibraryRepository.upsert(entry)
         }
 
+        migrationStateRepository.markCompleted()
+
         return CanonicalMigrationReport(
             totalProcessed = snapshots.size,
             newlyImported = newlyImported,
             alreadyMapped = alreadyMapped,
         )
     }
+}
+
+
+private object AlwaysPendingCanonicalLibraryMigrationStateRepository :
+    CanonicalLibraryMigrationStateRepository {
+
+    override suspend fun isCompleted(): Boolean = false
+
+    override suspend fun markCompleted() = Unit
 }
