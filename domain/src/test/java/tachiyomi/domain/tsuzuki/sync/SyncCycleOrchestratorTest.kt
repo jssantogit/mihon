@@ -360,7 +360,6 @@ class SyncCycleOrchestratorTest {
         transport.replicaUpdateOwners shouldBe emptyList()
     }
 
-
     @Test
     fun `second v1 device migration detects stale same field conflict after v2 exists`() = runTest {
         val legacyBase = document(record("a", "name" to "Base"))
