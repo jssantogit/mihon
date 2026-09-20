@@ -54,7 +54,6 @@ private object EmptySourceTitleMappingRepository : SourceTitleMappingRepository 
     ) = Unit
 }
 
-
 private object EmptyLibraryTitleCategoryRepository : LibraryTitleCategoryRepository {
     override fun getAllAsFlow() =
         flowOf(emptyList<tachiyomi.domain.tsuzuki.library.model.LibraryTitleCategory>())
