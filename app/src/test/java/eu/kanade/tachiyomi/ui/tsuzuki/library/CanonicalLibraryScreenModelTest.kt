@@ -97,6 +97,44 @@ class CanonicalLibraryScreenModelTest {
     }
 
     @Test
+    fun `search filters primary library by canonical display title`() = runTest(testDispatcher) {
+        val fakeRepo = FakeCanonicalLibraryRepository()
+        val screenModel = CanonicalLibraryScreenModel(
+            observeCanonicalLibrary = ObserveCanonicalLibrary(fakeRepo),
+            setCanonicalLibraryStatus = SetCanonicalLibraryStatus(fakeRepo),
+            removeUnifiedLibraryTitle = RemoveUnifiedLibraryTitle(
+                getFavoriteMihonMangaIds = { emptyList() },
+                setMihonFavorite = { _, _ -> true },
+                removeCanonical = fakeRepo::remove,
+            ),
+            migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
+        )
+        fakeRepo.emitItems(
+            listOf(
+                canonicalItem("title-1", "Frieren"),
+                canonicalItem("title-2", "Dungeon Meshi"),
+            ),
+        )
+        advanceUntilIdle()
+
+        screenModel.search("frie")
+        advanceUntilIdle()
+
+        val filtered = screenModel.state.value
+        filtered.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
+        filtered.searchQuery shouldBe "frie"
+        filtered.items.map { it.title.displayTitle } shouldBe listOf("Frieren")
+
+        screenModel.search(null)
+        advanceUntilIdle()
+
+        val restored = screenModel.state.value
+        restored.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
+        restored.items.map { it.title.displayTitle } shouldBe listOf("Frieren", "Dungeon Meshi")
+    }
+
+    @Test
     fun `status changes update the entry and list`() = runTest(testDispatcher) {
         val fakeRepo = FakeCanonicalLibraryRepository()
         val entry = CanonicalLibraryEntry(
@@ -309,6 +347,23 @@ class CanonicalLibraryScreenModelTest {
         event.await() shouldBe CanonicalLibraryEvent.OpenReader("chapter-42")
         resolver.lastCanonicalTitleId shouldBe "title-42"
     }
+
+    private fun canonicalItem(id: String, title: String) = CanonicalLibraryItem(
+        title = CanonicalTitle(
+            id = id,
+            displayTitle = title,
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 1000L,
+            updatedAt = 1000L,
+        ),
+        entry = CanonicalLibraryEntry(
+            canonicalTitleId = id,
+            status = LibraryStatus.READING,
+            favorite = true,
+            addedAt = 1000L,
+            updatedAt = 1000L,
+        ),
+    )
 
     private class FakeMigrateMihonLibraryToCanonical(
         private val shouldFail: Boolean = false,
