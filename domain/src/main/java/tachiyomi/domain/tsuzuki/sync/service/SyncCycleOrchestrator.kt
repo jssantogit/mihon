@@ -543,13 +543,14 @@ class SyncCycleOrchestrator(
             lastRemoteRevisionToken =
                 localReplica?.file?.revision?.revisionToken ?: existing.lastRemoteRevisionToken,
             nextSequence = maxOf(existing.nextSequence, nextFromRemote),
-        ) ?: SyncReplicaState(
-            documentKind = kind,
-            ownerDeviceId = revisionSource.deviceId,
-            reservedRemoteId = localReplica?.file?.remoteId,
-            lastRemoteRevisionToken = localReplica?.file?.revision?.revisionToken,
-            nextSequence = nextFromRemote,
         )
+            ?: SyncReplicaState(
+                documentKind = kind,
+                ownerDeviceId = revisionSource.deviceId,
+                reservedRemoteId = localReplica?.file?.remoteId,
+                lastRemoteRevisionToken = localReplica?.file?.revision?.revisionToken,
+                nextSequence = nextFromRemote,
+            )
         if (existing != reconciled) {
             replicaRepository.put(reconciled)
         }
