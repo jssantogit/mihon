@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.logging.HttpLoggingInterceptor
 import tachiyomi.domain.tsuzuki.account.model.TsuzukiAccount
 
 class SupabaseAuthService(
@@ -229,3 +230,13 @@ private data class UserResponse(
     val id: String,
     val email: String? = null,
 )
+
+
+internal fun supabaseSafeClient(client: OkHttpClient): OkHttpClient {
+    return client.newBuilder()
+        .apply {
+            interceptors().removeAll { it is HttpLoggingInterceptor }
+            networkInterceptors().removeAll { it is HttpLoggingInterceptor }
+        }
+        .build()
+}
