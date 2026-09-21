@@ -222,7 +222,7 @@ jobs:
           retention-days: 3
 
   compile:
-    name: ${{ matrix.name }}
+    name: Compile — ${{ matrix.name }}
     needs: plan
     if: needs.plan.outputs.run_compile == 'true'
     strategy:
