@@ -23,8 +23,7 @@ import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCategoriesViewMode
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryEvent
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
-import eu.kanade.tachiyomi.ui.tsuzuki.source.ReadingSourcePreferencesScreen
-import eu.kanade.tachiyomi.ui.tsuzuki.source.SourceResolverScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.library.canonicalLibraryDestination
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -68,12 +67,9 @@ data object LibraryTab : Tab {
                             ),
                         )
                     }
-                    is CanonicalLibraryEvent.ResolveReadingSource -> {
+                    is CanonicalLibraryEvent.OpenCanonicalTitle -> {
                         navigator.push(
-                            SourceResolverScreen(
-                                event.canonicalTitleId,
-                                event.title,
-                            ),
+                            canonicalLibraryDestination(event.canonicalTitleId),
                         )
                     }
                 }
@@ -92,21 +88,12 @@ data object LibraryTab : Tab {
             onEditCategories = { navigator.push(CategoryScreen()) },
             onCategoryFilterChange = screenModel::selectCategory,
             onRead = { item ->
-                screenModel.readOrContinue(
-                    canonicalTitleId = item.title.id,
-                    title = item.title.displayTitle,
-                )
+                screenModel.readOrContinue(item.canonicalTitleId)
             },
-            onResolveSource = { item ->
+            onOpenItem = { item ->
                 navigator.push(
-                    SourceResolverScreen(
-                        item.title.id,
-                        item.title.displayTitle,
-                    ),
+                    canonicalLibraryDestination(item.canonicalTitleId),
                 )
-            },
-            onOpenSourcePreferences = {
-                navigator.push(ReadingSourcePreferencesScreen())
             },
         )
 
