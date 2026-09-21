@@ -884,6 +884,7 @@ class SupabaseSyncOrchestrator(
     ): SyncConflict {
         val path = fieldPath?.let(SupabaseFieldPathCodec::decode).orEmpty()
         return SyncConflict(
+            remoteConflictId = conflictId,
             documentKind = documentKind,
             recordId = recordId,
             propertyPath = path,
