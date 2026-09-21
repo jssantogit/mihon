@@ -62,10 +62,10 @@ class MalIntegrationProviderTest {
 
     @Test
     fun `mal unknown chapter count and score stay absent instead of becoming synthetic data`() = runTest {
+        val track = malTrack(id = 7, title = "Ongoing", score = -1.0, chapters = 0)
         val api = FakeMalIntegrationApi(
-            searchResults = listOf(
-                malTrack(id = 7, title = "Ongoing", score = -1.0, chapters = 0),
-            ),
+            searchResults = listOf(track),
+            detailsById = mapOf(7 to track),
         )
         val provider = MalIntegrationProvider.forTest(api)
 
