@@ -336,7 +336,15 @@ class SupabaseSyncOrchestrator(
                     now = now,
                 )
                 conflictRepository.clearForDocument(documentKind)
-                outboxRepository.clear(documentKind)
+                if (adapter.hasUnportableLocalState()) {
+                    ensureDirty(
+                        documentKind = documentKind,
+                        outbox = outboxRepository.get(documentKind),
+                        now = now,
+                    )
+                } else {
+                    outboxRepository.clear(documentKind)
+                }
                 return SyncDocumentResult.Synchronized(
                     documentKind = documentKind,
                     localApplied = prePushMerge.requiresLocalApply,
@@ -449,7 +457,15 @@ class SupabaseSyncOrchestrator(
             }
 
             conflictRepository.clearForDocument(documentKind)
-            outboxRepository.clear(documentKind)
+            if (adapter.hasUnportableLocalState()) {
+                ensureDirty(
+                    documentKind = documentKind,
+                    outbox = outboxRepository.get(documentKind),
+                    now = now,
+                )
+            } else {
+                outboxRepository.clear(documentKind)
+            }
             markSuccessful(
                 documentKind = documentKind,
                 remote = afterPush.document,
