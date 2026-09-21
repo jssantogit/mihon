@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.map
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.subscribeToList
+import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
@@ -83,6 +84,7 @@ class CanonicalChapterRepositoryImpl(
             confidence = chapter.confidence,
             createdAt = chapter.createdAt,
             updatedAt = chapter.updatedAt,
+            confirmationState = chapter.confirmation.name,
         )
     }
 
@@ -109,6 +111,7 @@ class CanonicalChapterRepositoryImpl(
                     confidence = chapter.confidence,
                     createdAt = chapter.createdAt,
                     updatedAt = chapter.updatedAt,
+                    confirmationState = chapter.confirmation.name,
                 )
             }
             variants.forEach { variant -> upsertVariantInternal(variant) }
@@ -163,6 +166,7 @@ class CanonicalChapterRepositoryImpl(
         confidence: Double,
         createdAt: Long,
         updatedAt: Long,
+        confirmationState: String,
     ) = CanonicalChapter(
         id = id,
         canonicalTitleId = canonicalTitleId,
@@ -176,6 +180,7 @@ class CanonicalChapterRepositoryImpl(
         confidence = confidence,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        confirmation = CanonicalChapterConfirmation.valueOf(confirmationState),
     )
 
     private fun mapVariant(
