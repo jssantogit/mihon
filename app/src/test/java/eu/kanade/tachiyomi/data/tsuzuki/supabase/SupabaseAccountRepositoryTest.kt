@@ -100,6 +100,39 @@ class SupabaseAccountRepositoryTest {
     }
 
     @Test
+    fun `expired access token is refreshed before use`() = runTest {
+        server.enqueue(sessionResponse(accessToken = "access-2", refreshToken = "refresh-2"))
+        val store = InMemorySessionStore().apply {
+            save(
+                SupabaseSession(
+                    accessToken = "old-access",
+                    refreshToken = "refresh-1",
+                    expiresAtEpochSeconds = 100,
+                    userId = "user-1",
+                    email = "reader@example.com",
+                ),
+            )
+        }
+        val config = SupabaseConfiguration(
+            url = server.url("/").toString().removeSuffix("/"),
+            publishableKey = "publishable-test-key",
+        )
+        val repository = SupabaseAccountRepository(
+            authService = SupabaseAuthService(
+                client = OkHttpClient(),
+                configuration = config,
+            ),
+            sessionStore = store,
+            nowEpochSeconds = { 100 },
+        )
+
+        repository.getAccessToken().getOrThrow() shouldBe "access-2"
+
+        val request = server.takeRequest()
+        request.url.encodedPath shouldBe "/auth/v1/token"
+        request.url.queryParameter("grant_type") shouldBe "refresh_token"
+    }
+    @Test
     fun `password recovery uses recover endpoint`() = runTest {
         server.enqueue(MockResponse.Builder().code(200).body("{}").build())
         val repository = repository(InMemorySessionStore())
