@@ -341,6 +341,19 @@ begin
             message = 'duplicate operation for record and field';
     end if;
 
+    if exists (
+        select 1
+        from jsonb_array_elements(v_operations) as item(value)
+        group by item.value ->> 'recordId'
+        having
+            bool_or(item.value ->> 'type' = 'delete')
+            and count(*) > 1
+    ) then
+        raise exception using
+            errcode = '22023',
+            message = 'delete cannot be combined with field edits for one record';
+    end if;
+
     v_request_hash := encode(
         extensions.digest(convert_to(p_request::text, 'UTF8'), 'sha256'),
         'hex'
