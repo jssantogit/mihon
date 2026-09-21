@@ -166,6 +166,26 @@ class SupabaseSyncHttpTransportTest {
     }
 
     @Test
+    fun `acknowledge conflict uses authenticated owner scoped rpc`() = runTest {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .addHeader("Content-Type", "application/json")
+                .body("true")
+                .build(),
+        )
+        val transport = transport()
+
+        val result = transport.ackConflict(42)
+
+        (result as SyncTransportResult.Success).value shouldBe true
+        val request = server.takeRequest()
+        request.url.encodedPath shouldBe "/rest/v1/rpc/sync_ack_conflict"
+        request.headers["Authorization"] shouldBe "Bearer access-token"
+        request.body!!.utf8().contains("\"p_conflict_id\":42") shouldBe true
+    }
+
+    @Test
     fun `claim external identity uses authenticated rpc and returns claimed id`() = runTest {
         server.enqueue(
             MockResponse.Builder()
