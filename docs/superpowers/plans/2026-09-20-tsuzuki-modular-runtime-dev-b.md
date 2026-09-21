@@ -278,11 +278,14 @@ git commit -m "feat(tsuzuki): resolve Mihon addon chapter content"
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/content/ContentPreferenceRepositoryImpl.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveChapterContent.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/RankContentOptions.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/cache/ContentOptionCache.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/cache/InFlightContentResolution.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/model/ContentResolution.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/model/CanonicalReaderPreference.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/SetCanonicalAutomaticFallback.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveChapterContentTest.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/RankContentOptionsTest.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ContentResolutionCacheTest.kt`
 
 **Interfaces:**
 - Produces: `ContentResolution.Direct`, `NeedsSelection`, `Unavailable`.
@@ -349,15 +352,42 @@ sealed interface ContentResolution {
 
 Move automatic-fallback storage to a global reading preference. Do not keep it title-scoped after migration.
 
-- [ ] **Step 4: Add progress-preservation test**
+- [ ] **Step 4: Add cache and in-flight coalescing tests**
+
+~~~kotlin
+@Test
+fun `two concurrent resolutions for same chapter share one provider request`() = runTest {
+    val first = async { resolver.execute("title", "chapter-37") }
+    val second = async { resolver.execute("title", "chapter-37") }
+
+    first.await()
+    second.await()
+
+    assertEquals(1, provider.resolveCalls)
+}
+
+@Test
+fun `expired option cache re-queries provider`() = runTest {
+    resolver.execute("title", "chapter-37")
+    clock.advanceBy(CONTENT_OPTION_TTL_MILLIS + 1)
+    resolver.execute("title", "chapter-37")
+
+    assertEquals(2, provider.resolveCalls)
+}
+~~~
+
+Use a bounded in-memory cache keyed by `canonicalTitleId + canonicalChapterId + addonId`. Cache successful option lists and short-lived empty results; do not persist page URLs. Invalidating/disabling an Add-on clears its entries.
+
+- [ ] **Step 5: Add progress-preservation test**
 
 Resolve the same CanonicalChapter with two different options and assert canonical progress repository retains the same chapter/page state; provider choice must not key progress.
 
-- [ ] **Step 5: Run tests and commit**
+- [ ] **Step 6: Run tests and commit**
 
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*ResolveChapterContentTest' \
   :domain:testDebugUnitTest --tests '*RankContentOptionsTest' \
+  :domain:testDebugUnitTest --tests '*ContentResolutionCacheTest' \
   spotlessCheck
 git add domain/src/main/java/tachiyomi/domain/tsuzuki/content \
   data/src/main/java/tachiyomi/data/tsuzuki/content \
