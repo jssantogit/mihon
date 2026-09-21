@@ -100,6 +100,7 @@ import tachiyomi.domain.tsuzuki.reader.interactor.SetCanonicalAutomaticFallback
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterDirection
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.OperationalReaderChapter
+import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.isLocal
@@ -222,7 +223,7 @@ class ReaderViewModel(
 
     /** Canonical identity attached to the operational Reader chapter for this session. */
     private var canonicalSession: OperationalReaderChapter? = null
-    private var pendingCanonicalFallback: CanonicalReaderPreparation.FallbackRequired? = null
+    private var pendingCanonicalFallback: CanonicalReaderPreparation.SelectionRequired? = null
 
     /**
      * The time the chapter was started reading
@@ -366,13 +367,16 @@ class ReaderViewModel(
                     when (
                         val preparation = prepareCanonicalChapterForReader.execute(
                             canonicalChapterId = canonicalId,
-                            preferredLanguage = canonicalPreferredLanguage,
                         )
                     ) {
                         is CanonicalReaderPreparation.Ready -> {
-                            loadCanonicalTarget(preparation.target, resetPage = false)
+                            loadCanonicalTarget(
+                                canonicalChapterId = preparation.canonicalChapterId,
+                                target = preparation.target,
+                                resetPage = false,
+                            )
                         }
-                        is CanonicalReaderPreparation.FallbackRequired -> {
+                        is CanonicalReaderPreparation.SelectionRequired -> {
                             showCanonicalFallback(preparation)
                         }
                         is CanonicalReaderPreparation.Unavailable -> {
@@ -484,20 +488,36 @@ class ReaderViewModel(
     }
 
     private suspend fun loadCanonicalTarget(
-        target: OperationalReaderChapter,
+        canonicalChapterId: String,
+        target: PreparedChapterContent,
         resetPage: Boolean,
     ) {
-        canonicalSession = target
+        val operationalTarget = when (target) {
+            is PreparedChapterContent.MihonOperational -> OperationalReaderChapter(
+                canonicalChapterId = canonicalChapterId,
+                variantId = "",
+                sourceMappingId = "",
+                mihonMangaId = target.mangaId,
+                mihonChapterId = target.chapterId,
+                sourceId = target.sourceId,
+            )
+            is PreparedChapterContent.LocalArchive,
+            is PreparedChapterContent.LocalDirectory,
+            is PreparedChapterContent.CanonicalDownload,
+            -> error("Prepared local content is not wired to the legacy Reader loader yet")
+        }
+
+        canonicalSession = operationalTarget
         pendingCanonicalFallback = null
-        mangaId = target.mihonMangaId
-        initialChapterId = target.mihonChapterId
-        chapterId = target.mihonChapterId
+        mangaId = operationalTarget.mihonMangaId
+        initialChapterId = operationalTarget.mihonChapterId
+        chapterId = operationalTarget.mihonChapterId
         if (resetPage) {
             chapterPageIndex = -1
         }
 
-        val manga = getManga.await(target.mihonMangaId)
-            ?: error("Requested manga of id ${target.mihonMangaId} not found")
+        val manga = getManga.await(operationalTarget.mihonMangaId)
+            ?: error("Requested manga of id ${operationalTarget.mihonMangaId} not found")
         val source = sourceManager.getOrStub(manga.source)
         incognitoMode = getIncognitoState.await(manga.source)
         val canonicalLoader = ChapterLoader(
@@ -511,8 +531,8 @@ class ReaderViewModel(
         loader = canonicalLoader
 
         val chapter = getChaptersByMangaId.await(manga.id, applyScanlatorFilter = false)
-            .firstOrNull { it.id == target.mihonChapterId }
-            ?: error("Operational chapter ${target.mihonChapterId} not found")
+            .firstOrNull { it.id == operationalTarget.mihonChapterId }
+            ?: error("Operational chapter ${operationalTarget.mihonChapterId} not found")
 
         mutableState.update {
             it.copy(
@@ -525,7 +545,7 @@ class ReaderViewModel(
     }
 
     private suspend fun showCanonicalFallback(
-        fallback: CanonicalReaderPreparation.FallbackRequired,
+        fallback: CanonicalReaderPreparation.SelectionRequired,
     ) {
         pendingCanonicalFallback = fallback
         withUIContext {
@@ -544,21 +564,26 @@ class ReaderViewModel(
                         enabled = true,
                     )
                 }
+                val selectedOption = fallback.options.firstOrNull()
+                    ?: error("Content selection contains no options")
                 when (
                     val preparation = prepareCanonicalChapterForReader.execute(
                         canonicalChapterId = fallback.canonicalChapterId,
-                        preferredLanguage = canonicalPreferredLanguage,
-                        allowFallbackOnce = true,
+                        selectedOption = selectedOption,
                     )
                 ) {
                     is CanonicalReaderPreparation.Ready -> {
                         if (hadActiveSession) {
                             updateHistory()
                         }
-                        loadCanonicalTarget(preparation.target, resetPage = hadActiveSession)
+                        loadCanonicalTarget(
+                            canonicalChapterId = preparation.canonicalChapterId,
+                            target = preparation.target,
+                            resetPage = hadActiveSession,
+                        )
                         restartReadTimer()
                     }
-                    is CanonicalReaderPreparation.FallbackRequired -> showCanonicalFallback(preparation)
+                    is CanonicalReaderPreparation.SelectionRequired -> showCanonicalFallback(preparation)
                     is CanonicalReaderPreparation.Unavailable -> {
                         logcat(LogPriority.WARN) { "Fallback chapter is no longer available" }
                     }
@@ -853,13 +878,22 @@ class ReaderViewModel(
             val canonicalSession = canonicalSessionFor(readerChapter)
             if (canonicalSession != null) {
                 try {
-                    recordCanonicalReaderProgress.recordPage(
-                        canonicalChapterId = canonicalSession.canonicalChapterId,
-                        variantId = canonicalSession.variantId,
-                        pageIndex = pageIndex,
-                        completed = readerChapter.pages?.lastIndex == pageIndex,
-                        mihonChapterId = readerChapter.chapter.id!!,
-                    )
+                    if (canonicalSession.variantId.isBlank()) {
+                        recordCanonicalReaderProgress.recordPage(
+                            canonicalChapterId = canonicalSession.canonicalChapterId,
+                            pageIndex = pageIndex,
+                            completed = readerChapter.pages?.lastIndex == pageIndex,
+                            mihonChapterId = readerChapter.chapter.id!!,
+                        )
+                    } else {
+                        recordCanonicalReaderProgress.recordPage(
+                            canonicalChapterId = canonicalSession.canonicalChapterId,
+                            variantId = canonicalSession.variantId.takeIf(String::isNotBlank),
+                            pageIndex = pageIndex,
+                            completed = readerChapter.pages?.lastIndex == pageIndex,
+                            mihonChapterId = readerChapter.chapter.id!!,
+                        )
+                    }
                 } catch (error: Throwable) {
                     logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader progress" }
                 }
@@ -978,15 +1012,18 @@ class ReaderViewModel(
             when (
                 val preparation = prepareCanonicalChapterForReader.execute(
                     canonicalChapterId = adjacent.id,
-                    preferredLanguage = canonicalPreferredLanguage,
                 )
             ) {
                 is CanonicalReaderPreparation.Ready -> {
                     updateHistory()
-                    loadCanonicalTarget(preparation.target, resetPage = true)
+                    loadCanonicalTarget(
+                        canonicalChapterId = preparation.canonicalChapterId,
+                        target = preparation.target,
+                        resetPage = true,
+                    )
                     restartReadTimer()
                 }
-                is CanonicalReaderPreparation.FallbackRequired -> showCanonicalFallback(preparation)
+                is CanonicalReaderPreparation.SelectionRequired -> showCanonicalFallback(preparation)
                 is CanonicalReaderPreparation.Unavailable -> {
                     logcat(LogPriority.WARN) { "Canonical adjacent chapter ${adjacent.id} has no readable variant" }
                 }
@@ -1375,7 +1412,7 @@ class ReaderViewModel(
         data object OrientationModeSelect : Dialog
         data class PageActions(val page: ReaderPage) : Dialog
         data class CanonicalFallback(
-            val fallback: CanonicalReaderPreparation.FallbackRequired,
+            val fallback: CanonicalReaderPreparation.SelectionRequired,
         ) : Dialog
     }
 
