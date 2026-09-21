@@ -4,9 +4,11 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.collections.shouldBeUnique
 import io.kotest.matchers.shouldBe
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncManifest
@@ -108,6 +110,28 @@ class SyncProtocolModelTest {
                 sequence = 1,
             )
         }
+    }
+
+    @Test
+    fun `legacy persisted conflict decodes without remote conflict id`() {
+        val legacy = """
+            {
+              "documentKind":"LIBRARY",
+              "recordId":"title-1",
+              "propertyPath":["status"],
+              "kind":"FIELD_DIVERGENCE",
+              "base":{"type":"missing"},
+              "local":{"type":"present","value":"READING"},
+              "remote":{"type":"present","value":"COMPLETED"}
+            }
+        """.trimIndent()
+
+        val decoded = Json.decodeFromString(
+            SyncConflict.serializer(),
+            legacy,
+        )
+
+        decoded.remoteConflictId shouldBe null
     }
 
     @Test
