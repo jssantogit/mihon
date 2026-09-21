@@ -360,7 +360,7 @@ begin
     end if;
 
     v_request_hash := encode(
-        extensions.digest(convert_to(p_request::text, 'UTF8'), 'sha256'),
+        digest(convert_to(p_request::text, 'UTF8'), 'sha256'),
         'hex'
     );
 
