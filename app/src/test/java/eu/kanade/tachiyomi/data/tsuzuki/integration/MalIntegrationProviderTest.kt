@@ -40,7 +40,7 @@ class MalIntegrationProviderTest {
         item.chapterCount shouldBe 162
         item.status shouldBe CatalogItemStatus.COMPLETED
         item.format shouldBe CatalogItemFormat.MANGA
-        (provider is ChapterEvidenceProvider) shouldBe false
+        ChapterEvidenceProvider::class.java.isAssignableFrom(provider.javaClass) shouldBe false
     }
 
     @Test
