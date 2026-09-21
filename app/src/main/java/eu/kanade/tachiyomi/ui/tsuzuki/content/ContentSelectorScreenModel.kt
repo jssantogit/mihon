@@ -113,10 +113,23 @@ class ContentSelectorScreenModel internal constructor(
         require(state.options.any { it.option.key == item.option.key }) {
             "Selected option is not part of the current selector"
         }
+        val hasExistingPreference = state.preferredAddonId != null
+        if (!hasExistingPreference) {
+            viewModelScope.launch {
+                contentPreferenceRepository.upsert(
+                    ContentPreference(
+                        canonicalTitleId = state.canonicalTitleId,
+                        preferredAddonId = item.option.addonId,
+                        updatedAt = clock(),
+                    ),
+                )
+            }
+        }
+
         return SelectionResult(
             canonicalTitleId = state.canonicalTitleId,
             option = item.option,
-            offerSetAsPreferred = state.preferredAddonId != null &&
+            offerSetAsPreferred = hasExistingPreference &&
                 state.preferredAddonId != item.option.addonId,
         )
     }
