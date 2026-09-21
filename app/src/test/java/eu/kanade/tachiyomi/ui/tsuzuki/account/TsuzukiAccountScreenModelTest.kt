@@ -16,6 +16,13 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.account.model.AccountState
 import tachiyomi.domain.tsuzuki.account.model.TsuzukiAccount
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionChoice
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionResult
+import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
+import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
+import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
+import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TsuzukiAccountScreenModelTest {
@@ -35,7 +42,7 @@ class TsuzukiAccountScreenModelTest {
     @Test
     fun `logged out account is a non blocking local only state`() = runTest(dispatcher) {
         val repository = FakeAccountRepository()
-        val model = TsuzukiAccountScreenModel(repository)
+        val model = TsuzukiAccountScreenModel(repository, FakeCloudSyncRuntime())
 
         advanceUntilIdle()
 
@@ -48,7 +55,7 @@ class TsuzukiAccountScreenModelTest {
     @Test
     fun `invalid credentials are rejected before backend call`() = runTest(dispatcher) {
         val repository = FakeAccountRepository()
-        val model = TsuzukiAccountScreenModel(repository)
+        val model = TsuzukiAccountScreenModel(repository, FakeCloudSyncRuntime())
 
         model.login("not-an-email", "")
         advanceUntilIdle()
@@ -60,7 +67,7 @@ class TsuzukiAccountScreenModelTest {
     @Test
     fun `login and logout update optional cloud account state`() = runTest(dispatcher) {
         val repository = FakeAccountRepository()
-        val model = TsuzukiAccountScreenModel(repository)
+        val model = TsuzukiAccountScreenModel(repository, FakeCloudSyncRuntime())
 
         model.login("reader@example.com", "secret")
         advanceUntilIdle()
@@ -78,6 +85,41 @@ class TsuzukiAccountScreenModelTest {
 
         model.state.value.accountState shouldBe AccountState.LoggedOut
         repository.logoutCalls shouldBe 1
+    }
+
+    @Test
+    fun `authenticated account can trigger manual Sync Now`() = runTest(dispatcher) {
+        val repository = FakeAccountRepository().apply {
+            login("reader@example.com", "secret")
+        }
+        val runtime = FakeCloudSyncRuntime()
+        val model = TsuzukiAccountScreenModel(repository, runtime)
+
+        advanceUntilIdle()
+        model.syncNow()
+        advanceUntilIdle()
+
+        runtime.runCalls shouldBe 1
+        runtime.lastTrigger shouldBe SyncTrigger.MANUAL
+    }
+
+    private class FakeCloudSyncRuntime : CloudSyncRuntime {
+        private val mutableState = MutableStateFlow<SyncRuntimeState>(SyncRuntimeState.Idle)
+        override val state: StateFlow<SyncRuntimeState> = mutableState
+
+        var runCalls = 0
+        var lastTrigger: SyncTrigger? = null
+
+        override suspend fun run(trigger: SyncTrigger): SyncCycleReport {
+            runCalls += 1
+            lastTrigger = trigger
+            return SyncCycleReport(emptyList())
+        }
+
+        override suspend fun resolveConflict(
+            conflict: SyncConflict,
+            choice: SyncConflictResolutionChoice,
+        ): SyncConflictResolutionResult = SyncConflictResolutionResult.Resolved
     }
 
     private class FakeAccountRepository : AccountRepository {
