@@ -1,6 +1,6 @@
 # Tsuzuki Modular Runtime — Dev B Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn Mihon extensions into Tsuzuki Add-ons and make canonical chapter reading resolve content at read time, with per-title provider preference, explicit fallback, provider-neutral Reader preparation, canonical downloads, and local content.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin, Metro DI, SQLDelight, Mihon ExtensionManager/SourceManager, existing canonical Reader/downloader, Jetpack Compose.
 
-**Spec:** \`docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md\`
+**Spec:** `docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md`
 
 ## Global Constraints
 
@@ -23,7 +23,7 @@
 - Removing an Add-on must not erase canonical chapter/progress/download state.
 - Reader progress remains keyed by CanonicalChapter.
 - Production torrent networking is a separate delivery subproject after the provider-neutral content seam is green; this plan defines the stable torrent delivery contract and artifact preparation boundary so the later engine does not reshape Core.
-- Fast CI per task; \`[ci-full]\` on the Dev B final checkpoint.
+- Fast CI per task; `[ci-full]` on the Dev B final checkpoint.
 
 ## Review Focus
 
@@ -38,22 +38,22 @@
 ### Task B1: Implement Add-on registry and Mihon extension facade
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/addon/model/InstalledAddon.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/addon/repository/AddonRepository.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonRepository.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/DefaultAddonRegistry.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonRepositoryTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/DefaultAddonRegistryTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/model/InstalledAddon.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/repository/AddonRepository.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonRepository.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/DefaultAddonRegistry.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonRepositoryTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/DefaultAddonRegistryTest.kt`
 
 **Interfaces:**
-- Consumes: Wave 0 \`AddonId\`, \`AddonRegistry\`, \`ContentProvider\`, \`ChapterProbeProvider\`; existing \`ExtensionManager\` and installed extension models.
-- Produces: \`Flow<List<InstalledAddon>>\` and enabled provider registry.
+- Consumes: Wave 0 `AddonId`, `AddonRegistry`, `ContentProvider`, `ChapterProbeProvider`; existing `ExtensionManager` and installed extension models.
+- Produces: `Flow<List<InstalledAddon>>` and enabled provider registry.
 
 - [ ] **Step 1: Write the failing one-extension/one-Add-on test**
 
 ~~~kotlin
 @Test
-fun \`multi source extension is exposed as one addon\`() {
+fun `multi source extension is exposed as one addon`() {
     val extension = installedExtension(
         pkgName = "eu.kanade.tachiyomi.extension.en.example",
         name = "Example",
@@ -100,7 +100,7 @@ Use extension package name as the initial stable AddonId for Mihon-backed Add-on
 
 - [ ] **Step 4: Implement registry filtering**
 
-\`DefaultAddonRegistry.contentProviders()\` and \`chapterProbeProviders()\` must return providers only for enabled/installed Add-ons.
+`DefaultAddonRegistry.contentProviders()` and `chapterProbeProviders()` must return providers only for enabled/installed Add-ons.
 
 A synced “desired Add-on” record is not enough to register executable code.
 
@@ -108,7 +108,7 @@ A synced “desired Add-on” record is not enough to register executable code.
 
 ~~~kotlin
 @Test
-fun \`registry never exposes addon that is only present in cloud desired state\`() {
+fun `registry never exposes addon that is only present in cloud desired state`() {
     val registry = registry(installed = emptyList(), desiredFromCloud = setOf(AddonId("pkg")))
     assertTrue(registry.contentProviders().isEmpty())
 }
@@ -131,22 +131,22 @@ git commit -m "feat(tsuzuki): expose Mihon extensions as addons"
 ### Task B2: Persist provider-neutral ContentBindings
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/repository/ContentBindingRepository.kt\`
-- Create: \`data/src/main/java/tachiyomi/data/tsuzuki/content/ContentBindingRepositoryImpl.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveContentBinding.kt\`
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonReadingSourceGateway.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveContentBindingTest.kt\`
-- Test: \`data/src/test/java/tachiyomi/data/tsuzuki/content/ContentBindingRepositoryImplTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/repository/ContentBindingRepository.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/content/ContentBindingRepositoryImpl.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveContentBinding.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonReadingSourceGateway.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveContentBindingTest.kt`
+- Test: `data/src/test/java/tachiyomi/data/tsuzuki/content/ContentBindingRepositoryImplTest.kt`
 
 **Interfaces:**
-- Consumes: existing title matching/search machinery and Wave 0 \`ContentBinding\`.
-- Produces: \`ResolveContentBinding.execute(canonicalTitleId, addonId)\`.
+- Consumes: existing title matching/search machinery and Wave 0 `ContentBinding`.
+- Produces: `ResolveContentBinding.execute(canonicalTitleId, addonId)`.
 
 - [ ] **Step 1: Write a failing binding reuse test**
 
 ~~~kotlin
 @Test
-fun \`existing addon binding is reused without title search\`() = runTest {
+fun `existing addon binding is reused without title search`() = runTest {
     repository.upsert(binding("title", AddonId("mangadex"), "remote-123"))
     val result = resolver.execute("title", AddonId("mangadex")).getOrThrow()
 
@@ -159,7 +159,7 @@ fun \`existing addon binding is reused without title search\`() = runTest {
 
 ~~~kotlin
 @Test
-fun \`stale binding is repaired inside same canonical title\`() = runTest {
+fun `stale binding is repaired inside same canonical title`() = runTest {
     repository.upsert(unavailableBinding("title", AddonId("mangadex"), "old"))
     searchGateway.results = listOf(highConfidenceCandidate(providerTitleKey = "new"))
 
@@ -209,21 +209,21 @@ git commit -m "feat(tsuzuki): add provider neutral content bindings"
 ### Task B3: Implement Mihon ContentProvider and ChapterProbeProvider
 
 **Files:**
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonContentProvider.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProvider.kt\`
-- Reuse/Modify: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterInventoryGateway.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonContentProviderTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProviderTest.kt\`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonContentProvider.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProvider.kt`
+- Reuse/Modify: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterInventoryGateway.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonContentProviderTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProviderTest.kt`
 
 **Interfaces:**
-- Produces: \`ContentOption\` and ADDON_PROVISIONAL \`ChapterEvidence\`.
-- Consumes: \`ContentBindingRepository\`, canonical chapter parser, Mihon source chapter inventory.
+- Produces: `ContentOption` and ADDON_PROVISIONAL `ChapterEvidence`.
+- Consumes: `ContentBindingRepository`, canonical chapter parser, Mihon source chapter inventory.
 
 - [ ] **Step 1: Write failing ContentOption test**
 
 ~~~kotlin
 @Test
-fun \`matching source release becomes content option for canonical chapter\`() = runTest {
+fun `matching source release becomes content option for canonical chapter`() = runTest {
     val options = provider.resolve("title", "canonical-chapter-37").getOrThrow()
 
     assertEquals(AddonId("mangadex"), options.single().addonId)
@@ -236,7 +236,7 @@ fun \`matching source release becomes content option for canonical chapter\`() =
 
 ~~~kotlin
 @Test
-fun \`source chapter ahead of integration becomes addon provisional evidence\`() = runTest {
+fun `source chapter ahead of integration becomes addon provisional evidence`() = runTest {
     val evidence = probe.probe("title").getOrThrow()
     val newChapter = evidence.single { it.rawLabel == "Chapter 211" }
 
@@ -255,7 +255,7 @@ For background probes, if the Add-on has no persisted ContentBinding for the can
 
 - [ ] **Step 4: Verify no source inventory mutates canonical chapters directly**
 
-Add a test using a fake CanonicalChapterRepository and assert the Mihon provider/probe never calls \`upsert\` on it.
+Add a test using a fake CanonicalChapterRepository and assert the Mihon provider/probe never calls `upsert` on it.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -274,40 +274,40 @@ git commit -m "feat(tsuzuki): resolve Mihon addon chapter content"
 ### Task B4: Implement per-title preference, ranking, and fallback policy
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/repository/ContentPreferenceRepository.kt\`
-- Create: \`data/src/main/java/tachiyomi/data/tsuzuki/content/ContentPreferenceRepositoryImpl.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveChapterContent.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/RankContentOptions.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/model/ContentResolution.kt\`
-- Modify: \`domain/src/main/java/tachiyomi/domain/tsuzuki/reader/model/CanonicalReaderPreference.kt\`
-- Modify: \`domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/SetCanonicalAutomaticFallback.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveChapterContentTest.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/content/RankContentOptionsTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/repository/ContentPreferenceRepository.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/content/ContentPreferenceRepositoryImpl.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveChapterContent.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/RankContentOptions.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/model/ContentResolution.kt`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/model/CanonicalReaderPreference.kt`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/SetCanonicalAutomaticFallback.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveChapterContentTest.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/RankContentOptionsTest.kt`
 
 **Interfaces:**
-- Produces: \`ContentResolution.Direct\`, \`NeedsSelection\`, \`Unavailable\`.
-- Consumes: \`AddonRegistry.contentProviders()\`, content preference repo, global reading preferences.
+- Produces: `ContentResolution.Direct`, `NeedsSelection`, `Unavailable`.
+- Consumes: `AddonRegistry.contentProviders()`, content preference repo, global reading preferences.
 
 - [ ] **Step 1: Write policy tests**
 
 ~~~kotlin
-@Test fun \`first read requires selector even when one provider exists\`() = runTest {
+@Test fun `first read requires selector even when one provider exists`() = runTest {
     assertIs<ContentResolution.NeedsSelection>(resolve(titlePreference = null, options = oneOption()))
 }
 
-@Test fun \`preferred addon opens directly when chapter is available\`() = runTest {
+@Test fun `preferred addon opens directly when chapter is available`() = runTest {
     assertIs<ContentResolution.Direct>(
         resolve(titlePreference = AddonId("mangadex"), options = optionsFrom("mangadex", "mangafire")),
     )
 }
 
-@Test fun \`missing preferred addon opens selector when automatic fallback is off\`() = runTest {
+@Test fun `missing preferred addon opens selector when automatic fallback is off`() = runTest {
     assertIs<ContentResolution.NeedsSelection>(
         resolve(titlePreference = AddonId("mangadex"), options = optionsFrom("mangafire"), autoFallback = false),
     )
 }
 
-@Test fun \`missing preferred addon selects ranked fallback only when enabled\`() = runTest {
+@Test fun `missing preferred addon selects ranked fallback only when enabled`() = runTest {
     val result = resolve(
         titlePreference = AddonId("mangadex"),
         options = optionsFrom("mangafire"),
@@ -321,7 +321,7 @@ git commit -m "feat(tsuzuki): resolve Mihon addon chapter content"
 
 ~~~kotlin
 @Test
-fun \`preferred language reorders but never filters alternatives\`() {
+fun `preferred language reorders but never filters alternatives`() {
     val ranked = rank(options = listOf(enOption(), ptOption()), preferredLanguages = listOf("pt-BR"))
     assertEquals("pt-BR", ranked.first().language)
     assertEquals(2, ranked.size)
@@ -371,17 +371,17 @@ git commit -m "feat(tsuzuki): add per-title content resolution policy"
 ### Task B5: Replace source-level Reader preparation with ContentOption selection
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/reader/model/PreparedChapterContent.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/reader/service/ChapterContentPreparer.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterContentPreparer.kt\`
-- Modify: \`domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/PrepareCanonicalChapterForReader.kt\`
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonCanonicalReaderGateway.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/reader/PrepareCanonicalChapterForReaderTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterContentPreparerTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/model/PreparedChapterContent.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/service/ChapterContentPreparer.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterContentPreparer.kt`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/PrepareCanonicalChapterForReader.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonCanonicalReaderGateway.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/reader/PrepareCanonicalChapterForReaderTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterContentPreparerTest.kt`
 
 **Interfaces:**
 - Produces: provider-neutral preparation seam.
-- Consumes: \`ResolveChapterContent\`, existing canonical progress, Mihon compatibility gateway.
+- Consumes: `ResolveChapterContent`, existing canonical progress, Mihon compatibility gateway.
 
 - [ ] **Step 1: Define preparation variants in a failing test**
 
@@ -399,7 +399,7 @@ sealed interface PreparedChapterContent {
 }
 ~~~
 
-Test that a \`ContentDelivery.Mihon\` becomes \`PreparedChapterContent.MihonOperational\` without changing CanonicalChapter ID.
+Test that a `ContentDelivery.Mihon` becomes `PreparedChapterContent.MihonOperational` without changing CanonicalChapter ID.
 
 - [ ] **Step 2: Run targeted tests and confirm failure**
 
@@ -410,7 +410,7 @@ Test that a \`ContentDelivery.Mihon\` becomes \`PreparedChapterContent.MihonOper
 
 - [ ] **Step 3: Implement preparer and adapt interactor**
 
-\`PrepareCanonicalChapterForReader\` must:
+`PrepareCanonicalChapterForReader` must:
 1. resolve content;
 2. return a selector-required state if needed;
 3. prepare the selected option;
@@ -442,17 +442,17 @@ git commit -m "refactor(tsuzuki): prepare reader from content options"
 ### Task B6: Build content selector, Reader “Change source”, and Add-ons Settings
 
 **Files:**
-- Create: \`app/src/main/java/eu/kanade/presentation/tsuzuki/content/ContentOptionSelectorSheet.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModel.kt\`
-- Modify: \`app/src/main/java/eu/kanade/presentation/reader/appbars/ReaderAppBars.kt\`
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt\`
-- Create: \`app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAddonsScreen.kt\`
-- Reuse: \`app/src/main/java/eu/kanade/presentation/more/settings/screen/browse/ExtensionStoresScreen.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModelTest.kt\`
+- Create: `app/src/main/java/eu/kanade/presentation/tsuzuki/content/ContentOptionSelectorSheet.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModel.kt`
+- Modify: `app/src/main/java/eu/kanade/presentation/reader/appbars/ReaderAppBars.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt`
+- Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAddonsScreen.kt`
+- Reuse: `app/src/main/java/eu/kanade/presentation/more/settings/screen/browse/ExtensionStoresScreen.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModelTest.kt`
 
 **Interfaces:**
 - Produces: standalone Add-ons settings destination and selector UI Dev C can wire.
-- Consumes: \`ResolveChapterContent\`, \`ContentPreferenceRepository\`, \`AddonRepository\`.
+- Consumes: `ResolveChapterContent`, `ContentPreferenceRepository`, `AddonRepository`.
 
 - [ ] **Step 1: Write selector presentation tests**
 
@@ -475,7 +475,7 @@ data class SelectionResult(
 )
 ~~~
 
-\`offerSetAsPreferred\` is true; preference does not change until confirmation.
+`offerSetAsPreferred` is true; preference does not change until confirmation.
 
 - [ ] **Step 3: Implement selector and Reader action**
 
@@ -536,13 +536,13 @@ git commit -m "feat(tsuzuki): add chapter content selector"
 ### Task B7: Make downloads canonical and add Local Content adapter
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/download/repository/CanonicalDownloadRepository.kt\`
-- Create: \`data/src/main/java/tachiyomi/data/tsuzuki/download/CanonicalDownloadRepositoryImpl.kt\`
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonCanonicalDownloadGateway.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/LocalContentProvider.kt\`
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/ui/reader/loader/ChapterLoader.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/download/CanonicalDownloadRepositoryTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/LocalContentProviderTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/download/repository/CanonicalDownloadRepository.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/download/CanonicalDownloadRepositoryImpl.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonCanonicalDownloadGateway.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/LocalContentProvider.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/reader/loader/ChapterLoader.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/download/CanonicalDownloadRepositoryTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/LocalContentProviderTest.kt`
 
 **Interfaces:**
 - Produces: downloaded-artifact-first resolution and local Add-on options.
@@ -552,7 +552,7 @@ git commit -m "feat(tsuzuki): add chapter content selector"
 
 ~~~kotlin
 @Test
-fun \`canonical download remains readable after origin addon disappears\`() = runTest {
+fun `canonical download remains readable after origin addon disappears`() = runTest {
     repository.upsert(
         CanonicalDownloadArtifact(
             canonicalChapterId = "chapter-1",
@@ -591,7 +591,7 @@ Local option ranks above remote when the exact chapter artifact already exists.
 
 - [ ] **Step 5: Teach Reader preparation to open canonical local artifacts**
 
-Reuse existing \`ArchivePageLoader\`, \`DirectoryPageLoader\`, and EPUB behavior. Avoid fake Source objects for new canonical artifact path.
+Reuse existing `ArchivePageLoader`, `DirectoryPageLoader`, and EPUB behavior. Avoid fake Source objects for new canonical artifact path.
 
 - [ ] **Step 6: Run tests and commit**
 
@@ -614,16 +614,16 @@ git commit -m "feat(tsuzuki): own downloads by canonical chapter"
 ### Task B8: Freeze remote-manifest and torrent delivery boundary
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/addon/remote/RemoteAddonManifest.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/addon/remote/RemoteAddonProtocol.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/TorrentArtifactEngine.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/PrepareTorrentArtifact.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/addon/remote/RemoteAddonManifestTest.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/content/PrepareTorrentArtifactTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/remote/RemoteAddonManifest.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/remote/RemoteAddonProtocol.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/TorrentArtifactEngine.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/PrepareTorrentArtifact.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/addon/remote/RemoteAddonManifestTest.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/content/PrepareTorrentArtifactTest.kt`
 
 **Interfaces:**
 - Produces: stable protocol/delivery seam for a separate production torrent-engine plan.
-- Consumes: existing \`ContentDelivery.Torrent\`, \`PreparedChapterContent.LocalArchive\`/directory path.
+- Consumes: existing `ContentDelivery.Torrent`, `PreparedChapterContent.LocalArchive`/directory path.
 
 - [ ] **Step 1: Define a strict remote manifest schema**
 
@@ -650,7 +650,7 @@ Reject unknown protocol versions and missing HTTPS endpoints at the parser bound
 
 ~~~kotlin
 @Test
-fun \`explicit torrent file index is preserved and not guessed\`() = runTest {
+fun `explicit torrent file index is preserved and not guessed`() = runTest {
     val delivery = ContentDelivery.Torrent(
         infoHash = "abc",
         magnetUri = null,
@@ -662,7 +662,7 @@ fun \`explicit torrent file index is preserved and not guessed\`() = runTest {
 }
 
 @Test
-fun \`torrent path traversal is rejected before artifact exposure\`() {
+fun `torrent path traversal is rejected before artifact exposure`() {
     assertFailsWith<IllegalArgumentException> {
         validateTorrentFilePath("../outside.cbz")
     }
@@ -682,7 +682,7 @@ data class PreparedTorrentArtifact(
 )
 ~~~
 
-\`PrepareTorrentArtifact\` converts a completed supported archive/directory artifact into provider-neutral Reader preparation.
+`PrepareTorrentArtifact` converts a completed supported archive/directory artifact into provider-neutral Reader preparation.
 
 - [ ] **Step 4: Keep production networking out of this task**
 
