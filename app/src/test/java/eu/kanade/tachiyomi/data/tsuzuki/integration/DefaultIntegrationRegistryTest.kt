@@ -5,7 +5,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
@@ -30,12 +30,11 @@ class DefaultIntegrationRegistryTest {
     fun `registry excludes providers whose integration is disabled`() = runTest {
         val settings = MutableStateFlow(fakeSettings("kitsu" to false))
         val registry = registry(
-            scope = backgroundScope,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
             settings = settings,
             searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
 
-        advanceUntilIdle()
 
         registry.searchProviders() shouldBe emptyList()
     }
@@ -43,12 +42,11 @@ class DefaultIntegrationRegistryTest {
     @Test
     fun `registry excludes providers without a persisted setting`() = runTest {
         val registry = registry(
-            scope = backgroundScope,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
             settings = MutableStateFlow(emptyList()),
             searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
 
-        advanceUntilIdle()
 
         registry.searchProviders() shouldBe emptyList()
     }
@@ -58,7 +56,7 @@ class DefaultIntegrationRegistryTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val malSearch = FakeSearchProvider("mal")
         val registry = registry(
-            scope = backgroundScope,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
             settings = MutableStateFlow(fakeSettings("kitsu" to false, "mal" to true)),
             searchProviders = setOf(kitsuSearch, malSearch),
             discoveryProviders = setOf(FakeDiscoveryProvider("kitsu"), FakeDiscoveryProvider("mal")),
@@ -68,7 +66,6 @@ class DefaultIntegrationRegistryTest {
             trackingProviders = setOf(FakeTrackingProvider("kitsu"), FakeTrackingProvider("mal")),
         )
 
-        advanceUntilIdle()
 
         registry.searchProviders() shouldContainExactly listOf(malSearch)
         registry.discoveryProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
@@ -83,20 +80,17 @@ class DefaultIntegrationRegistryTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val settings = MutableStateFlow(fakeSettings("kitsu" to false))
         val registry = registry(
-            scope = backgroundScope,
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
             settings = settings,
             searchProviders = setOf(kitsuSearch),
         )
 
-        advanceUntilIdle()
         registry.searchProviders() shouldBe emptyList()
 
         settings.value = fakeSettings("kitsu" to true)
-        advanceUntilIdle()
         registry.searchProviders() shouldContainExactly listOf(kitsuSearch)
 
         settings.value = fakeSettings("kitsu" to false)
-        advanceUntilIdle()
         registry.searchProviders() shouldBe emptyList()
     }
 
