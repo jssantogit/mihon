@@ -28,13 +28,12 @@ class RecordCanonicalReaderProgressUpdateStateTest {
 
         recorder.recordPage(
             canonicalChapterId = "chapter-1",
-            contentOptionKey = "option-1",
             pageIndex = 9,
             completed = true,
         )
 
         reading.progress?.read shouldBe true
-        reading.progress?.lastVariantId shouldBe "option-1"
+        reading.progress?.lastVariantId shouldBe null
         updates.acknowledgedChapterId shouldBe "chapter-1"
         updates.acknowledgedAt shouldBe 500L
     }

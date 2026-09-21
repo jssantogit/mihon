@@ -27,8 +27,8 @@ import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForRead
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
-import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
@@ -46,7 +46,7 @@ class PrepareCanonicalChapterForReaderTest {
             canonicalChapterId = "chapter-1",
             read = false,
             lastPageRead = 5L,
-            lastVariantId = option.key,
+            lastVariantId = null,
             updatedAt = 100L,
         )
 
@@ -93,7 +93,7 @@ class PrepareCanonicalChapterForReaderTest {
         fixture.reading.progress = CanonicalChapterProgress(
             canonicalChapterId = "chapter-1",
             lastPageRead = 8L,
-            lastVariantId = "old-option",
+            lastVariantId = null,
             updatedAt = 100L,
         )
 

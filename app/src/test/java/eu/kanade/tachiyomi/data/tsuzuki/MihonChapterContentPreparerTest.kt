@@ -28,7 +28,7 @@ class MihonChapterContentPreparerTest {
         val progress = CanonicalChapterProgress(
             canonicalChapterId = "chapter-1",
             lastPageRead = 4L,
-            lastVariantId = option.key,
+            lastVariantId = null,
             updatedAt = 100L,
         )
 

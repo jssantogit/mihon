@@ -54,7 +54,7 @@ class RecordCanonicalReaderProgress internal constructor(
         completed: Boolean,
         mihonChapterId: Long? = null,
     ) {
-        recordPage(
+        recordPageInternal(
             canonicalChapterId = canonicalChapterId,
             legacyVariantId = null,
             pageIndex = pageIndex,
@@ -70,7 +70,7 @@ class RecordCanonicalReaderProgress internal constructor(
         completed: Boolean,
         mihonChapterId: Long? = null,
     ) {
-        recordPage(
+        recordPageInternal(
             canonicalChapterId = canonicalChapterId,
             legacyVariantId = variantId,
             pageIndex = pageIndex,
@@ -79,7 +79,7 @@ class RecordCanonicalReaderProgress internal constructor(
         )
     }
 
-    private suspend fun recordPage(
+    private suspend fun recordPageInternal(
         canonicalChapterId: String,
         legacyVariantId: String?,
         pageIndex: Int,
