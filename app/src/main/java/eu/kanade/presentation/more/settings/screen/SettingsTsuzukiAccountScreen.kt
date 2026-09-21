@@ -135,7 +135,16 @@ object SettingsTsuzukiAccountScreen : Screen() {
                         item {
                             Button(
                                 modifier = Modifier.fillMaxWidth(),
-                                enabled = !state.isWorking,
+                                enabled = !state.isWorking && !state.isSyncing,
+                                onClick = screenModel::syncNow,
+                            ) {
+                                Text(if (state.isSyncing) "Syncing…" else "Sync Now")
+                            }
+                        }
+                        item {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !state.isWorking && !state.isSyncing,
                                 onClick = screenModel::logout,
                             ) {
                                 Text("Log out")
@@ -177,6 +186,8 @@ private fun TsuzukiAccountScreenError.messageText(): String = when (this) {
         "Network is unavailable. Your local data is unaffected."
     TsuzukiAccountScreenError.CONFIGURATION_UNAVAILABLE ->
         "Cloud sync is not configured in this build."
+    TsuzukiAccountScreenError.SYNC_FAILED ->
+        "Sync failed. Local data remains intact."
     TsuzukiAccountScreenError.UNKNOWN ->
         "Account request failed."
 }
