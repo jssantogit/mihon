@@ -1,6 +1,6 @@
 begin;
 
-select plan(9);
+select plan(8);
 
 insert into auth.users (
     id,
@@ -31,7 +31,7 @@ values
         now()
     );
 
-insert into public.tsuzuki_sync_fields (
+insert into tsuzuki_private.tsuzuki_sync_fields (
     user_id,
     domain,
     record_id,
@@ -60,7 +60,7 @@ values
         0
     );
 
-insert into public.tsuzuki_sync_conflicts (
+insert into tsuzuki_private.tsuzuki_sync_conflicts (
     user_id,
     domain,
     record_id,
@@ -85,7 +85,7 @@ select set_config(
     'test.foreign_conflict_id',
     (
         select conflict_id::text
-        from public.tsuzuki_sync_conflicts
+        from tsuzuki_private.tsuzuki_sync_conflicts
         where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
         limit 1
     ),
@@ -101,20 +101,20 @@ select set_config(
 );
 
 select is(
-    (select count(*)::integer from public.tsuzuki_sync_fields),
+    (select count(*)::integer from tsuzuki_private.tsuzuki_sync_fields),
     1,
     'RLS exposes only the authenticated user rows'
 );
 
 select is(
-    (select record_id from public.tsuzuki_sync_fields limit 1),
+    (select record_id from tsuzuki_private.tsuzuki_sync_fields limit 1),
     'a-title',
     'RLS hides another user sync field'
 );
 
 select throws_ok(
     $
-    update public.tsuzuki_sync_fields
+    update tsuzuki_private.tsuzuki_sync_fields
     set value = '"HACKED"'::jsonb
     where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
     $,
@@ -148,7 +148,7 @@ reset role;
 select is(
     (
         select value
-        from public.tsuzuki_sync_fields
+        from tsuzuki_private.tsuzuki_sync_fields
         where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
           and record_id = 'b-title'
           and field_path = 'status'
@@ -160,7 +160,7 @@ select is(
 select is(
     (
         select resolved_at is null
-        from public.tsuzuki_sync_conflicts
+        from tsuzuki_private.tsuzuki_sync_conflicts
         where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
         limit 1
     ),
