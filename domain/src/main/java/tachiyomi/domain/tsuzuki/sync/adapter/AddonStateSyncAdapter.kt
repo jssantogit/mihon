@@ -30,11 +30,10 @@ class AddonStateSyncAdapter(
         val installed = addonRepository.snapshot()
         val installedIds = installed.map { it.id.value }.toSet()
         val desired = persisted.desiredPackageIds + installedIds
-        val enabled = (
-            persisted.enabledPackageIds - installedIds
-            ) + installed
-            .filter { it.enabled }
-            .map { it.id.value }
+        val enabled = (persisted.enabledPackageIds - installedIds) +
+            installed
+                .filter { it.enabled }
+                .map { it.id.value }
 
         val now = clock.nowEpochMillis()
         val record = SyncRecordEnvelope(
