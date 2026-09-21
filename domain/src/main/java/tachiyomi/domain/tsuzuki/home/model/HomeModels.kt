@@ -16,12 +16,22 @@ data class HomeContinueReadingItem(
     }
 }
 
+sealed interface HomeRowContent {
+    data class Content(
+        val items: List<CatalogItem>,
+    ) : HomeRowContent
+
+    data class Unavailable(
+        val reason: String,
+    ) : HomeRowContent
+}
+
 data class HomeRow(
     val listId: String,
     val title: String,
     val providerId: String,
-    val items: List<CatalogItem> = emptyList(),
-    val unavailableReason: String? = null,
+    val layoutType: String?,
+    val content: HomeRowContent,
 )
 
 sealed interface HomeSection {
