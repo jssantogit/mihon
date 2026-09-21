@@ -453,10 +453,6 @@ Independent non-conflicting fields from the same remote delta are still applied;
 
 - [ ] **Step 8: Run tests and commit**
 
-A local Library change must enqueue sync work even while logged out; sync attempt does not erase it.
-
-- [ ] **Step 7: Run tests and commit**
-
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*SupabaseSyncOrchestratorTest' \
   :app:testDebugUnitTest --tests '*SupabaseSyncHttpTransportTest' \
@@ -508,11 +504,18 @@ git commit -m "feat(tsuzuki): sync canonical state through Supabase"
 - Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/model/GoogleAuthState.kt`
 - Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/model/GoogleAuthorizationResult.kt`
 - Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/service/GoogleAuthStateMachine.kt`
-- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/GoogleDriveAppDataTransportTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/GoogleDriveAppDataTransportTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAccountPickerTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthSessionManagerTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizationPlatformTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizedAccessTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GooglePlayAuthorizationPlatformTest.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/NoBackupGoogleAccountHintStoreTest.kt`
 - Delete: `domain/src/test/java/tachiyomi/domain/tsuzuki/googleauth/GoogleAuthStateMachineTest.kt`
 - Delete/replace: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/DriveSyncTransport.kt`
 - Remove target Settings entry: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsGoogleAccountScreen.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/sync/AvailableSupabaseSyncAdaptersTest.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/sync/adapter/CanonicalReadingProgressSyncAdapterTest.kt`
 
 **Interfaces:**
 - Produces: target sync domains without Drive/Google dependencies.
@@ -551,8 +554,6 @@ On pull:
 `CanonicalReadingProgressSyncAdapter` uses `CanonicalChapterSyncKey`, preserves canonical read state, and carries the last provider-variant evidence key alongside page position for diagnostics/compatibility. It must not use Mihon manga/chapter database IDs as remote identity.
 
 Add separate adapters for new-chapter acknowledgment and Continue Reading suppression so `+N` and “Remove from Continue Reading” converge independently from History.
-
-- [ ] **Step 3: Route SyncRuntimeController to Supabase orchestrator**
 
 - [ ] **Step 3: Route SyncRuntimeController to Supabase orchestrator**
 
