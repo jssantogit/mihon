@@ -12,6 +12,7 @@ import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCacheKey
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
@@ -57,6 +58,31 @@ class ContentResolutionCacheTest {
         resolver.execute("title", "chapter")
 
         provider.resolveCalls shouldBe 2
+    }
+
+    @Test
+    fun `invalidating addon clears its cached chapter options`() = runTest {
+        val cache = ContentOptionCache()
+        val key = ContentOptionCacheKey(
+            canonicalTitleId = "title",
+            canonicalChapterId = "chapter",
+            addonId = AddonId("mangadex"),
+        )
+        val option = ContentOption(
+            key = "cached",
+            canonicalChapterId = "chapter",
+            addonId = AddonId("mangadex"),
+            language = "en",
+            scanlationGroup = null,
+            releaseDate = null,
+            delivery = ContentDelivery.LocalArchive("content://cached"),
+        )
+        cache.put(key, listOf(option))
+
+        cache.get(key) shouldBe listOf(option)
+        cache.invalidateAddon(AddonId("mangadex"))
+
+        cache.get(key) shouldBe null
     }
 
     private fun resolver(
