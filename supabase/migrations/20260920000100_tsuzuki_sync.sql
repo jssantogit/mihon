@@ -1,7 +1,10 @@
 create schema if not exists extensions;
+create schema if not exists tsuzuki_private;
+revoke all on schema tsuzuki_private from public, anon;
+grant usage on schema tsuzuki_private to authenticated;
 create extension if not exists pgcrypto with schema extensions;
 
-create table public.tsuzuki_sync_fields (
+create table tsuzuki_private.tsuzuki_sync_fields (
     user_id uuid not null references auth.users(id) on delete cascade,
     domain text not null check (btrim(domain) <> ''),
     record_id text not null check (btrim(record_id) <> ''),
@@ -12,7 +15,7 @@ create table public.tsuzuki_sync_fields (
     primary key (user_id, domain, record_id, field_path)
 );
 
-create table public.tsuzuki_sync_records (
+create table tsuzuki_private.tsuzuki_sync_records (
     user_id uuid not null references auth.users(id) on delete cascade,
     domain text not null check (btrim(domain) <> ''),
     record_id text not null check (btrim(record_id) <> ''),
@@ -21,7 +24,7 @@ create table public.tsuzuki_sync_records (
     primary key (user_id, domain, record_id)
 );
 
-create table public.tsuzuki_sync_events (
+create table tsuzuki_private.tsuzuki_sync_events (
     event_id bigint generated always as identity primary key,
     user_id uuid not null references auth.users(id) on delete cascade,
     domain text not null check (btrim(domain) <> ''),
@@ -40,12 +43,12 @@ create table public.tsuzuki_sync_events (
 );
 
 create index tsuzuki_sync_events_user_domain_cursor
-on public.tsuzuki_sync_events(user_id, domain, event_id);
+on tsuzuki_private.tsuzuki_sync_events(user_id, domain, event_id);
 
 create index tsuzuki_sync_events_user_mutation
-on public.tsuzuki_sync_events(user_id, mutation_id);
+on tsuzuki_private.tsuzuki_sync_events(user_id, mutation_id);
 
-create table public.tsuzuki_sync_mutations (
+create table tsuzuki_private.tsuzuki_sync_mutations (
     user_id uuid not null references auth.users(id) on delete cascade,
     mutation_id uuid not null,
     request_hash text not null check (btrim(request_hash) <> ''),
@@ -54,7 +57,7 @@ create table public.tsuzuki_sync_mutations (
     primary key (user_id, mutation_id)
 );
 
-create table public.tsuzuki_canonical_identity_claims (
+create table tsuzuki_private.tsuzuki_canonical_identity_claims (
     user_id uuid not null references auth.users(id) on delete cascade,
     provider text not null check (btrim(provider) <> ''),
     external_id text not null check (btrim(external_id) <> ''),
@@ -63,7 +66,7 @@ create table public.tsuzuki_canonical_identity_claims (
     primary key (user_id, provider, external_id)
 );
 
-create table public.tsuzuki_sync_conflicts (
+create table tsuzuki_private.tsuzuki_sync_conflicts (
     conflict_id bigint generated always as identity primary key,
     user_id uuid not null references auth.users(id) on delete cascade,
     domain text not null check (btrim(domain) <> ''),
@@ -78,81 +81,74 @@ create table public.tsuzuki_sync_conflicts (
 );
 
 create index tsuzuki_sync_conflicts_user_unresolved
-on public.tsuzuki_sync_conflicts(user_id, conflict_id)
+on tsuzuki_private.tsuzuki_sync_conflicts(user_id, conflict_id)
 where resolved_at is null;
 
-alter table public.tsuzuki_sync_fields enable row level security;
-alter table public.tsuzuki_sync_records enable row level security;
-alter table public.tsuzuki_sync_events enable row level security;
-alter table public.tsuzuki_sync_mutations enable row level security;
-alter table public.tsuzuki_canonical_identity_claims enable row level security;
-alter table public.tsuzuki_sync_conflicts enable row level security;
+alter table tsuzuki_private.tsuzuki_sync_fields enable row level security;
+alter table tsuzuki_private.tsuzuki_sync_records enable row level security;
+alter table tsuzuki_private.tsuzuki_sync_events enable row level security;
+alter table tsuzuki_private.tsuzuki_sync_mutations enable row level security;
+alter table tsuzuki_private.tsuzuki_canonical_identity_claims enable row level security;
+alter table tsuzuki_private.tsuzuki_sync_conflicts enable row level security;
 
 create policy "users own sync fields"
-on public.tsuzuki_sync_fields
+on tsuzuki_private.tsuzuki_sync_fields
 for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 
 create policy "users own sync records"
-on public.tsuzuki_sync_records
+on tsuzuki_private.tsuzuki_sync_records
 for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 
 create policy "users own sync events"
-on public.tsuzuki_sync_events
+on tsuzuki_private.tsuzuki_sync_events
 for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 
 create policy "users own sync mutations"
-on public.tsuzuki_sync_mutations
+on tsuzuki_private.tsuzuki_sync_mutations
 for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 
 create policy "users own canonical identity claims"
-on public.tsuzuki_canonical_identity_claims
+on tsuzuki_private.tsuzuki_canonical_identity_claims
 for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 
 create policy "users own sync conflicts"
-on public.tsuzuki_sync_conflicts
+on tsuzuki_private.tsuzuki_sync_conflicts
 for all
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
 
-revoke all on table public.tsuzuki_sync_fields from anon;
-revoke all on table public.tsuzuki_sync_records from anon;
-revoke all on table public.tsuzuki_sync_events from anon;
-revoke all on table public.tsuzuki_sync_mutations from anon;
-revoke all on table public.tsuzuki_canonical_identity_claims from anon;
-revoke all on table public.tsuzuki_sync_conflicts from anon;
+revoke all on table tsuzuki_private.tsuzuki_sync_fields from anon;
+revoke all on table tsuzuki_private.tsuzuki_sync_records from anon;
+revoke all on table tsuzuki_private.tsuzuki_sync_events from anon;
+revoke all on table tsuzuki_private.tsuzuki_sync_mutations from anon;
+revoke all on table tsuzuki_private.tsuzuki_canonical_identity_claims from anon;
+revoke all on table tsuzuki_private.tsuzuki_sync_conflicts from anon;
 
-revoke insert, update, delete on table public.tsuzuki_sync_fields from authenticated;
-revoke insert, update, delete on table public.tsuzuki_sync_records from authenticated;
-revoke insert, update, delete on table public.tsuzuki_sync_events from authenticated;
-revoke insert, update, delete on table public.tsuzuki_sync_mutations from authenticated;
-revoke insert, update, delete on table public.tsuzuki_canonical_identity_claims from authenticated;
-revoke insert, update, delete on table public.tsuzuki_sync_conflicts from authenticated;
+grant select, insert, update, delete on table tsuzuki_private.tsuzuki_sync_fields to authenticated;
+grant select, insert, update, delete on table tsuzuki_private.tsuzuki_sync_records to authenticated;
+grant select, insert, update, delete on table tsuzuki_private.tsuzuki_sync_events to authenticated;
+grant select, insert, update, delete on table tsuzuki_private.tsuzuki_sync_mutations to authenticated;
+grant select, insert, update, delete on table tsuzuki_private.tsuzuki_canonical_identity_claims to authenticated;
+grant select, insert, update, delete on table tsuzuki_private.tsuzuki_sync_conflicts to authenticated;
 
-grant select on table public.tsuzuki_sync_fields to authenticated;
-grant select on table public.tsuzuki_sync_records to authenticated;
-grant select on table public.tsuzuki_sync_events to authenticated;
-grant select on table public.tsuzuki_sync_mutations to authenticated;
-grant select on table public.tsuzuki_canonical_identity_claims to authenticated;
-grant select on table public.tsuzuki_sync_conflicts to authenticated;
-
-revoke all on sequence public.tsuzuki_sync_events_event_id_seq from authenticated;
-revoke all on sequence public.tsuzuki_sync_conflicts_conflict_id_seq from authenticated;
+grant usage, select on sequence tsuzuki_private.tsuzuki_sync_events_event_id_seq to authenticated;
+grant usage, select on sequence tsuzuki_private.tsuzuki_sync_conflicts_conflict_id_seq to authenticated;
 
 create or replace function public.sync_claim_external_identity(
     p_provider text,
@@ -161,7 +157,7 @@ create or replace function public.sync_claim_external_identity(
 )
 returns text
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public
 as $$
 declare
@@ -183,7 +179,7 @@ begin
             message = 'provider, external ID, and canonical title ID are required';
     end if;
 
-    insert into public.tsuzuki_canonical_identity_claims (
+    insert into tsuzuki_private.tsuzuki_canonical_identity_claims (
         user_id,
         provider,
         external_id,
@@ -199,7 +195,7 @@ begin
 
     select c.canonical_title_id
     into v_canonical_title_id
-    from public.tsuzuki_canonical_identity_claims as c
+    from tsuzuki_private.tsuzuki_canonical_identity_claims as c
     where c.user_id = v_user_id
       and c.provider = p_provider
       and c.external_id = p_external_id;
@@ -219,7 +215,7 @@ create or replace function public.sync_apply_mutation_batch(
 )
 returns bigint
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public, extensions
 as $$
 declare
@@ -371,7 +367,7 @@ begin
         'hex'
     );
 
-    insert into public.tsuzuki_sync_mutations (
+    insert into tsuzuki_private.tsuzuki_sync_mutations (
         user_id,
         mutation_id,
         request_hash,
@@ -394,7 +390,7 @@ begin
         into
             v_existing_hash,
             v_existing_cursor
-        from public.tsuzuki_sync_mutations as m
+        from tsuzuki_private.tsuzuki_sync_mutations as m
         where m.user_id = v_user_id
           and m.mutation_id = v_mutation_id
         for update;
@@ -446,7 +442,7 @@ begin
         into
             v_record_deleted,
             v_delete_event_id
-        from public.tsuzuki_sync_records as r
+        from tsuzuki_private.tsuzuki_sync_records as r
         where r.user_id = v_user_id
           and r.domain = v_domain
           and r.record_id = v_record_id;
@@ -469,7 +465,7 @@ begin
             end;
 
             if v_delete_event_id > v_base_cursor then
-                insert into public.tsuzuki_sync_conflicts (
+                insert into tsuzuki_private.tsuzuki_sync_conflicts (
                     user_id,
                     domain,
                     record_id,
@@ -509,7 +505,7 @@ begin
                 v_field_value,
                 v_field_removed,
                 v_field_event_id
-            from public.tsuzuki_sync_fields as f
+            from tsuzuki_private.tsuzuki_sync_fields as f
             where f.user_id = v_user_id
               and f.domain = v_domain
               and f.record_id = v_record_id
@@ -544,7 +540,7 @@ begin
                     )
                 end;
 
-                insert into public.tsuzuki_sync_conflicts (
+                insert into tsuzuki_private.tsuzuki_sync_conflicts (
                     user_id,
                     domain,
                     record_id,
@@ -567,7 +563,7 @@ begin
                 continue;
             end if;
 
-            insert into public.tsuzuki_sync_events (
+            insert into tsuzuki_private.tsuzuki_sync_events (
                 user_id,
                 domain,
                 record_id,
@@ -589,7 +585,7 @@ begin
             )
             returning event_id into v_event_id;
 
-            insert into public.tsuzuki_sync_records (
+            insert into tsuzuki_private.tsuzuki_sync_records (
                 user_id,
                 domain,
                 record_id,
@@ -606,7 +602,7 @@ begin
             on conflict (user_id, domain, record_id) do update
             set is_deleted = false;
 
-            insert into public.tsuzuki_sync_fields (
+            insert into tsuzuki_private.tsuzuki_sync_fields (
                 user_id,
                 domain,
                 record_id,
@@ -635,7 +631,7 @@ begin
 
         select coalesce(max(f.last_event_id), 0)
         into v_latest_field_event_id
-        from public.tsuzuki_sync_fields as f
+        from tsuzuki_private.tsuzuki_sync_fields as f
         where f.user_id = v_user_id
           and f.domain = v_domain
           and f.record_id = v_record_id;
@@ -643,7 +639,7 @@ begin
         if v_latest_field_event_id > v_base_cursor
             or (v_delete_event_id > v_base_cursor and not v_record_deleted)
         then
-            insert into public.tsuzuki_sync_conflicts (
+            insert into tsuzuki_private.tsuzuki_sync_conflicts (
                 user_id,
                 domain,
                 record_id,
@@ -677,7 +673,7 @@ begin
             continue;
         end if;
 
-        insert into public.tsuzuki_sync_events (
+        insert into tsuzuki_private.tsuzuki_sync_events (
             user_id,
             domain,
             record_id,
@@ -699,7 +695,7 @@ begin
         )
         returning event_id into v_event_id;
 
-        insert into public.tsuzuki_sync_records (
+        insert into tsuzuki_private.tsuzuki_sync_records (
             user_id,
             domain,
             record_id,
@@ -721,11 +717,11 @@ begin
 
     select coalesce(max(e.event_id), 0)
     into v_result_cursor
-    from public.tsuzuki_sync_events as e
+    from tsuzuki_private.tsuzuki_sync_events as e
     where e.user_id = v_user_id
       and e.domain = v_domain;
 
-    update public.tsuzuki_sync_mutations as m
+    update tsuzuki_private.tsuzuki_sync_mutations as m
     set result_cursor = v_result_cursor
     where m.user_id = v_user_id
       and m.mutation_id = v_mutation_id;
@@ -741,7 +737,7 @@ create or replace function public.sync_pull_delta(
 )
 returns jsonb
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public
 as $$
 declare
@@ -795,7 +791,7 @@ begin
             e.origin_client_id,
             e.mutation_id,
             e.created_at
-        from public.tsuzuki_sync_events as e
+        from tsuzuki_private.tsuzuki_sync_events as e
         where e.user_id = v_user_id
           and e.domain = p_domain
           and e.event_id > p_since_event_id
@@ -812,7 +808,7 @@ create or replace function public.sync_get_cursor(
 )
 returns bigint
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public
 as $$
 declare
@@ -833,7 +829,7 @@ begin
 
     select coalesce(max(e.event_id), 0)
     into v_cursor
-    from public.tsuzuki_sync_events as e
+    from tsuzuki_private.tsuzuki_sync_events as e
     where e.user_id = v_user_id
       and e.domain = p_domain;
 
@@ -846,7 +842,7 @@ create or replace function public.sync_snapshot_domain(
 )
 returns jsonb
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public
 as $$
 declare
@@ -885,7 +881,7 @@ begin
                                     f.value
                                     order by f.field_path
                                 )
-                                from public.tsuzuki_sync_fields as f
+                                from tsuzuki_private.tsuzuki_sync_fields as f
                                 where f.user_id = v_user_id
                                   and f.domain = p_domain
                                   and f.record_id = r.record_id
@@ -897,7 +893,7 @@ begin
                     )
                     order by r.record_id
                 )
-                from public.tsuzuki_sync_records as r
+                from tsuzuki_private.tsuzuki_sync_records as r
                 where r.user_id = v_user_id
                   and r.domain = p_domain
                   and r.delete_last_event_id <= snapshot_cursor.event_cursor
@@ -908,7 +904,7 @@ begin
     into v_snapshot
     from (
         select coalesce(max(e.event_id), 0) as event_cursor
-        from public.tsuzuki_sync_events as e
+        from tsuzuki_private.tsuzuki_sync_events as e
         where e.user_id = v_user_id
           and e.domain = p_domain
     ) as snapshot_cursor;
@@ -917,12 +913,60 @@ begin
 end;
 $$;
 
+create or replace function public.sync_get_mutation_conflicts(
+    p_mutation_id uuid
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = pg_catalog, public, tsuzuki_private
+as $
+declare
+    v_user_id uuid := auth.uid();
+    v_result jsonb;
+begin
+    if v_user_id is null then
+        raise exception using
+            errcode = '42501',
+            message = 'authentication required';
+    end if;
+
+    if p_mutation_id is null then
+        raise exception using
+            errcode = '22023',
+            message = 'mutation ID is required';
+    end if;
+
+    select coalesce(
+        jsonb_agg(
+            jsonb_build_object(
+                'conflictId', c.conflict_id,
+                'recordId', c.record_id,
+                'fieldPath', c.field_path,
+                'kind', c.conflict_type,
+                'localValue', c.local_value,
+                'remoteValue', c.remote_value
+            )
+            order by c.conflict_id
+        ),
+        '[]'::jsonb
+    )
+    into v_result
+    from tsuzuki_private.tsuzuki_sync_conflicts as c
+    where c.user_id = v_user_id
+      and c.local_mutation_id = p_mutation_id
+      and c.resolved_at is null;
+
+    return v_result;
+end;
+$;
+
 create or replace function public.sync_ack_conflict(
     p_conflict_id bigint
 )
 returns boolean
 language plpgsql
-security definer
+security invoker
 set search_path = pg_catalog, public
 as $$
 declare
@@ -940,7 +984,7 @@ begin
             message = 'conflict ID must be positive';
     end if;
 
-    update public.tsuzuki_sync_conflicts as c
+    update tsuzuki_private.tsuzuki_sync_conflicts as c
     set resolved_at = coalesce(c.resolved_at, now())
     where c.conflict_id = p_conflict_id
       and c.user_id = v_user_id;
@@ -954,6 +998,7 @@ revoke all on function public.sync_apply_mutation_batch(jsonb) from public, anon
 revoke all on function public.sync_pull_delta(text, bigint, integer) from public, anon;
 revoke all on function public.sync_get_cursor(text) from public, anon;
 revoke all on function public.sync_snapshot_domain(text) from public, anon;
+revoke all on function public.sync_get_mutation_conflicts(uuid) from public, anon;
 revoke all on function public.sync_ack_conflict(bigint) from public, anon;
 
 grant execute on function public.sync_claim_external_identity(text, text, text) to authenticated;
@@ -961,4 +1006,5 @@ grant execute on function public.sync_apply_mutation_batch(jsonb) to authenticat
 grant execute on function public.sync_pull_delta(text, bigint, integer) to authenticated;
 grant execute on function public.sync_get_cursor(text) to authenticated;
 grant execute on function public.sync_snapshot_domain(text) to authenticated;
+grant execute on function public.sync_get_mutation_conflicts(uuid) to authenticated;
 grant execute on function public.sync_ack_conflict(bigint) to authenticated;
