@@ -375,6 +375,7 @@ git commit -m "feat(tsuzuki): add per-title content resolution policy"
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/service/ChapterContentPreparer.kt`
 - Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterContentPreparer.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/PrepareCanonicalChapterForReader.kt`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/reader/interactor/RecordCanonicalReaderProgress.kt`
 - Modify: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonCanonicalReaderGateway.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/reader/PrepareCanonicalChapterForReaderTest.kt`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterContentPreparerTest.kt`
@@ -446,6 +447,7 @@ git commit -m "refactor(tsuzuki): prepare reader from content options"
 - Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModel.kt`
 - Modify: `app/src/main/java/eu/kanade/presentation/reader/appbars/ReaderAppBars.kt`
 - Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt`
+- Modify: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsReaderScreen.kt`
 - Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAddonsScreen.kt`
 - Reuse: `app/src/main/java/eu/kanade/presentation/more/settings/screen/browse/ExtensionStoresScreen.kt`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModelTest.kt`
