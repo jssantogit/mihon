@@ -5,8 +5,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.chapter.update.model.CanonicalChapterUpdateState
-import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
+import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState
+import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.RecordCanonicalReaderProgress
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
@@ -48,6 +48,7 @@ class RecordCanonicalReaderProgressTest {
         val updateStateRepository = FakeChapterUpdateStateRepository()
         val recorder = RecordCanonicalReaderProgress(
             repository = repository,
+            compatibilityGateway = NoopCompatibilityGateway,
             chapterUpdateStateRepository = updateStateRepository,
             clock = { 700L },
         )
@@ -56,7 +57,7 @@ class RecordCanonicalReaderProgressTest {
             canonicalChapterId = "chapter-1",
             variantId = "variant-1",
             pageIndex = 0,
-            completed = false,
+            completed = true,
         )
 
         updateStateRepository.acknowledged shouldBe ("chapter-1" to 700L)
@@ -161,20 +162,32 @@ class RecordCanonicalReaderProgressTest {
         val sessionReadDuration: Long,
     )
 
+    private object NoopCompatibilityGateway : CanonicalReaderCompatibilityGateway {
+        override suspend fun projectProgress(
+            mihonChapterId: Long,
+            read: Boolean,
+            lastPageRead: Long,
+        ) = Unit
+
+        override suspend fun projectHistory(
+            mihonChapterId: Long,
+            readAt: Long,
+            sessionReadDuration: Long,
+        ) = Unit
+    }
+
     private class FakeChapterUpdateStateRepository : ChapterUpdateStateRepository {
         var acknowledged: Pair<String, Long>? = null
 
-        override suspend fun getAll(): List<CanonicalChapterUpdateState> = emptyList()
-
-        override suspend fun getByTitle(
+        override suspend fun getByCanonicalTitleId(
             canonicalTitleId: String,
-        ): List<CanonicalChapterUpdateState> = emptyList()
+        ): List<ChapterUpdateState> = emptyList()
 
-        override fun observeByTitle(
+        override suspend fun getUnacknowledgedByCanonicalTitleId(
             canonicalTitleId: String,
-        ): Flow<List<CanonicalChapterUpdateState>> = MutableStateFlow(emptyList())
+        ): List<ChapterUpdateState> = emptyList()
 
-        override suspend fun upsert(state: CanonicalChapterUpdateState) = Unit
+        override suspend fun upsert(state: ChapterUpdateState) = Unit
 
         override suspend fun acknowledge(
             canonicalChapterId: String,
