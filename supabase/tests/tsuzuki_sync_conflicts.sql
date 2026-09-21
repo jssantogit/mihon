@@ -1,6 +1,6 @@
 begin;
 
-select plan(17);
+select plan(19);
 
 insert into auth.users (
     id,
@@ -271,6 +271,91 @@ select is(
     ),
     1,
     'stale delete against a later edit produces DELETE_EDIT'
+);
+
+select public.sync_apply_mutation_batch(
+    jsonb_build_object(
+        'mutationId', '10000000-0000-0000-0000-000000000009',
+        'originClientId', 'device-a',
+        'domain', 'LIBRARY',
+        'baseCursor', public.sync_get_cursor('LIBRARY'),
+        'operations', jsonb_build_array(
+            jsonb_build_object(
+                'type', 'set',
+                'recordId', 'resurrection-title',
+                'fieldPath', 'current',
+                'value', 1
+            ),
+            jsonb_build_object(
+                'type', 'set',
+                'recordId', 'resurrection-title',
+                'fieldPath', 'legacy',
+                'value', 2
+            )
+        )
+    )
+);
+
+select public.sync_apply_mutation_batch(
+    jsonb_build_object(
+        'mutationId', '10000000-0000-0000-0000-000000000010',
+        'originClientId', 'device-a',
+        'domain', 'LIBRARY',
+        'baseCursor', public.sync_get_cursor('LIBRARY'),
+        'operations', jsonb_build_array(
+            jsonb_build_object(
+                'type', 'delete',
+                'recordId', 'resurrection-title'
+            )
+        )
+    )
+);
+
+select public.sync_apply_mutation_batch(
+    jsonb_build_object(
+        'mutationId', '10000000-0000-0000-0000-000000000011',
+        'originClientId', 'device-a',
+        'domain', 'LIBRARY',
+        'baseCursor', public.sync_get_cursor('LIBRARY'),
+        'operations', jsonb_build_array(
+            jsonb_build_object(
+                'type', 'set',
+                'recordId', 'resurrection-title',
+                'fieldPath', 'current',
+                'value', 10
+            ),
+            jsonb_build_object(
+                'type', 'set',
+                'recordId', 'resurrection-title',
+                'fieldPath', 'new',
+                'value', 3
+            )
+        )
+    )
+);
+
+select is(
+    (
+        select count(*)::integer
+        from tsuzuki_private.tsuzuki_sync_fields
+        where domain = 'LIBRARY'
+          and record_id = 'resurrection-title'
+          and field_path = 'legacy'
+    ),
+    0,
+    'resurrection does not restore fields from before the tombstone'
+);
+
+select is(
+    (
+        select value
+        from tsuzuki_private.tsuzuki_sync_fields
+        where domain = 'LIBRARY'
+          and record_id = 'resurrection-title'
+          and field_path = 'current'
+    ),
+    '10'::jsonb,
+    'resurrection materializes only fields explicitly sent after delete'
 );
 
 select is(
