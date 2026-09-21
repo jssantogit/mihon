@@ -137,10 +137,21 @@ class PlannerTest(unittest.TestCase):
         self.assertTrue(result["run_supabase"])
         self.assertTrue(result["run_release"])
 
+    def test_app_build_script_change_fails_safe_to_full_and_release(self):
+        result = plan(["app/build.gradle.kts"], "affected")
+        self.assertEqual(set(result["selected_tests"]), {"Core Common", "Domain", "Data", "App"})
+        self.assertTrue(result["run_database"])
+        self.assertTrue(result["run_release"])
+
     def test_data_build_script_change_fails_safe_to_full(self):
         result = plan(["data/build.gradle.kts"], "affected")
         self.assertEqual(set(result["selected_tests"]), {"Core Common", "Domain", "Data", "App"})
         self.assertTrue(result["run_database"])
+        self.assertTrue(result["run_release"])
+
+    def test_proguard_change_runs_app_tests_and_release_compile(self):
+        result = plan(["app/proguard-rules.pro"], "affected")
+        self.assertEqual(result["selected_tests"], ["App"])
         self.assertTrue(result["run_release"])
 
     def test_docs_only_needs_no_ci_work(self):
