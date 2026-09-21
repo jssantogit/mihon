@@ -104,13 +104,19 @@ Use Gradle properties such as \`TSUZUKI_SUPABASE_URL\` and \`TSUZUKI_SUPABASE_PU
 
 Store access/refresh session JSON encrypted using an AES/GCM key generated in Android Keystore. The encryption key is non-exportable; plaintext tokens never enter generic Preferences or sync documents.
 
-- [ ] **Step 5: Implement repository/session refresh**
+- [ ] **Step 5: Implement confirmation/recovery callback**
+
+Configure a Tsuzuki app deep link for Supabase Auth confirmation/recovery redirects. The callback activity accepts only the configured scheme/host, validates the callback type, exchanges/verifies the Supabase token/code through `SupabaseAuthService`, persists the resulting session, and immediately finishes back into Settings.
+
+Do not implement any Google/OAuth provider route.
+
+- [ ] **Step 6: Implement repository/session refresh**
 
 On 401 from later Supabase requests, refresh once using the stored refresh token, persist the replacement session, then retry only the safe request.
 
 Logout clears local session but does not delete local Tsuzuki user data.
 
-- [ ] **Step 6: Run tests and commit**
+- [ ] **Step 7: Run tests and commit**
 
 ~~~bash
 ./gradlew :app:testDebugUnitTest --tests '*SupabaseAccountRepositoryTest' \
@@ -120,6 +126,8 @@ Logout clears local session but does not delete local Tsuzuki user data.
 git add app/build.gradle.kts gradle/libs.versions.toml \
   domain/src/main/java/tachiyomi/domain/tsuzuki/account \
   app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase \
+  app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/account/SupabaseAuthCallbackActivity.kt \
+  app/src/main/AndroidManifest.xml \
   app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase
 git commit -m "feat(tsuzuki): add optional Supabase account"
 ~~~
@@ -439,7 +447,7 @@ git grep -n "SettingsGoogleAccountScreen\|GoogleDriveAppDataTransport\|DriveSync
 
 Expected: no target runtime references.
 
-- [ ] **Step 6: Run tests and commit**
+- [ ] **Step 7: Run tests and commit**
 
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*AvailableSupabaseSyncAdaptersTest' \
@@ -514,7 +522,19 @@ Delete \`refresh()\` from \`TsuzukiHomeScreenModel.init\`.
 
 Home does not fetch Trending/Popular unless the user has created/configured Collections whose provider query requests them.
 
-- [ ] **Step 5: Make Collection provider registry capability-driven**
+- [ ] **Step 5: Add new-chapter badge and Continue Reading hide semantics**
+
+Consume canonical chapter update state so each Continue Reading card exposes the count of newly observed, not-yet-acknowledged chapters. Reading a new chapter decrements that count.
+
+Add “Remove from Continue Reading” as a local user-state action that suppresses the item from Home while preserving:
+- canonical read flags;
+- page progress;
+- Library membership;
+- tracker state.
+
+Starting/resuming reading after the suppression point may make the title eligible again according to a newer progress timestamp.
+
+- [ ] **Step 6: Make Collection provider registry capability-driven**
 
 After Dev A merge, resolve a CollectionList \`providerId\` through enabled Integration discovery/search capability adapters instead of hardcoded \`KitsuCollectionQueryProvider\`.
 
@@ -654,11 +674,17 @@ Settings entries include:
 
 Remove Google Account entry.
 
-- [ ] **Step 5: Add Content Preferences sync adapter after B types exist**
+- [ ] **Step 5: Add post-merge modular-settings sync adapters**
 
-Sync per-title preferred Add-on ID and global automatic fallback/language preferences as non-secret state.
+After A/B types exist, add sync adapters for:
+- Integration enabled/config state, excluding Integration credentials/tokens;
+- per-title preferred Add-on;
+- global automatic fallback and preferred languages;
+- Add-on desired/enabled package IDs as non-executable intent only.
 
-Do not sync ContentBinding runtime payloads or executable trust decisions.
+On a new device, a desired APK-backed Add-on that is not installed is displayed as needing installation. Sync must not call ExtensionManager.install or trust an extension automatically.
+
+Do not sync ContentBinding runtime payloads, downloaded payloads, or executable trust decisions.
 
 - [ ] **Step 6: Run app/integration tests**
 
