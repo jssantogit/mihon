@@ -1,5 +1,6 @@
 package tachiyomi.domain.tsuzuki.reader.model
 
+/** Provider-neutral payload already prepared for a Reader transport. */
 sealed interface PreparedChapterContent {
     data class MihonOperational(
         val mangaId: Long,
