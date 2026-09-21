@@ -144,7 +144,29 @@ sealed interface ContentDelivery {
 }
 ~~~
 
-Define the capability interfaces exactly as frozen in the master plan.
+Define the capability interfaces exactly as frozen in the master plan. Add:
+
+~~~kotlin
+data class ExternalRating(
+    val providerId: String,
+    val label: String,
+    val value: Double,
+    val scaleMax: Double,
+)
+
+data class TrackingUpdate(
+    val externalId: String,
+    val chapterProgress: Double?,
+    val status: LibraryStatus?,
+    val score: Double?,
+)
+
+interface TrackingProvider {
+    val integrationId: IntegrationId
+    suspend fun isConnected(): Boolean
+    suspend fun update(update: TrackingUpdate): Result<Unit>
+}
+~~~
 
 - [ ] **Step 4: Add SQLDelight schemas and migration 30**
 
@@ -461,9 +483,10 @@ Keep OAuth/token behavior intact. Extract only the minimum constructor/interface
 ~~~kotlin
 class MalIntegrationProvider(
     private val api: MyAnimeListApi,
-) : SearchProvider, MetadataProvider, RatingsProvider {
+) : SearchProvider, MetadataProvider, RatingsProvider, TrackingProvider {
     override val integrationId = IntegrationId("mal")
-    // map TrackSearch/MAL details into CatalogItem with provider="mal"
+    // Search/metadata map TrackSearch/MAL details into CatalogItem with provider="mal".
+    // TrackingProvider delegates normalized TrackingUpdate to the existing MAL tracker API.
 }
 ~~~
 
@@ -746,7 +769,7 @@ fun \`detail exposes provisional state without hiding chapter\`() = runTest {
 - [ ] **Step 3: Implement Search UX**
 
 Empty query:
-- recent searches;
+- recent searches stored locally with a bounded list of 20 distinct queries, newest first;
 - configured Discover blocks from enabled DiscoveryProviders.
 
 Typed query:
@@ -832,14 +855,23 @@ git commit -m "test(tsuzuki): close integration evidence regressions [ci-full]"
 
 - [ ] **Step 5: Produce handoff**
 
+First run:
+
+~~~bash
+printf 'BASE_SHA=%s\n' "$(git merge-base tsuzuki/bootstrap HEAD)"
+printf 'HEAD_SHA=%s\n' "$(git rev-parse HEAD)"
+~~~
+
+Then fill the evidence block from those command outputs and the accepted CI run:
+
 ~~~text
 HANDOFF — DEV A
-BASE_SHA: <foundation merge sha>
-HEAD_SHA: <dev-a head>
+BASE_SHA: value printed by: git merge-base tsuzuki/bootstrap HEAD
+HEAD_SHA: value printed by: git rev-parse HEAD
 TASKS_COMPLETED: A1-A8
-PUBLIC_INTERFACES_CHANGED: none after foundation, or list additive fields
+PUBLIC_INTERFACES_CHANGED: report "none" or enumerate only additive fields actually committed after foundation
 MIGRATIONS: 30.sqm came from foundation only
-CI_RUN: <run id>
+CI_RUN: copy the exact GitHub Actions run ID from the accepted branch push
 CI_RESULT: green
 FILES_OTHER_DEVS_MAY_NOW_CONSUME:
 - IntegrationRegistry
