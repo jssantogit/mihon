@@ -171,10 +171,19 @@ class SupabaseSyncHttpTransport(
         ) { raw ->
             json.decodeFromString(
                 kotlinx.serialization.builtins.ListSerializer(
-                    SupabaseRemoteConflict.serializer(),
+                    MutationConflictResponse.serializer(),
                 ),
                 raw,
-            )
+            ).map { row ->
+                SupabaseRemoteConflict(
+                    conflictId = row.conflictId,
+                    recordId = row.recordId,
+                    fieldPath = row.fieldPath,
+                    kind = row.kind,
+                    localValue = row.localValue,
+                    remoteValue = row.remoteValue,
+                )
+            }
         }
     }
 
