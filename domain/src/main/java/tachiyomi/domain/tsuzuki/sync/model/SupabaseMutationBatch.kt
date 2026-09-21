@@ -110,6 +110,7 @@ data class SupabaseSyncSnapshot(
     }
 }
 
+@Serializable
 data class SupabaseRemoteConflict(
     val conflictId: Long,
     val recordId: String,
