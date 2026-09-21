@@ -1,12 +1,12 @@
 package eu.kanade.tachiyomi.ui.library
 
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCardModel
+import eu.kanade.tachiyomi.ui.tsuzuki.library.canonicalLibraryDestination
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
-import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
-import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCardModel
-import eu.kanade.tachiyomi.ui.tsuzuki.library.canonicalLibraryDestination
 
 class TsuzukiLibraryContractTest {
 
