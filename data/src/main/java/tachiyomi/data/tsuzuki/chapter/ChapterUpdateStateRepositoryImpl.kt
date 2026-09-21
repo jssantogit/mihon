@@ -93,5 +93,4 @@ class ChapterUpdateStateRepositoryImpl(
         database.tsuzuki_chapter_update_stateQueries
             .deleteTsuzukiChapterUpdateState(canonicalChapterId)
     }
-
 }
