@@ -36,6 +36,8 @@
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/capability/ProviderIds.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/integration/IntegrationCapabilities.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/integration/IntegrationRegistry.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/integration/model/ExternalRating.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/integration/model/TrackingUpdate.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/AddonCapabilities.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/AddonRegistry.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/evidence/ChapterEvidence.kt`
@@ -43,6 +45,9 @@
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/ContentBinding.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/content/ContentPreference.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/download/model/CanonicalDownloadArtifact.kt`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/model/CanonicalChapter.kt`
+- Modify: `data/src/main/java/tachiyomi/data/tsuzuki/CanonicalChapterRepositoryImpl.kt`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_canonical_chapters.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_integration_settings.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_chapter_evidence.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_content_bindings.sq`
@@ -55,7 +60,7 @@
 - Test: SQLDelight migration verification through CI v2
 
 **Interfaces:**
-- Produces: `IntegrationId`, `AddonId`, `SearchProvider`, `DiscoveryProvider`, `MetadataProvider`, `ChapterEvidenceProvider`, `RatingsProvider`, `ContentProvider`, `ChapterProbeProvider`, `IntegrationRegistry`, `AddonRegistry`, `ChapterEvidence`, `ContentOption`, `ContentDelivery`.
+- Produces: `IntegrationId`, `AddonId`, `SearchProvider`, `DiscoveryProvider`, `MetadataProvider`, `ChapterEvidenceProvider`, `RatingsProvider`, `TrackingProvider`, `ExternalRating`, `TrackingUpdate`, `ContentProvider`, `ChapterProbeProvider`, `IntegrationRegistry`, `AddonRegistry`, `ChapterEvidence`, `ContentOption`, `ContentDelivery`.
 - Consumes: existing `CatalogQuery`, `CatalogPage`, `CatalogItem`, `CanonicalTitle`, `CanonicalChapter`.
 
 - [ ] **Step 1: Write the contract test**
@@ -260,9 +265,21 @@ CREATE TABLE tsuzuki_supabase_pending_mutation(
     attempt_count INTEGER NOT NULL,
     next_attempt_at INTEGER
 );
+
+ALTER TABLE tsuzuki_canonical_chapters
+ADD COLUMN confirmation_state TEXT NOT NULL DEFAULT 'PROVISIONAL';
 ~~~
 
-Mirror the same schema in the corresponding `.sq` files with named get/upsert/delete queries.
+Update the SQLDelight schema definition, `CanonicalChapter`, and `CanonicalChapterRepositoryImpl` in the same foundation commit so generated query signatures stay compilable. Existing source-derived rows intentionally migrate to `PROVISIONAL`:
+
+~~~kotlin
+data class CanonicalChapter(
+    // keep every existing field unchanged
+    val confirmation: CanonicalChapterConfirmation = CanonicalChapterConfirmation.PROVISIONAL,
+)
+~~~
+
+Mirror the new cross-stream tables in the corresponding `.sq` files with named get/upsert/delete queries.
 
 - [ ] **Step 5: Run migration and domain checks**
 
@@ -547,8 +564,14 @@ fun `existing external identity resolves to existing canonical title`() = runTes
 
 @Test
 fun `two concurrent materializations of same verified identity converge`() = runTest {
-    // Execute twice against repository unique(provider, external_id).
-    // Assert one CanonicalTitle survives and both calls resolve to its id.
+    val first = async { reconciler.execute(kitsuItem(id = "1", title = "Dandadan")) }
+    val second = async { reconciler.execute(kitsuItem(id = "1", title = "Dandadan")) }
+
+    val ids = listOf(first.await().canonicalTitleId, second.await().canonicalTitleId)
+    assertEquals(1, ids.distinct().size)
+    assertEquals(1, repository.getAll().count { title ->
+        repository.getByExternalIdentity("kitsu", "1")?.id == title.id
+    })
 }
 ~~~
 
@@ -607,10 +630,8 @@ git commit -m "feat(tsuzuki): aggregate integration search safely"
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/evidence/ChapterEvidenceRepository.kt`
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/chapter/ChapterEvidenceRepositoryImpl.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/evidence/ReconcileChapterEvidence.kt`
-- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/model/CanonicalChapter.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/repository/CanonicalChapterRepository.kt`
-- Modify: `data/src/main/java/tachiyomi/data/tsuzuki/CanonicalChapterRepositoryImpl.kt`
-- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_canonical_chapters.sq` only if the Wave 0 schema already includes the confirmation column; otherwise stop for integration-steward migration assignment.
+- Modify: `data/src/main/java/tachiyomi/data/tsuzuki/CanonicalChapterRepositoryImpl.kt` only for evidence-related query helpers; confirmation state was added in F1.
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/chapter/evidence/ReconcileChapterEvidenceTest.kt`
 
 **Interfaces:**
@@ -622,9 +643,24 @@ git commit -m "feat(tsuzuki): aggregate integration search safely"
 Include exact cases:
 
 ~~~kotlin
-@Test fun `addon evidence creates provisional chapter`() = runTest { /* assert PROVISIONAL */ }
+@Test
+fun `addon evidence creates provisional chapter`() = runTest {
+    reconciler.execute("title", listOf(addonEvidence(rawLabel = "Chapter 211")))
+    val chapter = chapterRepository.getByCanonicalTitleId("title").single()
+    assertEquals(CanonicalChapterConfirmation.PROVISIONAL, chapter.confirmation)
+}
 
-@Test fun `editorial evidence promotes matching provisional chapter`() = runTest { /* same canonical id, CONFIRMED */ }
+@Test
+fun `editorial evidence promotes matching provisional chapter`() = runTest {
+    reconciler.execute("title", listOf(addonEvidence(rawLabel = "Chapter 211")))
+    val provisionalId = chapterRepository.getByCanonicalTitleId("title").single().id
+
+    reconciler.execute("title", listOf(editorialEvidence(rawLabel = "Chapter 211")))
+    val confirmed = chapterRepository.getByCanonicalTitleId("title").single()
+
+    assertEquals(provisionalId, confirmed.id)
+    assertEquals(CanonicalChapterConfirmation.CONFIRMED, confirmed.confirmation)
+}
 
 @Test fun `chapter count without evidence creates no rows`() = runTest {
     reconciler.execute("title", emptyList())
