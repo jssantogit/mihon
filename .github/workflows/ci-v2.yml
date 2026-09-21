@@ -37,11 +37,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
+      test_matrix: ${{ steps.plan.outputs.test_matrix }}
+      compile_matrix: ${{ steps.plan.outputs.compile_matrix }}
       run_tests: ${{ steps.plan.outputs.run_tests }}
+      run_compile: ${{ steps.plan.outputs.run_compile }}
       run_format: ${{ steps.plan.outputs.run_format }}
       run_database: ${{ steps.plan.outputs.run_database }}
-      selected: ${{ steps.plan.outputs.selected }}
+      run_supabase: ${{ steps.plan.outputs.run_supabase }}
+      run_native_package: ${{ steps.plan.outputs.run_native_package }}
+      run_release: ${{ steps.plan.outputs.run_release }}
+      selected_tests: ${{ steps.plan.outputs.selected_tests }}
+      selected_compiles: ${{ steps.plan.outputs.selected_compiles }}
       mode: ${{ steps.scope.outputs.mode }}
     steps:
       - name: Checkout
@@ -115,21 +121,32 @@ jobs:
         env:
           MODE: ${{ steps.scope.outputs.mode }}
         run: |
-          python3 .github/scripts/ci_v2_plan.py             --mode "$MODE"             --paths-file changed-paths.txt             | tee -a "$GITHUB_OUTPUT"
+          python3 .github/scripts/ci_v2_plan.py \
+            --mode "$MODE" \
+            --paths-file changed-paths.txt \
+            | tee -a "$GITHUB_OUTPUT"
 
       - name: Summarize plan
         shell: bash
         env:
           MODE: ${{ steps.scope.outputs.mode }}
-          SELECTED: ${{ steps.plan.outputs.selected }}
-          RUN_DATABASE: ${{ steps.plan.outputs.run_database }}
+          TESTS: ${{ steps.plan.outputs.selected_tests }}
+          COMPILES: ${{ steps.plan.outputs.selected_compiles }}
+          DATABASE: ${{ steps.plan.outputs.run_database }}
+          SUPABASE: ${{ steps.plan.outputs.run_supabase }}
+          NATIVE: ${{ steps.plan.outputs.run_native_package }}
+          RELEASE: ${{ steps.plan.outputs.run_release }}
         run: |
           {
-            echo "## CI v2 plan"
+            echo "## CI v2.1 plan"
             echo
-            echo "- Mode: `$MODE`"
-            echo "- Test shards: `$SELECTED`"
-            echo "- SQLDelight migrations: `$RUN_DATABASE`"
+            echo "- Mode: \`$MODE\`"
+            echo "- Test shards: \`$TESTS\`"
+            echo "- Compile checks: \`$COMPILES\`"
+            echo "- SQLDelight migrations: \`$DATABASE\`"
+            echo "- Supabase backend: \`$SUPABASE\`"
+            echo "- Native package gate: \`$NATIVE\`"
+            echo "- Release compile: \`$RELEASE\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   format:
@@ -162,7 +179,7 @@ jobs:
     if: needs.plan.outputs.run_tests == 'true'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.test_matrix) }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.timeout }}
     steps:
@@ -178,14 +195,20 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          # Tsuzuki development branches are intentionally allowed to warm
-          # their own branch-scoped caches for subsequent commits.
           cache-read-only: false
           cache-cleanup: on-success
 
       - name: Run ${{ matrix.name }} tests
         id: unit_tests
-        run: ./gradlew "${{ matrix.task }}"
+        shell: bash
+        env:
+          TEST_FILTER: ${{ matrix.filter }}
+        run: |
+          args=(./gradlew "${{ matrix.task }}")
+          if [ -n "$TEST_FILTER" ]; then
+            args+=(--tests "$TEST_FILTER")
+          fi
+          "${args[@]}"
 
       - name: Upload failed test report
         if: failure() && steps.unit_tests.outcome == 'failure'
@@ -195,6 +218,33 @@ jobs:
           path: ${{ matrix.report }}
           if-no-files-found: ignore
           retention-days: 3
+
+  compile:
+    name: ${{ matrix.name }}
+    needs: plan
+    if: needs.plan.outputs.run_compile == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.compile_matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Run compile check
+        run: ./gradlew "${{ matrix.task }}"
 
   database:
     name: SQLDelight Migrations
@@ -220,6 +270,97 @@ jobs:
       - name: Verify SQLDelight migrations
         run: ./gradlew verifySqlDelightMigration
 
+  supabase:
+    name: Supabase Backend
+    needs: plan
+    if: needs.plan.outputs.run_supabase == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect Supabase project
+        id: project
+        shell: bash
+        run: |
+          if [ -f supabase/config.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Supabase project not committed yet; backend lane is ready and intentionally skips."
+          fi
+
+      - name: Set up Supabase CLI
+        if: steps.project.outputs.present == 'true'
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: 2.117.0
+
+      - name: Start local Supabase
+        if: steps.project.outputs.present == 'true'
+        run: supabase start
+
+      - name: Reset database
+        if: steps.project.outputs.present == 'true'
+        run: supabase db reset
+
+      - name: Run database tests
+        if: steps.project.outputs.present == 'true'
+        run: supabase test db
+
+      - name: Stop local Supabase
+        if: always() && steps.project.outputs.present == 'true'
+        run: supabase stop --no-backup
+
+  native-package:
+    name: Native Package Gate
+    needs: plan
+    if: needs.plan.outputs.run_native_package == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Assemble debug package
+        run: ./gradlew :app:assembleDebug
+
+  release:
+    name: Release Compile
+    needs: plan
+    if: needs.plan.outputs.run_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Compile release
+        run: ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
+
   gate:
     name: CI Gate
     if: always()
@@ -227,7 +368,11 @@ jobs:
       - plan
       - format
       - tests
+      - compile
       - database
+      - supabase
+      - native-package
+      - release
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -237,7 +382,11 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           FORMAT: ${{ needs.format.result }}
           TESTS: ${{ needs.tests.result }}
+          COMPILE: ${{ needs.compile.result }}
           DATABASE: ${{ needs.database.result }}
+          SUPABASE: ${{ needs.supabase.result }}
+          NATIVE: ${{ needs.native-package.result }}
+          RELEASE: ${{ needs.release.result }}
         run: |
           failed=0
 
@@ -258,6 +407,10 @@ jobs:
           check_result "Change Planner" "$PLAN"
           check_result "Format" "$FORMAT"
           check_result "Tests" "$TESTS"
+          check_result "Compile" "$COMPILE"
           check_result "SQLDelight Migrations" "$DATABASE"
+          check_result "Supabase Backend" "$SUPABASE"
+          check_result "Native Package Gate" "$NATIVE"
+          check_result "Release Compile" "$RELEASE"
 
           exit "$failed"
