@@ -35,7 +35,6 @@ class DefaultIntegrationRegistryTest {
             searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
 
-
         registry.searchProviders() shouldBe emptyList()
     }
 
@@ -46,7 +45,6 @@ class DefaultIntegrationRegistryTest {
             settings = MutableStateFlow(emptyList()),
             searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
-
 
         registry.searchProviders() shouldBe emptyList()
     }
@@ -65,7 +63,6 @@ class DefaultIntegrationRegistryTest {
             ratingsProviders = setOf(FakeRatingsProvider("kitsu"), FakeRatingsProvider("mal")),
             trackingProviders = setOf(FakeTrackingProvider("kitsu"), FakeTrackingProvider("mal")),
         )
-
 
         registry.searchProviders() shouldContainExactly listOf(malSearch)
         registry.discoveryProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
