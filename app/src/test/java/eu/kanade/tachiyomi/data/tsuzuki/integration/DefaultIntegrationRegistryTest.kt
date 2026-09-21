@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -29,6 +30,7 @@ class DefaultIntegrationRegistryTest {
     fun `registry excludes providers whose integration is disabled`() = runTest {
         val settings = MutableStateFlow(fakeSettings("kitsu" to false))
         val registry = registry(
+            scope = backgroundScope,
             settings = settings,
             searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
@@ -41,6 +43,7 @@ class DefaultIntegrationRegistryTest {
     @Test
     fun `registry excludes providers without a persisted setting`() = runTest {
         val registry = registry(
+            scope = backgroundScope,
             settings = MutableStateFlow(emptyList()),
             searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
@@ -79,6 +82,7 @@ class DefaultIntegrationRegistryTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val settings = MutableStateFlow(fakeSettings("kitsu" to false))
         val registry = registry(
+            scope = backgroundScope,
             settings = settings,
             searchProviders = setOf(kitsuSearch),
         )
@@ -96,6 +100,7 @@ class DefaultIntegrationRegistryTest {
     }
 
     private fun registry(
+        scope: CoroutineScope,
         settings: MutableStateFlow<List<IntegrationSettings>>,
         searchProviders: Set<SearchProvider> = emptySet(),
         discoveryProviders: Set<DiscoveryProvider> = emptySet(),
@@ -111,7 +116,7 @@ class DefaultIntegrationRegistryTest {
         chapterEvidenceProviders = chapterEvidenceProviders,
         ratingsProviders = ratingsProviders,
         trackingProviders = trackingProviders,
-        scope = backgroundScope,
+        scope = scope,
     )
 
     private fun fakeSettings(vararg settings: Pair<String, Boolean>): List<IntegrationSettings> =
