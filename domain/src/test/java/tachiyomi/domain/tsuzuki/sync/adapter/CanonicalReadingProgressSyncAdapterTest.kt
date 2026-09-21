@@ -100,7 +100,9 @@ class CanonicalReadingProgressSyncAdapterTest {
         readingRepository = reading,
         evidenceRepository = ChapterSyncEvidenceRepository { null },
         revisionSource = FakeRevisionSource(),
-        clock = SyncClock { 100 },
+        clock = object : SyncClock {
+            override fun nowEpochMillis(): Long = 100L
+        },
     )
 
     private fun title() = CanonicalTitle(
