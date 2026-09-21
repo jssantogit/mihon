@@ -20,6 +20,30 @@ class RankContentOptionsTest {
     }
 
     @Test
+    fun `downloaded local artifact ranks above preferred remote addon`() {
+        val local = option(
+            addon = "local",
+            language = "en",
+            key = "local",
+            delivery = ContentDelivery.LocalArchive("content://chapter.cbz"),
+        )
+        val remote = option(
+            addon = "mangadex",
+            language = "en",
+            key = "remote",
+            delivery = ContentDelivery.Mihon(sourceId = 7L, mangaId = 8L, chapterId = 9L),
+        )
+
+        val ranked = RankContentOptions().execute(
+            options = listOf(remote, local),
+            preferredAddonId = AddonId("mangadex"),
+            preferredLanguages = emptyList(),
+        )
+
+        ranked.map { it.key } shouldBe listOf("local", "remote")
+    }
+
+    @Test
     fun `ranking is deterministic for otherwise equal options`() {
         val options = listOf(
             option("zeta", "en", key = "b"),
@@ -38,6 +62,7 @@ class RankContentOptionsTest {
         addon: String,
         language: String,
         key: String = addon + ":" + language,
+        delivery: ContentDelivery = ContentDelivery.LocalArchive("content://$key"),
     ) = ContentOption(
         key = key,
         canonicalChapterId = "chapter",
@@ -45,6 +70,6 @@ class RankContentOptionsTest {
         language = language,
         scanlationGroup = null,
         releaseDate = null,
-        delivery = ContentDelivery.LocalArchive("content://$key"),
+        delivery = delivery,
     )
 }
