@@ -16,6 +16,7 @@ import eu.kanade.presentation.more.settings.screen.SettingsAppearanceScreen
 import eu.kanade.presentation.more.settings.screen.SettingsDataScreen
 import eu.kanade.presentation.more.settings.screen.SettingsMainScreen
 import eu.kanade.presentation.more.settings.screen.SettingsTrackingScreen
+import eu.kanade.presentation.more.settings.screen.SettingsTsuzukiAddonsScreen
 import eu.kanade.presentation.more.settings.screen.about.AboutScreen
 import eu.kanade.presentation.util.DefaultNavigatorScreenTransition
 import eu.kanade.presentation.util.LocalBackPress
@@ -38,6 +39,7 @@ class SettingsScreen(
                     Destination.About.id -> AboutScreen
                     Destination.DataAndStorage.id -> SettingsDataScreen
                     Destination.Tracking.id -> SettingsTrackingScreen
+                    Destination.TsuzukiAddons.id -> SettingsTsuzukiAddonsScreen
                     else -> SettingsMainScreen
                 },
                 onBackPressed = null,
@@ -59,6 +61,7 @@ class SettingsScreen(
                     Destination.About.id -> AboutScreen
                     Destination.DataAndStorage.id -> SettingsDataScreen
                     Destination.Tracking.id -> SettingsTrackingScreen
+                    Destination.TsuzukiAddons.id -> SettingsTsuzukiAddonsScreen
                     else -> SettingsAppearanceScreen
                 },
                 onBackPressed = null,
@@ -83,5 +86,20 @@ class SettingsScreen(
         data object About : Destination(0)
         data object DataAndStorage : Destination(1)
         data object Tracking : Destination(2)
+        data object TsuzukiAddons : Destination(3)
+
+        companion object {
+            fun fromId(id: Int): Destination? = when (id) {
+                About.id -> About
+                DataAndStorage.id -> DataAndStorage
+                Tracking.id -> Tracking
+                TsuzukiAddons.id -> TsuzukiAddons
+                else -> null
+            }
+        }
+    }
+
+    companion object {
+        const val EXTRA_DESTINATION = "settings_destination"
     }
 }

@@ -28,13 +28,13 @@ class ChapterLoader(
     private val chapterCache: ChapterCache,
     private val manga: Manga,
     private val source: Source,
-) {
+) : ReaderChapterLoader {
 
     /**
      * Assigns the chapter's page loader and loads the its pages. Returns immediately if the chapter
      * is already loaded.
      */
-    suspend fun loadChapter(chapter: ReaderChapter) {
+    override suspend fun loadChapter(chapter: ReaderChapter) {
         if (chapterIsReady(chapter)) {
             return
         }

@@ -4,7 +4,11 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.source.model.StubSource
+import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
 
 class MihonCanonicalDownloadGatewayTest {
 
@@ -42,6 +46,66 @@ class MihonCanonicalDownloadGatewayTest {
             mangaTitle = "Local Manga Title",
             sourceId = 7L,
         )
+    }
+
+    @Test
+    fun `acquire reuses existing physical artifact without queueing`() = runTest {
+        val option = option()
+        val artifact = artifact(option)
+        var starts = 0
+        val gateway = MihonCanonicalDownloadGateway(
+            mangaTitleProvider = { "Title" },
+            sourceProvider = { StubSource(it, "en", "Source") },
+            downloadLookup = { _, _, _ -> false },
+            artifactLocator = { artifact },
+            downloadStarter = { starts++ },
+            downloadCompletion = { true },
+        )
+
+        gateway.acquire(option).getOrThrow() shouldBe artifact
+        starts shouldBe 0
+    }
+
+    @Test
+    fun `acquire queues operational chapter and returns artifact after completion`() = runTest {
+        val option = option()
+        val artifact = artifact(option)
+        var locateCalls = 0
+        var startedChapterId: Long? = null
+        var awaitedChapterId: Long? = null
+        val gateway = MihonCanonicalDownloadGateway(
+            mangaTitleProvider = { "Title" },
+            sourceProvider = { StubSource(it, "en", "Source") },
+            downloadLookup = { _, _, _ -> false },
+            artifactLocator = {
+                locateCalls++
+                if (locateCalls >= 2) artifact else null
+            },
+            downloadStarter = { startedChapterId = it },
+            downloadCompletion = {
+                awaitedChapterId = it
+                true
+            },
+        )
+
+        gateway.acquire(option).getOrThrow() shouldBe artifact
+        startedChapterId shouldBe 99L
+        awaitedChapterId shouldBe 99L
+    }
+
+    @Test
+    fun `acquire fails when queued download does not complete`() = runTest {
+        val option = option()
+        val gateway = MihonCanonicalDownloadGateway(
+            mangaTitleProvider = { "Title" },
+            sourceProvider = { StubSource(it, "en", "Source") },
+            downloadLookup = { _, _, _ -> false },
+            artifactLocator = { null },
+            downloadStarter = {},
+            downloadCompletion = { false },
+        )
+
+        gateway.acquire(option).isFailure shouldBe true
     }
 
     @Test
@@ -90,6 +154,30 @@ class MihonCanonicalDownloadGatewayTest {
         sourceLookupCalled shouldBe false
         downloadLookupCalled shouldBe false
     }
+
+    private fun option() = ContentOption(
+        key = "mangadex:chapter-1",
+        canonicalChapterId = "chapter-1",
+        addonId = AddonId("mangadex"),
+        language = "en",
+        scanlationGroup = "Group",
+        releaseDate = 100L,
+        delivery = ContentDelivery.Mihon(
+            sourceId = 7L,
+            mangaId = 55L,
+            chapterId = 99L,
+        ),
+    )
+
+    private fun artifact(option: ContentOption) = CanonicalDownloadArtifact(
+        canonicalChapterId = option.canonicalChapterId,
+        localUri = "content://downloads/chapter-1.cbz",
+        format = "CBZ",
+        originatingAddonId = option.addonId,
+        originatingOptionKey = option.key,
+        completedAt = 100L,
+        checksum = null,
+    )
 
     private fun variant(
         mihonMangaId: Long? = 55L,

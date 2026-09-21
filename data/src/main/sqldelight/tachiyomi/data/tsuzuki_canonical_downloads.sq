@@ -50,3 +50,9 @@ ON CONFLICT(canonical_chapter_id) DO UPDATE SET
 deleteTsuzukiCanonicalDownload:
 DELETE FROM tsuzuki_canonical_downloads
 WHERE canonical_chapter_id = :canonicalChapterId;
+
+clearTsuzukiCanonicalDownloadOrigin:
+UPDATE tsuzuki_canonical_downloads
+SET originating_addon_id = NULL,
+    originating_option_key = NULL
+WHERE originating_addon_id = :addonId;
