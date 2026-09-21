@@ -171,6 +171,15 @@ class CanonicalTitleMergeRepositoryImplTest {
             firstSeenAt = 50L,
             acknowledgedAt = null,
         )
+        database.tsuzuki_canonical_downloadsQueries.upsertTsuzukiCanonicalDownload(
+            canonicalChapterId = "chapter-37",
+            localUri = "file:///chapter-37.cbz",
+            format = "CBZ",
+            originatingAddonId = "mangadex",
+            originatingOptionKey = "md:37",
+            completedAt = 55L,
+            checksum = "abc",
+        )
         database.tsuzuki_continue_reading_stateQueries.upsertTsuzukiContinueReadingState(
             canonicalTitleId = "duplicate",
             hiddenAt = 60L,
@@ -210,9 +219,61 @@ class CanonicalTitleMergeRepositoryImplTest {
         database.tsuzuki_chapter_update_stateQueries
             .getTsuzukiChapterUpdateStateByTitle("winner") { chapterId, _, _, _ -> chapterId }
             .awaitAsList() shouldContainExactly listOf("chapter-37")
+        database.tsuzuki_canonical_downloadsQueries
+            .getTsuzukiCanonicalDownload("chapter-37") { _, localUri, _, _, _, _, _ -> localUri }
+            .awaitAsOneOrNull() shouldBe "file:///chapter-37.cbz"
         database.tsuzuki_continue_reading_stateQueries
             .getTsuzukiContinueReadingState("winner") { _, hiddenAt -> hiddenAt ?: -1L }
             .awaitAsOneOrNull() shouldBe 60L
+    }
+
+    @Test
+    fun `missing target is created from local title before rekey`() = runBlocking<Unit> {
+        seedTitle("local", "Cross-device title")
+        database.tsuzuki_external_identitiesQueries.insertTsuzukiExternalIdentity(
+            canonicalTitleId = "local",
+            provider = "mal",
+            externalId = "99",
+            verified = true,
+            createdAt = 1L,
+        )
+        database.tsuzuki_library_entriesQueries.upsertTsuzukiLibraryEntry(
+            canonicalTitleId = "local",
+            status = LibraryStatus.PLANNING.name,
+            favorite = true,
+            addedAt = 2L,
+            updatedAt = 3L,
+        )
+
+        repository.convergeTo(targetId = "cloud-winner", localId = "local")
+
+        titleRepository.getById("local") shouldBe null
+        titleRepository.getById("cloud-winner")?.displayTitle shouldBe "Cross-device title"
+        titleRepository.getByExternalIdentity("mal", "99")?.id shouldBe "cloud-winner"
+        libraryRepository.get("cloud-winner")?.canonicalTitleId shouldBe "cloud-winner"
+    }
+
+    @Test
+    fun `different preferred addons abort without deleting either title`() = runBlocking<Unit> {
+        seedTitle("winner", "Winner")
+        seedTitle("duplicate", "Duplicate")
+        database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
+            canonicalTitleId = "winner",
+            preferredAddonId = "addon-a",
+            updatedAt = 1L,
+        )
+        database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
+            canonicalTitleId = "duplicate",
+            preferredAddonId = "addon-b",
+            updatedAt = 2L,
+        )
+
+        shouldThrow<CanonicalTitleMergeConflict.PreferredAddonConflict> {
+            repository.convergeTo("winner", "duplicate")
+        }
+
+        titleRepository.getById("winner")?.id shouldBe "winner"
+        titleRepository.getById("duplicate")?.id shouldBe "duplicate"
     }
 
     @Test
