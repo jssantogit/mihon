@@ -1,11 +1,11 @@
 package tachiyomi.domain.tsuzuki.sync.service
 
+import tachiyomi.domain.tsuzuki.sync.model.SupabaseMutationBatch
 import tachiyomi.domain.tsuzuki.sync.model.SupabasePendingMutation
 import tachiyomi.domain.tsuzuki.sync.model.SupabasePushResult
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncCursor
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncEvent
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncSnapshot
-import tachiyomi.domain.tsuzuki.sync.model.SupabaseMutationBatch
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncTransportResult
 
