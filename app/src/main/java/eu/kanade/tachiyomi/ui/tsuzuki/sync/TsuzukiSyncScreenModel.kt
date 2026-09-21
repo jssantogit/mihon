@@ -69,23 +69,34 @@ class TsuzukiSyncScreenModel(
     private val resolvingConflictKey = MutableStateFlow<String?>(null)
     private val error = MutableStateFlow<TsuzukiSyncScreenError?>(null)
 
-    val state: StateFlow<TsuzukiSyncScreenState> = combine(
-        accountRepository.state,
-        runtime.state,
+    private val localUiState = combine(
         diagnostics,
         isLoadingDiagnostics,
         resolvingConflictKey,
         error,
-    ) { account, runtimeState, currentDiagnostics, loading, resolving, currentError ->
-        TsuzukiSyncScreenState(
-            accountState = account,
-            runtimeState = runtimeState,
-            pendingMutationCount = currentDiagnostics.pendingMutationCount,
-            lastSuccessfulSyncAtEpochMillis = currentDiagnostics.lastSuccessfulSyncAtEpochMillis,
-            conflicts = currentDiagnostics.conflicts,
+    ) { currentDiagnostics, loading, resolving, currentError ->
+        SyncLocalUiState(
+            diagnostics = currentDiagnostics,
             isLoadingDiagnostics = loading,
             resolvingConflictKey = resolving,
             error = currentError,
+        )
+    }
+
+    val state: StateFlow<TsuzukiSyncScreenState> = combine(
+        accountRepository.state,
+        runtime.state,
+        localUiState,
+    ) { account, runtimeState, local ->
+        TsuzukiSyncScreenState(
+            accountState = account,
+            runtimeState = runtimeState,
+            pendingMutationCount = local.diagnostics.pendingMutationCount,
+            lastSuccessfulSyncAtEpochMillis = local.diagnostics.lastSuccessfulSyncAtEpochMillis,
+            conflicts = local.diagnostics.conflicts,
+            isLoadingDiagnostics = local.isLoadingDiagnostics,
+            resolvingConflictKey = local.resolvingConflictKey,
+            error = local.error,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -221,5 +232,12 @@ class TsuzukiSyncScreenModel(
         val pendingMutationCount: Int = 0,
         val lastSuccessfulSyncAtEpochMillis: Long? = null,
         val conflicts: List<StoredSyncConflict> = emptyList(),
+    )
+
+    private data class SyncLocalUiState(
+        val diagnostics: SyncDiagnostics,
+        val isLoadingDiagnostics: Boolean,
+        val resolvingConflictKey: String?,
+        val error: TsuzukiSyncScreenError?,
     )
 }
