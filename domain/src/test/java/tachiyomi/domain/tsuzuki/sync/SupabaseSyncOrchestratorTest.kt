@@ -190,7 +190,7 @@ class SupabaseSyncOrchestratorTest {
 
     @Test
     fun `unresolved conflict blocks repush while independent remote fields still apply`() = runTest {
-        val adapter = FakeAdapter(document(status = "READING"))
+        val adapter = FakeAdapter(document(status = "READING", score = 8))
         val accepted = document(status = "COMPLETED", score = 8)
         val stored = FakeStoredState().apply {
             put(
