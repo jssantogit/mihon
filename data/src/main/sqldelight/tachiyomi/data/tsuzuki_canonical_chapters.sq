@@ -11,6 +11,7 @@ CREATE TABLE tsuzuki_canonical_chapters(
     confidence REAL NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    confirmation_state TEXT NOT NULL DEFAULT 'PROVISIONAL',
     FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
 );
 
@@ -42,7 +43,8 @@ INSERT INTO tsuzuki_canonical_chapters(
     alpha_suffix,
     confidence,
     created_at,
-    updated_at
+    updated_at,
+    confirmation_state
 )
 VALUES (
     :id,
@@ -56,7 +58,8 @@ VALUES (
     :alphaSuffix,
     :confidence,
     :createdAt,
-    :updatedAt
+    :updatedAt,
+    :confirmationState
 )
 ON CONFLICT(id) DO UPDATE SET
     canonical_title_id = excluded.canonical_title_id,
@@ -68,4 +71,5 @@ ON CONFLICT(id) DO UPDATE SET
     part = excluded.part,
     alpha_suffix = excluded.alpha_suffix,
     confidence = excluded.confidence,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at,
+    confirmation_state = excluded.confirmation_state;
