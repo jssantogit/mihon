@@ -1,18 +1,19 @@
 package tachiyomi.domain.tsuzuki.catalog.interactor
 
 import dev.zacsweers.metro.Inject
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
-import tachiyomi.domain.tsuzuki.catalog.service.CatalogProvider
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import java.text.Normalizer
 import kotlin.coroutines.cancellation.CancellationException
 
 @Inject
 class SearchCatalog(
-    private val catalogProvider: CatalogProvider,
+    private val integrationRegistry: IntegrationRegistry,
 ) {
 
     suspend fun await(
@@ -23,17 +24,22 @@ class SearchCatalog(
         genres: List<String> = emptyList(),
         status: CatalogItemStatus? = null,
     ): Result<CatalogPage> = try {
-        catalogProvider.search(
-            CatalogQuery(
-                query = query,
-                sort = sort,
-                genres = genres,
-                status = status,
-                offset = offset,
-                limit = limit,
-            ),
-        ).map { page ->
-            page.filterByTitleRelevance(query)
+        val provider = integrationRegistry.searchProviders().firstOrNull()
+        if (provider == null) {
+            Result.failure(CatalogError.ProviderUnavailable("No search Integration is enabled"))
+        } else {
+            provider.search(
+                CatalogQuery(
+                    query = query,
+                    sort = sort,
+                    genres = genres,
+                    status = status,
+                    offset = offset,
+                    limit = limit,
+                ),
+            ).map { page ->
+                page.filterByTitleRelevance(query)
+            }
         }
     } catch (e: CancellationException) {
         throw e

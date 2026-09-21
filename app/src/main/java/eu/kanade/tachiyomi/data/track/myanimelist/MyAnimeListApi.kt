@@ -30,11 +30,17 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import tachiyomi.domain.track.model.Track as DomainTrack
 
+interface MalIntegrationApi {
+    suspend fun search(query: String): List<TrackSearch>
+
+    suspend fun getMangaDetails(id: Int): TrackSearch
+}
+
 class MyAnimeListApi(
     private val trackerId: Long,
     private val client: OkHttpClient,
     interceptor: MyAnimeListInterceptor,
-) {
+) : MalIntegrationApi {
 
     private val json: Json by injectLazy()
 
@@ -71,7 +77,7 @@ class MyAnimeListApi(
         }
     }
 
-    suspend fun search(query: String): List<TrackSearch> {
+    override suspend fun search(query: String): List<TrackSearch> {
         return withIOContext {
             val url = "$BASE_API_URL/manga".toUri().buildUpon()
                 // MAL API throws a 400 when the query is over 64 characters...
@@ -90,7 +96,7 @@ class MyAnimeListApi(
         }
     }
 
-    suspend fun getMangaDetails(id: Int): TrackSearch {
+    override suspend fun getMangaDetails(id: Int): TrackSearch {
         return withIOContext {
             val url = "$BASE_API_URL/manga".toUri().buildUpon()
                 .appendPath(id.toString())
