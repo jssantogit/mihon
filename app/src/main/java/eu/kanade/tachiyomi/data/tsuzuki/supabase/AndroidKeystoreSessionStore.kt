@@ -5,13 +5,13 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.io.File
 import java.security.KeyStore
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.util.Base64
 
 interface SupabaseSessionStore {
     fun load(): SupabaseSession?
