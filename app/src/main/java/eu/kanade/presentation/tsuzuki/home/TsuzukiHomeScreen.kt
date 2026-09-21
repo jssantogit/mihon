@@ -14,10 +14,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,18 +24,18 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
-import mihon.icons.materialsymbols.MaterialSymbols
-import mihon.icons.materialsymbols.rounded.Refresh
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
+import tachiyomi.domain.tsuzuki.home.model.HomeRow
+import tachiyomi.domain.tsuzuki.home.model.HomeRowContent
+import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.presentation.core.components.material.Scaffold
 
 @Composable
 fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
-    onRefresh: () -> Unit,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
+    onRemoveFromContinueReading: (HomeContinueReadingItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -44,17 +43,6 @@ fun TsuzukiHomeScreen(
         topBar = {
             AppBar(
                 titleContent = { AppBarTitle("Home") },
-                actions = {
-                    IconButton(
-                        onClick = onRefresh,
-                        enabled = !state.isRefreshing,
-                    ) {
-                        Icon(
-                            imageVector = MaterialSymbols.Rounded.Refresh,
-                            contentDescription = "Refresh home",
-                        )
-                    }
-                },
             )
         },
     ) { paddingValues ->
@@ -65,14 +53,11 @@ fun TsuzukiHomeScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item(key = "continue_header") {
-                SectionHeader("Continue Reading")
-            }
-
-            item(key = "continue_content") {
-                if (state.continueReading.isEmpty()) {
-                    SectionMessage("Nothing in progress yet")
-                } else {
+            if (state.continueReading.isNotEmpty()) {
+                item(key = "continue_header") {
+                    SectionHeader("Continue Reading")
+                }
+                item(key = "continue_content") {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -84,46 +69,31 @@ fun TsuzukiHomeScreen(
                             ContinueReadingCard(
                                 item = item,
                                 onClick = { onContinueReading(item) },
+                                onRemove = { onRemoveFromContinueReading(item) },
                             )
                         }
                     }
                 }
             }
 
-            val feed = state.catalogFeed
-            if (feed == null) {
-                item(key = "remote_loading") {
-                    SectionMessage("Loading catalog sections…")
-                }
-            } else {
-                item(key = "recent_header") {
-                    SectionHeader("Recently Updated")
-                }
-                item(key = "recent_content") {
-                    CatalogSection(
-                        result = feed.recentlyUpdated,
-                        emptyMessage = "No recent titles available",
-                    )
-                }
-
-                item(key = "trending_header") {
-                    SectionHeader("Trending")
-                }
-                item(key = "trending_content") {
-                    CatalogSection(
-                        result = feed.trending,
-                        emptyMessage = "No trending titles available",
-                    )
-                }
-
-                item(key = "popular_header") {
-                    SectionHeader("Popular")
-                }
-                item(key = "popular_content") {
-                    CatalogSection(
-                        result = feed.popular,
-                        emptyMessage = "No popular titles available",
-                    )
+            state.sections.forEach { section ->
+                when (section) {
+                    is HomeSection.CollectionSection -> {
+                        item(key = "collection_header_${section.collectionId}") {
+                            SectionHeader(section.title)
+                        }
+                        if (section.rows.isEmpty()) {
+                            item(key = "collection_empty_${section.collectionId}") {
+                                SectionMessage("No Home rows configured")
+                            }
+                        } else {
+                            section.rows.forEach { row ->
+                                item(key = "row_${row.listId}") {
+                                    CollectionRow(row)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -136,7 +106,12 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+        modifier = Modifier.padding(
+            start = 16.dp,
+            end = 16.dp,
+            top = 12.dp,
+            bottom = 4.dp,
+        ),
     )
 }
 
@@ -154,6 +129,7 @@ private fun SectionMessage(message: String) {
 private fun ContinueReadingCard(
     item: HomeContinueReadingItem,
     onClick: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -167,12 +143,25 @@ private fun ContinueReadingCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    modifier = Modifier.weight(1f),
+                )
+                if (item.newChapterCount > 0) {
+                    Text(
+                        text = "+${item.newChapterCount}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             Text(
                 text = "Chapter ${item.chapterDisplayNumber}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -182,37 +171,48 @@ private fun ContinueReadingCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            TextButton(onClick = onRemove) {
+                Text("Remove from Continue Reading")
+            }
         }
     }
 }
 
 @Composable
-private fun CatalogSection(
-    result: Result<CatalogPage>,
-    emptyMessage: String,
-) {
-    result.fold(
-        onSuccess = { page ->
-            if (page.items.isEmpty()) {
-                SectionMessage(emptyMessage)
-            } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(
-                        items = page.items,
-                        key = { "${it.provider}:${it.providerId}" },
-                    ) { item ->
-                        CatalogHomeCard(item)
+private fun CollectionRow(row: HomeRow) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = row.title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+
+        when (val content = row.content) {
+            is HomeRowContent.Content -> {
+                if (content.items.isEmpty()) {
+                    SectionMessage("No matching titles")
+                } else {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(
+                            items = content.items,
+                            key = { "${it.provider}:${it.providerId}" },
+                        ) { item ->
+                            CatalogHomeCard(item)
+                        }
                     }
                 }
             }
-        },
-        onFailure = { error ->
-            SectionMessage(error.message ?: "This section is temporarily unavailable")
-        },
-    )
+            is HomeRowContent.Unavailable -> {
+                SectionMessage(content.reason)
+            }
+        }
+    }
 }
 
 @Composable
