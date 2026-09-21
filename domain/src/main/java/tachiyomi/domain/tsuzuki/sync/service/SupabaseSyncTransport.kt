@@ -24,6 +24,10 @@ interface SupabaseSyncTransport {
         batch: SupabaseMutationBatch,
     ): SyncTransportResult<SupabasePushResult>
 
+    suspend fun ackConflict(
+        conflictId: Long,
+    ): SyncTransportResult<Boolean>
+
     companion object {
         const val DEFAULT_DELTA_LIMIT = 500
     }
