@@ -338,6 +338,10 @@ class SupabaseSyncOrchestratorTest {
             error("not used")
 
         override suspend fun refreshSession() = error("not used")
+
+        override suspend fun getAccessToken() = Result.success(
+            if (state.value is AccountState.Authenticated) "access-token" else null,
+        )
     }
 
     private class FakeOutbox : SyncOutboxRepository {
@@ -430,7 +434,6 @@ class SupabaseSyncOrchestratorTest {
         ) {
             values[documentKind] = conflicts.mapIndexed { index, conflict ->
                 StoredSyncConflict(
-                    id = (index + 1).toLong(),
                     conflict = conflict,
                     createdAtEpochMillis = createdAtEpochMillis,
                 )
