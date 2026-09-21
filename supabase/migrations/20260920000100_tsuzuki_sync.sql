@@ -493,6 +493,15 @@ begin
                 continue;
             end if;
 
+            -- A resurrection starts from the tombstone, not from fields that
+            -- existed before the accepted delete event.
+            if v_record_deleted and v_delete_event_id <= v_base_cursor then
+                delete from tsuzuki_private.tsuzuki_sync_fields as stale
+                where stale.user_id = v_user_id
+                  and stale.domain = v_domain
+                  and stale.record_id = v_record_id;
+            end if;
+
             v_field_value := null;
             v_field_removed := false;
             v_field_event_id := 0;
