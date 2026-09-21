@@ -162,7 +162,6 @@ class GetConfiguredHomeSectionsTest {
                 lists[list.folderId].orEmpty().filterNot { it.id == list.id } + list
         }
     }
-
 }
 
 private fun list(
