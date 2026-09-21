@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
-import java.io.IOException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -28,6 +27,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncMutation
 import tachiyomi.domain.tsuzuki.sync.model.SyncTransportResult
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentityClaimTransport
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncTransport
+import java.io.IOException
 
 class SupabaseSyncHttpTransport(
     private val client: OkHttpClient,
