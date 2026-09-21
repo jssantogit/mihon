@@ -8,7 +8,6 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
-import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncRuntime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,6 +23,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
+import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncStateStore
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
 import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
@@ -59,7 +59,7 @@ enum class TsuzukiSyncScreenError {
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
 class TsuzukiSyncScreenModel(
     private val accountRepository: AccountRepository,
-    private val runtime: SupabaseSyncRuntime,
+    private val runtime: CloudSyncRuntime,
     private val stateStore: SupabaseSyncStateStore,
     private val conflictRepository: SyncConflictRepository,
 ) : ViewModel() {
