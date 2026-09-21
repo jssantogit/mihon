@@ -7,12 +7,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
-import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
-import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
-import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncRecordEnvelope
@@ -22,7 +19,6 @@ import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 
 class CanonicalLibrarySyncAdapter(
     private val libraryRepository: CanonicalLibraryRepository,
-    private val titleRepository: CanonicalTitleRepository,
     private val revisionSource: SyncRevisionSource,
     private val clock: SyncClock,
 ) : SyncDocumentAdapter {
@@ -36,20 +32,14 @@ class CanonicalLibrarySyncAdapter(
             .sortedBy { it.entry.canonicalTitleId }
             .associate { item ->
                 val entry = item.entry
-                val title = item.title
                 entry.canonicalTitleId to SyncRecordEnvelope(
                     id = entry.canonicalTitleId,
                     revision = revisionSource.nextRevision(),
-                    updatedAtEpochMillis = maxOf(entry.updatedAt, title.updatedAt),
+                    updatedAtEpochMillis = entry.updatedAt,
                     fields = buildJsonObject {
                         put("status", entry.status.name)
                         put("favorite", entry.favorite)
                         put("addedAt", entry.addedAt)
-                        put("updatedAt", entry.updatedAt)
-                        put("displayTitle", title.displayTitle)
-                        put("identityState", title.identityState.name)
-                        put("titleCreatedAt", title.createdAt)
-                        put("titleUpdatedAt", title.updatedAt)
                     },
                 )
             }
@@ -76,9 +66,7 @@ class CanonicalLibrarySyncAdapter(
                     is ParsedLibraryRecord.Deleted -> {
                         libraryRepository.remove(item.canonicalTitleId)
                     }
-
                     is ParsedLibraryRecord.Active -> {
-                        titleRepository.upsert(item.title)
                         libraryRepository.upsert(item.entry)
                     }
                 }
@@ -91,31 +79,18 @@ class CanonicalLibrarySyncAdapter(
         }
 
         val fields = record.fields
-        val title = CanonicalTitle(
-            id = record.id,
-            displayTitle = fields.requiredString("displayTitle"),
-            identityState = CanonicalIdentityState.valueOf(
-                fields.requiredString("identityState"),
-            ),
-            createdAt = fields.requiredLong("titleCreatedAt"),
-            updatedAt = fields.requiredLong("titleUpdatedAt"),
-        )
         val entry = CanonicalLibraryEntry(
             canonicalTitleId = record.id,
             status = LibraryStatus.valueOf(fields.requiredString("status")),
             favorite = fields.requiredBoolean("favorite"),
             addedAt = fields.requiredLong("addedAt"),
-            updatedAt = fields.requiredLong("updatedAt"),
+            updatedAt = record.updatedAtEpochMillis,
         )
-        return ParsedLibraryRecord.Active(
-            title = title,
-            entry = entry,
-        )
+        return ParsedLibraryRecord.Active(entry)
     }
 
     private sealed interface ParsedLibraryRecord {
         data class Active(
-            val title: CanonicalTitle,
             val entry: CanonicalLibraryEntry,
         ) : ParsedLibraryRecord
 
@@ -125,7 +100,7 @@ class CanonicalLibrarySyncAdapter(
     }
 
     private companion object {
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
     }
 }
 
