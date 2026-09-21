@@ -87,7 +87,13 @@ class ObserveHomeContinueReading(
                 chapterDisplayNumber = chapter.displayNumber,
                 lastPageRead = progress.lastPageRead,
                 updatedAt = progress.updatedAt,
-                newChapterCount = updateStates.count { it.acknowledgedAt == null },
+                newChapterCount = updateStates.count { state ->
+                    state.acknowledgedAt == null &&
+                        progressItems.none { progress ->
+                            progress.canonicalChapterId == state.canonicalChapterId &&
+                                progress.read
+                        }
+                },
             )
         }
     }
