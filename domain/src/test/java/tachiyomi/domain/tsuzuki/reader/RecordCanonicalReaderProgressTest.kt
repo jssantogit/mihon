@@ -5,14 +5,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState
-import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.RecordCanonicalReaderProgress
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderCompatibilityGateway
+import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState
+import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateStateRepository
 
 class RecordCanonicalReaderProgressTest {
 
