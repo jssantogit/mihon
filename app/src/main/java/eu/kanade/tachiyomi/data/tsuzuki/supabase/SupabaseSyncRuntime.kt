@@ -10,21 +10,29 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import tachiyomi.data.tsuzuki.sync.CollectionsSyncAdapter
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSyncIntentRepository
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.chapter.repository.ChapterOverrideRepository
 import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
+import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
+import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.sync.adapter.AddonStateSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalLibrarySyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalReadingProgressSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalTitlesSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.ChapterOverridesSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.ChapterUpdateStateSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.ContentPreferencesSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.ContinueReadingStateSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.IntegrationSettingsSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionChoice
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionResult
@@ -74,6 +82,11 @@ class SupabaseSyncRuntime(
     collectionStore: CollectionStore,
     chapterOverrideRepository: ChapterOverrideRepository,
     readerPreferenceRepository: CanonicalReaderPreferenceRepository,
+    integrationSettingsRepository: IntegrationSettingsRepository,
+    contentPreferenceRepository: ContentPreferenceRepository,
+    canonicalReaderPreferences: CanonicalReaderPreferences,
+    addonRepository: AddonRepository,
+    addonSyncIntentRepository: AddonSyncIntentRepository,
 ) : CloudSyncRuntime {
 
     private val clock: SyncClock = AndroidSupabaseSyncClock
@@ -129,6 +142,24 @@ class SupabaseSyncRuntime(
         ChapterOverridesSyncAdapter(
             overrideRepository = chapterOverrideRepository,
             readerPreferenceRepository = readerPreferenceRepository,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        IntegrationSettingsSyncAdapter(
+            repository = integrationSettingsRepository,
+            json = json,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        ContentPreferencesSyncAdapter(
+            repository = contentPreferenceRepository,
+            readerPreferences = canonicalReaderPreferences,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        AddonStateSyncAdapter(
+            addonRepository = addonRepository,
+            intentRepository = addonSyncIntentRepository,
             revisionSource = revisionSource,
             clock = clock,
         ),
