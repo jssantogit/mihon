@@ -343,6 +343,16 @@ class SupabaseSyncHttpTransport(
 }
 
 @Serializable
+private data class MutationConflictResponse(
+    val conflictId: Long,
+    val recordId: String,
+    val fieldPath: String?,
+    val kind: tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind,
+    val localValue: kotlinx.serialization.json.JsonElement?,
+    val remoteValue: kotlinx.serialization.json.JsonElement?,
+)
+
+@Serializable
 private data class SnapshotResponse(
     val cursor: Long,
     val records: List<SnapshotRecordResponse>,
