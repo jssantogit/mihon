@@ -174,6 +174,53 @@ class SupabaseSyncOrchestrator(
             }
             pull as RemotePull.Success
 
+            val existingStoredConflicts = conflictRepository
+                .getForDocument(documentKind)
+                .map { it.conflict }
+            if (existingStoredConflicts.isNotEmpty()) {
+                val blockedMerge = merge(
+                    base = acceptedBase,
+                    local = materializeLocalTombstones(
+                        base = acceptedBase,
+                        local = localBeforePull,
+                        now = now,
+                    ),
+                    remote = pull.document,
+                    now = now,
+                )
+                if (blockedMerge is LocalMerge.Failure) {
+                    return fail(
+                        documentKind = documentKind,
+                        pending = pendingAtStart,
+                        outbox = outbox,
+                        now = now,
+                        failure = blockedMerge.failure,
+                    )
+                }
+                blockedMerge as LocalMerge.Success
+
+                if (blockedMerge.requiresLocalApply) {
+                    adapter.applyDocument(blockedMerge.document)
+                }
+
+                val retainedConflicts = deduplicateConflicts(
+                    existingStoredConflicts + blockedMerge.conflicts,
+                )
+                persistAcceptedRemote(
+                    documentKind = documentKind,
+                    remote = pull.document,
+                    cursor = pull.cursor,
+                    lastSuccessfulSyncAt = cursorState?.lastSuccessfulSyncAtEpochMillis,
+                    stored = stored,
+                )
+                recordConflicts(documentKind, retainedConflicts, now)
+                ensureDirty(documentKind, outbox, now)
+                return SyncDocumentResult.Conflict(
+                    documentKind = documentKind,
+                    conflictCount = retainedConflicts.size,
+                )
+            }
+
             val serverConflicts = mutableListOf<SyncConflict>()
             var remoteWritten = false
 
