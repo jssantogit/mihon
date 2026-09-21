@@ -4,7 +4,6 @@ import java.io.IOException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -22,7 +21,6 @@ import tachiyomi.domain.tsuzuki.sync.model.SupabaseRemoteConflict
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncEvent
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncSnapshot
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncSnapshotRecord
-import tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncFailure
 import tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason
