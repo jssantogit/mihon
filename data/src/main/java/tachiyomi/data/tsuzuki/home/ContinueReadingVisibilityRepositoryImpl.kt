@@ -35,7 +35,12 @@ class ContinueReadingVisibilityRepositoryImpl(
         return database.tsuzuki_continue_reading_stateQueries
             .getAllTsuzukiContinueReadingState()
             .awaitAsList()
-            .map(::mapVisibility)
+            .map { row ->
+                ContinueReadingVisibility(
+                    canonicalTitleId = row.canonical_title_id,
+                    hiddenAt = row.hidden_at,
+                )
+            }
     }
 
     override fun observeAll(): Flow<List<ContinueReadingVisibility>> {
@@ -44,7 +49,12 @@ class ContinueReadingVisibilityRepositoryImpl(
             .subscribeToList()
             .let { flow ->
                 kotlinx.coroutines.flow.map(flow) { rows ->
-                    rows.map(::mapVisibility)
+                    rows.map { row ->
+                        ContinueReadingVisibility(
+                            canonicalTitleId = row.canonical_title_id,
+                            hiddenAt = row.hidden_at,
+                        )
+                    }
                 }
             }
     }
@@ -66,12 +76,4 @@ class ContinueReadingVisibilityRepositoryImpl(
             .deleteTsuzukiContinueReadingState(canonicalTitleId)
     }
 
-    private fun mapVisibility(
-        row: tachiyomi.data.Tsuzuki_continue_reading_state,
-    ): ContinueReadingVisibility {
-        return ContinueReadingVisibility(
-            canonicalTitleId = row.canonical_title_id,
-            hiddenAt = row.hidden_at,
-        )
-    }
 }
