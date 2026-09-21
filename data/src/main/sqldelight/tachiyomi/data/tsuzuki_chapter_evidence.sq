@@ -98,3 +98,19 @@ ON CONFLICT(id) DO UPDATE SET
 deleteTsuzukiChapterEvidenceById:
 DELETE FROM tsuzuki_chapter_evidence
 WHERE id = :id;
+
+
+getPortableTsuzukiChapterEvidenceKey:
+SELECT producer_kind, producer_id, external_chapter_key
+FROM tsuzuki_chapter_evidence
+WHERE mapped_canonical_chapter_id = :canonicalChapterId
+AND external_chapter_key IS NOT NULL
+ORDER BY
+    CASE authority_class
+        WHEN 'EDITORIAL' THEN 0
+        WHEN 'ADDON_PROVISIONAL' THEN 1
+        ELSE 2
+    END ASC,
+    observed_at ASC,
+    id ASC
+LIMIT 1;
