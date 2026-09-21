@@ -118,7 +118,7 @@ On 401 from later Supabase requests, refresh once using the stored refresh token
 
 Logout clears local session but does not delete local Tsuzuki user data.
 
-- [ ] **Step 7: Run tests and commit**
+- [ ] **Step 8: Run tests and commit**
 
 ~~~bash
 ./gradlew :app:testDebugUnitTest --tests '*SupabaseAccountRepositoryTest' \
@@ -201,6 +201,15 @@ create table public.tsuzuki_sync_mutations (
   primary key (user_id, mutation_id)
 );
 
+create table public.tsuzuki_canonical_identity_claims (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  external_id text not null,
+  canonical_title_id text not null,
+  claimed_at timestamptz not null default now(),
+  primary key (user_id, provider, external_id)
+);
+
 create table public.tsuzuki_sync_conflicts (
   conflict_id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -229,11 +238,32 @@ using (user_id = auth.uid())
 with check (user_id = auth.uid());
 ~~~
 
-Repeat for records/events/mutations/conflicts.
+Repeat for records/events/mutations/conflicts/identity claims.
 
 RPCs use `security invoker` where practical. Any `security definer` helper must explicitly compare its user scope to `auth.uid()` and use a locked `search_path`.
 
-- [ ] **Step 3: Implement `sync_apply_mutation_batch` transaction semantics**
+- [ ] **Step 3: Implement canonical external-identity claim RPC**
+
+Create:
+
+~~~sql
+sync_claim_external_identity(
+  p_provider text,
+  p_external_id text,
+  p_proposed_canonical_title_id text
+) returns text
+~~~
+
+Inside one transaction:
+1. scope all work to `auth.uid()`;
+2. attempt to insert `(user_id, provider, external_id, proposed_canonical_title_id)`;
+3. on uniqueness conflict, return the already-claimed `canonical_title_id`;
+4. never compare display title and never let request order alter an existing claim;
+5. same verified `provider + external_id` therefore converges to one cloud canonical ID.
+
+Cross-provider equivalence is not inferred here. A second provider is attached to the same canonical ID only after Dev A’s verified identity logic has already established the equivalence.
+
+- [ ] **Step 4: Implement `sync_apply_mutation_batch` transaction semantics**
 
 Input JSON contains:
 
@@ -261,7 +291,7 @@ Rules:
 9. delete concurrent with later field edit emits DELETE_EDIT;
 10. return highest emitted/known event cursor.
 
-- [ ] **Step 4: Implement delta/snapshot RPCs**
+- [ ] **Step 5: Implement delta/snapshot RPCs**
 
 `sync_pull_delta(p_domain, p_since_event_id, p_limit)` returns only caller-owned events ordered ascending.
 
@@ -269,7 +299,7 @@ Rules:
 
 `sync_snapshot_domain(p_domain)` returns materialized records plus a snapshot cursor captured consistently enough that subsequent delta pull from that cursor cannot miss committed events.
 
-- [ ] **Step 5: Write RLS and concurrency tests**
+- [ ] **Step 6: Write RLS and concurrency tests**
 
 `supabase/tests/tsuzuki_sync_rls.sql` proves user A cannot select/update user B state.
 
@@ -278,9 +308,11 @@ Rules:
 - same mutation ID/different request = error;
 - independent fields merge;
 - same-field concurrent different value produces conflict;
-- concurrent delete/edit produces conflict.
+- concurrent delete/edit produces conflict;
+- two proposed canonical IDs for the same verified external identity receive the same claimed canonical ID;
+- identity claims for equal display titles but different external identities remain separate.
 
-- [ ] **Step 6: Add backend CI**
+- [ ] **Step 7: Add backend CI**
 
 Extend CI v2 with a database-backend job triggered when `supabase/**` changes. Use the Supabase CLI to start the local stack and execute:
 
@@ -291,7 +323,7 @@ supabase test db
 
 The job must run without production credentials.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ~~~bash
 git add supabase .github/workflows/ci-v2.yml
@@ -308,6 +340,7 @@ Push and require both normal CI v2 and Supabase database tests green.
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/model/SupabaseMutationBatch.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/SupabaseSyncTransport.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/SupabaseSyncOrchestrator.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/CanonicalIdentityClaimTransport.kt`
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/sync/SupabaseSyncStateRepository.kt`
 - Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseSyncHttpTransport.kt`
 - Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SyncClientIdentityStore.kt`
@@ -315,8 +348,8 @@ Push and require both normal CI v2 and Supabase database tests green.
 - Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseSyncHttpTransportTest.kt`
 
 **Interfaces:**
-- Consumes: existing `SyncMutation`, `SyncDocumentDiffer`, `SyncDocumentAdapter`, `SyncOutboxRepository`; Wave 0 Supabase cursor/pending-mutation tables; AccountRepository.
-- Produces: pull-first local-first sync without Drive files.
+- Consumes: existing `SyncMutation`, `SyncDocumentDiffer`, `SyncDocumentAdapter`, `SyncOutboxRepository`; Wave 0 Supabase cursor/pending-mutation tables; AccountRepository; Dev A `MergeCanonicalTitles`.
+- Produces: pull-first local-first sync without Drive files plus cloud reconciliation of verified external identity claims.
 
 - [ ] **Step 1: Write idempotent ambiguous-push test**
 
@@ -363,7 +396,17 @@ Use current authenticated Supabase access token from AccountRepository.
 
 Do not send any request when logged out. Logged-out sync reports `AuthorizationRequired` while leaving outbox/pending state intact.
 
-- [ ] **Step 5: Implement orchestrator**
+- [ ] **Step 5: Reconcile canonical identity claims before generic document sync**
+
+Before pushing canonical Library/title state for an authenticated account:
+1. enumerate locally verified external identities;
+2. call `sync_claim_external_identity` with the local CanonicalTitle ID;
+3. if the returned ID differs, call Dev A `MergeCanonicalTitles.execute(survivorId = returnedId, duplicateId = localId)`;
+4. export/diff only after the local graph has converged to the claimed ID.
+
+Add a client test where device A proposes `canon-a`, device B proposes `canon-b` for `kitsu:1`, and both local graphs end on the same returned canonical ID without title-string matching.
+
+- [ ] **Step 6: Implement orchestrator**
 
 For each dirty document/domain:
 1. pull current remote delta from accepted cursor;
@@ -378,7 +421,37 @@ For each dirty document/domain:
 
 Drive frontiers/journals are not used.
 
-- [ ] **Step 6: Test logged-out local behavior**
+- [ ] **Step 7: Test logged-out local behavior and unresolved conflict retention**
+
+Add both:
+
+~~~kotlin
+@Test
+fun `logged out sync keeps local mutation pending`() = runTest {
+    seedDirtyLibrary()
+    accountState.value = AccountState.LoggedOut
+
+    orchestrator.sync(SyncDocumentKind.LIBRARY)
+
+    assertTrue(outboxRepository.get(SyncDocumentKind.LIBRARY) != null)
+}
+
+@Test
+fun `field conflict preserves local operational state and dirty intent`() = runTest {
+    seedLocalStatus("READING")
+    transport.pushResult = PushResult.Conflict(fieldPath = "status", remoteValue = "COMPLETED")
+
+    orchestrator.sync(SyncDocumentKind.LIBRARY)
+
+    assertEquals("READING", localLibrary.status())
+    assertNotNull(conflictRepository.get(SyncDocumentKind.LIBRARY))
+    assertNotNull(outboxRepository.get(SyncDocumentKind.LIBRARY))
+}
+~~~
+
+Independent non-conflicting fields from the same remote delta are still applied; only the divergent field remains unresolved.
+
+- [ ] **Step 8: Run tests and commit**
 
 A local Library change must enqueue sync work even while logged out; sync attempt does not erase it.
 
@@ -640,11 +713,14 @@ git commit -m "feat(tsuzuki): add optional account and Home settings"
 **Files:**
 - Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/home/HomeScreen.kt`
 - Modify: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsMainScreen.kt`
+- Modify: `app/src/main/java/eu/kanade/presentation/tsuzuki/library/CanonicalLibraryScreen.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/library/LibraryTab.kt`
 - Modify as needed: `app/src/main/java/eu/kanade/tachiyomi/ui/main/MainActivity.kt`
 - Consume from Dev A: `TsuzukiSearchTab`, `SettingsTsuzukiIntegrationsScreen`, `CanonicalTitleScreen`
 - Consume from Dev B: `SettingsTsuzukiAddonsScreen`, content selector route
 - Create if needed: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/settings/TsuzukiSettingsTab.kt`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/ui/home/TsuzukiNavigationContractTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/ui/library/TsuzukiLibraryContractTest.kt`
 
 **Interfaces:**
 - Produces: final product navigation.
@@ -684,7 +760,15 @@ Target bottom navigation:
 
 Keep legacy routes/classes only if internal compatibility still references them. They must not be primary tabs.
 
-- [ ] **Step 4: Build Settings landing page**
+- [ ] **Step 4: Finalize canonical Library contract**
+
+Add a test that the Library presentation model/card exposes canonical title, status, categories and reading state but does **not** expose `SOURCE_ONLY`, source ID, per-title language, source order, or reading-source configuration actions.
+
+Library item click navigates to Dev A `CanonicalTitleScreen(canonicalTitleId)`.
+
+Keep categories/status filters; remove the old source-configuration entry points from the target Library surface.
+
+- [ ] **Step 5: Build Settings landing page**
 
 Settings entries include:
 - Account → C screen;
@@ -698,7 +782,7 @@ Settings entries include:
 
 Remove Google Account entry.
 
-- [ ] **Step 5: Add post-merge modular-settings sync adapters**
+- [ ] **Step 6: Add post-merge modular-settings sync adapters**
 
 After A/B types exist, add sync adapters for:
 - Integration enabled/config state, excluding Integration credentials/tokens;
@@ -710,10 +794,11 @@ On a new device, a desired APK-backed Add-on that is not installed is displayed 
 
 Do not sync ContentBinding runtime payloads, downloaded payloads, or executable trust decisions.
 
-- [ ] **Step 6: Run app/integration tests**
+- [ ] **Step 7: Run app/integration tests**
 
 ~~~bash
 ./gradlew :app:testDebugUnitTest --tests '*TsuzukiNavigationContractTest' \
+  :app:testDebugUnitTest --tests '*TsuzukiLibraryContractTest' \
   :domain:testDebugUnitTest \
   :data:testDebugUnitTest \
   :app:testDebugUnitTest \
@@ -722,7 +807,7 @@ Do not sync ContentBinding runtime payloads, downloaded payloads, or executable 
   spotlessCheck
 ~~~
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ~~~bash
 git add -A
