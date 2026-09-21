@@ -126,16 +126,17 @@ class ResolveChapterContent(
             contentOptionCache.get(key)?.let { cached ->
                 return@execute Result.success(cached)
             }
-            provider.resolve(canonicalTitleId, canonicalChapterId)
+            val result = provider.resolve(canonicalTitleId, canonicalChapterId)
                 .map { options ->
                     options.filter { option ->
                         option.canonicalChapterId == canonicalChapterId &&
                             option.addonId == provider.addonId
                     }
                 }
-                .onSuccess { options ->
-                    contentOptionCache.put(key, options)
-                }
+            result.getOrNull()?.let { options ->
+                contentOptionCache.put(key, options)
+            }
+            result
         }
     }
 
