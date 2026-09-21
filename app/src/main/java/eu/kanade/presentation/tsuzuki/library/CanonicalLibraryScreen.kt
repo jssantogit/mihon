@@ -1,5 +1,6 @@
 package eu.kanade.presentation.tsuzuki.library
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,16 +39,15 @@ import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCardModel
+import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryReadingState
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Delete
 import mihon.icons.materialsymbols.rounded.MoreVert
-import mihon.icons.materialsymbols.rounded.Settings
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.domain.category.model.Category
-import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
-import tachiyomi.domain.tsuzuki.model.SourceRepresentation
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
@@ -64,12 +64,13 @@ fun CanonicalLibraryScreen(
     onSetCategories: (String, List<Long>) -> Unit = { _, _ -> },
     onEditCategories: () -> Unit = {},
     onCategoryFilterChange: (Long?) -> Unit = {},
-    onRead: (CanonicalLibraryItem) -> Unit = {},
-    onResolveSource: (CanonicalLibraryItem) -> Unit = {},
-    onOpenSourcePreferences: () -> Unit = {},
+    onRead: (CanonicalLibraryCardModel) -> Unit = {},
+    onOpenItem: (CanonicalLibraryCardModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var categoryDialogItem by remember { mutableStateOf<CanonicalLibraryItem?>(null) }
+    var categoryDialogItem by remember {
+        mutableStateOf<CanonicalLibraryCardModel?>(null)
+    }
 
     Scaffold(
         modifier = modifier,
@@ -79,14 +80,6 @@ fun CanonicalLibraryScreen(
                 navigateUp = navigateUp,
                 searchQuery = (state as? CanonicalLibraryScreenState.Success)?.searchQuery,
                 onChangeSearchQuery = onSearchQueryChange,
-                actions = {
-                    TextButton(onClick = onOpenSourcePreferences) {
-                        Icon(
-                            imageVector = MaterialSymbols.Rounded.Settings,
-                            contentDescription = "Reading source preferences",
-                        )
-                    }
-                },
             )
         },
     ) { paddingValues ->
@@ -96,9 +89,7 @@ fun CanonicalLibraryScreen(
                 .padding(paddingValues),
         ) {
             when (state) {
-                is CanonicalLibraryScreenState.Loading -> {
-                    LoadingScreen()
-                }
+                CanonicalLibraryScreenState.Loading -> LoadingScreen()
                 is CanonicalLibraryScreenState.Success -> {
                     Column(modifier = Modifier.fillMaxSize()) {
                         CanonicalLibraryCategoryFilters(
@@ -112,9 +103,7 @@ fun CanonicalLibraryScreen(
                                     .fillMaxWidth()
                                     .weight(1f),
                             ) {
-                                EmptyScreen(
-                                    message = "No canonical titles in library",
-                                )
+                                EmptyScreen(message = "No canonical titles in library")
                             }
                         } else {
                             CanonicalLibraryList(
@@ -123,7 +112,7 @@ fun CanonicalLibraryScreen(
                                 onRemoveItem = onRemoveItem,
                                 onChangeCategories = { categoryDialogItem = it },
                                 onRead = onRead,
-                                onResolveSource = onResolveSource,
+                                onOpenItem = onOpenItem,
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -151,7 +140,7 @@ fun CanonicalLibraryScreen(
             },
             onConfirm = { include, _ ->
                 categoryDialogItem = null
-                onSetCategories(item.title.id, include)
+                onSetCategories(item.canonicalTitleId, include)
             },
         )
     }
@@ -186,12 +175,12 @@ private fun CanonicalLibraryCategoryFilters(
 
 @Composable
 private fun CanonicalLibraryList(
-    items: List<CanonicalLibraryItem>,
+    items: List<CanonicalLibraryCardModel>,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
-    onChangeCategories: (CanonicalLibraryItem) -> Unit,
-    onRead: (CanonicalLibraryItem) -> Unit,
-    onResolveSource: (CanonicalLibraryItem) -> Unit,
+    onChangeCategories: (CanonicalLibraryCardModel) -> Unit,
+    onRead: (CanonicalLibraryCardModel) -> Unit,
+    onOpenItem: (CanonicalLibraryCardModel) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -201,16 +190,17 @@ private fun CanonicalLibraryList(
     ) {
         items(
             items = items,
-            key = { it.title.id },
+            key = CanonicalLibraryCardModel::canonicalTitleId,
         ) { item ->
             CanonicalLibraryItemCard(
                 item = item,
-                sources = item.sources,
-                onUpdateStatus = { status -> onUpdateStatus(item.title.id, status) },
-                onRemove = { onRemoveItem(item.title.id) },
+                onUpdateStatus = { status ->
+                    onUpdateStatus(item.canonicalTitleId, status)
+                },
+                onRemove = { onRemoveItem(item.canonicalTitleId) },
                 onChangeCategories = { onChangeCategories(item) },
                 onRead = { onRead(item) },
-                onResolveSource = { onResolveSource(item) },
+                onOpenItem = { onOpenItem(item) },
             )
         }
     }
@@ -219,19 +209,20 @@ private fun CanonicalLibraryList(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CanonicalLibraryItemCard(
-    item: CanonicalLibraryItem,
-    sources: List<SourceRepresentation>,
+    item: CanonicalLibraryCardModel,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
     onChangeCategories: () -> Unit,
     onRead: () -> Unit,
-    onResolveSource: () -> Unit,
+    onOpenItem: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var statusMenuExpanded by remember { mutableStateOf(false) }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenItem),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
@@ -247,7 +238,7 @@ private fun CanonicalLibraryItemCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = item.title.displayTitle,
+                    text = item.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
@@ -257,10 +248,9 @@ private fun CanonicalLibraryItemCard(
                     IconButton(onClick = { statusMenuExpanded = true }) {
                         Icon(
                             imageVector = MaterialSymbols.Rounded.MoreVert,
-                            contentDescription = "Status Options",
+                            contentDescription = "Status options",
                         )
                     }
-
                     DropdownMenu(
                         expanded = statusMenuExpanded,
                         onDismissRequest = { statusMenuExpanded = false },
@@ -269,8 +259,10 @@ private fun CanonicalLibraryItemCard(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = status.name.lowercase().replaceFirstChar { it.uppercase() },
-                                        fontWeight = if (status == item.entry.status) {
+                                        text = status.name
+                                            .lowercase()
+                                            .replaceFirstChar { it.uppercase() },
+                                        fontWeight = if (status == item.status) {
                                             FontWeight.Bold
                                         } else {
                                             FontWeight.Normal
@@ -305,24 +297,14 @@ private fun CanonicalLibraryItemCard(
                     onClick = { statusMenuExpanded = true },
                     label = {
                         Text(
-                            text = "Status: ${item.entry.status.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                            text = "Status: ${
+                                item.status.name.lowercase()
+                                    .replaceFirstChar { it.uppercase() }
+                            }",
                             style = MaterialTheme.typography.labelSmall,
                         )
                     },
                 )
-
-                SuggestionChip(
-                    onClick = {},
-                    label = {
-                        Text(
-                            text = "Identity: ${item.title.identityState.name.lowercase().replaceFirstChar {
-                                it.uppercase()
-                            }}",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    },
-                )
-
                 SuggestionChip(
                     onClick = onChangeCategories,
                     label = {
@@ -336,28 +318,30 @@ private fun CanonicalLibraryItemCard(
                         )
                     },
                 )
+                SuggestionChip(
+                    onClick = onRead,
+                    label = {
+                        Text(
+                            text = when (item.readingState) {
+                                CanonicalLibraryReadingState.NOT_STARTED -> "Not started"
+                                CanonicalLibraryReadingState.IN_PROGRESS -> "In progress"
+                                CanonicalLibraryReadingState.READ -> "Read"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                )
             }
 
-            val preferredSource = sources.firstOrNull { it.preferredOverride } ?: sources.firstOrNull()
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(
-                    onClick = onRead,
-                    enabled = preferredSource != null,
-                ) {
+                TextButton(onClick = onRead) {
                     Text("Read / Continue")
                 }
-
-                TextButton(onClick = onResolveSource) {
-                    if (preferredSource == null) {
-                        Text("Find reading source")
-                    } else {
-                        Text(
-                            "Reading source: #${preferredSource.sourceId} · ${preferredSource.language}",
-                        )
-                    }
+                TextButton(onClick = onOpenItem) {
+                    Text("Details")
                 }
             }
         }
