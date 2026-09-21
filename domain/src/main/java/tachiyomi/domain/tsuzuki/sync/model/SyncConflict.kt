@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class SyncConflict(
+    val remoteConflictId: Long? = null,
     val documentKind: SyncDocumentKind,
     val recordId: String,
     val propertyPath: List<String>,
@@ -15,6 +16,9 @@ data class SyncConflict(
     val remote: SyncConflictValue,
 ) {
     init {
+        require(remoteConflictId == null || remoteConflictId > 0) {
+            "Remote sync conflict ID must be positive"
+        }
         require(recordId.isNotBlank()) { "Sync conflict record ID must not be blank" }
         require(propertyPath.none(String::isBlank)) {
             "Sync conflict property path segments must not be blank"
