@@ -119,7 +119,9 @@ class MihonChapterInventoryGateway(
                 ?: snapshot.sourceChapterId.takeIf(String::isNotBlank)
                 ?: error("Source chapter snapshot has no operational URL")
 
-            val byStoredId = snapshot.mihonChapterId?.let(chapterRepository::getChapterById)
+            val byStoredId = snapshot.mihonChapterId?.let { chapterId ->
+                chapterRepository.getChapterById(chapterId)
+            }
             val existing = byStoredId
                 ?.takeIf { it.mangaId == mangaId && it.url == sourceUrl }
                 ?: chapterRepository.getChapterByUrlAndMangaId(sourceUrl, mangaId)
