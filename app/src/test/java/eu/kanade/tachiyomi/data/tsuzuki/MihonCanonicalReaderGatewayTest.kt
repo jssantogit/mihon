@@ -7,315 +7,139 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
-import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
-import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
-import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
-import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
-import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
-import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
-import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
-import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
 class MihonCanonicalReaderGatewayTest {
 
     @Test
-    fun `materialize creates one operational chapter and projects canonical progress`() = runTest {
-        val chapters = FakeChapterRepository()
-        val canonical = FakeCanonicalChapterRepository()
-        val mappings = FakeSourceTitleMappingRepository(mapping())
-        val variant = variant()
-        canonical.chapter = canonicalChapter()
-        canonical.variant = variant
+    fun `materialize projects canonical progress onto selected operational chapter`() = runTest {
+        val chapters = FakeChapterRepository().apply {
+            rows[30L] = Chapter.create().copy(
+                id = 30L,
+                mangaId = 20L,
+                url = "/chapter/1",
+                name = "Chapter 1",
+                read = false,
+                lastPageRead = 1L,
+            )
+        }
+        val gateway = MihonCanonicalReaderGateway(chapters)
 
-        val gateway = MihonCanonicalReaderGateway(chapters, canonical, mappings)
         val target = gateway.materialize(
-            variant = variant,
+            canonicalChapterId = "chapter-1",
+            delivery = ContentDelivery.Mihon(
+                sourceId = 7L,
+                mangaId = 20L,
+                chapterId = 30L,
+            ),
             progress = CanonicalChapterProgress(
-                canonicalChapterId = "canonical-chapter-1",
-                read = true,
-                lastPageRead = 7L,
-                lastVariantId = "variant-1",
-                updatedAt = 200L,
-            ),
-        ).getOrThrow()
-
-        target.canonicalChapterId shouldBe "canonical-chapter-1"
-        target.variantId shouldBe "variant-1"
-        target.sourceMappingId shouldBe "mapping-1"
-        target.mihonMangaId shouldBe 55L
-        target.mihonChapterId shouldBe 1L
-        chapters.addCalls shouldBe 1
-
-        chapters.getChapterById(1L)!!.let { chapter ->
-            chapter.mangaId shouldBe 55L
-            chapter.url shouldBe "/chapter/1"
-            chapter.name shouldBe "Chapter 1"
-            chapter.read shouldBe true
-            chapter.lastPageRead shouldBe 7L
-            chapter.scanlator shouldBe "Group"
-            chapter.chapterNumber shouldBe 1.0
-            chapter.sourceOrder shouldBe 4L
-            chapter.memo["nested"] shouldBe JsonPrimitive("raw")
-        }
-
-        canonical.variant!!.mihonMangaId shouldBe 55L
-        canonical.variant!!.mihonChapterId shouldBe 1L
-    }
-
-    @Test
-    fun `materialize reuses operational chapter by source url and refreshes projected progress`() = runTest {
-        val chapters = FakeChapterRepository().apply {
-            rows[9L] = Chapter.create().copy(
-                id = 9L,
-                mangaId = 55L,
-                url = "/chapter/1",
-                name = "Chapter 1",
-                read = false,
-                lastPageRead = 2L,
-            )
-        }
-        val canonical = FakeCanonicalChapterRepository().apply {
-            chapter = canonicalChapter()
-            variant = variant(mihonChapterId = 999L)
-        }
-        val mappings = FakeSourceTitleMappingRepository(mapping())
-        val gateway = MihonCanonicalReaderGateway(chapters, canonical, mappings)
-
-        val target = gateway.materialize(
-            canonical.variant!!,
-            CanonicalChapterProgress(
-                canonicalChapterId = "canonical-chapter-1",
+                canonicalChapterId = "chapter-1",
                 read = true,
                 lastPageRead = 8L,
-                lastVariantId = "variant-1",
-                updatedAt = 300L,
+                lastVariantId = null,
+                updatedAt = 100L,
             ),
         ).getOrThrow()
 
-        target.mihonChapterId shouldBe 9L
-        chapters.addCalls shouldBe 0
-        chapters.rows.getValue(9L).read shouldBe true
-        chapters.rows.getValue(9L).lastPageRead shouldBe 8L
-        canonical.variant!!.mihonChapterId shouldBe 9L
+        target.canonicalChapterId shouldBe "chapter-1"
+        target.mihonMangaId shouldBe 20L
+        target.mihonChapterId shouldBe 30L
+        target.sourceId shouldBe 7L
+        chapters.rows.getValue(30L).read shouldBe true
+        chapters.rows.getValue(30L).lastPageRead shouldBe 8L
     }
 
     @Test
-    fun `materialize never projects another variant page index`() = runTest {
+    fun `materialize fails closed when operational coordinates do not match`() = runTest {
         val chapters = FakeChapterRepository().apply {
-            rows[9L] = Chapter.create().copy(
-                id = 9L,
-                mangaId = 55L,
+            rows[30L] = Chapter.create().copy(
+                id = 30L,
+                mangaId = 99L,
                 url = "/chapter/1",
                 name = "Chapter 1",
-                read = false,
-                lastPageRead = 2L,
             )
         }
-        val canonical = FakeCanonicalChapterRepository().apply {
-            chapter = canonicalChapter()
-            variant = variant(mihonChapterId = 9L)
-        }
-        val gateway = MihonCanonicalReaderGateway(
-            chapters,
-            canonical,
-            FakeSourceTitleMappingRepository(mapping()),
-        )
+        val gateway = MihonCanonicalReaderGateway(chapters)
 
         gateway.materialize(
-            canonical.variant!!,
-            CanonicalChapterProgress(
-                canonicalChapterId = "canonical-chapter-1",
-                read = false,
-                lastPageRead = 8L,
-                lastVariantId = "other-variant",
-                updatedAt = 300L,
+            canonicalChapterId = "chapter-1",
+            delivery = ContentDelivery.Mihon(
+                sourceId = 7L,
+                mangaId = 20L,
+                chapterId = 30L,
             ),
-        ).getOrThrow()
-
-        chapters.rows.getValue(9L).lastPageRead shouldBe 2L
-    }
-
-    @Test
-    fun `materialize fails closed on invalid mapping or missing materialization`() = runTest {
-        val chapters = FakeChapterRepository()
-        val canonical = FakeCanonicalChapterRepository().apply {
-            chapter = canonicalChapter()
-            variant = variant()
-        }
-
-        MihonCanonicalReaderGateway(
-            chapters,
-            canonical,
-            FakeSourceTitleMappingRepository(mapping(sourceId = 999L)),
-        ).materialize(canonical.variant!!, null).isFailure shouldBe true
-        chapters.addCalls shouldBe 0
-
-        MihonCanonicalReaderGateway(
-            chapters,
-            canonical,
-            FakeSourceTitleMappingRepository(mapping(mihonMangaId = null)),
-        ).materialize(canonical.variant!!, null).isFailure shouldBe true
-        chapters.addCalls shouldBe 0
-    }
-
-    @Test
-    fun `materialize accepts unavailable mapping only when its variant is downloaded`() = runTest {
-        val chapters = FakeChapterRepository()
-        val canonical = FakeCanonicalChapterRepository().apply {
-            chapter = canonicalChapter()
-            variant = variant()
-        }
-        val mappings = FakeSourceTitleMappingRepository(
-            mapping(availability = SourceMappingAvailability.UNAVAILABLE),
-        )
-        val downloaded = FakeCanonicalDownloadGateway(
-            downloadedVariantIds = setOf("variant-1"),
-            expectedMihonMangaId = 55L,
-        )
-
-        MihonCanonicalReaderGateway(
-            chapters,
-            canonical,
-            mappings,
-            downloaded,
-        ).materialize(canonical.variant!!, null).isSuccess shouldBe true
-        chapters.addCalls shouldBe 1
-
-        val unavailableChapters = FakeChapterRepository()
-        MihonCanonicalReaderGateway(
-            unavailableChapters,
-            canonical,
-            mappings,
-            FakeCanonicalDownloadGateway(downloadedVariantIds = emptySet()),
-        ).materialize(canonical.variant!!, null).isFailure shouldBe true
-        unavailableChapters.addCalls shouldBe 0
-    }
-
-    @Test
-    fun `materialize rejects progress belonging to another canonical chapter`() = runTest {
-        val chapters = FakeChapterRepository()
-        val canonical = FakeCanonicalChapterRepository().apply {
-            chapter = canonicalChapter()
-            variant = variant()
-        }
-        val gateway = MihonCanonicalReaderGateway(
-            chapters,
-            canonical,
-            FakeSourceTitleMappingRepository(mapping()),
-        )
-
-        gateway.materialize(
-            canonical.variant!!,
-            CanonicalChapterProgress(canonicalChapterId = "other"),
+            progress = null,
         ).isFailure shouldBe true
-        chapters.addCalls shouldBe 0
+
+        gateway.materialize(
+            canonicalChapterId = "chapter-1",
+            delivery = ContentDelivery.Mihon(
+                sourceId = 7L,
+                mangaId = 20L,
+                chapterId = 404L,
+            ),
+            progress = null,
+        ).isFailure shouldBe true
     }
 
     @Test
-    fun `cancellation from operational persistence propagates`() = runTest {
+    fun `materialize rejects progress from another canonical chapter`() = runTest {
         val chapters = FakeChapterRepository().apply {
-            addError = CancellationException("cancelled")
+            rows[30L] = Chapter.create().copy(
+                id = 30L,
+                mangaId = 20L,
+                url = "/chapter/1",
+                name = "Chapter 1",
+            )
         }
-        val canonical = FakeCanonicalChapterRepository().apply {
-            chapter = canonicalChapter()
-            variant = variant()
+        val gateway = MihonCanonicalReaderGateway(chapters)
+
+        gateway.materialize(
+            canonicalChapterId = "chapter-1",
+            delivery = ContentDelivery.Mihon(7L, 20L, 30L),
+            progress = CanonicalChapterProgress(canonicalChapterId = "other"),
+        ).isFailure shouldBe true
+    }
+
+    @Test
+    fun `cancellation from operational projection propagates`() = runTest {
+        val chapters = FakeChapterRepository().apply {
+            rows[30L] = Chapter.create().copy(
+                id = 30L,
+                mangaId = 20L,
+                url = "/chapter/1",
+                name = "Chapter 1",
+            )
+            updateError = CancellationException("cancelled")
         }
-        val gateway = MihonCanonicalReaderGateway(
-            chapters,
-            canonical,
-            FakeSourceTitleMappingRepository(mapping()),
-        )
+        val gateway = MihonCanonicalReaderGateway(chapters)
 
         shouldThrow<CancellationException> {
-            gateway.materialize(canonical.variant!!, null)
-        }
-    }
-
-    private fun canonicalChapter() = CanonicalChapter(
-        id = "canonical-chapter-1",
-        canonicalTitleId = "title-1",
-        displayNumber = "1",
-        type = CanonicalChapterType.REGULAR,
-        baseNumber = 1,
-        confidence = 1.0,
-        createdAt = 100L,
-        updatedAt = 100L,
-    )
-
-    private fun variant(mihonChapterId: Long? = null) = ChapterVariant(
-        id = "variant-1",
-        canonicalChapterId = "canonical-chapter-1",
-        sourceMappingId = "mapping-1",
-        sourceId = 7L,
-        mihonMangaId = null,
-        mihonChapterId = mihonChapterId,
-        sourceChapterId = "/chapter/1",
-        sourceChapterUrl = "/chapter/1",
-        language = "en",
-        scanlationGroup = "Group",
-        version = 2L,
-        releaseDate = 123L,
-        rawName = "Chapter 1",
-        rawNumberHint = 1.0,
-        rawSourceOrder = 4L,
-        rawSourceMetadata = buildJsonObject {
-            put("nested", JsonPrimitive("raw"))
-        },
-        createdAt = 100L,
-        updatedAt = 100L,
-    )
-
-    private fun mapping(
-        sourceId: Long = 7L,
-        mihonMangaId: Long? = 55L,
-        availability: SourceMappingAvailability = SourceMappingAvailability.AVAILABLE,
-    ) = SourceTitleMapping(
-        id = "mapping-1",
-        canonicalTitleId = "title-1",
-        mihonMangaId = mihonMangaId,
-        sourceId = sourceId,
-        sourceUrl = "/title",
-        language = "en",
-        matchConfidence = 1.0,
-        verifiedByUser = true,
-        availability = availability,
-        preferredOverride = true,
-        createdAt = 100L,
-        updatedAt = 100L,
-    )
-
-    private class FakeCanonicalDownloadGateway(
-        private val downloadedVariantIds: Set<String>,
-        private val expectedMihonMangaId: Long? = null,
-    ) : CanonicalDownloadGateway {
-        override suspend fun isDownloaded(variant: ChapterVariant): Boolean {
-            expectedMihonMangaId?.let { variant.mihonMangaId shouldBe it }
-            return variant.id in downloadedVariantIds
+            gateway.materialize(
+                canonicalChapterId = "chapter-1",
+                delivery = ContentDelivery.Mihon(7L, 20L, 30L),
+                progress = CanonicalChapterProgress(
+                    canonicalChapterId = "chapter-1",
+                    read = true,
+                    lastPageRead = 2L,
+                ),
+            )
         }
     }
 
     private class FakeChapterRepository : ChapterRepository {
         val rows = linkedMapOf<Long, Chapter>()
-        var addCalls = 0
-        var addError: Throwable? = null
-        private var nextId = 1L
+        var updateError: Throwable? = null
 
-        override suspend fun addAll(chapters: List<Chapter>): List<Chapter> {
-            addError?.let { throw it }
-            addCalls += 1
-            return chapters.map { chapter ->
-                chapter.copy(id = nextId++).also { rows[it.id] = it }
-            }
-        }
+        override suspend fun addAll(chapters: List<Chapter>): List<Chapter> = chapters
 
         override suspend fun update(chapterUpdate: ChapterUpdate) {
+            updateError?.let { throw it }
             val current = rows[chapterUpdate.id] ?: return
             rows[chapterUpdate.id] = current.copy(
                 read = chapterUpdate.read ?: current.read,
@@ -331,13 +155,16 @@ class MihonCanonicalReaderGatewayTest {
             chapterIds.forEach(rows::remove)
         }
 
-        override suspend fun getChapterByMangaId(mangaId: Long, applyScanlatorFilter: Boolean): List<Chapter> =
-            rows.values.filter { it.mangaId == mangaId }
+        override suspend fun getChapterByMangaId(
+            mangaId: Long,
+            applyScanlatorFilter: Boolean,
+        ): List<Chapter> = rows.values.filter { it.mangaId == mangaId }
 
         override suspend fun getScanlatorsByMangaId(mangaId: Long): List<String> = emptyList()
         override fun getScanlatorsByMangaIdAsFlow(mangaId: Long): Flow<List<String>> = emptyFlow()
         override suspend fun getBookmarkedChaptersByMangaId(mangaId: Long): List<Chapter> = emptyList()
         override suspend fun getChapterById(id: Long): Chapter? = rows[id]
+
         override suspend fun getChapterByMangaIdAsFlow(
             mangaId: Long,
             applyScanlatorFilter: Boolean,
@@ -345,67 +172,5 @@ class MihonCanonicalReaderGatewayTest {
 
         override suspend fun getChapterByUrlAndMangaId(url: String, mangaId: Long): Chapter? =
             rows.values.firstOrNull { it.url == url && it.mangaId == mangaId }
-    }
-
-    private class FakeCanonicalChapterRepository : CanonicalChapterRepository {
-        var chapter: CanonicalChapter? = null
-        var variant: ChapterVariant? = null
-
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
-            listOfNotNull(chapter).filter { it.canonicalTitleId == canonicalTitleId }
-
-        override fun observeByCanonicalTitleId(canonicalTitleId: String): Flow<List<CanonicalChapter>> =
-            MutableStateFlow(emptyList())
-
-        override suspend fun getById(id: String): CanonicalChapter? = chapter?.takeIf { it.id == id }
-
-        override suspend fun getVariantBySourceIdentity(
-            sourceId: Long,
-            sourceChapterId: String,
-        ): ChapterVariant? = variant?.takeIf {
-            it.sourceId == sourceId && it.sourceChapterId == sourceChapterId
-        }
-
-        override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> =
-            listOfNotNull(variant).filter { it.canonicalChapterId == canonicalChapterId }
-
-        override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> =
-            listOfNotNull(variant).filter { it.sourceMappingId == sourceMappingId }
-
-        override suspend fun upsert(chapter: CanonicalChapter) {
-            this.chapter = chapter
-        }
-
-        override suspend fun upsertVariant(variant: ChapterVariant) {
-            this.variant = variant
-        }
-
-        override suspend fun upsertBatch(
-            chapters: List<CanonicalChapter>,
-            variants: List<ChapterVariant>,
-        ) {
-            chapters.lastOrNull()?.let { chapter = it }
-            variants.lastOrNull()?.let { variant = it }
-        }
-    }
-
-    private class FakeSourceTitleMappingRepository(
-        private vararg val mappings: SourceTitleMapping,
-    ) : SourceTitleMappingRepository {
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> =
-            mappings.filter { it.canonicalTitleId == canonicalTitleId }
-
-        override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>> =
-            MutableStateFlow(mappings.filter { it.canonicalTitleId == canonicalTitleId })
-
-        override suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping? =
-            mappings.firstOrNull { it.sourceId == sourceId && it.sourceUrl == sourceUrl }
-
-        override suspend fun upsert(mapping: SourceTitleMapping) = Unit
-        override suspend fun setPreferredForTitle(
-            canonicalTitleId: String,
-            mappingId: String?,
-            updatedAt: Long,
-        ) = Unit
     }
 }

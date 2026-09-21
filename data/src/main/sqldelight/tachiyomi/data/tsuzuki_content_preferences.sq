@@ -16,6 +16,12 @@ SELECT *
 FROM tsuzuki_content_preferences
 ORDER BY canonical_title_id ASC;
 
+observeTsuzukiContentPreference:
+SELECT *
+FROM tsuzuki_content_preferences
+WHERE canonical_title_id = :canonicalTitleId
+LIMIT 1;
+
 upsertTsuzukiContentPreference:
 INSERT INTO tsuzuki_content_preferences(
     canonical_title_id,

@@ -2,62 +2,77 @@ package tachiyomi.domain.tsuzuki.reader.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
-import tachiyomi.domain.tsuzuki.chapter.interactor.SelectChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
+import tachiyomi.domain.tsuzuki.content.model.ContentResolution
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
-import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
-import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderGateway
+import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
 
 @Inject
 class PrepareCanonicalChapterForReader(
-    private val selectChapterVariant: SelectChapterVariant,
+    private val resolveChapterContent: ResolveChapterContent,
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val canonicalReadingRepository: CanonicalReadingRepository,
-    private val canonicalReaderPreferenceRepository: CanonicalReaderPreferenceRepository,
-    private val canonicalReaderGateway: CanonicalReaderGateway,
+    private val canonicalDownloadRepository: CanonicalDownloadRepository,
+    private val chapterContentPreparer: ChapterContentPreparer,
 ) {
 
     suspend fun execute(
         canonicalChapterId: String,
-        preferredLanguage: String? = null,
-        allowFallbackOnce: Boolean = false,
+        selectedOption: ContentOption? = null,
     ): CanonicalReaderPreparation {
         return try {
             val chapter = canonicalChapterRepository.getById(canonicalChapterId)
                 ?: return CanonicalReaderPreparation.Unavailable(canonicalChapterId)
-            val selection = selectChapterVariant.execute(
-                canonicalChapterId = canonicalChapterId,
-                preferredLanguage = preferredLanguage,
-            )
-            val variant = selection.selected
-                ?: return CanonicalReaderPreparation.Unavailable(canonicalChapterId)
 
-            val automaticFallback = canonicalReaderPreferenceRepository
-                .get(chapter.canonicalTitleId)
-                ?.automaticFallback == true
-            if (selection.requiresFallback && !allowFallbackOnce && !automaticFallback) {
-                return CanonicalReaderPreparation.FallbackRequired(
+            if (selectedOption == null) {
+                canonicalDownloadRepository.get(canonicalChapterId)?.let { artifact ->
+                    return CanonicalReaderPreparation.Ready(
+                        canonicalChapterId = canonicalChapterId,
+                        target = tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent.CanonicalDownload(
+                            uri = artifact.localUri,
+                            format = artifact.format,
+                        ),
+                        usedFallback = false,
+                    )
+                }
+            }
+
+            val resolution = if (selectedOption != null) {
+                require(selectedOption.canonicalChapterId == canonicalChapterId) {
+                    "Selected content option does not belong to canonical chapter"
+                }
+                ContentResolution.Direct(
+                    option = selectedOption,
+                    usedFallback = false,
+                )
+            } else {
+                resolveChapterContent.execute(
                     canonicalTitleId = chapter.canonicalTitleId,
                     canonicalChapterId = canonicalChapterId,
-                    preferredSourceMappingId = selection.preferredSourceMappingId,
-                    fallbackVariant = variant,
                 )
             }
 
-            val progress = canonicalReadingRepository.getProgress(canonicalChapterId)
-            canonicalReaderGateway.materialize(variant, progress).fold(
-                onSuccess = { target ->
-                    CanonicalReaderPreparation.Ready(
-                        target = target,
-                        usedFallback = selection.requiresFallback,
-                    )
-                },
-                onFailure = { error ->
-                    if (error is CancellationException) throw error
-                    CanonicalReaderPreparation.Failed(canonicalChapterId, error)
-                },
-            )
+            when (resolution) {
+                is ContentResolution.Direct -> prepare(
+                    canonicalChapterId = canonicalChapterId,
+                    option = resolution.option,
+                    usedFallback = resolution.usedFallback,
+                )
+
+                is ContentResolution.NeedsSelection -> CanonicalReaderPreparation.SelectionRequired(
+                    canonicalTitleId = chapter.canonicalTitleId,
+                    canonicalChapterId = canonicalChapterId,
+                    options = resolution.options,
+                    preferredAddonId = resolution.preferredAddonId,
+                    preferredUnavailable = resolution.preferredUnavailable,
+                )
+
+                ContentResolution.Unavailable -> CanonicalReaderPreparation.Unavailable(canonicalChapterId)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -65,8 +80,28 @@ class PrepareCanonicalChapterForReader(
         }
     }
 
+    private suspend fun prepare(
+        canonicalChapterId: String,
+        option: ContentOption,
+        usedFallback: Boolean,
+    ): CanonicalReaderPreparation {
+        val progress = canonicalReadingRepository.getProgress(canonicalChapterId)
+        return chapterContentPreparer.prepare(option, progress).fold(
+            onSuccess = { target ->
+                CanonicalReaderPreparation.Ready(
+                    canonicalChapterId = canonicalChapterId,
+                    target = target,
+                    usedFallback = usedFallback,
+                )
+            },
+            onFailure = { error ->
+                if (error is CancellationException) throw error
+                CanonicalReaderPreparation.Failed(canonicalChapterId, error)
+            },
+        )
+    }
+
     suspend operator fun invoke(
         canonicalChapterId: String,
-        preferredLanguage: String? = null,
-    ): CanonicalReaderPreparation = execute(canonicalChapterId, preferredLanguage)
+    ): CanonicalReaderPreparation = execute(canonicalChapterId)
 }

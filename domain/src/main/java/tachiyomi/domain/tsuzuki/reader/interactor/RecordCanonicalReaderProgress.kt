@@ -5,11 +5,13 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderCompatibilityGateway
+import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateStateRepository
 import kotlin.time.Clock
 
 class RecordCanonicalReaderProgress internal constructor(
     private val repository: CanonicalReadingRepository,
     private val compatibilityGateway: CanonicalReaderCompatibilityGateway,
+    private val chapterUpdateStateRepository: ChapterUpdateStateRepository,
     private val clock: () -> Long,
 ) {
 
@@ -19,6 +21,18 @@ class RecordCanonicalReaderProgress internal constructor(
     ) : this(
         repository = repository,
         compatibilityGateway = NoopCompatibilityGateway,
+        chapterUpdateStateRepository = NoopChapterUpdateStateRepository,
+        clock = clock,
+    )
+
+    internal constructor(
+        repository: CanonicalReadingRepository,
+        compatibilityGateway: CanonicalReaderCompatibilityGateway,
+        clock: () -> Long,
+    ) : this(
+        repository = repository,
+        compatibilityGateway = compatibilityGateway,
+        chapterUpdateStateRepository = NoopChapterUpdateStateRepository,
         clock = clock,
     )
 
@@ -26,11 +40,28 @@ class RecordCanonicalReaderProgress internal constructor(
     constructor(
         repository: CanonicalReadingRepository,
         compatibilityGateway: CanonicalReaderCompatibilityGateway,
+        chapterUpdateStateRepository: ChapterUpdateStateRepository,
     ) : this(
         repository = repository,
         compatibilityGateway = compatibilityGateway,
+        chapterUpdateStateRepository = chapterUpdateStateRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
     )
+
+    suspend fun recordPage(
+        canonicalChapterId: String,
+        pageIndex: Int,
+        completed: Boolean,
+        mihonChapterId: Long? = null,
+    ) {
+        recordPageInternal(
+            canonicalChapterId = canonicalChapterId,
+            legacyVariantId = null,
+            pageIndex = pageIndex,
+            completed = completed,
+            mihonChapterId = mihonChapterId,
+        )
+    }
 
     suspend fun recordPage(
         canonicalChapterId: String,
@@ -39,16 +70,40 @@ class RecordCanonicalReaderProgress internal constructor(
         completed: Boolean,
         mihonChapterId: Long? = null,
     ) {
+        recordPageInternal(
+            canonicalChapterId = canonicalChapterId,
+            legacyVariantId = variantId,
+            pageIndex = pageIndex,
+            completed = completed,
+            mihonChapterId = mihonChapterId,
+        )
+    }
+
+    private suspend fun recordPageInternal(
+        canonicalChapterId: String,
+        legacyVariantId: String?,
+        pageIndex: Int,
+        completed: Boolean,
+        mihonChapterId: Long?,
+    ) {
         require(pageIndex >= 0) { "pageIndex must not be negative" }
         val existing = repository.getProgress(canonicalChapterId)
+        val updatedAt = clock()
         val progress = CanonicalChapterProgress(
             canonicalChapterId = canonicalChapterId,
             read = existing?.read == true || completed,
             lastPageRead = pageIndex.toLong(),
-            lastVariantId = variantId,
-            updatedAt = clock(),
+            lastVariantId = legacyVariantId,
+            updatedAt = updatedAt,
         )
         repository.upsertProgress(progress)
+
+        if (completed && existing?.read != true) {
+            chapterUpdateStateRepository.acknowledge(
+                canonicalChapterId = canonicalChapterId,
+                acknowledgedAt = updatedAt,
+            )
+        }
 
         if (mihonChapterId != null) {
             compatibilityGateway.projectProgress(
@@ -96,6 +151,13 @@ class RecordCanonicalReaderProgress internal constructor(
             mihonChapterId: Long,
             readAt: Long,
             sessionReadDuration: Long,
+        ) = Unit
+    }
+
+    private object NoopChapterUpdateStateRepository : ChapterUpdateStateRepository {
+        override suspend fun acknowledge(
+            canonicalChapterId: String,
+            acknowledgedAt: Long,
         ) = Unit
     }
 }

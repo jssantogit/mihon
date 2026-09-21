@@ -5,6 +5,8 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.CatalogueSource
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
@@ -97,12 +99,20 @@ class MihonReadingSourceGateway(
                 favorite = false,
             )
             val localManga = networkToLocalManga(manga)
+            val payload = MihonContentBindingPayload(
+                sourceId = candidate.sourceId,
+                mihonMangaId = localManga.id,
+                sourceUrl = candidate.sourceUrl,
+                language = candidate.language,
+            )
             Result.success(
                 MaterializedReadingSource(
                     mihonMangaId = localManga.id,
                     sourceId = candidate.sourceId,
                     sourceUrl = candidate.sourceUrl,
                     language = candidate.language,
+                    providerTitleKey = candidate.sourceId.toString() + ":" + candidate.sourceUrl,
+                    runtimePayload = MihonContentBindingPayloadCodec.encode(payload),
                 ),
             )
         } catch (e: CancellationException) {

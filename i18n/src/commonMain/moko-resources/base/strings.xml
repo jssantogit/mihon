@@ -879,6 +879,29 @@
     <string name="tsuzuki_reader_fallback_message">The preferred source does not have this chapter. Another source can be used for this chapter without changing the title's preferred source.</string>
     <string name="tsuzuki_reader_fallback_read_once">Read once</string>
     <string name="tsuzuki_reader_fallback_always">Always use fallback</string>
+    <string name="tsuzuki_content_selector_title">Choose reading source</string>
+    <string name="tsuzuki_content_no_options">No reading options found</string>
+    <string name="tsuzuki_content_selector_error">Unable to load reading options</string>
+    <string name="tsuzuki_content_preferred_badge">Preferred</string>
+    <string name="tsuzuki_content_change_source">Change source</string>
+    <string name="tsuzuki_content_open_addons">Add-ons settings</string>
+    <string name="tsuzuki_content_set_preferred_title">Set preferred Add-on?</string>
+    <string name="tsuzuki_content_set_preferred_message">Use this Add-on as the preferred reading source for this title?</string>
+    <string name="tsuzuki_content_settings_title">Tsuzuki content</string>
+    <string name="tsuzuki_content_preferred_languages">Preferred languages</string>
+    <string name="tsuzuki_content_languages_ranking_only">Order affects ranking only; alternative languages remain available.</string>
+    <string name="tsuzuki_content_languages_hint">Comma-separated language codes</string>
+    <string name="tsuzuki_content_automatic_fallback">Automatic fallback</string>
+    <string name="tsuzuki_content_automatic_fallback_summary">Automatically use another Add-on when the preferred one cannot provide a chapter.</string>
+    <string name="tsuzuki_addons_title">Add-ons</string>
+    <string name="tsuzuki_addons_repositories">Repositories</string>
+    <string name="tsuzuki_addons_installed">Installed Add-ons</string>
+    <string name="tsuzuki_addons_none_installed">No Add-ons installed</string>
+    <string name="tsuzuki_addon_update_available">Update available</string>
+    <string name="tsuzuki_addon_enabled">Enabled</string>
+    <string name="tsuzuki_addon_disabled">Disabled</string>
+    <string name="tsuzuki_addon_uninstall_title">Uninstall Add-on?</string>
+    <string name="tsuzuki_addon_uninstall_message">Uninstall %1$s? Canonical titles, chapters, reading progress, history, and completed canonical downloads are kept.</string>
 
     <!-- Updates -->
     <string name="updating_library">Updating library</string>

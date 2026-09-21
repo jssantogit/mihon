@@ -1,31 +1,25 @@
 package tachiyomi.domain.tsuzuki.reader.interactor
 
 import dev.zacsweers.metro.Inject
-import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreference
-import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
-import kotlin.time.Clock
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
-class SetCanonicalAutomaticFallback internal constructor(
-    private val repository: CanonicalReaderPreferenceRepository,
-    private val clock: () -> Long,
+@Inject
+class SetCanonicalAutomaticFallback(
+    private val preferences: CanonicalReaderPreferences,
 ) {
 
-    @Inject
-    constructor(repository: CanonicalReaderPreferenceRepository) : this(
-        repository = repository,
-        clock = { Clock.System.now().toEpochMilliseconds() },
-    )
+    suspend fun execute(enabled: Boolean) {
+        preferences.automaticFallback.set(enabled)
+    }
 
+    @Deprecated(
+        message = "Automatic fallback is global in runtime-v2",
+        replaceWith = ReplaceWith("execute(enabled)"),
+    )
     suspend fun execute(
-        canonicalTitleId: String,
+        @Suppress("UNUSED_PARAMETER") canonicalTitleId: String,
         enabled: Boolean,
     ) {
-        repository.upsert(
-            CanonicalReaderPreference(
-                canonicalTitleId = canonicalTitleId,
-                automaticFallback = enabled,
-                updatedAt = clock(),
-            ),
-        )
+        execute(enabled)
     }
 }
