@@ -135,6 +135,12 @@ interface RatingsProvider {
     suspend fun ratings(externalId: String): Result<List<ExternalRating>>
 }
 
+interface TrackingProvider {
+    val integrationId: IntegrationId
+    suspend fun isConnected(): Boolean
+    suspend fun update(update: TrackingUpdate): Result<Unit>
+}
+
 interface ContentProvider {
     val addonId: AddonId
     suspend fun resolve(
@@ -158,6 +164,7 @@ interface IntegrationRegistry {
     fun metadataProviders(): List<MetadataProvider>
     fun chapterEvidenceProviders(): List<ChapterEvidenceProvider>
     fun ratingsProviders(): List<RatingsProvider>
+    fun trackingProviders(): List<TrackingProvider>
 }
 
 interface AddonRegistry {
@@ -395,7 +402,9 @@ After the core Nuvio-style flow is green on device, Dev B continues the provider
 - canonical downloaded artifacts;
 - local content;
 - remote manifest protocol;
-- torrent artifact delivery.
+- torrent artifact delivery contract.
+
+The native production torrent engine is deliberately split into a follow-up delivery subproject because choosing/embedding a libtorrent implementation adds native dependency, ABI, licensing, battery/network, and security decisions that are independent from the modular Core. Dev B Task B8 freezes the Core contract first so that follow-up can be implemented without changing canonical identity or Reader APIs.
 
 Dev A and C may simultaneously address polish only in their owned files, but no architecture changes occur without amending the spec.
 
@@ -471,7 +480,7 @@ Do not use successful compilation as a substitute for behavior tests.
 Every cross-dev handoff must contain:
 
 ~~~text
-HANDOFF — DEV <A|B|C>
+HANDOFF — DEV
 BASE_SHA:
 HEAD_SHA:
 TASKS_COMPLETED:
