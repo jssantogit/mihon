@@ -29,6 +29,7 @@ import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.ui.browse.extension.details.ExtensionDetailsScreen
 import kotlinx.coroutines.launch
 import mihon.app.di.appGraph
+import tachiyomi.domain.tsuzuki.addon.model.AddonSyncIntent
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -44,36 +45,53 @@ object SettingsTsuzukiAddonsScreen : SearchableSettings {
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
         val repository = remember { context.appGraph.addonRepository }
+        val intentRepository = remember { context.appGraph.addonSyncIntentRepository }
         val addons by repository.observeInstalled().collectAsState(initial = emptyList())
+        val syncIntent by intentRepository.observe().collectAsState(initial = AddonSyncIntent())
         val scope = rememberCoroutineScope()
 
-        val addonItems = if (addons.isEmpty()) {
+        val installedIds = addons.map { it.id.value }.toSet()
+        val installedItems: List<Preference.PreferenceItem<out Any, out Any>> = addons
+            .sortedBy { it.displayName.lowercase() }
+            .map { addon ->
+                Preference.PreferenceItem.CustomPreference(
+                    title = addon.displayName,
+                ) {
+                    AddonPreferenceRow(
+                        addon = addon,
+                        onEnabledChange = { enabled ->
+                            scope.launch {
+                                intentRepository.recordEnabled(addon.id, enabled)
+                                repository.setEnabled(addon.id, enabled)
+                            }
+                        },
+                        onOpenSettings = {
+                            navigator.push(ExtensionDetailsScreen(addon.id.value))
+                        },
+                        onUninstall = {
+                            scope.launch {
+                                repository.uninstall(addon.id)
+                                intentRepository.removeDesired(addon.id)
+                            }
+                        },
+                    )
+                }
+            }
+        val missingItems: List<Preference.PreferenceItem<out Any, out Any>> =
+            (syncIntent.desiredPackageIds - installedIds)
+                .sorted()
+                .map { packageId ->
+                    Preference.PreferenceItem.TextPreference(
+                        title = packageId,
+                        subtitle = "Needs installation · Install manually from Extension Stores",
+                    )
+                }
+        val addonItems = (installedItems + missingItems).ifEmpty {
             listOf(
                 Preference.PreferenceItem.InfoPreference(
                     title = stringResource(MR.strings.tsuzuki_addons_none_installed),
                 ),
             )
-        } else {
-            addons
-                .sortedBy { it.displayName.lowercase() }
-                .map { addon ->
-                    Preference.PreferenceItem.CustomPreference(
-                        title = addon.displayName,
-                    ) {
-                        AddonPreferenceRow(
-                            addon = addon,
-                            onEnabledChange = { enabled ->
-                                scope.launch { repository.setEnabled(addon.id, enabled) }
-                            },
-                            onOpenSettings = {
-                                navigator.push(ExtensionDetailsScreen(addon.id.value))
-                            },
-                            onUninstall = {
-                                scope.launch { repository.uninstall(addon.id) }
-                            },
-                        )
-                    }
-                }
         }
 
         return listOf(
