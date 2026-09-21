@@ -3,10 +3,11 @@ package eu.kanade.tachiyomi.ui.reader.loader
 import android.content.Context
 import android.net.Uri
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.ui.reader.CanonicalLocalReaderFormat
+import eu.kanade.tachiyomi.ui.reader.CanonicalReaderTargetPlan
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
-import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 
 class LocalChapterLoader internal constructor(
     private val pageLoader: PageLoader,
@@ -35,26 +36,15 @@ class LocalChapterLoader internal constructor(
     companion object {
         fun from(
             context: Context,
-            target: PreparedChapterContent,
+            plan: CanonicalReaderTargetPlan.Local,
         ): LocalChapterLoader {
-            val uri = when (target) {
-                is PreparedChapterContent.LocalArchive -> target.uri
-                is PreparedChapterContent.LocalDirectory -> target.uri
-                is PreparedChapterContent.CanonicalDownload -> target.uri
-                is PreparedChapterContent.MihonOperational ->
-                    error("Mihon operational content is not local content")
-            }
-            val file = UniFile.fromUri(context, Uri.parse(uri))
-                ?: error("Unable to open canonical local content: $uri")
-            val formatHint = (target as? PreparedChapterContent.CanonicalDownload)?.format
+            val file = UniFile.fromUri(context, Uri.parse(plan.uri))
+                ?: error("Unable to open canonical local content: " + plan.uri)
 
-            val pageLoader = when {
-                target is PreparedChapterContent.LocalDirectory -> DirectoryPageLoader(file)
-                formatHint.equals("DIRECTORY", ignoreCase = true) -> DirectoryPageLoader(file)
-                formatHint.equals("EPUB", ignoreCase = true) -> EpubPageLoader(file.epubReader(context))
-                file.name.orEmpty().endsWith(".epub", ignoreCase = true) ->
-                    EpubPageLoader(file.epubReader(context))
-                else -> ArchivePageLoader(file.archiveReader(context))
+            val pageLoader = when (plan.format) {
+                CanonicalLocalReaderFormat.DIRECTORY -> DirectoryPageLoader(file)
+                CanonicalLocalReaderFormat.EPUB -> EpubPageLoader(file.epubReader(context))
+                CanonicalLocalReaderFormat.ARCHIVE -> ArchivePageLoader(file.archiveReader(context))
             }
             return LocalChapterLoader(pageLoader)
         }

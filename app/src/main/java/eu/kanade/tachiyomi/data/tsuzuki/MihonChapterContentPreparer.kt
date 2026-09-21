@@ -8,16 +8,27 @@ import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderGateway
 import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
 
-@Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
-class MihonChapterContentPreparer(
+class MihonChapterContentPreparer internal constructor(
     private val canonicalReaderGateway: CanonicalReaderGateway,
+    private val canonicalDownloadRepository: CanonicalDownloadRepository?,
 ) : ChapterContentPreparer {
+
+    @Inject
+    constructor(
+        canonicalReaderGateway: CanonicalReaderGateway,
+        canonicalDownloadRepository: CanonicalDownloadRepository,
+    ) : this(canonicalReaderGateway, canonicalDownloadRepository)
+
+    internal constructor(
+        canonicalReaderGateway: CanonicalReaderGateway,
+    ) : this(canonicalReaderGateway, null)
 
     override suspend fun prepare(
         option: ContentOption,
@@ -43,13 +54,33 @@ class MihonChapterContentPreparer(
                     }
                 }
 
-                is ContentDelivery.LocalArchive -> Result.success(
-                    PreparedChapterContent.LocalArchive(delivery.uri),
-                )
+                is ContentDelivery.LocalArchive -> {
+                    val artifact = canonicalDownloadRepository
+                        ?.get(option.canonicalChapterId)
+                        ?.takeIf { it.localUri == delivery.uri }
+                    Result.success(
+                        artifact?.let {
+                            PreparedChapterContent.CanonicalDownload(
+                                uri = it.localUri,
+                                format = it.format,
+                            )
+                        } ?: PreparedChapterContent.LocalArchive(delivery.uri),
+                    )
+                }
 
-                is ContentDelivery.LocalDirectory -> Result.success(
-                    PreparedChapterContent.LocalDirectory(delivery.uri),
-                )
+                is ContentDelivery.LocalDirectory -> {
+                    val artifact = canonicalDownloadRepository
+                        ?.get(option.canonicalChapterId)
+                        ?.takeIf { it.localUri == delivery.uri }
+                    Result.success(
+                        artifact?.let {
+                            PreparedChapterContent.CanonicalDownload(
+                                uri = it.localUri,
+                                format = it.format,
+                            )
+                        } ?: PreparedChapterContent.LocalDirectory(delivery.uri),
+                    )
+                }
 
                 is ContentDelivery.Torrent -> Result.failure(
                     UnsupportedOperationException(

@@ -509,24 +509,24 @@ class ReaderViewModel(
         target: PreparedChapterContent,
         resetPage: Boolean,
     ) {
-        when (target) {
-            is PreparedChapterContent.MihonOperational -> {
+        when (val plan = planCanonicalReaderTarget(canonicalChapterId, target)) {
+            is CanonicalReaderTargetPlan.Mihon -> {
                 val session = CanonicalReaderSession(
-                    canonicalChapterId = canonicalChapterId,
+                    canonicalChapterId = plan.canonicalChapterId,
                     variantId = null,
-                    readerChapterId = target.chapterId,
-                    mihonChapterId = target.chapterId,
+                    readerChapterId = plan.chapterId,
+                    mihonChapterId = plan.chapterId,
                 )
                 canonicalSession = session
-                mangaId = target.mangaId
-                initialChapterId = target.chapterId
-                chapterId = target.chapterId
+                mangaId = plan.mangaId
+                initialChapterId = plan.chapterId
+                chapterId = plan.chapterId
                 if (resetPage) {
                     chapterPageIndex = -1
                 }
 
-                val manga = getManga.await(target.mangaId)
-                    ?: error("Requested manga of id ${target.mangaId} not found")
+                val manga = getManga.await(plan.mangaId)
+                    ?: error("Requested manga of id ${plan.mangaId} not found")
                 val source = sourceManager.getOrStub(manga.source)
                 incognitoMode = getIncognitoState.await(manga.source)
                 val canonicalLoader = ChapterLoader(
@@ -540,8 +540,8 @@ class ReaderViewModel(
                 loader = canonicalLoader
 
                 val chapter = getChaptersByMangaId.await(manga.id, applyScanlatorFilter = false)
-                    .firstOrNull { it.id == target.chapterId }
-                    ?: error("Operational chapter ${target.chapterId} not found")
+                    .firstOrNull { it.id == plan.chapterId }
+                    ?: error("Operational chapter ${plan.chapterId} not found")
 
                 mutableState.update {
                     it.copy(
@@ -553,23 +553,14 @@ class ReaderViewModel(
                 loadChapter(canonicalLoader, ReaderChapter(chapter.toDbChapter()))
             }
 
-            is PreparedChapterContent.LocalArchive,
-            is PreparedChapterContent.LocalDirectory,
-            is PreparedChapterContent.CanonicalDownload,
-            -> {
-                val canonicalChapter = canonicalChapterRepository.getById(canonicalChapterId)
-                    ?: error("Canonical chapter $canonicalChapterId not found")
-                val progress = canonicalReadingRepository.getProgress(canonicalChapterId)
-                val readerChapterId = localReaderChapterId(canonicalChapterId)
-                val uri = when (target) {
-                    is PreparedChapterContent.LocalArchive -> target.uri
-                    is PreparedChapterContent.LocalDirectory -> target.uri
-                    is PreparedChapterContent.CanonicalDownload -> target.uri
-                    is PreparedChapterContent.MihonOperational -> error("Unreachable")
-                }
+            is CanonicalReaderTargetPlan.Local -> {
+                val canonicalChapter = canonicalChapterRepository.getById(plan.canonicalChapterId)
+                    ?: error("Canonical chapter ${plan.canonicalChapterId} not found")
+                val progress = canonicalReadingRepository.getProgress(plan.canonicalChapterId)
+                val readerChapterId = localReaderChapterId(plan.canonicalChapterId)
 
                 canonicalSession = CanonicalReaderSession(
-                    canonicalChapterId = canonicalChapterId,
+                    canonicalChapterId = plan.canonicalChapterId,
                     variantId = null,
                     readerChapterId = readerChapterId,
                     mihonChapterId = null,
@@ -594,7 +585,7 @@ class ReaderViewModel(
                     ChapterImpl().apply {
                         id = readerChapterId
                         manga_id = null
-                        this.url = uri
+                        url = plan.uri
                         name = canonicalChapter.title
                             ?.takeIf(String::isNotBlank)
                             ?: "Chapter ${canonicalChapter.displayNumber}"
@@ -604,7 +595,7 @@ class ReaderViewModel(
                         date_upload = canonicalChapter.updatedAt
                     },
                 )
-                val canonicalLoader = LocalChapterLoader.from(context, target)
+                val canonicalLoader = LocalChapterLoader.from(context, plan)
                 loader = canonicalLoader
 
                 mutableState.update {
