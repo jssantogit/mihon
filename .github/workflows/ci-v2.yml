@@ -140,7 +140,7 @@ jobs:
           RELEASE: ${{ steps.plan.outputs.run_release }}
         run: |
           {
-            echo "## CI v2.1 plan"
+            echo "## CI v2.1 execution plan"
             echo
             echo "- Mode: \`$MODE\`"
             echo "- Test shards: \`$TESTS\`"
