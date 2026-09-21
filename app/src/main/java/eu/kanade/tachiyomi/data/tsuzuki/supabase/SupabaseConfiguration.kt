@@ -9,6 +9,9 @@ data class SupabaseConfiguration(
     val isConfigured: Boolean
         get() = url.isNotBlank() && publishableKey.isNotBlank()
 
+    val callbackUrl: String
+        get() = "$CALLBACK_SCHEME://$CALLBACK_HOST"
+
     fun endpoint(path: String): String = url.trimEnd('/') + "/" + path.trimStart('/')
 
     companion object {
