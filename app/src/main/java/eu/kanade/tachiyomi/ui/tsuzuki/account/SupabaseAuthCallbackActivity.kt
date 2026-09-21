@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.account
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import eu.kanade.tachiyomi.ui.main.MainActivity
 
 class SupabaseAuthCallbackActivity : ComponentActivity() {
 
@@ -70,6 +72,11 @@ class SupabaseAuthCallbackActivity : ComponentActivity() {
             }
 
             withContext(Dispatchers.Main) {
+                startActivity(
+                    Intent(this@SupabaseAuthCallbackActivity, MainActivity::class.java)
+                        .setAction(Intent.ACTION_APPLICATION_PREFERENCES)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                )
                 finish()
             }
         }
