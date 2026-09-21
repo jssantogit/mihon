@@ -6,6 +6,11 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionChoice
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
 
+/**
+ * Runtime boundary for optional cloud sync surfaces.
+ *
+ * Local reading and library flows do not depend on an authenticated cloud session.
+ */
 interface CloudSyncRuntime {
     val state: StateFlow<SyncRuntimeState>
 
