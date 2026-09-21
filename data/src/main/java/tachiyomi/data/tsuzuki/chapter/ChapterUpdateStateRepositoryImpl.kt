@@ -56,14 +56,14 @@ class ChapterUpdateStateRepositoryImpl(
             .getTsuzukiChapterUpdateStateByTitle(canonicalTitleId)
             .subscribeToList()
             .map { rows ->
-                    rows.map { row ->
-                        CanonicalChapterUpdateState(
-                            canonicalChapterId = row.canonical_chapter_id,
-                            canonicalTitleId = row.canonical_title_id,
-                            firstSeenAt = row.first_seen_at,
-                            acknowledgedAt = row.acknowledged_at,
-                        )
-            }
+                rows.map { row ->
+                    CanonicalChapterUpdateState(
+                        canonicalChapterId = row.canonical_chapter_id,
+                        canonicalTitleId = row.canonical_title_id,
+                        firstSeenAt = row.first_seen_at,
+                        acknowledgedAt = row.acknowledged_at,
+                    )
+                }
             }
     }
 
