@@ -1,6 +1,6 @@
 # Tsuzuki Modular Runtime — Three-Developer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the approved modular Tsuzuki architecture with three coordinated developers while preserving a working canonical Library/Reader at every integration checkpoint.
 
@@ -8,13 +8,13 @@
 
 **Tech Stack:** Kotlin, Jetpack Compose, Metro DI, SQLDelight, OkHttp/Ktor where already used, Mihon extension runtime, Supabase Auth/PostgREST/RPC, GitHub Actions CI v2.
 
-**Spec:** \`docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md\`
+**Spec:** `docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md`
 
 ## Global Constraints
 
-- Baseline design is approved at \`docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md\`.
+- Baseline design is approved at `docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md`.
 - Tsuzuki canonical identity must never become Kitsu, MAL, Mihon Source, Add-on, or display-title identity.
-- \`chapterCount\` is metadata only and must never synthesize chapter rows.
+- `chapterCount` is metadata only and must never synthesize chapter rows.
 - Integrations and Add-ons have separate lifecycle/trust systems even when they satisfy compatible capabilities.
 - Fresh install has no enabled Integration, no installed/configured Home discovery source, and no implicit Kitsu fallback.
 - Supabase account is optional; local Library/Reader/downloads/Add-ons/Collections must work without login.
@@ -24,8 +24,8 @@
 - Executable Add-ons are never silently installed or trusted from synced state.
 - Automatic content fallback is global opt-in and disabled by default.
 - Preferred content provider is per canonical title.
-- Fast CI/CI v2 is the normal task gate; request \`[ci-full]\` at integration checkpoints and \`[apk]\` only for device-visible checkpoints.
-- Follow \`.agents/rules/tsuzuki-development.md\`: small commits, diff review, at most two correction cycles per task.
+- Fast CI/CI v2 is the normal task gate; request `[ci-full]` at integration checkpoints and `[apk]` only for device-visible checkpoints.
+- Follow `.agents/rules/tsuzuki-development.md`: small commits, diff review, at most two correction cycles per task.
 
 ## Review Focus
 
@@ -73,23 +73,23 @@ Do not create the three branches before Wave 0 is merged.
 
 | Area | Owner | Other developers |
 | --- | --- | --- |
-| \`domain/.../tsuzuki/integration/**\` | Dev A | read-only |
-| \`data/.../tsuzuki/integration/**\` | Dev A | read-only |
+| `domain/.../tsuzuki/integration/**` | Dev A | read-only |
+| `data/.../tsuzuki/integration/**` | Dev A | read-only |
 | Kitsu/MAL Integration adapters | Dev A | read-only |
 | canonical search/detail UI | Dev A | read-only |
-| \`chapter/evidence/**\`, chapter authority | Dev A | read-only |
-| \`domain/.../tsuzuki/addon/**\` | Dev B | read-only |
-| \`domain/.../tsuzuki/content/**\` | Dev B | read-only |
+| `chapter/evidence/**`, chapter authority | Dev A | read-only |
+| `domain/.../tsuzuki/addon/**` | Dev B | read-only |
+| `domain/.../tsuzuki/content/**` | Dev B | read-only |
 | Mihon Add-on adapter | Dev B | read-only |
 | content selector / Reader integration | Dev B | read-only |
 | canonical downloads/local/torrent delivery | Dev B | read-only |
-| \`domain/.../tsuzuki/account/**\` | Dev C | read-only |
+| `domain/.../tsuzuki/account/**` | Dev C | read-only |
 | Supabase client/backend/sync | Dev C | read-only |
 | Home/Collections composition | Dev C | read-only |
-| \`HomeScreen.kt\`, Settings main shell | Dev C | read-only |
+| `HomeScreen.kt`, Settings main shell | Dev C | read-only |
 | old Google auth / Drive removal | Dev C | read-only |
 
-Shared hot files such as \`HomeScreen.kt\`, \`SettingsMainScreen.kt\`, top-level Gradle dependency files, and the final navigation wiring have one owner only: Dev C.
+Shared hot files such as `HomeScreen.kt`, `SettingsMainScreen.kt`, top-level Gradle dependency files, and the final navigation wiring have one owner only: Dev C.
 
 Reader files have one owner only: Dev B.
 
@@ -213,7 +213,7 @@ Later tasks may add optional fields additively. They must not rename/remove thes
 
 Parallel SQLDelight migration-number conflicts are prohibited.
 
-Wave 0 owns **migration \`30.sqm\`** and creates all cross-stream tables required for parallel implementation:
+Wave 0 owns **migration `30.sqm`** and creates all cross-stream tables required for parallel implementation:
 
 - integration settings;
 - chapter evidence;
@@ -228,11 +228,11 @@ After Wave 0, no developer adds another migration until the first parallel merge
 
 If a workstream discovers a schema omission:
 
-1. add the desired schema change to its \`.sq\` definition only behind a branch-local failing migration test;
+1. add the desired schema change to its `.sq` definition only behind a branch-local failing migration test;
 2. stop and report the required migration delta in the handoff;
 3. the integration steward assigns the next migration number after merge order is known.
 
-This prevents three branches from independently creating \`31.sqm\`.
+This prevents three branches from independently creating `31.sqm`.
 
 ---
 
@@ -240,7 +240,7 @@ This prevents three branches from independently creating \`31.sqm\`.
 
 ### Dev A — Integrations, Search, canonical chapter authority
 
-Plan: \`docs/superpowers/plans/2026-09-20-tsuzuki-modular-runtime-dev-a.md\`
+Plan: `docs/superpowers/plans/2026-09-20-tsuzuki-modular-runtime-dev-a.md`
 
 Deliverables:
 
@@ -258,7 +258,7 @@ Dev A must not modify Reader/download/add-on runtime or Supabase sync.
 
 ### Dev B — Add-ons, content resolver, Reader/download delivery
 
-Plan: \`docs/superpowers/plans/2026-09-20-tsuzuki-modular-runtime-dev-b.md\`
+Plan: `docs/superpowers/plans/2026-09-20-tsuzuki-modular-runtime-dev-b.md`
 
 Deliverables:
 
@@ -279,7 +279,7 @@ Dev B must not modify Integration/Kitsu/MAL logic, Home shell, or Supabase sync.
 
 ### Dev C — Supabase, optional account, Home/Collections, shell/integration
 
-Plan: \`docs/superpowers/plans/2026-09-20-tsuzuki-modular-runtime-dev-c.md\`
+Plan: `docs/superpowers/plans/2026-09-20-tsuzuki-modular-runtime-dev-c.md`
 
 Deliverables:
 
@@ -310,7 +310,7 @@ Dev C must not implement canonical search logic, content resolver logic, or Read
 - [ ] Dev A completes Foundation Task F1 from the Dev A plan.
 - [ ] Run CI v2 full because migration 30 and cross-module domain contracts change.
 - [ ] Human reviews the contract names and file ownership map.
-- [ ] Merge \`tsuzuki/runtime-v2-foundation\` into \`tsuzuki/bootstrap\`.
+- [ ] Merge `tsuzuki/runtime-v2-foundation` into `tsuzuki/bootstrap`.
 - [ ] Record the merge SHA and create Dev A/B/C branches from it.
 
 No product UI should change in Wave 0.
@@ -327,7 +327,7 @@ Each accepted task:
 1. ends in a small commit;
 2. pushes the branch;
 3. waits for CI v2;
-4. posts the standard evidence block from \`.agents/rules/tsuzuki-development.md\`.
+4. posts the standard evidence block from `.agents/rules/tsuzuki-development.md`.
 
 ### Wave 2 — Canonical behavior
 
@@ -351,7 +351,7 @@ Dev C consumes canonical Library/progress/update repositories; it never construc
 **Dev B:** Add-ons settings/content selector/download/local delivery.  
 **Dev C:** Home/Collections/Account/Settings shell.
 
-Do not modify \`HomeScreen.kt\` outside Dev C.
+Do not modify `HomeScreen.kt` outside Dev C.
 
 Do not add A/B destinations to the primary navigation in their branches. Their screens remain directly instantiable Compose/Voyager screens until final wiring.
 
@@ -387,8 +387,8 @@ git merge tsuzuki/runtime-v2-integration
 
 Dev C then owns:
 
-- \`HomeScreen.kt\` target tabs;
-- \`SettingsMainScreen.kt\` links to A/B/C Settings destinations;
+- `HomeScreen.kt` target tabs;
+- `SettingsMainScreen.kt` links to A/B/C Settings destinations;
 - removal of Updates/History/Browse from target nav;
 - retirement of Google/Drive target screens/jobs;
 - fresh-install empty-state smoke.
@@ -412,7 +412,7 @@ Dev A and C may simultaneously address polish only in their owned files, but no 
 
 ## 6. Integration acceptance gate
 
-Before merging the program back to \`tsuzuki/bootstrap\`, the integrated branch must prove:
+Before merging the program back to `tsuzuki/bootstrap`, the integrated branch must prove:
 
 ~~~text
 Fresh install:
@@ -458,14 +458,14 @@ Cloud:
 
 Per task, use the affected CI v2 path from the branch push.
 
-At these checkpoints force full verification with commit message token \`[ci-full]\`:
+At these checkpoints force full verification with commit message token `[ci-full]`:
 
 - Foundation Wave 0;
 - A+B integration merge;
 - Dev C final shell/Supabase integration;
 - final program merge.
 
-Request \`[apk]\` only for:
+Request `[apk]` only for:
 
 - first end-to-end chapter selector → Reader build;
 - final Home/Search/Library/Settings + Supabase account build;
@@ -493,7 +493,7 @@ KNOWN_LIMITATIONS:
 NEXT_DEPENDENCY:
 ~~~
 
-If \`PUBLIC_INTERFACES_CHANGED\` is non-empty after Wave 0, the developer must explain why the additive change was necessary. Breaking changes require stopping the other workstreams until the new contract is merged.
+If `PUBLIC_INTERFACES_CHANGED` is non-empty after Wave 0, the developer must explain why the additive change was necessary. Breaking changes require stopping the other workstreams until the new contract is merged.
 
 ---
 
@@ -503,7 +503,7 @@ Stop integration and report BLOCKED instead of patching around these failures:
 
 - any implementation requires title-string auto-merge to work;
 - any content provider needs to become CanonicalTitle identity;
-- \`chapterCount\` must be expanded into synthetic chapters for a common flow;
+- `chapterCount` must be expanded into synthetic chapters for a common flow;
 - cloud availability becomes required for normal local reading;
 - synced Add-on state causes executable installation/trust without user action;
 - a new transport requires every content option to fake a Mihon Source;
@@ -526,4 +526,4 @@ After all three plans are complete:
 - [ ] Execute the human smoke matrix from Section 6.
 - [ ] Review the full diff against the design spec.
 - [ ] Remove only dead legacy routes proven unused by the target shell; do not perform unrelated cleanup.
-- [ ] Merge the verified integrated branch into \`tsuzuki/bootstrap\`.
+- [ ] Merge the verified integrated branch into `tsuzuki/bootstrap`.
