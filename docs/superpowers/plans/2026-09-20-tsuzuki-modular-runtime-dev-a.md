@@ -539,14 +539,25 @@ git commit -m "feat(tsuzuki): add MAL integration capabilities"
 **Files:**
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/catalog/interactor/SearchIntegrations.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/ReconcileExternalSearchCandidate.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/MergeCanonicalTitles.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/repository/CanonicalTitleMergeRepository.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/interactor/MaterializeCanonicalTitleFromCatalog.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/repository/CanonicalTitleRepository.kt`
 - Modify: `data/src/main/java/tachiyomi/data/tsuzuki/CanonicalTitleRepositoryImpl.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/CanonicalTitleMergeRepositoryImpl.kt`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_titles.sq`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_external_identities.sq`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_library_entries.sq`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_library_categories.sq`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_source_mappings.sq`
+- Modify: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_canonical_chapters.sq`
+- Modify: foundation-owned `tsuzuki_chapter_evidence.sq`, `tsuzuki_content_bindings.sq`, `tsuzuki_content_preferences.sq`, `tsuzuki_chapter_update_state.sq`, `tsuzuki_continue_reading_state.sq`, and `tsuzuki_canonical_downloads.sq`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/catalog/interactor/SearchIntegrationsTest.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/interactor/ReconcileExternalSearchCandidateTest.kt`
+- Test: `data/src/test/java/tachiyomi/data/tsuzuki/CanonicalTitleMergeRepositoryImplTest.kt`
 
 **Interfaces:**
-- Produces: one aggregated Search result stream/page for UI.
+- Produces: one aggregated Search result stream/page for UI plus an atomic local canonical-title rekey/merge primitive that Dev C can invoke when the Supabase identity-claim RPC chooses another canonical ID.
 - Consumes: `IntegrationRegistry.searchProviders()`, external identity repository lookups.
 
 - [ ] **Step 1: Write three identity regression tests**
@@ -615,18 +626,78 @@ Priority:
 
 Do not introduce title-only merge.
 
-- [ ] **Step 5: Run tests, format, commit**
+- [ ] **Step 5: Write the atomic canonical merge regression**
+
+~~~kotlin
+@Test
+fun `verified duplicate title can be rekeyed without losing canonical user state`() = runTest {
+    seedCanonicalTitle("winner")
+    seedCanonicalTitle("duplicate")
+    seedLibraryEntry("duplicate")
+    seedExternalIdentity("duplicate", provider = "kitsu", externalId = "1")
+    seedCanonicalChapter(titleId = "duplicate", chapterId = "chapter-37")
+    seedChapterProgress(chapterId = "chapter-37", page = 12)
+    seedContentPreference(titleId = "duplicate", addonId = "mangadex")
+
+    mergeRepository.mergeInto(survivorId = "winner", duplicateId = "duplicate")
+
+    assertNull(titleRepository.getById("duplicate"))
+    assertNotNull(titleRepository.getById("winner"))
+    assertEquals("winner", titleRepository.getByExternalIdentity("kitsu", "1")?.id)
+    assertEquals("winner", libraryRepository.get("winner")?.canonicalTitleId)
+    assertEquals("winner", chapterRepository.getById("chapter-37")?.canonicalTitleId)
+    assertEquals(12L, readingRepository.getProgress("chapter-37")?.lastPageRead)
+    assertEquals(AddonId("mangadex"), contentPreferenceRepository.get("winner")?.preferredAddonId)
+}
+~~~
+
+- [ ] **Step 6: Implement `MergeCanonicalTitles` as one SQLDelight transaction**
+
+The merge primitive is used **only** when equivalence is already proven by a verified external-identity claim. It never decides equivalence itself.
+
+Within one transaction:
+1. reject `survivorId == duplicateId`;
+2. require both CanonicalTitles to exist;
+3. move every external identity from duplicate to survivor, collapsing identical `provider + externalId` rows;
+4. merge Library membership/status/categories with the existing canonical merge rules rather than dropping either side;
+5. repoint source/content bindings, canonical chapters, chapter evidence, content preference, update state, Continue Reading suppression, and canonical-download provenance to the survivor;
+6. preserve CanonicalChapter IDs, so chapter progress/history continue to reference the same chapter IDs;
+7. when both titles already contain equivalent canonical chapters, invoke the chapter reconciler/override policy before deleting a duplicate chapter rather than selecting by timestamp;
+8. delete the duplicate CanonicalTitle only after all dependent rows are safely repointed.
+
+Expose:
+
+~~~kotlin
+interface CanonicalTitleMergeRepository {
+    suspend fun mergeInto(survivorId: String, duplicateId: String)
+}
+
+class MergeCanonicalTitles(
+    private val repository: CanonicalTitleMergeRepository,
+) {
+    suspend fun execute(survivorId: String, duplicateId: String) =
+        repository.mergeInto(survivorId, duplicateId)
+}
+~~~
+
+This primitive is deliberately independent of Supabase; Dev C calls it after the cloud identity claim returns the authoritative canonical ID.
+
+- [ ] **Step 7: Run tests, format, commit**
 
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*SearchIntegrationsTest' \
   :domain:testDebugUnitTest --tests '*ReconcileExternalSearchCandidateTest' \
+  :data:testDebugUnitTest --tests '*CanonicalTitleMergeRepositoryImplTest' \
   spotlessCheck
 git add domain/src/main/java/tachiyomi/domain/tsuzuki/catalog \
   domain/src/main/java/tachiyomi/domain/tsuzuki/interactor \
   domain/src/main/java/tachiyomi/domain/tsuzuki/repository \
   data/src/main/java/tachiyomi/data/tsuzuki/CanonicalTitleRepositoryImpl.kt \
-  domain/src/test/java/tachiyomi/domain/tsuzuki
-git commit -m "feat(tsuzuki): aggregate integration search safely"
+  data/src/main/java/tachiyomi/data/tsuzuki/CanonicalTitleMergeRepositoryImpl.kt \
+  data/src/main/sqldelight/tachiyomi/data/tsuzuki*.sq \
+  domain/src/test/java/tachiyomi/domain/tsuzuki \
+  data/src/test/java/tachiyomi/data/tsuzuki/CanonicalTitleMergeRepositoryImplTest.kt
+git commit -m "feat(tsuzuki): aggregate search and preserve canonical identity"
 ~~~
 
 ---
