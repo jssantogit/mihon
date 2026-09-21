@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.tsuzuki.supabase
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,26 +18,35 @@ class SupabaseAuthService(
 ) {
 
     suspend fun register(email: String, password: String): AuthResult =
-        post(
-            path = "auth/v1/signup",
-            body = CredentialsRequest(email = email, password = password),
+        postAuth(
+            url = endpointWithRedirect("auth/v1/signup"),
+            body = json.encodeToString(
+                CredentialsRequest.serializer(),
+                CredentialsRequest(email = email, password = password),
+            ),
         )
 
     suspend fun login(email: String, password: String): AuthResult =
-        post(
-            path = "auth/v1/token?grant_type=password",
-            body = CredentialsRequest(email = email, password = password),
+        postAuth(
+            url = configuration.endpoint("auth/v1/token?grant_type=password"),
+            body = json.encodeToString(
+                CredentialsRequest.serializer(),
+                CredentialsRequest(email = email, password = password),
+            ),
         )
 
     suspend fun refresh(refreshToken: String): AuthResult =
-        post(
-            path = "auth/v1/token?grant_type=refresh_token",
-            body = RefreshRequest(refreshToken),
+        postAuth(
+            url = configuration.endpoint("auth/v1/token?grant_type=refresh_token"),
+            body = json.encodeToString(
+                RefreshRequest.serializer(),
+                RefreshRequest(refreshToken),
+            ),
         )
 
     suspend fun sendPasswordRecovery(email: String) {
         postRaw(
-            path = "auth/v1/recover",
+            url = endpointWithRedirect("auth/v1/recover"),
             body = json.encodeToString(RecoveryRequest.serializer(), RecoveryRequest(email)),
         ).use { response ->
             check(response.isSuccessful) {
@@ -57,11 +67,14 @@ class SupabaseAuthService(
     }
 
     suspend fun verifyCallbackToken(tokenHash: String, type: String): AuthResult =
-        post(
-            path = "auth/v1/verify",
-            body = VerifyRequest(
-                tokenHash = tokenHash,
-                type = type,
+        postAuth(
+            url = configuration.endpoint("auth/v1/verify"),
+            body = json.encodeToString(
+                VerifyRequest.serializer(),
+                VerifyRequest(
+                    tokenHash = tokenHash,
+                    type = type,
+                ),
             ),
         )
 
@@ -70,36 +83,21 @@ class SupabaseAuthService(
         refreshToken: String,
         expiresInSeconds: Long,
     ): AuthResult {
-        val response = request(
-            Request.Builder()
-                .url(configuration.endpoint("auth/v1/user"))
-                .get()
-                .header("apikey", configuration.publishableKey)
-                .header("Authorization", "Bearer $accessToken")
-                .build(),
+        val account = fetchAccount(accessToken)
+        return AuthResult(
+            account = account,
+            session = SupabaseSession(
+                accessToken = accessToken,
+                refreshToken = refreshToken,
+                expiresAtEpochSeconds = nowEpochSeconds() + expiresInSeconds,
+                userId = account.id,
+                email = account.email,
+            ),
         )
-        response.use {
-            val raw = it.body.string()
-            check(it.isSuccessful) { "Supabase auth request failed with HTTP ${it.code}" }
-            val user = json.decodeFromString(UserResponse.serializer(), raw)
-            val email = requireNotNull(user.email) { "Supabase user response did not contain an email" }
-            return AuthResult(
-                account = TsuzukiAccount(id = user.id, email = email),
-                session = SupabaseSession(
-                    accessToken = accessToken,
-                    refreshToken = refreshToken,
-                    expiresAtEpochSeconds = nowEpochSeconds() + expiresInSeconds,
-                    userId = user.id,
-                    email = email,
-                ),
-            )
-        }
     }
 
-    private suspend inline fun <reified T> post(path: String, body: T): AuthResult {
-        val serializer = kotlinx.serialization.serializer<T>()
-        val raw = json.encodeToString(serializer, body)
-        val response = postRaw(path, raw)
+    private suspend fun postAuth(url: String, body: String): AuthResult {
+        val response = postRaw(url, body)
         response.use {
             val responseBody = it.body.string()
             check(it.isSuccessful) { "Supabase auth request failed with HTTP ${it.code}" }
@@ -107,27 +105,14 @@ class SupabaseAuthService(
         }
     }
 
-    private suspend fun postRaw(path: String, body: String) =
-        request(
-            Request.Builder()
-                .url(configuration.endpoint(path))
-                .post(body.toRequestBody(JSON_MEDIA_TYPE))
-                .header("apikey", configuration.publishableKey)
-                .header("Authorization", "Bearer ${configuration.publishableKey}")
-                .build(),
-        )
-
-    private fun request(request: Request) = client.newCall(request).execute()
-
-    private fun decodeAuthResult(raw: String): AuthResult {
+    private suspend fun decodeAuthResult(raw: String): AuthResult {
         val response = json.decodeFromString(AuthResponse.serializer(), raw)
-        val user = response.user
-        val account = user?.let {
-            val email = requireNotNull(it.email) { "Supabase user response did not contain an email" }
-            TsuzukiAccount(id = it.id, email = email)
-        }
         val accessToken = response.accessToken
         val refreshToken = response.refreshToken
+
+        val account = response.user?.toAccount()
+            ?: accessToken?.let { fetchAccount(it) }
+
         val session = if (accessToken != null && refreshToken != null && account != null) {
             SupabaseSession(
                 accessToken = accessToken,
@@ -141,6 +126,48 @@ class SupabaseAuthService(
         }
         return AuthResult(account = account, session = session)
     }
+
+    private suspend fun fetchAccount(accessToken: String): TsuzukiAccount {
+        val response = request(
+            Request.Builder()
+                .url(configuration.endpoint("auth/v1/user"))
+                .get()
+                .header("apikey", configuration.publishableKey)
+                .header("Authorization", "Bearer $accessToken")
+                .build(),
+        )
+        response.use {
+            val raw = it.body.string()
+            check(it.isSuccessful) { "Supabase auth request failed with HTTP ${it.code}" }
+            return json.decodeFromString(UserResponse.serializer(), raw).toAccount()
+        }
+    }
+
+    private fun UserResponse.toAccount(): TsuzukiAccount =
+        TsuzukiAccount(
+            id = id,
+            email = requireNotNull(email) { "Supabase user response did not contain an email" },
+        )
+
+    private fun postRaw(url: String, body: String) =
+        request(
+            Request.Builder()
+                .url(url)
+                .post(body.toRequestBody(JSON_MEDIA_TYPE))
+                .header("apikey", configuration.publishableKey)
+                .header("Authorization", "Bearer ${configuration.publishableKey}")
+                .build(),
+        )
+
+    private fun endpointWithRedirect(path: String): String =
+        configuration.endpoint(path)
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("redirect_to", configuration.callbackUrl)
+            .build()
+            .toString()
+
+    private fun request(request: Request) = client.newCall(request).execute()
 
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
