@@ -18,8 +18,8 @@ import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleSyncSource
 import tachiyomi.domain.tsuzuki.sync.service.ChapterSyncEvidenceRepository
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
-import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
+import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 
 class CanonicalReadingProgressSyncAdapterTest {
 
