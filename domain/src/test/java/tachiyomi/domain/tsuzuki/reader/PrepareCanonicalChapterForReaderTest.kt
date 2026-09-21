@@ -6,188 +6,200 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.chapter.interactor.SelectChapterVariant
+import tachiyomi.core.common.preference.InMemoryPreferenceStore
+import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
+import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
-import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
-import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.content.ContentPreference
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
+import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
+import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
+import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
-import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreference
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
-import tachiyomi.domain.tsuzuki.reader.model.OperationalReaderChapter
-import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
+import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
-import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderGateway
-import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
-import tachiyomi.domain.tsuzuki.source.interactor.GetPreferredReadingSources
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
-import tachiyomi.domain.tsuzuki.source.repository.ReadingSourcePreferenceRepository
+import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
 
 class PrepareCanonicalChapterForReaderTest {
 
     @Test
-    fun `preferred variant prepares reader with canonical progress`() = runTest {
+    fun `direct content option prepares reader with canonical progress`() = runTest {
+        val option = option("mangadex")
         val fixture = fixture(
-            variants = listOf(variant("preferred", "mapping-1", 1L)),
-            preferredMapping = "mapping-1",
+            preference = ContentPreference("title-1", AddonId("mangadex"), 1L),
+            providers = listOf(provider(option)),
         )
         fixture.reading.progress = CanonicalChapterProgress(
             canonicalChapterId = "chapter-1",
             read = false,
             lastPageRead = 5L,
+            lastVariantId = option.key,
             updatedAt = 100L,
         )
 
-        val result = fixture.prepare.execute("chapter-1", preferredLanguage = "en")
+        val result = fixture.prepare.execute("chapter-1")
 
         result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
+        result.canonicalChapterId shouldBe "chapter-1"
         result.usedFallback shouldBe false
-        result.target.variantId shouldBe "preferred"
-        fixture.gateway.lastProgress shouldBe fixture.reading.progress
+        result.target shouldBe PreparedChapterContent.MihonOperational(
+            mangaId = 20L,
+            chapterId = 30L,
+            sourceId = 7L,
+        )
+        fixture.preparer.lastOption shouldBe option
+        fixture.preparer.lastProgress shouldBe fixture.reading.progress
     }
 
     @Test
-    fun `missing preferred variant requires explicit fallback without materializing`() = runTest {
+    fun `first read returns selection state without preparing content`() = runTest {
+        val option = option("mangadex")
         val fixture = fixture(
-            variants = listOf(variant("fallback", "mapping-2", 2L)),
-            preferredMapping = "mapping-1",
+            preference = null,
+            providers = listOf(provider(option)),
         )
 
-        val result = fixture.prepare.execute("chapter-1", preferredLanguage = "en")
+        val result = fixture.prepare.execute("chapter-1")
 
-        result.shouldBeInstanceOf<CanonicalReaderPreparation.FallbackRequired>()
+        result.shouldBeInstanceOf<CanonicalReaderPreparation.SelectionRequired>()
         result.canonicalTitleId shouldBe "title-1"
-        result.preferredSourceMappingId shouldBe "mapping-1"
-        result.fallbackVariant.id shouldBe "fallback"
-        fixture.gateway.calls shouldBe 0
+        result.canonicalChapterId shouldBe "chapter-1"
+        result.options shouldBe listOf(option)
+        result.preferredAddonId shouldBe null
+        result.preferredUnavailable shouldBe false
+        fixture.preparer.calls shouldBe 0
     }
 
     @Test
-    fun `read once bypasses fallback prompt without changing persistent preference`() = runTest {
+    fun `explicitly selected option prepares same canonical chapter without rekeying progress`() = runTest {
+        val selected = option("mangafire")
         val fixture = fixture(
-            variants = listOf(variant("fallback", "mapping-2", 2L)),
-            preferredMapping = "mapping-1",
+            preference = null,
+            providers = emptyList(),
+        )
+        fixture.reading.progress = CanonicalChapterProgress(
+            canonicalChapterId = "chapter-1",
+            lastPageRead = 8L,
+            lastVariantId = "old-option",
+            updatedAt = 100L,
         )
 
         val result = fixture.prepare.execute(
             canonicalChapterId = "chapter-1",
-            preferredLanguage = "en",
-            allowFallbackOnce = true,
+            selectedOption = selected,
         )
 
         result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
-        result.usedFallback shouldBe true
-        fixture.gateway.calls shouldBe 1
-        fixture.preferences.get("title-1") shouldBe null
+        result.canonicalChapterId shouldBe "chapter-1"
+        fixture.preparer.lastOption shouldBe selected
+        fixture.preparer.lastProgress?.canonicalChapterId shouldBe "chapter-1"
     }
 
     @Test
-    fun `automatic fallback preference bypasses repeated prompt`() = runTest {
+    fun `no content option returns unavailable without preparer call`() = runTest {
         val fixture = fixture(
-            variants = listOf(variant("fallback", "mapping-2", 2L)),
-            preferredMapping = "mapping-1",
-        )
-        fixture.preferences.preference = CanonicalReaderPreference(
-            canonicalTitleId = "title-1",
-            automaticFallback = true,
-            updatedAt = 100L,
+            preference = null,
+            providers = emptyList(),
         )
 
-        val result = fixture.prepare.execute("chapter-1", preferredLanguage = "en")
-
-        result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
-        result.usedFallback shouldBe true
-        fixture.gateway.calls shouldBe 1
-    }
-
-    @Test
-    fun `no variant returns unavailable without touching operational reader`() = runTest {
-        val fixture = fixture(
-            variants = emptyList(),
-            preferredMapping = "mapping-1",
-        )
-
-        fixture.prepare.execute("chapter-1", preferredLanguage = "en")
+        fixture.prepare.execute("chapter-1")
             .shouldBeInstanceOf<CanonicalReaderPreparation.Unavailable>()
-        fixture.gateway.calls shouldBe 0
+        fixture.preparer.calls shouldBe 0
     }
 
     private fun fixture(
-        variants: List<ChapterVariant>,
-        preferredMapping: String,
+        preference: ContentPreference?,
+        providers: List<ContentProvider>,
     ): Fixture {
-        val chapters = FakeCanonicalChapterRepository(variants)
-        val mappings = FakeSourceTitleMappingRepository(
-            mapping("mapping-1", 1L, preferred = preferredMapping == "mapping-1"),
-            mapping("mapping-2", 2L, preferred = preferredMapping == "mapping-2"),
+        val readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
+        val resolver = ResolveChapterContent(
+            addonRegistry = FakeAddonRegistry(providers),
+            contentPreferenceRepository = FakeContentPreferenceRepository(preference),
+            readerPreferences = readerPreferences,
+            rankContentOptions = RankContentOptions(),
+            contentOptionCache = ContentOptionCache(),
+            inFlightContentResolution = InFlightContentResolution(),
         )
-        val selector = SelectChapterVariant(
-            canonicalChapterRepository = chapters,
-            sourceTitleMappingRepository = mappings,
-            getPreferredReadingSources = GetPreferredReadingSources(FakeReadingSourcePreferenceRepository()),
-        )
+        val chapters = FakeCanonicalChapterRepository()
         val reading = FakeCanonicalReadingRepository()
-        val preferences = FakeCanonicalReaderPreferenceRepository()
-        val gateway = FakeCanonicalReaderGateway()
+        val preparer = FakeChapterContentPreparer()
         val prepare = PrepareCanonicalChapterForReader(
-            selectChapterVariant = selector,
+            resolveChapterContent = resolver,
             canonicalChapterRepository = chapters,
             canonicalReadingRepository = reading,
-            canonicalReaderPreferenceRepository = preferences,
-            canonicalReaderGateway = gateway,
+            chapterContentPreparer = preparer,
         )
-        return Fixture(prepare, reading, preferences, gateway)
+        return Fixture(prepare, reading, preparer)
     }
 
     private data class Fixture(
         val prepare: PrepareCanonicalChapterForReader,
         val reading: FakeCanonicalReadingRepository,
-        val preferences: FakeCanonicalReaderPreferenceRepository,
-        val gateway: FakeCanonicalReaderGateway,
+        val preparer: FakeChapterContentPreparer,
     )
 
-    private fun variant(
-        id: String,
-        mappingId: String,
-        sourceId: Long,
-    ) = ChapterVariant(
-        id = id,
+    private fun provider(vararg options: ContentOption): ContentProvider = object : ContentProvider {
+        override val addonId = options.first().addonId
+
+        override suspend fun resolve(
+            canonicalTitleId: String,
+            canonicalChapterId: String,
+        ): Result<List<ContentOption>> = Result.success(options.toList())
+    }
+
+    private fun option(addon: String) = ContentOption(
+        key = addon + ":chapter-1",
         canonicalChapterId = "chapter-1",
-        sourceMappingId = mappingId,
-        sourceId = sourceId,
-        sourceChapterId = "/$id",
-        sourceChapterUrl = "/$id",
+        addonId = AddonId(addon),
         language = "en",
-        rawName = "Chapter 1",
+        scanlationGroup = "Group",
+        releaseDate = 100L,
+        delivery = ContentDelivery.Mihon(
+            sourceId = 7L,
+            mangaId = 20L,
+            chapterId = 30L,
+        ),
     )
 
-    private fun mapping(
-        id: String,
-        sourceId: Long,
-        preferred: Boolean,
-    ) = SourceTitleMapping(
-        id = id,
-        canonicalTitleId = "title-1",
-        mihonMangaId = 10L + sourceId,
-        sourceId = sourceId,
-        sourceUrl = "/$id",
-        language = "en",
-        matchConfidence = 1.0,
-        verifiedByUser = true,
-        availability = SourceMappingAvailability.AVAILABLE,
-        preferredOverride = preferred,
-        createdAt = 100L,
-        updatedAt = 100L,
-    )
+    private class FakeAddonRegistry(
+        private val providers: List<ContentProvider>,
+    ) : AddonRegistry {
+        override fun contentProviders(): List<ContentProvider> = providers
+        override fun chapterProbeProviders(): List<ChapterProbeProvider> = emptyList()
+    }
 
-    private class FakeCanonicalChapterRepository(
-        private val variants: List<ChapterVariant>,
-    ) : CanonicalChapterRepository {
+    private class FakeContentPreferenceRepository(
+        private var preference: ContentPreference?,
+    ) : ContentPreferenceRepository {
+        override suspend fun get(canonicalTitleId: String): ContentPreference? =
+            preference?.takeIf { it.canonicalTitleId == canonicalTitleId }
+
+        override fun observe(canonicalTitleId: String): Flow<ContentPreference?> =
+            MutableStateFlow(preference?.takeIf { it.canonicalTitleId == canonicalTitleId })
+
+        override suspend fun upsert(preference: ContentPreference) {
+            this.preference = preference
+        }
+
+        override suspend fun delete(canonicalTitleId: String) {
+            if (preference?.canonicalTitleId == canonicalTitleId) preference = null
+        }
+    }
+
+    private class FakeCanonicalChapterRepository : CanonicalChapterRepository {
         private val chapter = CanonicalChapter(
             id = "chapter-1",
             canonicalTitleId = "title-1",
@@ -195,30 +207,28 @@ class PrepareCanonicalChapterForReaderTest {
             type = CanonicalChapterType.REGULAR,
             baseNumber = 1,
             confidence = 1.0,
-            createdAt = 100L,
-            updatedAt = 100L,
+            createdAt = 1L,
+            updatedAt = 1L,
         )
 
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
             listOf(chapter).filter { it.canonicalTitleId == canonicalTitleId }
 
         override fun observeByCanonicalTitleId(canonicalTitleId: String): Flow<List<CanonicalChapter>> =
-            MutableStateFlow(listOf(chapter))
+            MutableStateFlow(listOf(chapter).filter { it.canonicalTitleId == canonicalTitleId })
 
         override suspend fun getById(id: String): CanonicalChapter? = chapter.takeIf { it.id == id }
 
         override suspend fun getVariantBySourceIdentity(
             sourceId: Long,
             sourceChapterId: String,
-        ): ChapterVariant? = variants.firstOrNull {
-            it.sourceId == sourceId && it.sourceChapterId == sourceChapterId
-        }
+        ): ChapterVariant? = null
 
         override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> =
-            variants.filter { it.canonicalChapterId == canonicalChapterId }
+            emptyList()
 
         override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> =
-            variants.filter { it.sourceMappingId == sourceMappingId }
+            emptyList()
 
         override suspend fun upsert(chapter: CanonicalChapter) = Unit
         override suspend fun upsertVariant(variant: ChapterVariant) = Unit
@@ -228,41 +238,14 @@ class PrepareCanonicalChapterForReaderTest {
         ) = Unit
     }
 
-    private class FakeSourceTitleMappingRepository(
-        private vararg val mappings: SourceTitleMapping,
-    ) : SourceTitleMappingRepository {
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> =
-            mappings.filter { it.canonicalTitleId == canonicalTitleId }
-
-        override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>> =
-            MutableStateFlow(mappings.filter { it.canonicalTitleId == canonicalTitleId })
-
-        override suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping? =
-            mappings.firstOrNull { it.sourceId == sourceId && it.sourceUrl == sourceUrl }
-
-        override suspend fun upsert(mapping: SourceTitleMapping) = Unit
-        override suspend fun setPreferredForTitle(
-            canonicalTitleId: String,
-            mappingId: String?,
-            updatedAt: Long,
-        ) = Unit
-    }
-
-    private class FakeReadingSourcePreferenceRepository : ReadingSourcePreferenceRepository {
-        override suspend fun getForLanguage(language: String): List<ReadingSourcePreference> = emptyList()
-        override fun observeForLanguage(language: String): Flow<List<ReadingSourcePreference>> =
-            MutableStateFlow(emptyList())
-
-        override suspend fun getConfiguredLanguages(): List<String> = emptyList()
-        override suspend fun replaceForLanguage(language: String, orderedSourceIds: List<Long>) = Unit
-    }
-
     private class FakeCanonicalReadingRepository : CanonicalReadingRepository {
         var progress: CanonicalChapterProgress? = null
 
-        override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? = progress
+        override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? =
+            progress?.takeIf { it.canonicalChapterId == canonicalChapterId }
+
         override fun observeProgress(canonicalChapterId: String): Flow<CanonicalChapterProgress?> =
-            MutableStateFlow(progress)
+            MutableStateFlow(progress?.takeIf { it.canonicalChapterId == canonicalChapterId })
 
         override suspend fun getProgressByCanonicalTitleId(
             canonicalTitleId: String,
@@ -274,44 +257,32 @@ class PrepareCanonicalChapterForReaderTest {
 
         override suspend fun getHistory(canonicalChapterId: String): CanonicalChapterHistory? = null
         override suspend fun recordHistory(update: CanonicalChapterHistoryUpdate) = Unit
+
         override suspend fun recordCheckpoint(
             progress: CanonicalChapterProgress,
             history: CanonicalChapterHistoryUpdate?,
-        ) = Unit
-    }
-
-    private class FakeCanonicalReaderPreferenceRepository : CanonicalReaderPreferenceRepository {
-        var preference: CanonicalReaderPreference? = null
-
-        override suspend fun get(canonicalTitleId: String): CanonicalReaderPreference? =
-            preference?.takeIf { it.canonicalTitleId == canonicalTitleId }
-
-        override fun observe(canonicalTitleId: String): Flow<CanonicalReaderPreference?> =
-            MutableStateFlow(preference)
-
-        override suspend fun upsert(preference: CanonicalReaderPreference) {
-            this.preference = preference
+        ) {
+            this.progress = progress
         }
     }
 
-    private class FakeCanonicalReaderGateway : CanonicalReaderGateway {
+    private class FakeChapterContentPreparer : ChapterContentPreparer {
         var calls = 0
+        var lastOption: ContentOption? = null
         var lastProgress: CanonicalChapterProgress? = null
 
-        override suspend fun materialize(
-            variant: ChapterVariant,
+        override suspend fun prepare(
+            option: ContentOption,
             progress: CanonicalChapterProgress?,
-        ): Result<OperationalReaderChapter> {
-            calls += 1
+        ): Result<PreparedChapterContent> {
+            calls++
+            lastOption = option
             lastProgress = progress
             return Result.success(
-                OperationalReaderChapter(
-                    canonicalChapterId = variant.canonicalChapterId,
-                    variantId = variant.id,
-                    sourceMappingId = variant.sourceMappingId,
-                    mihonMangaId = 20L,
-                    mihonChapterId = 30L,
-                    sourceId = variant.sourceId,
+                PreparedChapterContent.MihonOperational(
+                    mangaId = 20L,
+                    chapterId = 30L,
+                    sourceId = 7L,
                 ),
             )
         }
