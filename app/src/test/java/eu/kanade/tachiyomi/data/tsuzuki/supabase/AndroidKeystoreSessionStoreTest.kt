@@ -1,9 +1,9 @@
 package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
 import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Test
 import java.io.File
 import java.nio.file.Files
-import org.junit.jupiter.api.Test
 
 class AndroidKeystoreSessionStoreTest {
 
