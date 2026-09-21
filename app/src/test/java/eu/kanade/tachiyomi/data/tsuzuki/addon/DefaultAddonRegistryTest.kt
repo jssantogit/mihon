@@ -22,7 +22,10 @@ class DefaultAddonRegistryTest {
         val registry = DefaultAddonRegistry(
             installedAddons = { repository.current },
             contentProviderCandidates = listOf(FakeContentProvider(enabled.id), FakeContentProvider(disabled.id)),
-            chapterProbeProviderCandidates = listOf(FakeChapterProbeProvider(enabled.id), FakeChapterProbeProvider(disabled.id)),
+            chapterProbeProviderCandidates = listOf(
+                FakeChapterProbeProvider(enabled.id),
+                FakeChapterProbeProvider(disabled.id),
+            ),
         )
 
         registry.contentProviders().map { it.addonId }.shouldContainExactly(enabled.id)
