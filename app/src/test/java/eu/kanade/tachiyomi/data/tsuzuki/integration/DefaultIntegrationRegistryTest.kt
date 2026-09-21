@@ -58,6 +58,7 @@ class DefaultIntegrationRegistryTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val malSearch = FakeSearchProvider("mal")
         val registry = registry(
+            scope = backgroundScope,
             settings = MutableStateFlow(fakeSettings("kitsu" to false, "mal" to true)),
             searchProviders = setOf(kitsuSearch, malSearch),
             discoveryProviders = setOf(FakeDiscoveryProvider("kitsu"), FakeDiscoveryProvider("mal")),
