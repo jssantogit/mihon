@@ -134,6 +134,21 @@ class SupabaseSyncHttpTransport(
         }
     }
 
+    override suspend fun ackConflict(
+        conflictId: Long,
+    ): SyncTransportResult<Boolean> {
+        require(conflictId > 0) { "Conflict ID must be positive" }
+
+        val body = buildJsonObject {
+            put("p_conflict_id", JsonPrimitive(conflictId))
+        }
+        return executeAuthenticated(
+            request = rpcRequest("sync_ack_conflict", body),
+        ) { raw ->
+            raw.trim().toBooleanStrict()
+        }
+    }
+
     override suspend fun claim(
         provider: String,
         externalId: String,
