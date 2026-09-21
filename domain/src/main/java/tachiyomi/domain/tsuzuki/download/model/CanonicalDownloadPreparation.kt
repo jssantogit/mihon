@@ -3,6 +3,7 @@ package tachiyomi.domain.tsuzuki.download.model
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.content.ContentOption
 
+/** Canonical download command outcome; storage ownership stays on CanonicalChapter. */
 sealed interface CanonicalDownloadPreparation {
 
     data class Complete(
