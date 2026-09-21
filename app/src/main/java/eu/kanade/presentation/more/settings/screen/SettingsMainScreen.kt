@@ -53,7 +53,11 @@ object SettingsMainScreen : Screen() {
 
     @Composable
     override fun Content() {
-        Content(twoPane = false)
+        val backPress = LocalBackPress.currentOrThrow
+        Content(
+            twoPane = false,
+            navigateUp = backPress,
+        )
     }
 
     @Composable
@@ -74,8 +78,19 @@ object SettingsMainScreen : Screen() {
 
     @Composable
     fun Content(twoPane: Boolean) {
-        val navigator = LocalNavigator.currentOrThrow
         val backPress = LocalBackPress.currentOrThrow
+        Content(
+            twoPane = twoPane,
+            navigateUp = backPress,
+        )
+    }
+
+    @Composable
+    fun Content(
+        twoPane: Boolean,
+        navigateUp: (() -> Unit)?,
+    ) {
+        val navigator = LocalNavigator.currentOrThrow
         val containerColor = if (twoPane) getPalerSurface() else MaterialTheme.colorScheme.surface
         val topBarState = rememberTopAppBarState()
 
@@ -84,7 +99,7 @@ object SettingsMainScreen : Screen() {
             topBar = { scrollBehavior ->
                 AppBar(
                     title = stringResource(MR.strings.label_settings),
-                    navigateUp = backPress::invoke,
+                    navigateUp = navigateUp,
                     actions = {
                         AppBarActions(
                             listOf(
@@ -172,16 +187,24 @@ object SettingsMainScreen : Screen() {
 
     private val items = listOf(
         Item(
-            titleRes = MR.strings.pref_category_appearance,
-            subtitleRes = MR.strings.pref_appearance_summary,
-            icon = MaterialSymbols.Rounded.Palette,
-            screen = SettingsAppearanceScreen,
+            titleRes = MR.strings.tsuzuki_account_title,
+            icon = MaterialSymbols.Rounded.Security,
+            screen = SettingsTsuzukiAccountScreen,
         ),
         Item(
-            titleRes = MR.strings.pref_category_library,
-            subtitleRes = MR.strings.pref_library_summary,
+            titleRes = MR.strings.tsuzuki_integrations_title,
+            icon = MaterialSymbols.Rounded.Explore,
+            screen = SettingsTsuzukiIntegrationsScreen(),
+        ),
+        Item(
+            titleRes = MR.strings.tsuzuki_addons_title,
+            icon = MaterialSymbols.Rounded.Code,
+            screen = SettingsTsuzukiAddonsScreen,
+        ),
+        Item(
+            titleRes = MR.strings.tsuzuki_home_collections_title,
             icon = MaterialSymbols.Rounded.CollectionsBookmark,
-            screen = SettingsLibraryScreen,
+            screen = SettingsTsuzukiHomeScreen,
         ),
         Item(
             titleRes = MR.strings.pref_category_reader,
@@ -196,16 +219,27 @@ object SettingsMainScreen : Screen() {
             screen = SettingsDownloadScreen,
         ),
         Item(
+            titleRes = MR.strings.tsuzuki_sync_title,
+            icon = MaterialSymbols.Rounded.Sync,
+            screen = SettingsTsuzukiSyncScreen,
+        ),
+        Item(
+            titleRes = MR.strings.pref_category_appearance,
+            subtitleRes = MR.strings.pref_appearance_summary,
+            icon = MaterialSymbols.Rounded.Palette,
+            screen = SettingsAppearanceScreen,
+        ),
+        Item(
+            titleRes = MR.strings.pref_category_library,
+            subtitleRes = MR.strings.pref_library_summary,
+            icon = MaterialSymbols.Rounded.CollectionsBookmark,
+            screen = SettingsLibraryScreen,
+        ),
+        Item(
             titleRes = MR.strings.pref_category_tracking,
             subtitleRes = MR.strings.pref_tracking_summary,
             icon = MaterialSymbols.Rounded.Sync,
             screen = SettingsTrackingScreen,
-        ),
-        Item(
-            titleRes = MR.strings.browse,
-            subtitleRes = MR.strings.pref_browse_summary,
-            icon = MaterialSymbols.Rounded.Explore,
-            screen = SettingsBrowseScreen,
         ),
         Item(
             titleRes = MR.strings.label_data_storage,
@@ -233,5 +267,4 @@ object SettingsMainScreen : Screen() {
             icon = MaterialSymbols.Rounded.Info,
             screen = AboutScreen,
         ),
-    )
-}
+    )}
