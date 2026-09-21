@@ -26,9 +26,8 @@ import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.track.TrackerManager
-import eu.kanade.tachiyomi.data.tsuzuki.drivesync.DriveSyncJob
-import eu.kanade.tachiyomi.data.tsuzuki.drivesync.DriveSyncRuntime
-import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthInteractiveCoordinator
+import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncJob
+import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncRuntime
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.util.ExtensionInstallActivity
@@ -54,6 +53,7 @@ import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.domain.track.interactor.InsertTrack
+import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 
 @DependencyGraph(
     scope = AppScope::class,
@@ -66,7 +66,7 @@ interface AppGraph : ViewModelGraph {
     fun inject(webViewActivity: WebViewActivity)
     fun inject(baseOAuthLoginActivity: BaseOAuthLoginActivity)
     fun inject(libraryUpdateJob: LibraryUpdateJob)
-    fun inject(driveSyncJob: DriveSyncJob)
+    fun inject(supabaseSyncJob: SupabaseSyncJob)
     fun inject(metadataUpdateJob: MetadataUpdateJob)
     fun inject(backupRestoreJob: BackupRestoreJob)
     fun inject(backupCreateJob: BackupCreateJob)
@@ -103,8 +103,8 @@ interface AppGraph : ViewModelGraph {
 
     val sourceManager: SourceManager
     val trackerManager: TrackerManager
-    val googleAuthInteractiveCoordinator: GoogleAuthInteractiveCoordinator
-    val driveSyncRuntime: DriveSyncRuntime
+    val accountRepository: AccountRepository
+    val supabaseSyncRuntime: SupabaseSyncRuntime
     val extensionManager: ExtensionManager
     val chapterCache: ChapterCache
     val downloadCache: DownloadCache
