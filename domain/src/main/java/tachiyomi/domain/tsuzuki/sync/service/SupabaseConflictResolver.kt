@@ -102,6 +102,12 @@ class SupabaseConflictResolver(
         )
         adapter.applyDocument(resolvedLocal)
 
+        reconcileOutbox(
+            adapter = adapter,
+            remote = remote,
+            now = now,
+        )
+
         val remoteConflictId = conflict.remoteConflictId
         if (remoteConflictId != null) {
             when (val acknowledged = transport.ackConflict(remoteConflictId)) {
@@ -117,11 +123,6 @@ class SupabaseConflictResolver(
         }
 
         removeConflict(conflict, now)
-        reconcileOutbox(
-            adapter = adapter,
-            remote = remote,
-            now = now,
-        )
         return SyncConflictResolutionResult.Resolved
     }
 
