@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki.content
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -24,6 +25,12 @@ class ContentPreferenceRepositoryImpl(
         return database.tsuzuki_content_preferencesQueries
             .getTsuzukiContentPreference(canonicalTitleId, ::mapPreference)
             .awaitAsOneOrNull()
+    }
+
+    override suspend fun getAll(): List<ContentPreference> {
+        return database.tsuzuki_content_preferencesQueries
+            .getAllTsuzukiContentPreferences(::mapPreference)
+            .awaitAsList()
     }
 
     override fun observe(canonicalTitleId: String): Flow<ContentPreference?> {
