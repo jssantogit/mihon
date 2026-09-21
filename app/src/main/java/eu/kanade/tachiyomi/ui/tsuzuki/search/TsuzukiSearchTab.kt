@@ -24,7 +24,7 @@ data object TsuzukiSearchTab : Tab {
     override val options: TabOptions
         @Composable
         get() = TabOptions(
-            index = 2u,
+            index = 1u,
             title = "Search",
             icon = painterResource(R.drawable.ic_book_24dp),
         )
