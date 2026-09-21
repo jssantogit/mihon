@@ -27,7 +27,7 @@ import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 class AvailableSyncDocumentAdaptersTest {
 
     @Test
-    fun `case 1 - library round trip carries title bootstrap metadata`() = runTest {
+    fun `case 1 - library round trip carries membership while titles sync separately`() = runTest {
         val title = title("title-1", "Tsuzuki")
         val entry = CanonicalLibraryEntry(
             canonicalTitleId = title.id,
@@ -41,19 +41,14 @@ class AvailableSyncDocumentAdaptersTest {
             entries = mutableMapOf(title.id to entry),
             titleLookup = sourceTitles,
         )
-        val exported = libraryAdapter(
-            sourceLibrary,
-            FakeTitleRepository(sourceTitles),
-        ).exportDocument()
+        val exported = libraryAdapter(sourceLibrary).exportDocument()
 
         exported.kind shouldBe SyncDocumentKind.LIBRARY
         exported.records.keys.toList() shouldContainExactly listOf("title-1")
 
-        val targetTitles = FakeTitleRepository()
-        val targetLibrary = FakeLibraryRepository(titleLookup = targetTitles.titles)
-        libraryAdapter(targetLibrary, targetTitles).applyDocument(exported)
+        val targetLibrary = FakeLibraryRepository()
+        libraryAdapter(targetLibrary).applyDocument(exported)
 
-        targetTitles.getById(title.id) shouldBe title
         targetLibrary.get(title.id) shouldBe entry
     }
 
@@ -72,14 +67,14 @@ class AvailableSyncDocumentAdaptersTest {
             entries = mutableMapOf(title.id to entry),
             titleLookup = titles.titles,
         )
-        val active = libraryAdapter(library, titles).exportDocument()
+        val active = libraryAdapter(library).exportDocument()
         val tombstone = active.copy(
             records = active.records.mapValues { (_, record) ->
                 record.copy(deletedAtEpochMillis = 30)
             },
         )
 
-        libraryAdapter(library, titles).applyDocument(tombstone)
+        libraryAdapter(library).applyDocument(tombstone)
 
         library.get(title.id) shouldBe null
         titles.getById(title.id) shouldBe title
@@ -159,10 +154,8 @@ class AvailableSyncDocumentAdaptersTest {
 
     private fun libraryAdapter(
         library: CanonicalLibraryRepository,
-        titles: CanonicalTitleRepository,
     ) = CanonicalLibrarySyncAdapter(
         libraryRepository = library,
-        titleRepository = titles,
         revisionSource = revisions(),
         clock = clock(),
     )
