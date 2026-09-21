@@ -936,7 +936,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path = pg_catalog, public, tsuzuki_private
-as $
+as $$
 declare
     v_user_id uuid := auth.uid();
     v_result jsonb;
@@ -975,7 +975,7 @@ begin
 
     return v_result;
 end;
-$;
+$$;
 
 create or replace function public.sync_ack_conflict(
     p_conflict_id bigint
