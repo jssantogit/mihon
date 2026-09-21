@@ -233,7 +233,9 @@ class DownloadCanonicalChapterTest {
 
         override suspend fun getById(id: String) = chapter.takeIf { it.id == id }
         override suspend fun getVariantBySourceIdentity(sourceId: Long, sourceChapterId: String): ChapterVariant? = null
-        override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> = emptyList()
+        override suspend fun getVariantsByCanonicalChapterId(
+            canonicalChapterId: String,
+        ): List<ChapterVariant> = emptyList()
         override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> = emptyList()
         override suspend fun upsert(chapter: CanonicalChapter) = Unit
         override suspend fun upsertVariant(variant: ChapterVariant) = Unit
