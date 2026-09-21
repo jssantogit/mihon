@@ -133,7 +133,7 @@ class ResolveContentBinding internal constructor(
         }
 
         val now = clock()
-        return ContentBinding(
+        val binding = ContentBinding(
             id = existing?.id ?: idFactory(),
             canonicalTitleId = canonicalTitleId,
             addonId = addonId,
@@ -144,7 +144,9 @@ class ResolveContentBinding internal constructor(
             runtimePayload = materialized.runtimePayload,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
-        ).also(contentBindingRepository::upsert)
+        )
+        contentBindingRepository.upsert(binding)
+        return binding
     }
 
     private suspend fun requireExecutableAddon(addonId: AddonId): InstalledAddon {
