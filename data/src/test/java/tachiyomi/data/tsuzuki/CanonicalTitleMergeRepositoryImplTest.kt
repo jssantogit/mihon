@@ -191,7 +191,7 @@ class CanonicalTitleMergeRepositoryImplTest {
             .getTsuzukiLibraryCategoriesByTitle("winner") { categoryId, _, _, _ -> categoryId }
             .awaitAsList() shouldContainExactly listOf(1L)
         database.tsuzuki_source_mappingsQueries
-            .getTsuzukiSourceMappingById("mapping-1") { _, canonicalTitleId, _, _, _, _, _, _, _, _, _ ->
+            .getTsuzukiSourceMappingById("mapping-1") { _, canonicalTitleId, _, _, _, _, _, _, _, _, _, _ ->
                 canonicalTitleId
             }
             .awaitAsOneOrNull() shouldBe "winner"
@@ -199,7 +199,7 @@ class CanonicalTitleMergeRepositoryImplTest {
         readingRepository.getProgress("chapter-37")?.lastPageRead shouldBe 12L
         readingRepository.getHistory("chapter-37")?.totalReadDuration shouldBe 90L
         database.tsuzuki_content_preferencesQueries
-            .getTsuzukiContentPreference("winner") { _, preferredAddonId, _ -> preferredAddonId }
+            .getTsuzukiContentPreference("winner") { _, preferredAddonId, _ -> preferredAddonId.orEmpty() }
             .awaitAsOneOrNull() shouldBe "mangadex"
         database.tsuzuki_content_bindingsQueries
             .getTsuzukiContentBindingsByTitle("winner") { id, _, _, _, _, _, _, _, _, _ -> id }
@@ -211,7 +211,7 @@ class CanonicalTitleMergeRepositoryImplTest {
             .getTsuzukiChapterUpdateStateByTitle("winner") { chapterId, _, _, _ -> chapterId }
             .awaitAsList() shouldContainExactly listOf("chapter-37")
         database.tsuzuki_continue_reading_stateQueries
-            .getTsuzukiContinueReadingState("winner") { _, hiddenAt -> hiddenAt }
+            .getTsuzukiContinueReadingState("winner") { _, hiddenAt -> hiddenAt ?: -1L }
             .awaitAsOneOrNull() shouldBe 60L
     }
 
