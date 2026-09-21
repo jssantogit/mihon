@@ -132,6 +132,7 @@ class SupabaseAccountRepositoryTest {
         request.url.encodedPath shouldBe "/auth/v1/token"
         request.url.queryParameter("grant_type") shouldBe "refresh_token"
     }
+
     @Test
     fun `password recovery uses recover endpoint`() = runTest {
         server.enqueue(MockResponse.Builder().code(200).body("{}").build())
