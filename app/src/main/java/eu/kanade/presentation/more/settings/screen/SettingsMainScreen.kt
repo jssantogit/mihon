@@ -267,4 +267,5 @@ object SettingsMainScreen : Screen() {
             icon = MaterialSymbols.Rounded.Info,
             screen = AboutScreen,
         ),
-    )}
+    )
+}
