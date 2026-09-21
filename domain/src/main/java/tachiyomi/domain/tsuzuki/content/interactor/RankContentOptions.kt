@@ -35,7 +35,8 @@ class RankContentOptions {
 
     private fun deliveryRank(delivery: ContentDelivery): Int = when (delivery) {
         is ContentDelivery.LocalArchive,
-        is ContentDelivery.LocalDirectory -> 0
+        is ContentDelivery.LocalDirectory,
+        -> 0
         is ContentDelivery.Mihon -> 1
         is ContentDelivery.Torrent -> 2
     }
