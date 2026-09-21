@@ -223,10 +223,11 @@ class ReaderActivity : BaseActivity() {
             .launchIn(lifecycleScope)
 
         viewModel.state
-            .map { it.manga }
+            .map(ReaderViewModel.State::needsViewerInitialization)
             .distinctUntilChanged()
-            .filterNotNull()
-            .onEach { updateViewer() }
+            .onEach { needsInitialization ->
+                if (needsInitialization) updateViewer()
+            }
             .launchIn(lifecycleScope)
 
         viewModel.state

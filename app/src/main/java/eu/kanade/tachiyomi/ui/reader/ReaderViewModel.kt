@@ -573,14 +573,11 @@ class ReaderViewModel(
                 }
                 incognitoMode = getIncognitoState.await(null)
 
-                val requestedPage = when {
-                    !resetPage && chapterPageIndex >= 0 -> chapterPageIndex
-                    progress?.lastVariantId == null -> progress?.lastPageRead
-                        ?.coerceAtMost(Int.MAX_VALUE.toLong())
-                        ?.toInt()
-                        ?: 0
-                    else -> 0
-                }
+                val requestedPage = resolveCanonicalLocalRequestedPage(
+                    resetPage = resetPage,
+                    savedPageIndex = chapterPageIndex,
+                    progress = progress,
+                )
                 val readerChapter = ReaderChapter(
                     ChapterImpl().apply {
                         id = readerChapterId
