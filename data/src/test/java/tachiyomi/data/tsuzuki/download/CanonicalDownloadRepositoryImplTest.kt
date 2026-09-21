@@ -78,8 +78,11 @@ class CanonicalDownloadRepositoryImplTest {
     @AfterEach
     fun tearDown() {
         if (::driver.isInitialized) driver.close()
-        if (originalNativeLibraryPath == null) System.clearProperty("org.sqlite.lib.path")
-        else System.setProperty("org.sqlite.lib.path", originalNativeLibraryPath)
+        if (originalNativeLibraryPath == null) {
+            System.clearProperty("org.sqlite.lib.path")
+        } else {
+            System.setProperty("org.sqlite.lib.path", originalNativeLibraryPath)
+        }
         nativeLibraryDirectory?.toFile()?.deleteRecursively()
     }
 
