@@ -24,6 +24,7 @@ class MihonAddonRepository internal constructor(
     private val disabledSourceIds: () -> Set<String>,
     private val disabledSourceIdsFlow: Flow<Set<String>>,
     private val setDisabledSourceIds: (Set<String>) -> Unit,
+    private val uninstallExtension: (Extension.Installed) -> Unit = {},
 ) : AddonRepository {
 
     @Inject
@@ -37,6 +38,7 @@ class MihonAddonRepository internal constructor(
         disabledSourceIdsFlow = sourcePreferences.disabledSources.changes()
             .onStart { emit(sourcePreferences.disabledSources.get()) },
         setDisabledSourceIds = sourcePreferences.disabledSources::set,
+        uninstallExtension = { extension -> extensionManager.uninstallExtension(extension) },
     )
 
     override fun observeInstalled(): Flow<List<InstalledAddon>> {
@@ -66,6 +68,11 @@ class MihonAddonRepository internal constructor(
         )
     }
 
+    override suspend fun uninstall(id: AddonId) {
+        val extension = installedExtensionsSnapshot().firstOrNull { it.pkgName == id.value } ?: return
+        uninstallExtension(extension)
+    }
+
     private fun Extension.Installed.toInstalledAddon(disabled: Set<String>): InstalledAddon {
         val sourceIds = sources.map { it.id }
         return InstalledAddon(
@@ -75,6 +82,7 @@ class MihonAddonRepository internal constructor(
             versionName = versionName,
             mihonSourceIds = sourceIds,
             hasSettings = sources.any { it is ConfigurableSource },
+            hasUpdate = hasUpdate,
         )
     }
 }

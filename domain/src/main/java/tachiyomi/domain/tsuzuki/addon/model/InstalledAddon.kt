@@ -9,4 +9,5 @@ data class InstalledAddon(
     val versionName: String,
     val mihonSourceIds: List<Long>,
     val hasSettings: Boolean,
+    val hasUpdate: Boolean = false,
 )

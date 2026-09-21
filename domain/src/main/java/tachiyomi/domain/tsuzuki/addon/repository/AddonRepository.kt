@@ -10,4 +10,6 @@ interface AddonRepository {
     suspend fun snapshot(): List<InstalledAddon>
 
     suspend fun setEnabled(id: AddonId, enabled: Boolean)
+
+    suspend fun uninstall(id: AddonId) = Unit
 }
