@@ -50,6 +50,8 @@
 - Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAuthService.kt`
 - Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAccountRepository.kt`
 - Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/AndroidKeystoreSessionStore.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/account/SupabaseAuthCallbackActivity.kt`
+- Modify: `app/src/main/AndroidManifest.xml`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAccountRepositoryTest.kt`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/AndroidKeystoreSessionStoreTest.kt`
 
@@ -404,9 +406,29 @@ git commit -m "feat(tsuzuki): sync canonical state through Supabase"
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ChapterOverridesSyncAdapter.kt`
 - Modify: `data/src/main/java/tachiyomi/data/tsuzuki/sync/CollectionsSyncAdapter.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ContentPreferencesSyncAdapter.kt` after Dev B merge during final integration if the type is not yet available on Dev C branch.
-- Delete target-path files: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/**`
-- Delete target-path files: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/**`
-- Delete target-path files: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/**`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/DriveSyncJob.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/DriveSyncRuntime.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/GoogleDriveAppDataTransport.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAccountHintStore.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAccountPicker.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthConnectResult.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthInteractiveCoordinator.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthSessionManager.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizationActivityBridge.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizationPlatform.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizationPlatformResult.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizationSession.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GoogleAuthorizedAccess.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GooglePlayAuthorizationActivityBridge.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/GooglePlayAuthorizationPlatform.kt`
+- Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/NoBackupGoogleAccountHintStore.kt`
+- Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/model/GoogleAccountIdentity.kt`
+- Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/model/GoogleAuthFailure.kt`
+- Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/model/GoogleAuthState.kt`
+- Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/model/GoogleAuthorizationResult.kt`
+- Delete: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/service/GoogleAuthStateMachine.kt`
+- Delete: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/GoogleDriveAppDataTransportTest.kt`
+- Delete: `domain/src/test/java/tachiyomi/domain/tsuzuki/googleauth/GoogleAuthStateMachineTest.kt`
 - Delete/replace: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/DriveSyncTransport.kt`
 - Remove target Settings entry: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsGoogleAccountScreen.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/sync/AvailableSupabaseSyncAdaptersTest.kt`
@@ -472,6 +494,8 @@ git commit -m "refactor(tsuzuki): retire Google Drive sync"
 - Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/home/TsuzukiHomeScreenModel.kt`
 - Modify: `app/src/main/java/eu/kanade/presentation/tsuzuki/home/TsuzukiHomeScreen.kt`
 - Reuse: `domain/src/main/java/tachiyomi/domain/tsuzuki/collections/**`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/home/repository/ContinueReadingVisibilityRepository.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/home/ContinueReadingVisibilityRepositoryImpl.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/home/GetConfiguredHomeSectionsTest.kt`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/home/TsuzukiHomeScreenModelTest.kt`
 
