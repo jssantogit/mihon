@@ -113,11 +113,11 @@ select is(
 );
 
 select throws_ok(
-    $
+    $$
     update tsuzuki_private.tsuzuki_sync_fields
     set value = '"HACKED"'::jsonb
     where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
-    $,
+    $$,
     '42501',
     null,
     'authenticated clients cannot mutate sync tables directly'
