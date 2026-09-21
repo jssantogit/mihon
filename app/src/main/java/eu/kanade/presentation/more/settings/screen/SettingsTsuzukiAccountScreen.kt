@@ -47,7 +47,7 @@ object SettingsTsuzukiAccountScreen : Screen() {
             topBar = {
                 AppBar(
                     titleContent = { AppBarTitle("Account") },
-                    navigateUp = navigator::pop,
+                    navigateUp = { navigator.pop() },
                 )
             },
         ) { padding ->
@@ -74,8 +74,7 @@ object SettingsTsuzukiAccountScreen : Screen() {
 
                 when (state.accountState) {
                     AccountState.LoggedOut,
-                    is AccountState.EmailConfirmationRequired,
-                    -> {
+                    is AccountState.EmailConfirmationRequired -> {
                         item {
                             OutlinedTextField(
                                 modifier = Modifier.fillMaxWidth(),
