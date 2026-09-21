@@ -9,13 +9,13 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkerParameters
 import dev.zacsweers.metro.Inject
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import mihon.app.di.AppGraph
 import mihon.core.metro.metroGraph
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason
 import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
+import java.util.concurrent.TimeUnit
 
 class SupabaseSyncJob(
     private val context: Context,
