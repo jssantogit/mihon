@@ -31,39 +31,42 @@ class GetConfiguredHomeSections(
     suspend fun execute(pageSize: Int = DEFAULT_PAGE_SIZE): List<HomeSection> {
         require(pageSize > 0) { "Home Collection page size must be positive" }
 
-        return store.getCollections()
-            .asSequence()
+        val collections = store.getCollections()
             .filter { it.origin == CollectionOrigin.USER }
             .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-            .map { collection ->
-                val lists = store.getFolders(collection.id)
-                    .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-                    .flatMap { folder ->
-                        store.getLists(folder.id)
-                            .asSequence()
-                            .filter(CollectionList::enabled)
-                            .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-                            .toList()
-                    }
 
-                HomeSection.CollectionSection(
-                    collectionId = collection.id,
-                    title = collection.title,
-                    rows = lists.map { list ->
-                        HomeRow(
-                            listId = list.id,
-                            title = list.title,
-                            providerId = list.providerId,
-                            layoutType = list.layoutType,
-                            content = loader.load(
-                                listId = list.id,
-                                pageSize = pageSize,
-                            ),
-                        )
-                    },
+        val sections = mutableListOf<HomeSection>()
+        for (collection in collections) {
+            val lists = mutableListOf<CollectionList>()
+            val folders = store.getFolders(collection.id)
+                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+            for (folder in folders) {
+                lists += store.getLists(folder.id)
+                    .filter(CollectionList::enabled)
+                    .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+            }
+
+            val rows = mutableListOf<HomeRow>()
+            for (list in lists) {
+                rows += HomeRow(
+                    listId = list.id,
+                    title = list.title,
+                    providerId = list.providerId,
+                    layoutType = list.layoutType,
+                    content = loader.load(
+                        listId = list.id,
+                        pageSize = pageSize,
+                    ),
                 )
             }
-            .toList()
+
+            sections += HomeSection.CollectionSection(
+                collectionId = collection.id,
+                title = collection.title,
+                rows = rows,
+            )
+        }
+        return sections
     }
 
     fun subscribe(pageSize: Int = DEFAULT_PAGE_SIZE): Flow<List<HomeSection>> {
