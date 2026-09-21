@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 class SupabaseAccountRepository(
     private val authService: SupabaseAuthService,
     private val sessionStore: SupabaseSessionStore,
+    private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
 ) : AccountRepository {
 
     private val mutableState = MutableStateFlow(
@@ -68,6 +69,18 @@ class SupabaseAccountRepository(
             session.toAccountState().also { mutableState.value = it }
         }
 
+    override suspend fun getAccessToken(): Result<String?> = runCatching {
+        if (state.value !is AccountState.Authenticated) return@runCatching null
+
+        val session = sessionStore.load() ?: return@runCatching null
+        if (session.expiresAtEpochSeconds > nowEpochSeconds() + ACCESS_TOKEN_REFRESH_SKEW_SECONDS) {
+            return@runCatching session.accessToken
+        }
+
+        refreshSession().getOrThrow()
+        sessionStore.load()?.accessToken
+    }
+
     fun acceptSession(session: SupabaseSession): AccountState {
         sessionStore.save(session)
         return session.toAccountState().also { mutableState.value = it }
@@ -85,4 +98,8 @@ class SupabaseAccountRepository(
                 email = email,
             ),
         )
+
+    private companion object {
+        const val ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 30L
+    }
 }
