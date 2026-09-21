@@ -6,7 +6,6 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.network.NetworkHelper
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import tachiyomi.data.tsuzuki.sync.CollectionsSyncAdapter
@@ -48,6 +47,7 @@ import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeController
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
 import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
 import kotlin.time.Clock
+import java.util.concurrent.atomic.AtomicLong
 
 @Inject
 @SingleIn(AppScope::class)
