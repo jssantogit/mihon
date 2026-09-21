@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
 import java.io.IOException
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -10,7 +9,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -167,36 +165,18 @@ class SupabaseSyncHttpTransport(
     private suspend fun getMutationConflicts(
         mutationId: String,
     ): SyncTransportResult<List<SupabaseRemoteConflict>> {
-        val url = configuration.endpoint("rest/v1/tsuzuki_sync_conflicts")
-            .toHttpUrl()
-            .newBuilder()
-            .addQueryParameter(
-                "select",
-                "conflict_id,record_id,field_path,conflict_type,local_value,remote_value",
-            )
-            .addQueryParameter("local_mutation_id", "eq.$mutationId")
-            .addQueryParameter("resolved_at", "is.null")
-            .build()
-
+        val body = buildJsonObject {
+            put("p_mutation_id", JsonPrimitive(mutationId))
+        }
         return executeAuthenticated(
-            request = Request.Builder()
-                .url(url)
-                .get()
-                .build(),
+            request = rpcRequest("sync_get_mutation_conflicts", body),
         ) { raw ->
             json.decodeFromString(
-                ConflictResponse.serializer(),
+                kotlinx.serialization.builtins.ListSerializer(
+                    SupabaseRemoteConflict.serializer(),
+                ),
                 raw,
-            ).map { row ->
-                SupabaseRemoteConflict(
-                    conflictId = row.conflictId,
-                    recordId = row.recordId,
-                    fieldPath = row.fieldPath,
-                    kind = row.conflictType,
-                    localValue = row.localValue,
-                    remoteValue = row.remoteValue,
-                )
-            }
+            )
         }
     }
 
@@ -352,23 +332,3 @@ private data class SnapshotRecordResponse(
     val isDeleted: Boolean,
     val fields: JsonObject,
 )
-
-@Serializable
-private data class ConflictRow(
-    @SerialName("conflict_id")
-    val conflictId: Long,
-    @SerialName("record_id")
-    val recordId: String,
-    @SerialName("field_path")
-    val fieldPath: String? = null,
-    @SerialName("conflict_type")
-    val conflictType: SyncConflictKind,
-    @SerialName("local_value")
-    val localValue: JsonElement? = null,
-    @SerialName("remote_value")
-    val remoteValue: JsonElement? = null,
-)
-
-private object ConflictResponse {
-    val serializer = kotlinx.serialization.builtins.ListSerializer(ConflictRow.serializer())
-}
