@@ -2,6 +2,10 @@ package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -17,50 +21,50 @@ import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
+import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
 
 class DefaultIntegrationRegistryTest {
 
     @Test
-    fun `registry excludes providers whose integration is disabled`() {
-        val registry = DefaultIntegrationRegistry(
-            settings = fakeSettings("kitsu" to false),
-            searchProviders = listOf(FakeSearchProvider("kitsu")),
-            discoveryProviders = emptyList(),
-            metadataProviders = emptyList(),
-            chapterEvidenceProviders = emptyList(),
-            ratingsProviders = emptyList(),
+    fun `registry excludes providers whose integration is disabled`() = runTest {
+        val settings = MutableStateFlow(fakeSettings("kitsu" to false))
+        val registry = registry(
+            settings = settings,
+            searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
+
+        advanceUntilIdle()
 
         registry.searchProviders() shouldBe emptyList()
     }
 
     @Test
-    fun `registry excludes providers without a persisted setting`() {
-        val registry = DefaultIntegrationRegistry(
-            settings = emptyList(),
-            searchProviders = listOf(FakeSearchProvider("kitsu")),
-            discoveryProviders = emptyList(),
-            metadataProviders = emptyList(),
-            chapterEvidenceProviders = emptyList(),
-            ratingsProviders = emptyList(),
+    fun `registry excludes providers without a persisted setting`() = runTest {
+        val registry = registry(
+            settings = MutableStateFlow(emptyList()),
+            searchProviders = setOf(FakeSearchProvider("kitsu")),
         )
+
+        advanceUntilIdle()
 
         registry.searchProviders() shouldBe emptyList()
     }
 
     @Test
-    fun `registry does not infer enabled state from provider presence`() {
+    fun `registry does not infer enabled state from provider presence`() = runTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val malSearch = FakeSearchProvider("mal")
-        val registry = DefaultIntegrationRegistry(
-            settings = fakeSettings("kitsu" to false, "mal" to true),
-            searchProviders = listOf(kitsuSearch, malSearch),
-            discoveryProviders = listOf(FakeDiscoveryProvider("kitsu"), FakeDiscoveryProvider("mal")),
-            metadataProviders = listOf(FakeMetadataProvider("kitsu"), FakeMetadataProvider("mal")),
-            chapterEvidenceProviders = listOf(FakeChapterEvidenceProvider("kitsu"), FakeChapterEvidenceProvider("mal")),
-            ratingsProviders = listOf(FakeRatingsProvider("kitsu"), FakeRatingsProvider("mal")),
-            trackingProviders = listOf(FakeTrackingProvider("kitsu"), FakeTrackingProvider("mal")),
+        val registry = registry(
+            settings = MutableStateFlow(fakeSettings("kitsu" to false, "mal" to true)),
+            searchProviders = setOf(kitsuSearch, malSearch),
+            discoveryProviders = setOf(FakeDiscoveryProvider("kitsu"), FakeDiscoveryProvider("mal")),
+            metadataProviders = setOf(FakeMetadataProvider("kitsu"), FakeMetadataProvider("mal")),
+            chapterEvidenceProviders = setOf(FakeChapterEvidenceProvider("kitsu"), FakeChapterEvidenceProvider("mal")),
+            ratingsProviders = setOf(FakeRatingsProvider("kitsu"), FakeRatingsProvider("mal")),
+            trackingProviders = setOf(FakeTrackingProvider("kitsu"), FakeTrackingProvider("mal")),
         )
+
+        advanceUntilIdle()
 
         registry.searchProviders() shouldContainExactly listOf(malSearch)
         registry.discoveryProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
@@ -71,26 +75,63 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
-    fun `registry uses the latest setting when duplicate snapshots are supplied`() {
-        val registry = DefaultIntegrationRegistry(
-            settings = listOf(
-                IntegrationSettings(integrationId = IntegrationId("kitsu"), enabled = true, updatedAt = 1L),
-                IntegrationSettings(integrationId = IntegrationId("kitsu"), enabled = false, updatedAt = 2L),
-            ),
-            searchProviders = listOf(FakeSearchProvider("kitsu")),
-            discoveryProviders = emptyList(),
-            metadataProviders = emptyList(),
-            chapterEvidenceProviders = emptyList(),
-            ratingsProviders = emptyList(),
+    fun `registry reflects settings changes without being reconstructed`() = runTest {
+        val kitsuSearch = FakeSearchProvider("kitsu")
+        val settings = MutableStateFlow(fakeSettings("kitsu" to false))
+        val registry = registry(
+            settings = settings,
+            searchProviders = setOf(kitsuSearch),
         )
 
+        advanceUntilIdle()
+        registry.searchProviders() shouldBe emptyList()
+
+        settings.value = fakeSettings("kitsu" to true)
+        advanceUntilIdle()
+        registry.searchProviders() shouldContainExactly listOf(kitsuSearch)
+
+        settings.value = fakeSettings("kitsu" to false)
+        advanceUntilIdle()
         registry.searchProviders() shouldBe emptyList()
     }
+
+    private fun registry(
+        settings: MutableStateFlow<List<IntegrationSettings>>,
+        searchProviders: Set<SearchProvider> = emptySet(),
+        discoveryProviders: Set<DiscoveryProvider> = emptySet(),
+        metadataProviders: Set<MetadataProvider> = emptySet(),
+        chapterEvidenceProviders: Set<ChapterEvidenceProvider> = emptySet(),
+        ratingsProviders: Set<RatingsProvider> = emptySet(),
+        trackingProviders: Set<TrackingProvider> = emptySet(),
+    ) = DefaultIntegrationRegistry(
+        settingsRepository = FakeIntegrationSettingsRepository(settings),
+        searchProviders = searchProviders,
+        discoveryProviders = discoveryProviders,
+        metadataProviders = metadataProviders,
+        chapterEvidenceProviders = chapterEvidenceProviders,
+        ratingsProviders = ratingsProviders,
+        trackingProviders = trackingProviders,
+        scope = backgroundScope,
+    )
 
     private fun fakeSettings(vararg settings: Pair<String, Boolean>): List<IntegrationSettings> =
         settings.map { (id, enabled) ->
             IntegrationSettings(integrationId = IntegrationId(id), enabled = enabled)
         }
+
+    private class FakeIntegrationSettingsRepository(
+        private val settings: MutableStateFlow<List<IntegrationSettings>>,
+    ) : IntegrationSettingsRepository {
+        override suspend fun get(id: IntegrationId): IntegrationSettings? =
+            settings.value.firstOrNull { it.integrationId == id }
+
+        override fun observeAll(): Flow<List<IntegrationSettings>> = settings
+
+        override suspend fun upsert(settings: IntegrationSettings) {
+            this.settings.value = this.settings.value
+                .filterNot { it.integrationId == settings.integrationId } + settings
+        }
+    }
 
     private class FakeSearchProvider(id: String) : SearchProvider {
         override val integrationId = IntegrationId(id)
