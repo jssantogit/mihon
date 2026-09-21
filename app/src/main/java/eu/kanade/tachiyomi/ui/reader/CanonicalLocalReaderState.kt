@@ -7,8 +7,7 @@ internal fun resolveCanonicalLocalRequestedPage(
     savedPageIndex: Int,
     progress: CanonicalChapterProgress?,
 ): Int {
-    if (resetPage) return 0
-    if (savedPageIndex >= 0) return savedPageIndex
+    if (!resetPage && savedPageIndex >= 0) return savedPageIndex
     return progress?.lastPageRead
         ?.coerceIn(0L, Int.MAX_VALUE.toLong())
         ?.toInt()
