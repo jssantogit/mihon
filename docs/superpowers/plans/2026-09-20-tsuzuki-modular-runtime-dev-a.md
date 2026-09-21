@@ -53,6 +53,7 @@
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_content_bindings.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_content_preferences.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_chapter_update_state.sq`
+- Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_continue_reading_state.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_canonical_downloads.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/data/tsuzuki_supabase_sync.sq`
 - Create: `data/src/main/sqldelight/tachiyomi/migrations/30.sqm`
@@ -236,6 +237,12 @@ CREATE TABLE tsuzuki_chapter_update_state(
     first_seen_at INTEGER NOT NULL,
     acknowledged_at INTEGER,
     FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE tsuzuki_continue_reading_state(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    hidden_at INTEGER,
     FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
 );
 
@@ -712,6 +719,7 @@ git commit -m "feat(tsuzuki): make chapter graph evidence driven"
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/library/interactor/RefreshLibraryTitleForUpdate.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/evidence/RefreshChapterEvidence.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/updates/interactor/RecordNewCanonicalChapters.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/updates/repository/ChapterUpdateStateRepository.kt`
 - Create: `data/src/main/java/tachiyomi/data/tsuzuki/updates/ChapterUpdateStateRepositoryImpl.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/chapter/evidence/RefreshChapterEvidenceTest.kt`
 - Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/updates/RecordNewCanonicalChaptersTest.kt`
