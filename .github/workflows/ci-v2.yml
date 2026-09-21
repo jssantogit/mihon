@@ -55,8 +55,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Test planner
-        run: python3 .github/scripts/test_ci_v2_plan.py
+      - name: Test CI routing
+        run: |
+          python3 .github/scripts/test_ci_v2_plan.py
+          python3 .github/scripts/test_apk_lane.py
 
       - name: Resolve verification scope
         id: scope
