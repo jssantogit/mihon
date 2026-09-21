@@ -75,5 +75,4 @@ class ContinueReadingVisibilityRepositoryImpl(
         database.tsuzuki_continue_reading_stateQueries
             .deleteTsuzukiContinueReadingState(canonicalTitleId)
     }
-
 }
