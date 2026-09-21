@@ -1,0 +1,52 @@
+CREATE TABLE tsuzuki_canonical_downloads(
+    canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
+    local_uri TEXT NOT NULL,
+    format TEXT NOT NULL,
+    originating_addon_id TEXT,
+    originating_option_key TEXT,
+    completed_at INTEGER NOT NULL,
+    checksum TEXT,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE
+);
+
+getTsuzukiCanonicalDownload:
+SELECT *
+FROM tsuzuki_canonical_downloads
+WHERE canonical_chapter_id = :canonicalChapterId
+LIMIT 1;
+
+getAllTsuzukiCanonicalDownloads:
+SELECT *
+FROM tsuzuki_canonical_downloads
+ORDER BY completed_at ASC, canonical_chapter_id ASC;
+
+upsertTsuzukiCanonicalDownload:
+INSERT INTO tsuzuki_canonical_downloads(
+    canonical_chapter_id,
+    local_uri,
+    format,
+    originating_addon_id,
+    originating_option_key,
+    completed_at,
+    checksum
+)
+VALUES (
+    :canonicalChapterId,
+    :localUri,
+    :format,
+    :originatingAddonId,
+    :originatingOptionKey,
+    :completedAt,
+    :checksum
+)
+ON CONFLICT(canonical_chapter_id) DO UPDATE SET
+    local_uri = excluded.local_uri,
+    format = excluded.format,
+    originating_addon_id = excluded.originating_addon_id,
+    originating_option_key = excluded.originating_option_key,
+    completed_at = excluded.completed_at,
+    checksum = excluded.checksum;
+
+deleteTsuzukiCanonicalDownload:
+DELETE FROM tsuzuki_canonical_downloads
+WHERE canonical_chapter_id = :canonicalChapterId;
