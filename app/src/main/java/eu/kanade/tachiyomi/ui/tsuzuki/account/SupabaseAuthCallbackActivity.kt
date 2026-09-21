@@ -9,11 +9,11 @@ import eu.kanade.tachiyomi.data.tsuzuki.supabase.AndroidKeystoreSessionStore
 import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseAccountRepository
 import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseAuthService
 import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseConfiguration
+import eu.kanade.tachiyomi.ui.main.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import eu.kanade.tachiyomi.ui.main.MainActivity
 
 class SupabaseAuthCallbackActivity : ComponentActivity() {
 
