@@ -1,12 +1,5 @@
 package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
-import android.content.Context
-import dev.zacsweers.metro.AppScope
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
-import dev.zacsweers.metro.SingleIn
-import eu.kanade.tachiyomi.network.NetworkHelper
-import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,27 +7,11 @@ import tachiyomi.domain.tsuzuki.account.model.AccountState
 import tachiyomi.domain.tsuzuki.account.model.TsuzukiAccount
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 
-@Inject
-@SingleIn(AppScope::class)
-@ContributesBinding(AppScope::class)
 class SupabaseAccountRepository(
     private val authService: SupabaseAuthService,
     private val sessionStore: SupabaseSessionStore,
     private val nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1_000L },
 ) : AccountRepository {
-
-    constructor(
-        context: Context,
-        networkHelper: NetworkHelper,
-        json: Json,
-    ) : this(
-        authService = SupabaseAuthService(
-            client = supabaseSafeClient(networkHelper.client),
-            configuration = SupabaseConfiguration.fromBuildConfig(),
-            json = json,
-        ),
-        sessionStore = AndroidKeystoreSessionStore(context, json),
-    )
 
     private val mutableState = MutableStateFlow(
         sessionStore.load()?.toAccountState() ?: AccountState.LoggedOut,
