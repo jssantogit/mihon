@@ -83,8 +83,6 @@ class CanonicalTitleScreenModelTest {
                 parser = ParseCanonicalChapterLabel(),
                 canonicalChapterRepository = chapters,
                 evidenceRepository = FakeEvidenceRepository(),
-                idFactory = { "unused" },
-                clock = { 100L },
             ),
         )
         val model = CanonicalTitleScreenModel(
@@ -94,7 +92,9 @@ class CanonicalTitleScreenModelTest {
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
-                canonicalDownloadGateway = CanonicalDownloadGateway { false },
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
             ),
             refreshChapterEvidence = refresh,
         )
@@ -126,7 +126,8 @@ class CanonicalTitleScreenModelTest {
         )
 
         override suspend fun getById(id: String): CanonicalTitle? = title.takeIf { it.id == id }
-        override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> = MutableStateFlow(title.takeIf { it.id == id })
+        override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> =
+            MutableStateFlow(title.takeIf { it.id == id })
         override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? = null
         override suspend fun getOrCreateByExternalIdentity(
             title: CanonicalTitle,
