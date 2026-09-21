@@ -879,6 +879,14 @@
     <string name="tsuzuki_reader_fallback_message">The preferred source does not have this chapter. Another source can be used for this chapter without changing the title's preferred source.</string>
     <string name="tsuzuki_reader_fallback_read_once">Read once</string>
     <string name="tsuzuki_reader_fallback_always">Always use fallback</string>
+    <string name="tsuzuki_content_selector_title">Choose reading source</string>
+    <string name="tsuzuki_content_no_options">No reading options found</string>
+    <string name="tsuzuki_content_selector_error">Unable to load reading options</string>
+    <string name="tsuzuki_content_preferred_badge">Preferred</string>
+    <string name="tsuzuki_content_change_source">Change source</string>
+    <string name="tsuzuki_content_open_addons">Add-ons settings</string>
+    <string name="tsuzuki_content_set_preferred_title">Set preferred Add-on?</string>
+    <string name="tsuzuki_content_set_preferred_message">Use this Add-on as the preferred reading source for this title?</string>
 
     <!-- Updates -->
     <string name="updating_library">Updating library</string>

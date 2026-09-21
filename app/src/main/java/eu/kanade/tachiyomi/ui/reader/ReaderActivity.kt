@@ -54,6 +54,7 @@ import eu.kanade.presentation.reader.ReaderPageActionsDialog
 import eu.kanade.presentation.reader.ReaderPageIndicator
 import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
+import eu.kanade.presentation.tsuzuki.content.ContentOptionSelectorSheet
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
 import eu.kanade.tachiyomi.R
@@ -76,6 +77,7 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.readerBackgroundColor
@@ -136,6 +138,7 @@ class ReaderActivity : BaseActivity() {
     lateinit var binding: ReaderActivityBinding
 
     val viewModel by viewModels<ReaderViewModel> { graph.viewModelFactory }
+    private val contentSelectorViewModel by viewModels<ContentSelectorScreenModel> { graph.viewModelFactory }
     private var assistUrl: String? = null
 
     /**
@@ -266,6 +269,7 @@ class ReaderActivity : BaseActivity() {
 
     private fun ReaderActivityBinding.setComposeOverlay(): Unit = composeOverlay.setComposeContent {
         val state by viewModel.state.collectAsState()
+        val selectorState by contentSelectorViewModel.state.collectAsState()
         val showPageNumber by readerPreferences.showPageNumber.collectAsState()
         val settingsviewModel = remember {
             ReaderSettingsViewModel(
@@ -347,28 +351,55 @@ class ReaderActivity : BaseActivity() {
                     onSave = viewModel::saveImage,
                 )
             }
-            is ReaderViewModel.Dialog.CanonicalFallback -> {
+            is ReaderViewModel.Dialog.ContentSelector -> {
+                val selector = state.dialog as ReaderViewModel.Dialog.ContentSelector
+                androidx.compose.runtime.LaunchedEffect(
+                    selector.canonicalTitleId,
+                    selector.canonicalChapterId,
+                ) {
+                    contentSelectorViewModel.start(
+                        canonicalTitleId = selector.canonicalTitleId,
+                        canonicalChapterId = selector.canonicalChapterId,
+                    )
+                }
+                ContentOptionSelectorSheet(
+                    state = selectorState,
+                    onSelect = { item ->
+                        viewModel.selectCanonicalContent(contentSelectorViewModel.select(item))
+                    },
+                    onRetry = { contentSelectorViewModel.retry() },
+                    onOpenAddonsSettings = {
+                        startActivity(
+                            Intent(this@ReaderActivity, MainActivity::class.java)
+                                .setAction(Intent.ACTION_APPLICATION_PREFERENCES),
+                        )
+                    },
+                    onDismissRequest = viewModel::dismissContentSelector,
+                )
+            }
+            is ReaderViewModel.Dialog.SetPreferredAddon -> {
+                val preference = state.dialog as ReaderViewModel.Dialog.SetPreferredAddon
                 AlertDialog(
-                    onDismissRequest = viewModel::cancelCanonicalFallback,
+                    onDismissRequest = viewModel::closeDialog,
                     title = {
-                        Text(stringResource(MR.strings.tsuzuki_reader_fallback_title))
+                        Text(stringResource(MR.strings.tsuzuki_content_set_preferred_title))
                     },
                     text = {
-                        Text(stringResource(MR.strings.tsuzuki_reader_fallback_message))
+                        Text(stringResource(MR.strings.tsuzuki_content_set_preferred_message))
                     },
                     confirmButton = {
-                        TextButton(onClick = { viewModel.confirmCanonicalFallback(always = false) }) {
-                            Text(stringResource(MR.strings.tsuzuki_reader_fallback_read_once))
+                        TextButton(
+                            onClick = {
+                                contentSelectorViewModel.confirmPreferred(preference.selection)
+                                viewModel.closeDialog()
+                            },
+                        ) {
+                            Text(stringResource(MR.strings.action_ok))
                         }
                     },
                     dismissButton = {
-                        Row {
-                            TextButton(onClick = { viewModel.confirmCanonicalFallback(always = true) }) {
-                                Text(stringResource(MR.strings.tsuzuki_reader_fallback_always))
-                            }
-                            TextButton(onClick = viewModel::cancelCanonicalFallback) {
-                                Text(stringResource(MR.strings.action_cancel))
-                            }
+                        TextButton(onClick = viewModel::closeDialog) {
+                            Text(stringResource(MR.strings.action_cancel))
                         }
                     },
                 )
@@ -515,6 +546,7 @@ class ReaderActivity : BaseActivity() {
             onClickTopAppBar = ::openMangaScreen,
             bookmarked = state.bookmarked,
             onToggleBookmarked = viewModel::toggleChapterBookmark,
+            onChangeSource = viewModel::openContentSelector.takeIf { viewModel.canChangeCanonicalSource() },
             onOpenInWebView = ::openChapterInWebView.takeIf { isHttpSource },
             onOpenInBrowser = ::openChapterInBrowser.takeIf { isHttpSource },
             onShare = ::shareChapter.takeIf { isHttpSource },
