@@ -55,3 +55,28 @@ object CanonicalVariantSyncKey {
         }
     }
 }
+
+
+object ChapterEvidenceSyncKey {
+    fun from(
+        producerKind: String,
+        producerId: String,
+        externalChapterKey: String,
+    ): String {
+        require(producerKind.isNotBlank()) { "Evidence producer kind must not be blank" }
+        require(producerId.isNotBlank()) { "Evidence producer ID must not be blank" }
+        require(externalChapterKey.isNotBlank()) { "External chapter key must not be blank" }
+
+        return buildString {
+            append(producerKind)
+            append(':')
+            append(producerId.length)
+            append(':')
+            append(producerId)
+            append(':')
+            append(externalChapterKey.length)
+            append(':')
+            append(externalChapterKey)
+        }
+    }
+}
