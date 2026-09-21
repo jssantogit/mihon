@@ -37,7 +37,9 @@ class InFlightContentResolution {
             deferred.cancel(error)
             throw error
         } catch (error: Throwable) {
-            Result.failure<List<ContentOption>>(error).also(deferred::complete)
+            val result = Result.failure<List<ContentOption>>(error)
+            deferred.complete(result)
+            result
         } finally {
             mutex.withLock {
                 if (active[key] === deferred) active.remove(key)
