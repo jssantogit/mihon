@@ -191,7 +191,9 @@ class CanonicalTitleMergeRepositoryImplTest {
             .getTsuzukiLibraryCategoriesByTitle("winner") { categoryId, _, _, _ -> categoryId }
             .awaitAsList() shouldContainExactly listOf(1L)
         database.tsuzuki_source_mappingsQueries
-            .getTsuzukiSourceMappingById("mapping-1") { _, canonicalTitleId, _, _, _, _, _, _, _, _, _ -> canonicalTitleId }
+            .getTsuzukiSourceMappingById("mapping-1") { _, canonicalTitleId, _, _, _, _, _, _, _, _, _ ->
+                canonicalTitleId
+            }
             .awaitAsOneOrNull() shouldBe "winner"
         chapterRepository.getById("chapter-37")?.canonicalTitleId shouldBe "winner"
         readingRepository.getProgress("chapter-37")?.lastPageRead shouldBe 12L
