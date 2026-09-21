@@ -2,9 +2,9 @@ package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.account.model.AccountState
@@ -31,11 +31,11 @@ class SupabaseAccountRepositoryTest {
     @Test
     fun `signup uses auth signup with publishable key only`() = runTest {
         server.enqueue(
-            MockResponse(
-                code = 200,
-                body = """{"user":{"id":"user-1","email":"reader@example.com"},"session":null}""",
-                headers = mapOf("Content-Type" to "application/json"),
-            ),
+            MockResponse.Builder()
+                .code(200)
+                .addHeader("Content-Type", "application/json")
+                .body("""{"user":{"id":"user-1","email":"reader@example.com"},"session":null}""")
+                .build(),
         )
         val repository = repository(InMemorySessionStore())
 
@@ -43,10 +43,10 @@ class SupabaseAccountRepositoryTest {
             AccountState.EmailConfirmationRequired("reader@example.com")
 
         val request = server.takeRequest()
-        request.path shouldBe "/auth/v1/signup"
+        request.url.encodedPath shouldBe "/auth/v1/signup"
         request.headers["apikey"] shouldBe "publishable-test-key"
         request.headers["Authorization"] shouldBe "Bearer publishable-test-key"
-        request.body.utf8().contains("secret123") shouldBe true
+        request.body!!.utf8().contains("secret123") shouldBe true
     }
 
     @Test
@@ -63,7 +63,9 @@ class SupabaseAccountRepositoryTest {
                 email = "reader@example.com",
             ),
         )
-        server.takeRequest().path shouldBe "/auth/v1/token?grant_type=password"
+        val request = server.takeRequest()
+        request.url.encodedPath shouldBe "/auth/v1/token"
+        request.url.queryParameter("grant_type") shouldBe "password"
         store.load()?.refreshToken shouldBe "refresh-1"
     }
 
@@ -86,19 +88,20 @@ class SupabaseAccountRepositoryTest {
         repository.refreshSession().getOrThrow()
 
         val request = server.takeRequest()
-        request.path shouldBe "/auth/v1/token?grant_type=refresh_token"
-        request.body.utf8().contains("refresh-1") shouldBe true
+        request.url.encodedPath shouldBe "/auth/v1/token"
+        request.url.queryParameter("grant_type") shouldBe "refresh_token"
+        request.body!!.utf8().contains("refresh-1") shouldBe true
         store.load()?.accessToken shouldBe "access-2"
     }
 
     @Test
     fun `password recovery uses recover endpoint`() = runTest {
-        server.enqueue(MockResponse(code = 200, body = "{}"))
+        server.enqueue(MockResponse.Builder().code(200).body("{}").build())
         val repository = repository(InMemorySessionStore())
 
         repository.sendPasswordRecovery("reader@example.com").getOrThrow()
 
-        server.takeRequest().path shouldBe "/auth/v1/recover"
+        server.takeRequest().url.encodedPath shouldBe "/auth/v1/recover"
     }
 
     private fun repository(store: SupabaseSessionStore): SupabaseAccountRepository {
@@ -119,18 +122,20 @@ class SupabaseAccountRepositoryTest {
     private fun sessionResponse(
         accessToken: String = "access-1",
         refreshToken: String = "refresh-1",
-    ) = MockResponse(
-        code = 200,
-        body = """
-            {
-              "access_token":"$accessToken",
-              "refresh_token":"$refreshToken",
-              "expires_in":3600,
-              "user":{"id":"user-1","email":"reader@example.com"}
-            }
-        """.trimIndent(),
-        headers = mapOf("Content-Type" to "application/json"),
-    )
+    ) = MockResponse.Builder()
+        .code(200)
+        .addHeader("Content-Type", "application/json")
+        .body(
+            """
+                {
+                  "access_token":"$accessToken",
+                  "refresh_token":"$refreshToken",
+                  "expires_in":3600,
+                  "user":{"id":"user-1","email":"reader@example.com"}
+                }
+            """.trimIndent(),
+        )
+        .build()
 
     private class InMemorySessionStore : SupabaseSessionStore {
         private var session: SupabaseSession? = null
