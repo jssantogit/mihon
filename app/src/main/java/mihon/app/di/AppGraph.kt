@@ -54,6 +54,8 @@ import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.domain.track.interactor.InsertTrack
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
 @DependencyGraph(
     scope = AppScope::class,
@@ -92,6 +94,7 @@ interface AppGraph : ViewModelGraph {
     val privacyPreferences: PrivacyPreferences
     val securityPreferences: SecurityPreferences
     val downloadPreferences: DownloadPreferences
+    val canonicalReaderPreferences: CanonicalReaderPreferences
 
     val crashLogUtil: CrashLogUtil
 
@@ -102,6 +105,7 @@ interface AppGraph : ViewModelGraph {
     val trustExtension: TrustExtension
 
     val sourceManager: SourceManager
+    val addonRepository: AddonRepository
     val trackerManager: TrackerManager
     val googleAuthInteractiveCoordinator: GoogleAuthInteractiveCoordinator
     val driveSyncRuntime: DriveSyncRuntime
