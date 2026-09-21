@@ -888,7 +888,7 @@ class ReaderViewModel(
                     } else {
                         recordCanonicalReaderProgress.recordPage(
                             canonicalChapterId = canonicalSession.canonicalChapterId,
-                            variantId = canonicalSession.variantId.takeIf(String::isNotBlank),
+                            variantId = canonicalSession.variantId,
                             pageIndex = pageIndex,
                             completed = readerChapter.pages?.lastIndex == pageIndex,
                             mihonChapterId = readerChapter.chapter.id!!,
@@ -962,7 +962,7 @@ class ReaderViewModel(
                 try {
                     recordCanonicalReaderProgress.recordHistory(
                         canonicalChapterId = canonicalSession.canonicalChapterId,
-                        variantId = canonicalSession.variantId,
+                        variantId = canonicalSession.variantId.takeIf(String::isNotBlank),
                         sessionReadDuration = sessionReadDuration,
                         mihonChapterId = chapterId,
                     )
