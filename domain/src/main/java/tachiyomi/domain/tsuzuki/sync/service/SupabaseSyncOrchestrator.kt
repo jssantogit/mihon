@@ -38,6 +38,11 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 
+enum class SupabaseConflictResolution {
+    KEEP_LOCAL,
+    KEEP_REMOTE,
+}
+
 class SupabaseSyncOrchestrator(
     private val accountRepository: AccountRepository,
     private val transport: SupabaseSyncTransport,
@@ -109,6 +114,211 @@ class SupabaseSyncOrchestrator(
         }
 
         SyncCycleReport(documentResults = results)
+    }
+
+    suspend fun resolveConflict(
+        documentKind: SyncDocumentKind,
+        remoteConflictId: Long,
+        resolution: SupabaseConflictResolution,
+    ): SyncTransportResult<Unit> = mutex.withLock {
+        if (accountRepository.state.value !is AccountState.Authenticated) {
+            return@withLock SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.AUTHORIZATION_REQUIRED),
+            )
+        }
+
+        val adapter = adapters[documentKind]
+            ?: return@withLock SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.LOCAL_STATE_UNAVAILABLE),
+            )
+        val storedConflicts = conflictRepository.getForDocument(documentKind)
+        val selected = storedConflicts
+            .firstOrNull { it.conflict.remoteConflictId == remoteConflictId }
+            ?.conflict
+            ?: return@withLock SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.REMOTE_NOT_FOUND),
+            )
+        val storedState = stateRepository.get(documentKind)
+        val accepted = storedState?.acceptedBase
+            ?: return@withLock SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.LOCAL_STATE_UNAVAILABLE),
+            )
+        val cursorState = supabaseStateStore.getCursor(documentKind)
+            ?: return@withLock SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.LOCAL_STATE_UNAVAILABLE),
+            )
+        val now = clock.nowEpochMillis()
+
+        when (resolution) {
+            SupabaseConflictResolution.KEEP_REMOTE -> {
+                val local = adapter.exportDocument()
+                val resolved = applyRemoteConflictChoice(
+                    local = local,
+                    acceptedRemote = accepted,
+                    conflict = selected,
+                    now = now,
+                ) ?: return@withLock SyncTransportResult.Failure(
+                    SyncFailure(SyncFailureReason.MALFORMED_DOCUMENT),
+                )
+                adapter.applyDocument(resolved)
+
+                when (val ack = transport.ackConflict(remoteConflictId)) {
+                    is SyncTransportResult.Failure -> return@withLock ack
+                    is SyncTransportResult.Success -> {
+                        if (!ack.value) {
+                            return@withLock SyncTransportResult.Failure(
+                                SyncFailure(SyncFailureReason.REMOTE_NOT_FOUND),
+                            )
+                        }
+                    }
+                }
+
+                removeResolvedConflict(
+                    documentKind = documentKind,
+                    remoteConflictId = remoteConflictId,
+                    now = now,
+                )
+                return@withLock SyncTransportResult.Success(Unit)
+            }
+
+            SupabaseConflictResolution.KEEP_LOCAL -> {
+                val local = adapter.exportDocument()
+                val pending = supabaseStateStore.getPending(documentKind)
+                val pendingMutation = pending ?: run {
+                    val operations = selectedLocalOperations(
+                        local = local,
+                        conflict = selected,
+                        now = now,
+                    )
+                    if (operations.isEmpty()) {
+                        return@withLock SyncTransportResult.Failure(
+                            SyncFailure(SyncFailureReason.MALFORMED_DOCUMENT),
+                        )
+                    }
+                    SupabasePendingMutation(
+                        batch = SupabaseMutationBatch(
+                            mutationId = mutationIdSource(),
+                            originClientId = clientIdentityProvider.getOrCreate(),
+                            domain = documentKind.name,
+                            baseCursor = cursorState.eventCursor,
+                            operations = operations,
+                        ),
+                        createdAtEpochMillis = now,
+                    ).also { supabaseStateStore.putPending(it) }
+                }
+
+                val pushed = when (val push = transport.push(pendingMutation.batch)) {
+                    is SyncTransportResult.Failure -> {
+                        val nextAttemptAt = retryPolicy.nextAttemptAt(
+                            nowEpochMillis = now,
+                            currentAttemptCount = pendingMutation.attemptCount,
+                            failure = push.failure,
+                        )
+                        supabaseStateStore.recordPendingFailure(
+                            mutation = pendingMutation,
+                            nextAttemptAtEpochMillis = nextAttemptAt,
+                        )
+                        outboxRepository.recordFailure(
+                            documentKind = documentKind,
+                            nextAttemptAtEpochMillis = nextAttemptAt,
+                        )
+                        return@withLock push
+                    }
+                    is SyncTransportResult.Success -> push.value
+                }
+                supabaseStateStore.deletePending(pendingMutation.batch.mutationId)
+
+                val afterPush = pullDelta(
+                    documentKind = documentKind,
+                    schemaVersion = accepted.schemaVersion,
+                    startDocument = accepted,
+                    startCursor = cursorState.eventCursor,
+                    now = now,
+                )
+                if (afterPush is RemotePull.Failure) {
+                    return@withLock SyncTransportResult.Failure(afterPush.failure)
+                }
+                afterPush as RemotePull.Success
+                if (afterPush.cursor < pushed.cursor) {
+                    return@withLock SyncTransportResult.Failure(
+                        SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
+                    )
+                }
+
+                val newServerConflicts = pushed.conflicts.map {
+                    it.toSyncConflict(documentKind)
+                }
+                if (newServerConflicts.isNotEmpty()) {
+                    recordConflicts(
+                        documentKind = documentKind,
+                        conflicts = deduplicateConflicts(
+                            storedConflicts.map { it.conflict } + newServerConflicts,
+                        ),
+                        now = now,
+                    )
+                    persistAcceptedRemote(
+                        documentKind = documentKind,
+                        remote = afterPush.document,
+                        cursor = afterPush.cursor,
+                        lastSuccessfulSyncAt = storedState.lastSuccessfulSyncAtEpochMillis,
+                        stored = storedState,
+                    )
+                    return@withLock SyncTransportResult.Failure(
+                        SyncFailure(SyncFailureReason.REMOTE_CHANGED),
+                    )
+                }
+
+                val merged = merge(
+                    base = accepted,
+                    local = materializeLocalTombstones(
+                        base = accepted,
+                        local = local,
+                        now = now,
+                    ),
+                    remote = afterPush.document,
+                    now = now,
+                )
+                if (merged is LocalMerge.Failure) {
+                    return@withLock SyncTransportResult.Failure(merged.failure)
+                }
+                merged as LocalMerge.Success
+                if (merged.requiresLocalApply) {
+                    adapter.applyDocument(merged.document)
+                }
+
+                persistAcceptedRemote(
+                    documentKind = documentKind,
+                    remote = afterPush.document,
+                    cursor = afterPush.cursor,
+                    lastSuccessfulSyncAt = storedState.lastSuccessfulSyncAtEpochMillis,
+                    stored = storedState,
+                )
+
+                when (val ack = transport.ackConflict(remoteConflictId)) {
+                    is SyncTransportResult.Failure -> return@withLock ack
+                    is SyncTransportResult.Success -> {
+                        if (!ack.value) {
+                            return@withLock SyncTransportResult.Failure(
+                                SyncFailure(SyncFailureReason.REMOTE_NOT_FOUND),
+                            )
+                        }
+                    }
+                }
+
+                val remaining = deduplicateConflicts(
+                    storedConflicts
+                        .map { it.conflict }
+                        .filterNot { it.remoteConflictId == remoteConflictId } +
+                        merged.conflicts,
+                )
+                if (remaining.isEmpty()) {
+                    conflictRepository.clearForDocument(documentKind)
+                } else {
+                    recordConflicts(documentKind, remaining, now)
+                }
+                return@withLock SyncTransportResult.Success(Unit)
+            }
+        }
     }
 
     private suspend fun syncDocument(
@@ -919,6 +1129,166 @@ class SupabaseSyncOrchestrator(
                     SyncConflictValue.Present(objectValue)
                 }
             }
+        }
+    }
+
+    private fun applyRemoteConflictChoice(
+        local: SyncDocumentEnvelope,
+        acceptedRemote: SyncDocumentEnvelope,
+        conflict: SyncConflict,
+        now: Long,
+    ): SyncDocumentEnvelope? {
+        val records = local.records.toMutableMap()
+        val remoteRecord = acceptedRemote.records[conflict.recordId]
+
+        when (conflict.kind) {
+            SyncConflictKind.DELETE_EDIT -> {
+                if (remoteRecord == null) {
+                    records.remove(conflict.recordId)
+                } else {
+                    records[conflict.recordId] = remoteRecord
+                }
+            }
+            SyncConflictKind.FIELD_DIVERGENCE -> {
+                if (conflict.propertyPath.isEmpty()) return null
+                val localRecord = records[conflict.recordId] ?: return null
+                if (remoteRecord == null || remoteRecord.isTombstone) {
+                    records[conflict.recordId] = remoteRecord ?: localRecord.copy(
+                        revision = SyncRevision("conflict-remote", now),
+                        updatedAtEpochMillis = now,
+                        deletedAtEpochMillis = now,
+                    )
+                } else {
+                    val remoteValue = getPath(
+                        root = remoteRecord.fields,
+                        path = conflict.propertyPath,
+                    )
+                    val fields = if (remoteValue == null) {
+                        removePath(localRecord.fields, conflict.propertyPath)
+                    } else {
+                        setPath(localRecord.fields, conflict.propertyPath, remoteValue)
+                    }
+                    records[conflict.recordId] = localRecord.copy(
+                        revision = SyncRevision("conflict-remote", now),
+                        updatedAtEpochMillis = now,
+                        deletedAtEpochMillis = null,
+                        fields = fields,
+                    )
+                }
+            }
+        }
+
+        return local.copy(
+            revision = SyncRevision("conflict-remote", now),
+            generatedAtEpochMillis = now,
+            records = records,
+        )
+    }
+
+    private fun selectedLocalOperations(
+        local: SyncDocumentEnvelope,
+        conflict: SyncConflict,
+        now: Long,
+    ): List<SyncMutation> {
+        val record = local.records[conflict.recordId]
+        return when (conflict.kind) {
+            SyncConflictKind.FIELD_DIVERGENCE -> {
+                if (conflict.propertyPath.isEmpty()) return emptyList()
+                val updatedAt = record?.updatedAtEpochMillis ?: now
+                val value = record
+                    ?.takeUnless { it.isTombstone }
+                    ?.let { getPath(it.fields, conflict.propertyPath) }
+                if (value == null) {
+                    listOf(
+                        SyncMutation.RemoveField(
+                            recordId = conflict.recordId,
+                            propertyPath = conflict.propertyPath,
+                            recordUpdatedAtEpochMillis = updatedAt,
+                        ),
+                    )
+                } else {
+                    listOf(
+                        SyncMutation.SetField(
+                            recordId = conflict.recordId,
+                            propertyPath = conflict.propertyPath,
+                            value = value,
+                            recordUpdatedAtEpochMillis = updatedAt,
+                        ),
+                    )
+                }
+            }
+            SyncConflictKind.DELETE_EDIT -> {
+                if (record == null || record.isTombstone) {
+                    listOf(
+                        SyncMutation.DeleteRecord(
+                            recordId = conflict.recordId,
+                            recordUpdatedAtEpochMillis = record?.updatedAtEpochMillis ?: now,
+                            deletedAtEpochMillis = record?.deletedAtEpochMillis ?: now,
+                        ),
+                    )
+                } else {
+                    flattenFields(
+                        recordId = conflict.recordId,
+                        root = record.fields,
+                        updatedAt = record.updatedAtEpochMillis,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun flattenFields(
+        recordId: String,
+        root: JsonObject,
+        updatedAt: Long,
+        prefix: List<String> = emptyList(),
+    ): List<SyncMutation> {
+        return root.entries.flatMap { (key, value) ->
+            val path = prefix + key
+            if (value is JsonObject) {
+                flattenFields(
+                    recordId = recordId,
+                    root = value,
+                    updatedAt = updatedAt,
+                    prefix = path,
+                )
+            } else {
+                listOf(
+                    SyncMutation.SetField(
+                        recordId = recordId,
+                        propertyPath = path,
+                        value = value,
+                        recordUpdatedAtEpochMillis = updatedAt,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun getPath(
+        root: JsonObject,
+        path: List<String>,
+    ): JsonElement? {
+        var current: JsonElement = root
+        path.forEach { segment ->
+            val objectValue = current as? JsonObject ?: return null
+            current = objectValue[segment] ?: return null
+        }
+        return current
+    }
+
+    private suspend fun removeResolvedConflict(
+        documentKind: SyncDocumentKind,
+        remoteConflictId: Long,
+        now: Long,
+    ) {
+        val remaining = conflictRepository.getForDocument(documentKind)
+            .map { it.conflict }
+            .filterNot { it.remoteConflictId == remoteConflictId }
+        if (remaining.isEmpty()) {
+            conflictRepository.clearForDocument(documentKind)
+        } else {
+            recordConflicts(documentKind, remaining, now)
         }
     }
 
