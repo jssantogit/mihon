@@ -9,6 +9,8 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
 class SetCanonicalAutomaticFallbackTest {
 
+    // Runtime-v2 fallback is intentionally app-global; title preference remains separate.
+
     @Test
     fun `automatic fallback is one global preference not title scoped`() = runTest {
         val preferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
