@@ -6,12 +6,18 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.account.model.AccountState
 
 class SupabaseAccountRepositoryTest {
 
     private val server = MockWebServer()
+
+    @BeforeEach
+    fun setUp() {
+        server.start()
+    }
 
     @AfterEach
     fun tearDown() {
@@ -20,7 +26,6 @@ class SupabaseAccountRepositoryTest {
 
     @Test
     fun `repository without stored session starts logged out without network`() {
-        server.start()
         val store = InMemorySessionStore()
         val repository = repository(store)
 
