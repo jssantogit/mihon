@@ -51,7 +51,6 @@ class RecordCanonicalReaderProgressUpdateStateTest {
 
         recorder.recordPage(
             canonicalChapterId = "chapter-1",
-            contentOptionKey = "option-1",
             pageIndex = 4,
             completed = false,
         )
