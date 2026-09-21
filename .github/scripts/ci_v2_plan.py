@@ -168,8 +168,14 @@ def plan(paths: list[str], mode: str) -> dict[str, object]:
                 state["run_supabase"] = True
                 continue
 
-            if path in ROOT_BUILD_FILES or path.startswith("gradle/"):
+            if path in ROOT_BUILD_FILES or path.startswith("gradle/") or path.endswith("/build.gradle.kts"):
                 select_full(state)
+                continue
+
+            if path in {"app/proguard-rules.pro", "app/proguard-android-optimize.txt"}:
+                add_test(state["tests"], "app")
+                state["run_release"] = True
+                state["run_format"] = True
                 continue
 
             state["run_format"] = True
