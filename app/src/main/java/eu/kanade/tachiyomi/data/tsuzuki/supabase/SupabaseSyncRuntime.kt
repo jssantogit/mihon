@@ -1,0 +1,178 @@
+package eu.kanade.tachiyomi.data.tsuzuki.supabase
+
+import android.content.Context
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
+import eu.kanade.tachiyomi.network.NetworkHelper
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.Json
+import tachiyomi.data.tsuzuki.sync.CollectionsSyncAdapter
+import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
+import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.chapter.repository.ChapterOverrideRepository
+import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
+import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
+import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReaderPreferenceRepository
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
+import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
+import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalLibrarySyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalReadingProgressSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalTitlesSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.ChapterOverridesSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.ChapterUpdateStateSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.adapter.ContinueReadingStateSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
+import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
+import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
+import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
+import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
+import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
+import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
+import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleSyncSource
+import tachiyomi.domain.tsuzuki.sync.service.ChapterSyncEvidenceRepository
+import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncOrchestrator
+import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncStateStore
+import tachiyomi.domain.tsuzuki.sync.service.SyncClock
+import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
+import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeController
+import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
+import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
+import kotlin.time.Clock
+
+@Inject
+@SingleIn(AppScope::class)
+class SupabaseSyncRuntime(
+    context: Context,
+    networkHelper: NetworkHelper,
+    json: Json,
+    accountRepository: AccountRepository,
+    outboxRepository: SyncOutboxRepository,
+    stateRepository: SyncStateRepository,
+    supabaseStateStore: SupabaseSyncStateStore,
+    conflictRepository: SyncConflictRepository,
+    identityRepository: CanonicalIdentitySyncRepository,
+    canonicalTitleMergePort: CanonicalTitleMergePort,
+    titleSource: CanonicalTitleSyncSource,
+    titleRepository: CanonicalTitleRepository,
+    libraryRepository: CanonicalLibraryRepository,
+    chapterRepository: CanonicalChapterRepository,
+    readingRepository: CanonicalReadingRepository,
+    evidenceRepository: ChapterSyncEvidenceRepository,
+    chapterUpdateStateRepository: ChapterUpdateStateRepository,
+    continueReadingVisibilityRepository: ContinueReadingVisibilityRepository,
+    collectionStore: CollectionStore,
+    chapterOverrideRepository: ChapterOverrideRepository,
+    readerPreferenceRepository: CanonicalReaderPreferenceRepository,
+) {
+
+    private val clock: SyncClock = AndroidSupabaseSyncClock
+    private val clientIdentity = SyncClientIdentityStore(context)
+    private val revisionSource: SyncRevisionSource = AndroidSupabaseRevisionSource(
+        clientIdentity = clientIdentity,
+    )
+    private val transport = SupabaseSyncHttpTransport(
+        client = supabaseSafeClient(networkHelper.client),
+        configuration = SupabaseConfiguration.fromBuildConfig(),
+        accountRepository = accountRepository,
+        json = json,
+    )
+    private val controller = SyncRuntimeController(
+        runner = SupabaseSyncOrchestrator(
+            accountRepository = accountRepository,
+            transport = transport,
+            identityClaimTransport = transport,
+            identityRepository = identityRepository,
+            canonicalTitleMergePort = canonicalTitleMergePort,
+            outboxRepository = outboxRepository,
+            stateRepository = stateRepository,
+            supabaseStateStore = supabaseStateStore,
+            conflictRepository = conflictRepository,
+            adapters = listOf(
+                CanonicalTitlesSyncAdapter(
+                    titleSource = titleSource,
+                    identitySource = identityRepository,
+                    titleRepository = titleRepository,
+                    canonicalTitleMergePort = canonicalTitleMergePort,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                CanonicalLibrarySyncAdapter(
+                    libraryRepository = libraryRepository,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                CanonicalReadingProgressSyncAdapter(
+                    titleSource = titleSource,
+                    chapterRepository = chapterRepository,
+                    readingRepository = readingRepository,
+                    evidenceRepository = evidenceRepository,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                ChapterUpdateStateSyncAdapter(
+                    stateRepository = chapterUpdateStateRepository,
+                    chapterRepository = chapterRepository,
+                    evidenceRepository = evidenceRepository,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                ContinueReadingStateSyncAdapter(
+                    visibilityRepository = continueReadingVisibilityRepository,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                CollectionsSyncAdapter(
+                    store = collectionStore,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+                ChapterOverridesSyncAdapter(
+                    overrideRepository = chapterOverrideRepository,
+                    readerPreferenceRepository = readerPreferenceRepository,
+                    revisionSource = revisionSource,
+                    clock = clock,
+                ),
+            ),
+            clientIdentityProvider = clientIdentity,
+            clock = clock,
+        ),
+        clock = clock,
+    )
+
+    val state: StateFlow<SyncRuntimeState>
+        get() = controller.state
+
+    suspend fun run(trigger: SyncTrigger): SyncCycleReport =
+        controller.run(trigger)
+}
+
+private data object AndroidSupabaseSyncClock : SyncClock {
+    override fun nowEpochMillis(): Long =
+        Clock.System.now().toEpochMilliseconds()
+}
+
+private class AndroidSupabaseRevisionSource(
+    private val clientIdentity: SyncClientIdentityStore,
+) : SyncRevisionSource {
+
+    override val deviceId: String = clientIdentity.getOrCreate()
+
+    private val sequence = AtomicLong(
+        Clock.System.now().toEpochMilliseconds().coerceAtLeast(0L),
+    )
+
+    override fun nextRevision(): SyncRevision {
+        val now = Clock.System.now().toEpochMilliseconds().coerceAtLeast(0L)
+        val next = sequence.updateAndGet { current ->
+            maxOf(current + 1L, now)
+        }
+        return SyncRevision(
+            deviceId = deviceId,
+            sequence = next,
+        )
+    }
+}
