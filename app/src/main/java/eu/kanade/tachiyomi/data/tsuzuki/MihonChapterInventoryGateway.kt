@@ -6,6 +6,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.domain.manga.model.toSManga
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.model.SChapter
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.chapter.model.Chapter
@@ -17,11 +18,15 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 
 /**
  * Reads Mihon's source/chapter boundary into neutral Tsuzuki observations.
- * The legacy repositories are input-only here; reconciliation owns all writes.
+ *
+ * [fetch] is read-only. [materializeOperationalChapter] is an explicit compatibility
+ * operation that may create a legacy Mihon chapter row, but never canonical state.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -34,12 +39,14 @@ class MihonChapterInventoryGateway(
 
     override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> {
         val mihonMangaId = mapping.mihonMangaId
-            ?: return Result.failure(IllegalArgumentException("Source mapping ${mapping.id} is not materialized"))
+            ?: return Result.failure(
+                IllegalArgumentException("Source mapping " + mapping.id + " is not materialized"),
+            )
 
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
             val source = sourceManager.get(mapping.sourceId)
-                ?: error("Source ${mapping.sourceId} is unavailable")
+                ?: error("Source " + mapping.sourceId + " is unavailable")
             if (source is StubSource) throw SourceNotInstalledException()
 
             val legacyChapters = chapterRepository.getChapterByMangaId(mihonMangaId)
@@ -70,6 +77,68 @@ class MihonChapterInventoryGateway(
                     language = mapping.language,
                 ),
             )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun fetch(binding: ContentBinding): Result<SourceChapterInventory> {
+        return try {
+            val payload = MihonContentBindingPayloadCodec.decode(binding.runtimePayload)
+            fetch(
+                SourceTitleMapping(
+                    id = binding.id,
+                    canonicalTitleId = binding.canonicalTitleId,
+                    mihonMangaId = payload.mihonMangaId,
+                    sourceId = payload.sourceId,
+                    sourceUrl = payload.sourceUrl,
+                    language = payload.language,
+                    matchConfidence = binding.matchConfidence,
+                    verifiedByUser = binding.verifiedByUser,
+                    availability = SourceMappingAvailability.valueOf(binding.availability.name),
+                    preferredOverride = false,
+                    createdAt = binding.createdAt,
+                    updatedAt = binding.updatedAt,
+                ),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun materializeOperationalChapter(snapshot: SourceChapterSnapshot): Result<Long> {
+        return try {
+            val mangaId = snapshot.mihonMangaId
+                ?: error("Source chapter snapshot has no materialized Mihon manga")
+            val sourceUrl = snapshot.sourceChapterUrl
+                .takeIf(String::isNotBlank)
+                ?: snapshot.sourceChapterId.takeIf(String::isNotBlank)
+                ?: error("Source chapter snapshot has no operational URL")
+
+            val byStoredId = snapshot.mihonChapterId?.let(chapterRepository::getChapterById)
+            val existing = byStoredId
+                ?.takeIf { it.mangaId == mangaId && it.url == sourceUrl }
+                ?: chapterRepository.getChapterByUrlAndMangaId(sourceUrl, mangaId)
+            if (existing != null) return Result.success(existing.id)
+
+            val chapter = Chapter.create().copy(
+                mangaId = mangaId,
+                url = sourceUrl,
+                name = snapshot.rawName,
+                scanlator = snapshot.scanlationGroup,
+                chapterNumber = snapshot.rawNumberHint ?: -1.0,
+                sourceOrder = snapshot.rawSourceOrder ?: 0L,
+                dateUpload = snapshot.releaseDate ?: 0L,
+                version = snapshot.version ?: 1L,
+                memo = snapshot.rawSourceMetadata,
+            )
+            val inserted = chapterRepository.addAll(listOf(chapter)).singleOrNull()
+                ?: error("Failed to materialize operational Mihon chapter")
+            Result.success(inserted.id)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
