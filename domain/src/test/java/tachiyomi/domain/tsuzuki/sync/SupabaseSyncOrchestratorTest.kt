@@ -20,6 +20,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncCursor
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncEvent
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncOperation
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncSnapshot
+import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncSnapshotRecord
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictValue
@@ -106,6 +107,51 @@ class SupabaseSyncOrchestratorTest {
             SyncFailureReason.AUTHORIZATION_REQUIRED
         outbox.get(SyncDocumentKind.LIBRARY) shouldNotBe null
         transport.networkCalls shouldBe 0
+    }
+
+    @Test
+    fun `snapshot rebuilds encoded field paths into nested local document`() = runTest {
+        val adapter = FakeAdapter(emptyDocument())
+        val cloudState = FakeCloudState().apply {
+            putCursor(
+                documentKind = SyncDocumentKind.LIBRARY,
+                eventCursor = 5,
+                lastSuccessfulSyncAtEpochMillis = 1,
+            )
+        }
+        val transport = FakeTransport().apply {
+            snapshotValue = SupabaseSyncSnapshot(
+                documentKind = SyncDocumentKind.LIBRARY,
+                cursor = 5,
+                records = listOf(
+                    SupabaseSyncSnapshotRecord(
+                        recordId = "title-1",
+                        isDeleted = false,
+                        fields = buildJsonObject {
+                            put("progress/chapter~1number", JsonPrimitive(3))
+                        },
+                    ),
+                ),
+            )
+        }
+        val orchestrator = orchestrator(
+            adapter = adapter,
+            cloudState = cloudState,
+            transport = transport,
+        )
+
+        orchestrator.sync(SyncDocumentKind.LIBRARY)
+
+        adapter.current.records.getValue("title-1").fields shouldBe
+            buildJsonObject {
+                put(
+                    "progress",
+                    buildJsonObject {
+                        put("chapter/number", JsonPrimitive(3))
+                    },
+                )
+            }
+        transport.mutationIds shouldBe emptyList()
     }
 
     @Test
@@ -537,6 +583,7 @@ class SupabaseSyncOrchestratorTest {
         val pushOutcomes = ArrayDeque<PushOutcome>()
         val mutationIds = mutableListOf<String>()
         val events = mutableListOf<SupabaseSyncEvent>()
+        var snapshotValue: SupabaseSyncSnapshot? = null
         var networkCalls = 0
 
         override suspend fun pullDelta(
@@ -557,7 +604,7 @@ class SupabaseSyncOrchestratorTest {
         ): SyncTransportResult<SupabaseSyncSnapshot> {
             networkCalls += 1
             return SyncTransportResult.Success(
-                SupabaseSyncSnapshot(
+                snapshotValue ?: SupabaseSyncSnapshot(
                     documentKind = documentKind,
                     cursor = events.maxOfOrNull { it.eventId } ?: 0,
                     records = emptyList(),
