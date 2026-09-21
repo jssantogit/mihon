@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.net.URI
 
+/** Data-only parser boundary; parsing never loads or executes remote code. */
 object RemoteAddonManifestParser {
     const val CURRENT_PROTOCOL_VERSION = 1
 
