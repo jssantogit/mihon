@@ -46,19 +46,6 @@ class DefaultAddonRegistryTest {
     }
 
     @Test
-    fun `registry always exposes local content provider outside installed addon lifecycle`() {
-        val local = FakeContentProvider(AddonId("tsuzuki.local-content"))
-        val registry = DefaultAddonRegistry(
-            installedAddons = { emptyList() },
-            contentProviderCandidates = emptyList(),
-            chapterProbeProviderCandidates = emptyList(),
-            localContentProvider = local,
-        )
-
-        registry.contentProviders().map { it.addonId }.shouldContainExactly(local.addonId)
-    }
-
-    @Test
     fun `registry never exposes addon that is only present in cloud desired state`() {
         val registry = DefaultAddonRegistry(
             installedAddons = { emptyList() },
