@@ -9,8 +9,6 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -18,18 +16,19 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.history.repository.HistoryRepository
-import tachiyomi.domain.tsuzuki.home.interactor.GetHomeCatalogFeed
+import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
-import tachiyomi.domain.tsuzuki.home.model.HomeCatalogFeed
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
+import tachiyomi.domain.tsuzuki.home.model.HomeSection
+import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.reader.interactor.ImportLegacyCanonicalProgress
+import kotlin.time.Clock
 
 @Immutable
 data class TsuzukiHomeScreenState(
     val continueReading: List<HomeContinueReadingItem> = emptyList(),
-    val catalogFeed: HomeCatalogFeed? = null,
-    val isRefreshing: Boolean = false,
+    val sections: List<HomeSection> = emptyList(),
 )
 
 @Inject
@@ -37,25 +36,20 @@ data class TsuzukiHomeScreenState(
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
 class TsuzukiHomeScreenModel(
     observeHomeContinueReading: ObserveHomeContinueReading,
-    private val getHomeCatalogFeed: GetHomeCatalogFeed,
+    getConfiguredHomeSections: GetConfiguredHomeSections,
+    private val visibilityRepository: ContinueReadingVisibilityRepository,
     private val observeCanonicalLibrary: ObserveCanonicalLibrary,
     private val historyRepository: HistoryRepository,
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
 ) : ViewModel() {
 
-    private val catalogFeed = MutableStateFlow<HomeCatalogFeed?>(null)
-    private val isRefreshing = MutableStateFlow(false)
-    private var refreshJob: Job? = null
-
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
         observeHomeContinueReading.subscribe(),
-        catalogFeed,
-        isRefreshing,
-    ) { local, remote, refreshing ->
+        getConfiguredHomeSections.subscribe(),
+    ) { continueReading, sections ->
         TsuzukiHomeScreenState(
-            continueReading = local,
-            catalogFeed = remote,
-            isRefreshing = refreshing,
+            continueReading = continueReading,
+            sections = sections,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -77,26 +71,22 @@ class TsuzukiHomeScreenModel(
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Throwable) {
-                        // Legacy compatibility must never block Home.
+                        // Legacy local compatibility must never block Home.
                     }
                 }
             }
         }
-        refresh()
     }
 
-    fun refresh(): Job {
-        refreshJob?.cancel()
-        refreshJob = viewModelScope.launch {
-            isRefreshing.value = true
-            try {
-                catalogFeed.value = getHomeCatalogFeed.execute()
-            } catch (error: CancellationException) {
-                throw error
-            } finally {
-                isRefreshing.value = false
-            }
+    fun removeFromContinueReading(item: HomeContinueReadingItem) {
+        viewModelScope.launch {
+            visibilityRepository.hide(
+                canonicalTitleId = item.canonicalTitleId,
+                hiddenAt = maxOf(
+                    item.updatedAt,
+                    Clock.System.now().toEpochMilliseconds(),
+                ),
+            )
         }
-        return refreshJob!!
     }
 }
