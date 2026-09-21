@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(9);
 
 insert into auth.users (
     id,
@@ -141,6 +141,16 @@ select is(
     jsonb_array_length(public.sync_pull_delta('LIBRARY', 0, 100)),
     0,
     'delta RPC does not leak another user events'
+);
+
+select is(
+    jsonb_array_length(
+        public.sync_get_mutation_conflicts(
+            '00000000-0000-0000-0000-00000000b001'::uuid
+        )
+    ),
+    0,
+    'conflict lookup RPC does not leak another user conflicts'
 );
 
 reset role;
