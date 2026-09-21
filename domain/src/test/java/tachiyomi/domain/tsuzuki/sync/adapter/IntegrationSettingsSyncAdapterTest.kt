@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
@@ -85,7 +86,7 @@ class IntegrationSettingsSyncAdapterTest {
                     "example" to record.copy(
                         updatedAtEpochMillis = 99,
                         fields = kotlinx.serialization.json.buildJsonObject {
-                            put("enabled", true)
+                            put("enabled", JsonPrimitive(true))
                             put(
                                 "config",
                                 Json.parseToJsonElement(
