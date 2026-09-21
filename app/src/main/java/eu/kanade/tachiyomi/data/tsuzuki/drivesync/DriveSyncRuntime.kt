@@ -77,7 +77,6 @@ class DriveSyncRuntime(
             adapters = listOf(
                 CanonicalLibrarySyncAdapter(
                     libraryRepository = libraryRepository,
-                    titleRepository = titleRepository,
                     revisionSource = revisionSource,
                     clock = clock,
                 ),
