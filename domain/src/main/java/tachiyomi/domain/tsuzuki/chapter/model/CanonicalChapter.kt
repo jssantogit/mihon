@@ -1,5 +1,7 @@
 package tachiyomi.domain.tsuzuki.chapter.model
 
+import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+
 /** A Tsuzuki-owned logical chapter, independent of any source release. */
 data class CanonicalChapter(
     val id: String,
@@ -14,6 +16,7 @@ data class CanonicalChapter(
     val confidence: Double = 0.0,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
+    val confirmation: CanonicalChapterConfirmation = CanonicalChapterConfirmation.PROVISIONAL,
 ) {
 
     val identity: CanonicalChapterIdentity

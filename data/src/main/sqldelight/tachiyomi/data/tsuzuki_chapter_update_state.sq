@@ -1,0 +1,51 @@
+CREATE TABLE tsuzuki_chapter_update_state(
+    canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    first_seen_at INTEGER NOT NULL,
+    acknowledged_at INTEGER,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_chapter_update_state_title_index
+ON tsuzuki_chapter_update_state(canonical_title_id);
+
+getTsuzukiChapterUpdateStateByTitle:
+SELECT *
+FROM tsuzuki_chapter_update_state
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY first_seen_at ASC, canonical_chapter_id ASC;
+
+getTsuzukiUnacknowledgedChapterUpdatesByTitle:
+SELECT *
+FROM tsuzuki_chapter_update_state
+WHERE canonical_title_id = :canonicalTitleId
+AND acknowledged_at IS NULL
+ORDER BY first_seen_at ASC, canonical_chapter_id ASC;
+
+upsertTsuzukiChapterUpdateState:
+INSERT INTO tsuzuki_chapter_update_state(
+    canonical_chapter_id,
+    canonical_title_id,
+    first_seen_at,
+    acknowledged_at
+)
+VALUES (
+    :canonicalChapterId,
+    :canonicalTitleId,
+    :firstSeenAt,
+    :acknowledgedAt
+)
+ON CONFLICT(canonical_chapter_id) DO UPDATE SET
+    canonical_title_id = excluded.canonical_title_id,
+    first_seen_at = excluded.first_seen_at,
+    acknowledged_at = excluded.acknowledged_at;
+
+acknowledgeTsuzukiChapterUpdate:
+UPDATE tsuzuki_chapter_update_state
+SET acknowledged_at = :acknowledgedAt
+WHERE canonical_chapter_id = :canonicalChapterId;
+
+deleteTsuzukiChapterUpdateState:
+DELETE FROM tsuzuki_chapter_update_state
+WHERE canonical_chapter_id = :canonicalChapterId;

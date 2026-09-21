@@ -30,7 +30,7 @@
 
 ---
 
-### Task F1: Freeze shared capability contracts and cross-stream persistence
+### Task F1: Freeze shared capability contracts and cross-stream persistence — COMPLETE IN WAVE 0
 
 **Files:**
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/capability/ProviderIds.kt`
@@ -64,7 +64,7 @@
 - Produces: `IntegrationId`, `AddonId`, `SearchProvider`, `DiscoveryProvider`, `MetadataProvider`, `ChapterEvidenceProvider`, `RatingsProvider`, `TrackingProvider`, `ExternalRating`, `TrackingUpdate`, `ContentProvider`, `ChapterProbeProvider`, `IntegrationRegistry`, `AddonRegistry`, `ChapterEvidence`, `ContentOption`, `ContentDelivery`.
 - Consumes: existing `CatalogQuery`, `CatalogPage`, `CatalogItem`, `CanonicalTitle`, `CanonicalChapter`.
 
-- [ ] **Step 1: Write the contract test**
+- [x] **Step 1: Write the contract test**
 
 ~~~kotlin
 class CapabilityContractsTest {
@@ -100,7 +100,7 @@ class CapabilityContractsTest {
 }
 ~~~
 
-- [ ] **Step 2: Run the targeted domain test and confirm it fails because the new types do not exist**
+- [x] **Step 2: Run the targeted domain test and confirm it fails because the new types do not exist**
 
 Run:
 
@@ -110,7 +110,7 @@ Run:
 
 Expected: compile/test failure for unresolved shared types.
 
-- [ ] **Step 3: Add the shared types with stable signatures**
+- [x] **Step 3: Add the shared types with stable signatures**
 
 ~~~kotlin
 @JvmInline
@@ -174,7 +174,7 @@ interface TrackingProvider {
 }
 ~~~
 
-- [ ] **Step 4: Add SQLDelight schemas and migration 30**
+- [x] **Step 4: Add SQLDelight schemas and migration 30**
 
 The migration creates all cross-stream tables in one serial baseline. Use these columns as the minimum contract:
 
@@ -299,7 +299,7 @@ data class CanonicalChapter(
 
 Mirror the new cross-stream tables in the corresponding `.sq` files with named get/upsert/delete queries.
 
-- [ ] **Step 5: Run migration and domain checks**
+- [x] **Step 5: Run migration and domain checks**
 
 Run:
 
@@ -309,7 +309,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit foundation**
+- [x] **Step 6: Commit foundation**
 
 ~~~bash
 git add domain/src/main/java/tachiyomi/domain/tsuzuki \

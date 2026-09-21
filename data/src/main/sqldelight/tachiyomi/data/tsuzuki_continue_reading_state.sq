@@ -1,0 +1,32 @@
+CREATE TABLE tsuzuki_continue_reading_state(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    hidden_at INTEGER,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+getTsuzukiContinueReadingState:
+SELECT *
+FROM tsuzuki_continue_reading_state
+WHERE canonical_title_id = :canonicalTitleId
+LIMIT 1;
+
+getAllTsuzukiContinueReadingState:
+SELECT *
+FROM tsuzuki_continue_reading_state
+ORDER BY canonical_title_id ASC;
+
+upsertTsuzukiContinueReadingState:
+INSERT INTO tsuzuki_continue_reading_state(
+    canonical_title_id,
+    hidden_at
+)
+VALUES (
+    :canonicalTitleId,
+    :hiddenAt
+)
+ON CONFLICT(canonical_title_id) DO UPDATE SET
+    hidden_at = excluded.hidden_at;
+
+deleteTsuzukiContinueReadingState:
+DELETE FROM tsuzuki_continue_reading_state
+WHERE canonical_title_id = :canonicalTitleId;
