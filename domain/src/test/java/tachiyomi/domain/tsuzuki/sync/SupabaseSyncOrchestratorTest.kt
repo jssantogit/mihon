@@ -612,6 +612,13 @@ class SupabaseSyncOrchestratorTest {
             )
         }
 
+        override suspend fun ackConflict(
+            conflictId: Long,
+        ): SyncTransportResult<Boolean> {
+            networkCalls += 1
+            return SyncTransportResult.Success(true)
+        }
+
         override suspend fun push(
             batch: tachiyomi.domain.tsuzuki.sync.model.SupabaseMutationBatch,
         ): SyncTransportResult<SupabasePushResult> {
