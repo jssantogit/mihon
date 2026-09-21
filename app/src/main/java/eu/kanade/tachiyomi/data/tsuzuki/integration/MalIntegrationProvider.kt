@@ -47,7 +47,7 @@ class MalIntegrationProvider private constructor(
             val pageItems = results
                 .drop(offset)
                 .take(limit)
-                .map(TrackSearch::toCatalogItem)
+                .map { it.toCatalogItem() }
 
             CatalogPage(
                 items = pageItems,
