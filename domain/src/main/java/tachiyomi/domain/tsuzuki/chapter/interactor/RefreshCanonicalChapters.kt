@@ -8,7 +8,14 @@ import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 
-/** Fetches an explicit source subset and reconciles it without source-wide scans. */
+/**
+ * Legacy compatibility path for Mihon source inventories.
+ *
+ * New canonical detail and Library update flows must use RefreshChapterEvidence,
+ * where Integrations provide editorial evidence and Add-ons may submit provisional
+ * evidence. This class remains only for callers that still operate on materialized
+ * Mihon source mappings.
+ */
 @Inject
 class RefreshCanonicalChapters(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,

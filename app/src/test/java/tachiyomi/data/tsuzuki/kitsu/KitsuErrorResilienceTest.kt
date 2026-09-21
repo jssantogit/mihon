@@ -11,26 +11,35 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
-import tachiyomi.domain.tsuzuki.catalog.service.CatalogProvider
+import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
+import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.SearchProvider
+import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 
 class KitsuErrorResilienceTest {
 
     @Test
     fun `rate limit failure in provider is exposed as typed RateLimitExceeded without crashing`() = runTest {
-        val failingProvider = object : CatalogProvider {
-            override val providerId: String = "kitsu"
-            override val displayName: String = "Kitsu"
+        val failingProvider = object : CatalogCapabilityProvider {
+            override val integrationId = IntegrationId("kitsu")
             override suspend fun search(query: CatalogQuery): Result<CatalogPage> =
                 Result.failure(CatalogError.RateLimitExceeded(retryAfterSeconds = 120))
-            override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.failure(CatalogError.RateLimitExceeded(retryAfterSeconds = 120))
-            override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.failure(CatalogError.RateLimitExceeded(retryAfterSeconds = 120))
-            override suspend fun getDetails(providerId: String): Result<CatalogItem> =
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
+
+            override suspend fun getDetails(externalId: String): Result<CatalogItem> =
                 Result.failure(CatalogError.RateLimitExceeded(retryAfterSeconds = 120))
         }
 
-        val search = SearchCatalog(failingProvider)
+        val search = SearchCatalog(registry(failingProvider))
         val result = search.execute("Guts")
 
         result.isFailure shouldBe true
@@ -41,20 +50,22 @@ class KitsuErrorResilienceTest {
 
     @Test
     fun `outage during discover does not throw unhandled exception`() = runTest {
-        val outageProvider = object : CatalogProvider {
-            override val providerId: String = "kitsu"
-            override val displayName: String = "Kitsu"
+        val outageProvider = object : CatalogCapabilityProvider {
+            override val integrationId = IntegrationId("kitsu")
             override suspend fun search(query: CatalogQuery): Result<CatalogPage> =
                 Result.failure(CatalogError.ProviderUnavailable("Kitsu is down"))
-            override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.failure(CatalogError.ProviderUnavailable("Kitsu is down"))
-            override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.failure(CatalogError.ProviderUnavailable("Kitsu is down"))
-            override suspend fun getDetails(providerId: String): Result<CatalogItem> =
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
+
+            override suspend fun getDetails(externalId: String): Result<CatalogItem> =
                 Result.failure(CatalogError.ProviderUnavailable("Kitsu is down"))
         }
 
-        val discover = GetDiscoverFeed(outageProvider)
+        val discover = GetDiscoverFeed(registry(outageProvider))
         val feed = discover.execute()
 
         feed.trending.isFailure shouldBe true
@@ -65,22 +76,23 @@ class KitsuErrorResilienceTest {
 
     @Test
     fun `discover feed partial degradation delivers popular when trending suffers outage`() = runTest {
-        val partiallyDegradedProvider = object : CatalogProvider {
-            override val providerId: String = "kitsu"
-            override val displayName: String = "Kitsu"
+        val partiallyDegradedProvider = object : CatalogCapabilityProvider {
+            override val integrationId = IntegrationId("kitsu")
             override suspend fun search(
                 query: CatalogQuery,
             ): Result<CatalogPage> = Result.failure(NotImplementedError())
-            override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.failure(CatalogError.ProviderUnavailable("Trending endpoint 500"))
-            override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.success(CatalogPage(listOf(CatalogItem("kitsu", "1", "Berserk")), false))
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
             override suspend fun getDetails(
-                providerId: String,
+                externalId: String,
             ): Result<CatalogItem> = Result.failure(NotImplementedError())
         }
 
-        val discover = GetDiscoverFeed(partiallyDegradedProvider)
+        val discover = GetDiscoverFeed(registry(partiallyDegradedProvider))
         val feed = discover.execute()
 
         feed.trending.isFailure shouldBe true
@@ -108,26 +120,28 @@ class KitsuErrorResilienceTest {
     @Test
     fun `search and discover interactors do not trigger persistence or side effects`() = runTest {
         var persistenceTriggered = false
-        val nonPersistingProvider = object : CatalogProvider {
-            override val providerId: String = "kitsu"
-            override val displayName: String = "Kitsu"
+        val nonPersistingProvider = object : CatalogCapabilityProvider {
+            override val integrationId = IntegrationId("kitsu")
             override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
                 return Result.success(CatalogPage(listOf(CatalogItem("kitsu", "10", "Ephemeral Title")), false))
             }
-            override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> {
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> {
                 return Result.success(CatalogPage(listOf(CatalogItem("kitsu", "10", "Ephemeral Title")), false))
             }
-            override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> {
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> {
                 return Result.success(CatalogPage(listOf(CatalogItem("kitsu", "10", "Ephemeral Title")), false))
             }
-            override suspend fun getDetails(providerId: String): Result<CatalogItem> {
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
+
+            override suspend fun getDetails(externalId: String): Result<CatalogItem> {
                 persistenceTriggered = true
                 return Result.failure(NotImplementedError())
             }
         }
 
-        val search = SearchCatalog(nonPersistingProvider)
-        val discover = GetDiscoverFeed(nonPersistingProvider)
+        val search = SearchCatalog(registry(nonPersistingProvider))
+        val discover = GetDiscoverFeed(registry(nonPersistingProvider))
 
         val searchResult = search.await("Ephemeral")
         val discoverFeed = discover.await()
@@ -136,5 +150,15 @@ class KitsuErrorResilienceTest {
         discoverFeed.trending.isSuccess shouldBe true
         discoverFeed.popular.isSuccess shouldBe true
         persistenceTriggered shouldBe false
+    }
+    private interface CatalogCapabilityProvider : SearchProvider, DiscoveryProvider, MetadataProvider
+
+    private fun registry(provider: CatalogCapabilityProvider) = object : IntegrationRegistry {
+        override fun searchProviders(): List<SearchProvider> = listOf(provider)
+        override fun discoveryProviders(): List<DiscoveryProvider> = listOf(provider)
+        override fun metadataProviders(): List<MetadataProvider> = listOf(provider)
+        override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun trackingProviders(): List<TrackingProvider> = emptyList()
     }
 }
