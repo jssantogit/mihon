@@ -85,8 +85,10 @@ class KitsuErrorResilienceTest {
                 Result.failure(CatalogError.ProviderUnavailable("Trending endpoint 500"))
             override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.success(CatalogPage(listOf(CatalogItem("kitsu", "1", "Berserk")), false))
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
             override suspend fun getDetails(
-                providerId: String,
+                externalId: String,
             ): Result<CatalogItem> = Result.failure(NotImplementedError())
         }
 
