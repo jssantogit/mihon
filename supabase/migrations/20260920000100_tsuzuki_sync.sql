@@ -137,15 +137,22 @@ revoke all on table public.tsuzuki_sync_mutations from anon;
 revoke all on table public.tsuzuki_canonical_identity_claims from anon;
 revoke all on table public.tsuzuki_sync_conflicts from anon;
 
-grant select, insert, update, delete on table public.tsuzuki_sync_fields to authenticated;
-grant select, insert, update, delete on table public.tsuzuki_sync_records to authenticated;
-grant select, insert, update, delete on table public.tsuzuki_sync_events to authenticated;
-grant select, insert, update, delete on table public.tsuzuki_sync_mutations to authenticated;
-grant select, insert, update, delete on table public.tsuzuki_canonical_identity_claims to authenticated;
-grant select, insert, update, delete on table public.tsuzuki_sync_conflicts to authenticated;
+revoke insert, update, delete on table public.tsuzuki_sync_fields from authenticated;
+revoke insert, update, delete on table public.tsuzuki_sync_records from authenticated;
+revoke insert, update, delete on table public.tsuzuki_sync_events from authenticated;
+revoke insert, update, delete on table public.tsuzuki_sync_mutations from authenticated;
+revoke insert, update, delete on table public.tsuzuki_canonical_identity_claims from authenticated;
+revoke insert, update, delete on table public.tsuzuki_sync_conflicts from authenticated;
 
-grant usage, select on sequence public.tsuzuki_sync_events_event_id_seq to authenticated;
-grant usage, select on sequence public.tsuzuki_sync_conflicts_conflict_id_seq to authenticated;
+grant select on table public.tsuzuki_sync_fields to authenticated;
+grant select on table public.tsuzuki_sync_records to authenticated;
+grant select on table public.tsuzuki_sync_events to authenticated;
+grant select on table public.tsuzuki_sync_mutations to authenticated;
+grant select on table public.tsuzuki_canonical_identity_claims to authenticated;
+grant select on table public.tsuzuki_sync_conflicts to authenticated;
+
+revoke all on sequence public.tsuzuki_sync_events_event_id_seq from authenticated;
+revoke all on sequence public.tsuzuki_sync_conflicts_conflict_id_seq from authenticated;
 
 create or replace function public.sync_claim_external_identity(
     p_provider text,
@@ -154,7 +161,7 @@ create or replace function public.sync_claim_external_identity(
 )
 returns text
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, public
 as $$
 declare
@@ -212,7 +219,7 @@ create or replace function public.sync_apply_mutation_batch(
 )
 returns bigint
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, public, extensions
 as $$
 declare
@@ -734,7 +741,7 @@ create or replace function public.sync_pull_delta(
 )
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, public
 as $$
 declare
@@ -805,7 +812,7 @@ create or replace function public.sync_get_cursor(
 )
 returns bigint
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, public
 as $$
 declare
@@ -839,7 +846,7 @@ create or replace function public.sync_snapshot_domain(
 )
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, public
 as $$
 declare
@@ -915,7 +922,7 @@ create or replace function public.sync_ack_conflict(
 )
 returns boolean
 language plpgsql
-security invoker
+security definer
 set search_path = pg_catalog, public
 as $$
 declare
