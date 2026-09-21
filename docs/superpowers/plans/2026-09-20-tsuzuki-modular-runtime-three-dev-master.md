@@ -179,6 +179,20 @@ The foundation also freezes these cross-stream domain types:
 enum class ChapterEvidenceAuthority { EDITORIAL, ADDON_PROVISIONAL }
 enum class CanonicalChapterConfirmation { CONFIRMED, PROVISIONAL, CONFLICTED }
 
+data class ExternalRating(
+    val providerId: String,
+    val label: String,
+    val value: Double,
+    val scaleMax: Double,
+)
+
+data class TrackingUpdate(
+    val externalId: String,
+    val chapterProgress: Double?,
+    val status: LibraryStatus?,
+    val score: Double?,
+)
+
 data class ChapterEvidence(
     val id: String,
     val canonicalTitleId: String,
