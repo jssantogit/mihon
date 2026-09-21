@@ -27,6 +27,21 @@ class CanonicalLocalReaderStateTest {
     }
 
     @Test
+    fun `reset discards saved process page but keeps persisted canonical progress`() {
+        val progress = CanonicalChapterProgress(
+            canonicalChapterId = "chapter-1",
+            lastPageRead = 8L,
+            updatedAt = 100L,
+        )
+
+        resolveCanonicalLocalRequestedPage(
+            resetPage = true,
+            savedPageIndex = 4,
+            progress = progress,
+        ) shouldBe 8
+    }
+
+    @Test
     fun `saved process page wins over persisted progress when not resetting`() {
         val progress = CanonicalChapterProgress(
             canonicalChapterId = "chapter-1",
