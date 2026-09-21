@@ -8,7 +8,6 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +22,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason
 import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
 import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
+import java.io.IOException
 
 @Immutable
 data class TsuzukiAccountScreenState(
