@@ -1,0 +1,113 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_integration_settings(
+    integration_id TEXT NOT NULL PRIMARY KEY,
+    enabled INTEGER AS Boolean NOT NULL,
+    config_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE tsuzuki_chapter_evidence(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    producer_kind TEXT NOT NULL,
+    producer_id TEXT NOT NULL,
+    external_chapter_key TEXT,
+    raw_label TEXT NOT NULL,
+    raw_number REAL,
+    volume INTEGER,
+    title TEXT,
+    observed_at INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    authority_class TEXT NOT NULL,
+    mapped_canonical_chapter_id TEXT,
+    raw_metadata BLOB NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE,
+    FOREIGN KEY(mapped_canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE SET NULL
+);
+
+CREATE INDEX tsuzuki_chapter_evidence_title_index
+ON tsuzuki_chapter_evidence(canonical_title_id);
+
+CREATE INDEX tsuzuki_chapter_evidence_mapped_chapter_index
+ON tsuzuki_chapter_evidence(mapped_canonical_chapter_id);
+
+CREATE UNIQUE INDEX tsuzuki_chapter_evidence_external_index
+ON tsuzuki_chapter_evidence(producer_kind, producer_id, external_chapter_key)
+WHERE external_chapter_key IS NOT NULL;
+
+CREATE TABLE tsuzuki_content_bindings(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    addon_id TEXT NOT NULL,
+    provider_title_key TEXT NOT NULL,
+    match_confidence REAL NOT NULL,
+    verified_by_user INTEGER AS Boolean NOT NULL,
+    availability TEXT NOT NULL,
+    runtime_payload BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(addon_id, provider_title_key),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_content_binding_title_index
+ON tsuzuki_content_bindings(canonical_title_id);
+
+CREATE INDEX tsuzuki_content_binding_addon_index
+ON tsuzuki_content_bindings(addon_id);
+
+CREATE TABLE tsuzuki_content_preferences(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    preferred_addon_id TEXT,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE tsuzuki_chapter_update_state(
+    canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    first_seen_at INTEGER NOT NULL,
+    acknowledged_at INTEGER,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_chapter_update_state_title_index
+ON tsuzuki_chapter_update_state(canonical_title_id);
+
+CREATE TABLE tsuzuki_continue_reading_state(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    hidden_at INTEGER,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE tsuzuki_canonical_downloads(
+    canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
+    local_uri TEXT NOT NULL,
+    format TEXT NOT NULL,
+    originating_addon_id TEXT,
+    originating_option_key TEXT,
+    completed_at INTEGER NOT NULL,
+    checksum TEXT,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE
+);
+
+CREATE TABLE tsuzuki_supabase_sync_cursor(
+    domain TEXT NOT NULL PRIMARY KEY,
+    event_cursor INTEGER NOT NULL,
+    last_successful_sync_at INTEGER
+);
+
+CREATE TABLE tsuzuki_supabase_pending_mutation(
+    mutation_id TEXT NOT NULL PRIMARY KEY,
+    domain TEXT NOT NULL,
+    base_cursor INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL,
+    next_attempt_at INTEGER
+);
+
+ALTER TABLE tsuzuki_canonical_chapters
+ADD COLUMN confirmation_state TEXT NOT NULL DEFAULT 'PROVISIONAL';
