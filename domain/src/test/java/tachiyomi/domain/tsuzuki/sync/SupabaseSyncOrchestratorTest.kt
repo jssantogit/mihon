@@ -40,6 +40,7 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentityClaimTransport
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
+import tachiyomi.domain.tsuzuki.sync.service.SupabaseConflictResolution
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncOrchestrator
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncStateStore
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncTransport
@@ -303,6 +304,138 @@ class SupabaseSyncOrchestratorTest {
         adapter.field("note") shouldBe JsonPrimitive("remote-note")
         transport.mutationIds shouldBe emptyList()
         outbox.get(SyncDocumentKind.LIBRARY) shouldNotBe null
+    }
+
+    @Test
+    fun `keep remote applies accepted value and acknowledges conflict`() = runTest {
+        val adapter = FakeAdapter(document(status = "READING"))
+        val stored = FakeStoredState().apply {
+            put(
+                SyncStoredState(
+                    documentKind = SyncDocumentKind.LIBRARY,
+                    acceptedBase = document(status = "COMPLETED"),
+                    remoteRevision = null,
+                    lastSuccessfulSyncAtEpochMillis = 1,
+                ),
+            )
+        }
+        val cloudState = FakeCloudState().apply {
+            putCursor(
+                SyncDocumentKind.LIBRARY,
+                eventCursor = 7,
+                lastSuccessfulSyncAtEpochMillis = 1,
+            )
+        }
+        val conflicts = FakeConflictRepository().apply {
+            replaceForDocument(
+                documentKind = SyncDocumentKind.LIBRARY,
+                conflicts = listOf(
+                    SyncConflict(
+                        remoteConflictId = 99,
+                        documentKind = SyncDocumentKind.LIBRARY,
+                        recordId = "title-1",
+                        propertyPath = listOf("status"),
+                        kind = SyncConflictKind.FIELD_DIVERGENCE,
+                        base = SyncConflictValue.Present(JsonPrimitive("PLANNING")),
+                        local = SyncConflictValue.Present(JsonPrimitive("READING")),
+                        remote = SyncConflictValue.Present(JsonPrimitive("COMPLETED")),
+                    ),
+                ),
+                createdAtEpochMillis = 1,
+            )
+        }
+        val transport = FakeTransport()
+        val orchestrator = orchestrator(
+            adapter = adapter,
+            storedState = stored,
+            cloudState = cloudState,
+            transport = transport,
+            conflicts = conflicts,
+        )
+
+        val result = orchestrator.resolveConflict(
+            documentKind = SyncDocumentKind.LIBRARY,
+            remoteConflictId = 99,
+            resolution = SupabaseConflictResolution.KEEP_REMOTE,
+        )
+
+        result shouldBe SyncTransportResult.Success(Unit)
+        adapter.field("status") shouldBe JsonPrimitive("COMPLETED")
+        transport.acknowledgedConflictIds shouldBe listOf(99L)
+        conflicts.getForDocument(SyncDocumentKind.LIBRARY) shouldBe emptyList()
+    }
+
+    @Test
+    fun `keep local pushes fresh causal mutation before acknowledging conflict`() = runTest {
+        val adapter = FakeAdapter(document(status = "READING"))
+        val stored = FakeStoredState().apply {
+            put(
+                SyncStoredState(
+                    documentKind = SyncDocumentKind.LIBRARY,
+                    acceptedBase = document(status = "COMPLETED"),
+                    remoteRevision = null,
+                    lastSuccessfulSyncAtEpochMillis = 1,
+                ),
+            )
+        }
+        val cloudState = FakeCloudState().apply {
+            putCursor(
+                SyncDocumentKind.LIBRARY,
+                eventCursor = 7,
+                lastSuccessfulSyncAtEpochMillis = 1,
+            )
+        }
+        val conflicts = FakeConflictRepository().apply {
+            replaceForDocument(
+                documentKind = SyncDocumentKind.LIBRARY,
+                conflicts = listOf(
+                    SyncConflict(
+                        remoteConflictId = 99,
+                        documentKind = SyncDocumentKind.LIBRARY,
+                        recordId = "title-1",
+                        propertyPath = listOf("status"),
+                        kind = SyncConflictKind.FIELD_DIVERGENCE,
+                        base = SyncConflictValue.Present(JsonPrimitive("PLANNING")),
+                        local = SyncConflictValue.Present(JsonPrimitive("READING")),
+                        remote = SyncConflictValue.Present(JsonPrimitive("COMPLETED")),
+                    ),
+                ),
+                createdAtEpochMillis = 1,
+            )
+        }
+        val transport = FakeTransport().apply {
+            pushOutcomes += PushOutcome.Success(
+                cursor = 8,
+                events = listOf(
+                    event(
+                        id = 8,
+                        recordId = "title-1",
+                        fieldPath = "status",
+                        value = JsonPrimitive("READING"),
+                    ),
+                ),
+            )
+        }
+        val orchestrator = orchestrator(
+            adapter = adapter,
+            storedState = stored,
+            cloudState = cloudState,
+            transport = transport,
+            conflicts = conflicts,
+        )
+
+        val result = orchestrator.resolveConflict(
+            documentKind = SyncDocumentKind.LIBRARY,
+            remoteConflictId = 99,
+            resolution = SupabaseConflictResolution.KEEP_LOCAL,
+        )
+
+        result shouldBe SyncTransportResult.Success(Unit)
+        transport.pushedBatches.single().baseCursor shouldBe 7
+        transport.acknowledgedConflictIds shouldBe listOf(99L)
+        cloudState.getPending(SyncDocumentKind.LIBRARY) shouldBe null
+        cloudState.getCursor(SyncDocumentKind.LIBRARY)?.eventCursor shouldBe 8
+        conflicts.getForDocument(SyncDocumentKind.LIBRARY) shouldBe emptyList()
     }
 
     @Test
@@ -582,6 +715,8 @@ class SupabaseSyncOrchestratorTest {
     private class FakeTransport : SupabaseSyncTransport {
         val pushOutcomes = ArrayDeque<PushOutcome>()
         val mutationIds = mutableListOf<String>()
+        val pushedBatches = mutableListOf<tachiyomi.domain.tsuzuki.sync.model.SupabaseMutationBatch>()
+        val acknowledgedConflictIds = mutableListOf<Long>()
         val events = mutableListOf<SupabaseSyncEvent>()
         var snapshotValue: SupabaseSyncSnapshot? = null
         var networkCalls = 0
@@ -616,6 +751,7 @@ class SupabaseSyncOrchestratorTest {
             conflictId: Long,
         ): SyncTransportResult<Boolean> {
             networkCalls += 1
+            acknowledgedConflictIds += conflictId
             return SyncTransportResult.Success(true)
         }
 
@@ -624,6 +760,7 @@ class SupabaseSyncOrchestratorTest {
         ): SyncTransportResult<SupabasePushResult> {
             networkCalls += 1
             mutationIds += batch.mutationId
+            pushedBatches += batch
             return when (val outcome = pushOutcomes.removeFirstOrNull()) {
                 is PushOutcome.AppliedResponseLost -> {
                     events += outcome.events
