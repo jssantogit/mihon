@@ -18,6 +18,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.account.model.AccountState
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
+import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentResult
+import tachiyomi.domain.tsuzuki.sync.model.SyncFailureReason
+import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
+import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
+import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
 
 @Immutable
 data class TsuzukiAccountScreenState(
@@ -25,13 +30,18 @@ data class TsuzukiAccountScreenState(
     val isWorking: Boolean = false,
     val error: TsuzukiAccountScreenError? = null,
     val recoverySentTo: String? = null,
-)
+    val syncRuntimeState: SyncRuntimeState = SyncRuntimeState.Idle,
+) {
+    val isSyncing: Boolean
+        get() = syncRuntimeState is SyncRuntimeState.Running
+}
 
 enum class TsuzukiAccountScreenError {
     INVALID_INPUT,
     AUTHENTICATION_FAILED,
     NETWORK_UNAVAILABLE,
     CONFIGURATION_UNAVAILABLE,
+    SYNC_FAILED,
     UNKNOWN,
 }
 
@@ -40,29 +50,43 @@ enum class TsuzukiAccountScreenError {
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
 class TsuzukiAccountScreenModel(
     private val accountRepository: AccountRepository,
+    private val cloudSyncRuntime: CloudSyncRuntime,
 ) : ViewModel() {
 
     private val isWorking = MutableStateFlow(false)
     private val error = MutableStateFlow<TsuzukiAccountScreenError?>(null)
     private val recoverySentTo = MutableStateFlow<String?>(null)
 
-    val state: StateFlow<TsuzukiAccountScreenState> = combine(
-        accountRepository.state,
+    private val localUiState = combine(
         isWorking,
         error,
         recoverySentTo,
-    ) { accountState, working, currentError, recovery ->
-        TsuzukiAccountScreenState(
-            accountState = accountState,
+    ) { working, currentError, recovery ->
+        LocalUiState(
             isWorking = working,
             error = currentError,
             recoverySentTo = recovery,
+        )
+    }
+
+    val state: StateFlow<TsuzukiAccountScreenState> = combine(
+        accountRepository.state,
+        cloudSyncRuntime.state,
+        localUiState,
+    ) { accountState, syncRuntimeState, local ->
+        TsuzukiAccountScreenState(
+            accountState = accountState,
+            isWorking = local.isWorking,
+            error = local.error,
+            recoverySentTo = local.recoverySentTo,
+            syncRuntimeState = syncRuntimeState,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = TsuzukiAccountScreenState(
             accountState = accountRepository.state.value,
+            syncRuntimeState = cloudSyncRuntime.state.value,
         ),
     )
 
@@ -112,6 +136,31 @@ class TsuzukiAccountScreenModel(
         }
     }
 
+    fun syncNow() {
+        if (accountRepository.state.value !is AccountState.Authenticated) {
+            error.value = TsuzukiAccountScreenError.AUTHENTICATION_FAILED
+            return
+        }
+        if (isWorking.value || cloudSyncRuntime.state.value is SyncRuntimeState.Running) return
+
+        viewModelScope.launch {
+            error.value = null
+            try {
+                val report = cloudSyncRuntime.run(SyncTrigger.MANUAL)
+                val failure = report.globalFailure
+                    ?: report.documentResults
+                        .filterIsInstance<SyncDocumentResult.Failed>()
+                        .firstOrNull()
+                        ?.failure
+                error.value = failure?.reason?.toAccountScreenError()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                error.value = TsuzukiAccountScreenError.SYNC_FAILED
+            }
+        }
+    }
+
     fun clearFeedback() {
         error.value = null
         recoverySentTo.value = null
@@ -149,6 +198,17 @@ class TsuzukiAccountScreenModel(
         return separator > 0 && separator < email.lastIndex
     }
 
+    private fun SyncFailureReason.toAccountScreenError(): TsuzukiAccountScreenError = when (this) {
+        SyncFailureReason.AUTHORIZATION_REQUIRED ->
+            TsuzukiAccountScreenError.AUTHENTICATION_FAILED
+        SyncFailureReason.NETWORK_UNAVAILABLE,
+        SyncFailureReason.RATE_LIMITED,
+        SyncFailureReason.REMOTE_UNAVAILABLE,
+        SyncFailureReason.REMOTE_ACCESS_DENIED,
+        SyncFailureReason.REMOTE_NOT_FOUND -> TsuzukiAccountScreenError.NETWORK_UNAVAILABLE
+        else -> TsuzukiAccountScreenError.SYNC_FAILED
+    }
+
     private fun Throwable.toScreenError(): TsuzukiAccountScreenError {
         if (this is IOException) {
             return TsuzukiAccountScreenError.NETWORK_UNAVAILABLE
@@ -175,4 +235,10 @@ class TsuzukiAccountScreenModel(
             else -> TsuzukiAccountScreenError.UNKNOWN
         }
     }
+
+    private data class LocalUiState(
+        val isWorking: Boolean,
+        val error: TsuzukiAccountScreenError?,
+        val recoverySentTo: String?,
+    )
 }
