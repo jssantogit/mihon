@@ -55,6 +55,7 @@ import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSyncIntentRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
 @DependencyGraph(
@@ -106,6 +107,7 @@ interface AppGraph : ViewModelGraph {
 
     val sourceManager: SourceManager
     val addonRepository: AddonRepository
+    val addonSyncIntentRepository: AddonSyncIntentRepository
     val trackerManager: TrackerManager
     val accountRepository: AccountRepository
     val supabaseSyncRuntime: SupabaseSyncRuntime
