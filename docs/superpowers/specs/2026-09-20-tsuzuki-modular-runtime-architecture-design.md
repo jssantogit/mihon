@@ -1662,14 +1662,42 @@ Reference repositories/documentation used during design:
 
 ---
 
-## 40. Open assumptions requiring confirmation only if implementation exposes them
+## 40. Resolved deployment policies
 
-Most product behavior is decided. Two deployment-policy questions can be resolved during planning without changing the architecture:
+The remaining deployment-policy questions are now decided.
 
-1. **Account optionality:** this spec recommends local-only use without login and requires login only for cloud sync. If Tsuzuki instead mandates an account at first launch, only onboarding/product policy changes.
-2. **Legacy Drive cloud data:** if there are production users whose only surviving data is remote Drive state, a one-time importer is required. Otherwise local bootstrap into Supabase is the preferred path and Drive migration infrastructure is unnecessary.
+### 40.1 Account optionality
 
-Neither question changes Core / Integration / Add-on / canonical chapter boundaries.
+A Tsuzuki account is **optional**.
+
+The application must remain usable locally without authentication:
+
+- Library;
+- Reader;
+- local progress;
+- local downloads;
+- local Add-ons;
+- local Integrations that do not require Tsuzuki cloud identity;
+- local Collections and settings.
+
+Supabase authentication is required only for Tsuzuki cloud-backed features such as cross-device synchronization.
+
+The product must not block first launch or local reading behind account creation.
+
+### 40.2 Google Drive retirement
+
+No Google Drive cloud-data importer will be built.
+
+Google Drive sync was used only during pre-production/development validation and has no public user population whose remote-only data must be preserved.
+
+Migration policy is therefore:
+
+1. existing local SQLDelight state remains authoritative on the device;
+2. after optional Supabase account creation/login, local synchronizable state bootstraps into Supabase;
+3. Drive sync code is retired from the target path;
+4. no dual-write, cloud-to-cloud migration, or permanent Drive compatibility layer is required.
+
+This is intentionally a clean protocol cut rather than a compatibility burden carried into the new architecture.
 
 ---
 
