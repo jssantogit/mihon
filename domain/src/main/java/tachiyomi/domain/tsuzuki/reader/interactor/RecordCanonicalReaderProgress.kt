@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.reader.interactor
 
 import dev.zacsweers.metro.Inject
+import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
@@ -10,6 +11,7 @@ import kotlin.time.Clock
 class RecordCanonicalReaderProgress internal constructor(
     private val repository: CanonicalReadingRepository,
     private val compatibilityGateway: CanonicalReaderCompatibilityGateway,
+    private val chapterUpdateStateRepository: ChapterUpdateStateRepository?,
     private val clock: () -> Long,
 ) {
 
@@ -19,6 +21,29 @@ class RecordCanonicalReaderProgress internal constructor(
     ) : this(
         repository = repository,
         compatibilityGateway = NoopCompatibilityGateway,
+        chapterUpdateStateRepository = null,
+        clock = clock,
+    )
+
+    internal constructor(
+        repository: CanonicalReadingRepository,
+        compatibilityGateway: CanonicalReaderCompatibilityGateway,
+        clock: () -> Long,
+    ) : this(
+        repository = repository,
+        compatibilityGateway = compatibilityGateway,
+        chapterUpdateStateRepository = null,
+        clock = clock,
+    )
+
+    internal constructor(
+        repository: CanonicalReadingRepository,
+        chapterUpdateStateRepository: ChapterUpdateStateRepository,
+        clock: () -> Long,
+    ) : this(
+        repository = repository,
+        compatibilityGateway = NoopCompatibilityGateway,
+        chapterUpdateStateRepository = chapterUpdateStateRepository,
         clock = clock,
     )
 
@@ -26,9 +51,11 @@ class RecordCanonicalReaderProgress internal constructor(
     constructor(
         repository: CanonicalReadingRepository,
         compatibilityGateway: CanonicalReaderCompatibilityGateway,
+        chapterUpdateStateRepository: ChapterUpdateStateRepository,
     ) : this(
         repository = repository,
         compatibilityGateway = compatibilityGateway,
+        chapterUpdateStateRepository = chapterUpdateStateRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
     )
 
@@ -49,6 +76,10 @@ class RecordCanonicalReaderProgress internal constructor(
             updatedAt = clock(),
         )
         repository.upsertProgress(progress)
+        chapterUpdateStateRepository?.acknowledge(
+            canonicalChapterId = canonicalChapterId,
+            acknowledgedAt = progress.updatedAt,
+        )
 
         if (mihonChapterId != null) {
             compatibilityGateway.projectProgress(
