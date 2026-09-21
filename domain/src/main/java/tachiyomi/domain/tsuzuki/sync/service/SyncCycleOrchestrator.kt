@@ -818,11 +818,18 @@ class SyncCycleOrchestrator(
 
 private val SyncDocumentKind.syncApplyOrder: Int
     get() = when (this) {
-        SyncDocumentKind.LIBRARY -> 0
-        SyncDocumentKind.SOURCE_MAPPINGS -> 1
-        SyncDocumentKind.COLLECTIONS -> 2
-        SyncDocumentKind.CHAPTER_OVERRIDES -> 3
-        SyncDocumentKind.SETTINGS -> 4
-        SyncDocumentKind.FALLBACK_PROGRESS -> 5
-        SyncDocumentKind.MANIFEST -> 6
+        SyncDocumentKind.TITLES -> 0
+        SyncDocumentKind.LIBRARY -> 1
+        SyncDocumentKind.READING_PROGRESS -> 2
+        SyncDocumentKind.CHAPTER_UPDATE_STATE -> 3
+        SyncDocumentKind.CONTINUE_READING_STATE -> 4
+        SyncDocumentKind.COLLECTIONS -> 5
+        SyncDocumentKind.CHAPTER_OVERRIDES -> 6
+        SyncDocumentKind.INTEGRATION_SETTINGS -> 7
+        SyncDocumentKind.CONTENT_PREFERENCES -> 8
+        SyncDocumentKind.ADDON_STATE -> 9
+        SyncDocumentKind.SOURCE_MAPPINGS -> 10
+        SyncDocumentKind.SETTINGS -> 11
+        SyncDocumentKind.FALLBACK_PROGRESS -> 12
+        SyncDocumentKind.MANIFEST -> 13
     }
