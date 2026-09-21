@@ -1,9 +1,9 @@
 package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
 import android.content.Context
+import tachiyomi.domain.tsuzuki.sync.service.SyncClientIdentityProvider
 import java.io.File
 import java.util.UUID
-import tachiyomi.domain.tsuzuki.sync.service.SyncClientIdentityProvider
 
 class SyncClientIdentityStore(
     private val directory: File,
