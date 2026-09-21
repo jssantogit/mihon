@@ -234,6 +234,7 @@ Wave 0 owns **migration `30.sqm`** and creates all cross-stream tables required 
 - content bindings;
 - per-title preferred Add-on;
 - chapter-new/acknowledgment state;
+- Continue Reading suppression state;
 - canonical download artifacts;
 - Supabase delta cursors;
 - pending Supabase mutation batches.
