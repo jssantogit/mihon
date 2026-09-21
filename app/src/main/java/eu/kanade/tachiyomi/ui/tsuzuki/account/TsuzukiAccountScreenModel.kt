@@ -205,7 +205,8 @@ class TsuzukiAccountScreenModel(
         SyncFailureReason.RATE_LIMITED,
         SyncFailureReason.REMOTE_UNAVAILABLE,
         SyncFailureReason.REMOTE_ACCESS_DENIED,
-        SyncFailureReason.REMOTE_NOT_FOUND -> TsuzukiAccountScreenError.NETWORK_UNAVAILABLE
+        SyncFailureReason.REMOTE_NOT_FOUND,
+        -> TsuzukiAccountScreenError.NETWORK_UNAVAILABLE
         else -> TsuzukiAccountScreenError.SYNC_FAILED
     }
 
