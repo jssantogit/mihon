@@ -6,7 +6,9 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
+import tachiyomi.data.subscribeToList
 import tachiyomi.domain.tsuzuki.home.model.ContinueReadingVisibility
 import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
 
@@ -33,11 +35,17 @@ class ContinueReadingVisibilityRepositoryImpl(
         return database.tsuzuki_continue_reading_stateQueries
             .getAllTsuzukiContinueReadingState()
             .awaitAsList()
-            .map { row ->
-                ContinueReadingVisibility(
-                    canonicalTitleId = row.canonical_title_id,
-                    hiddenAt = row.hidden_at,
-                )
+            .map(::mapVisibility)
+    }
+
+    override fun observeAll(): Flow<List<ContinueReadingVisibility>> {
+        return database.tsuzuki_continue_reading_stateQueries
+            .getAllTsuzukiContinueReadingState()
+            .subscribeToList()
+            .let { flow ->
+                kotlinx.coroutines.flow.map(flow) { rows ->
+                    rows.map(::mapVisibility)
+                }
             }
     }
 
@@ -56,5 +64,14 @@ class ContinueReadingVisibilityRepositoryImpl(
     override suspend fun clear(canonicalTitleId: String) {
         database.tsuzuki_continue_reading_stateQueries
             .deleteTsuzukiContinueReadingState(canonicalTitleId)
+    }
+
+    private fun mapVisibility(
+        row: tachiyomi.data.Tsuzuki_continue_reading_state,
+    ): ContinueReadingVisibility {
+        return ContinueReadingVisibility(
+            canonicalTitleId = row.canonical_title_id,
+            hiddenAt = row.hidden_at,
+        )
     }
 }
