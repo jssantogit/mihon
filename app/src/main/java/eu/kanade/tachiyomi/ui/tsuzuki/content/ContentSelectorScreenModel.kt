@@ -61,7 +61,6 @@ data class SelectionResult(
     val offerSetAsPreferred: Boolean,
 )
 
-@Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
 class ContentSelectorScreenModel internal constructor(
