@@ -51,6 +51,13 @@ SELECT *
 FROM tsuzuki_supabase_pending_mutation
 ORDER BY created_at ASC, mutation_id ASC;
 
+getTsuzukiSupabasePendingMutationByDomain:
+SELECT *
+FROM tsuzuki_supabase_pending_mutation
+WHERE domain = :domain
+ORDER BY created_at ASC, mutation_id ASC
+LIMIT 1;
+
 getReadyTsuzukiSupabasePendingMutations:
 SELECT *
 FROM tsuzuki_supabase_pending_mutation
