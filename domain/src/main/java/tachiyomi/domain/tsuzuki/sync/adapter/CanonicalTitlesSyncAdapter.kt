@@ -16,6 +16,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncRecordEnvelope
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
+import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleSyncSource
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
 import tachiyomi.domain.tsuzuki.sync.service.SyncDocumentAdapter
@@ -25,6 +26,7 @@ class CanonicalTitlesSyncAdapter(
     private val titleSource: CanonicalTitleSyncSource,
     private val identitySource: CanonicalIdentitySyncRepository,
     private val titleRepository: CanonicalTitleRepository,
+    private val canonicalTitleMergePort: CanonicalTitleMergePort,
     private val revisionSource: SyncRevisionSource,
     private val clock: SyncClock,
 ) : SyncDocumentAdapter {
@@ -91,13 +93,22 @@ class CanonicalTitlesSyncAdapter(
                     "Canonical title tombstones are not supported"
                 }
                 val title = record.toTitle()
+                val identities = record.externalIdentities()
+
+                identities.forEach { (provider, externalId) ->
+                    val existing = titleRepository.getByExternalIdentity(provider, externalId)
+                    if (existing != null && existing.id != title.id) {
+                        canonicalTitleMergePort.merge(
+                            targetId = title.id,
+                            localId = existing.id,
+                        ).getOrThrow()
+                    }
+                }
+
                 titleRepository.upsert(title)
 
-                record.externalIdentities().forEach { (provider, externalId) ->
+                identities.forEach { (provider, externalId) ->
                     val existing = titleRepository.getByExternalIdentity(provider, externalId)
-                    require(existing == null || existing.id == title.id) {
-                        "Verified external identity is mapped to another canonical title"
-                    }
                     if (existing == null) {
                         titleRepository.addExternalIdentity(
                             ExternalIdentity(
@@ -108,6 +119,10 @@ class CanonicalTitlesSyncAdapter(
                                 createdAt = title.createdAt,
                             ),
                         )
+                    } else {
+                        require(existing.id == title.id) {
+                            "Verified external identity did not converge to the cloud canonical title"
+                        }
                     }
                 }
             }
