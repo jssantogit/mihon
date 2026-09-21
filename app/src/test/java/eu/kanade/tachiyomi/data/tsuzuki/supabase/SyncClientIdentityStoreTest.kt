@@ -1,8 +1,8 @@
 package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
 import io.kotest.matchers.shouldBe
-import java.nio.file.Files
 import org.junit.jupiter.api.Test
+import java.nio.file.Files
 
 class SyncClientIdentityStoreTest {
 
