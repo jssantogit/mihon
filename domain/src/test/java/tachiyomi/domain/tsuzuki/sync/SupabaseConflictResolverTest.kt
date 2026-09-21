@@ -93,6 +93,50 @@ class SupabaseConflictResolverTest {
     }
 
     @Test
+    fun `keep remote reconciles dirty intent before acknowledgement and retains conflict on ack failure`() = runTest {
+        val adapter = FakeAdapter(document(status = "READING"))
+        val conflict = conflict(remoteConflictId = 66)
+        val conflicts = FakeConflictRepository().apply {
+            replaceForDocument(
+                documentKind = SyncDocumentKind.LIBRARY,
+                conflicts = listOf(conflict),
+                createdAtEpochMillis = 1,
+            )
+        }
+        val outbox = FakeOutbox().apply {
+            markDirty(SyncDocumentKind.LIBRARY, 1)
+        }
+        val transport = FakeTransport(
+            snapshotValue = snapshot(
+                cursor = 6,
+                status = "COMPLETED",
+                note = null,
+            ),
+            ackResult = SyncTransportResult.Failure(
+                SyncFailure(SyncFailureReason.NETWORK_UNAVAILABLE),
+            ),
+        )
+        val resolver = resolver(
+            adapter = adapter,
+            transport = transport,
+            conflicts = conflicts,
+            outbox = outbox,
+        )
+
+        val result = resolver.resolve(
+            conflict = conflict,
+            choice = SyncConflictResolutionChoice.KEEP_REMOTE,
+        )
+
+        (result as SyncConflictResolutionResult.Failed).failure.reason shouldBe
+            SyncFailureReason.NETWORK_UNAVAILABLE
+        adapter.field("status") shouldBe JsonPrimitive("COMPLETED")
+        outbox.get(SyncDocumentKind.LIBRARY) shouldBe null
+        conflicts.getForDocument(SyncDocumentKind.LIBRARY).map { it.conflict } shouldBe
+            listOf(conflict)
+    }
+
+    @Test
     fun `keep local pushes causally later field mutation before acknowledgement`() = runTest {
         val adapter = FakeAdapter(document(status = "READING"))
         val conflict = conflict(remoteConflictId = 77)
