@@ -4,9 +4,9 @@
 
 **Goal:** Deliver the approved modular Tsuzuki architecture with three coordinated developers while preserving a working canonical Library/Reader at every integration checkpoint.
 
-**Architecture:** Establish one shared contract/schema baseline first, then run three largely non-overlapping workstreams: Dev A owns Integrations, canonical search and chapter evidence; Dev B owns Add-ons, content resolution, Reader/download delivery; Dev C owns optional Supabase account/sync, Home/Collections, navigation shell and final integration. Cross-stream interaction happens only through contracts frozen in Wave 0 and explicit merge checkpoints.
+**Architecture:** Upgrade CI before product work, establish one shared contract/schema baseline, then run three largely non-overlapping workstreams: Dev A owns Integrations, canonical search and chapter evidence; Dev B owns Add-ons, content resolution, Reader/download delivery; Dev C owns optional Supabase account/sync, Home/Collections, navigation shell and final integration. Cross-stream interaction happens only through contracts frozen in Wave 0 and explicit merge checkpoints.
 
-**Tech Stack:** Kotlin, Jetpack Compose, Metro DI, SQLDelight, OkHttp/Ktor where already used, Mihon extension runtime, Supabase Auth/PostgREST/RPC, GitHub Actions CI v2.
+**Tech Stack:** Kotlin, Jetpack Compose, Metro DI, SQLDelight, OkHttp/Ktor where already used, Mihon extension runtime, Supabase Auth/PostgREST/RPC, GitHub Actions CI v2.1.
 
 **Spec:** `docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md`
 
@@ -24,7 +24,8 @@
 - Executable Add-ons are never silently installed or trusted from synced state.
 - Automatic content fallback is global opt-in and disabled by default.
 - Preferred content provider is per canonical title.
-- Fast CI/CI v2 is the normal task gate; request `[ci-full]` at integration checkpoints and `[apk]` only for device-visible checkpoints.
+- CI v2.1 affected mode is the normal task gate; request `[ci-full]` at integration checkpoints and `[apk]` only for device-visible checkpoints.
+- Wave -1 CI v2.1 must be merged before the runtime-v2 foundation branch is created.
 - Follow `.agents/rules/tsuzuki-development.md`: small commits, diff review, at most two correction cycles per task.
 
 ## Review Focus
@@ -39,7 +40,24 @@
 
 ## 1. Branch and ownership strategy
 
-The implementation uses one short serial foundation wave followed by parallel branches.
+The implementation uses a CI-preparation wave, one short serial foundation wave, then parallel branches.
+
+### Wave -1 — CI v2.1
+
+Complete and merge `tsuzuki/ci-v2-1` before any runtime-v2 implementation branch is created.
+
+Acceptance:
+- Tsuzuki-only Domain/Data/App changes select filtered Tsuzuki tests rather than whole-module suites;
+- downstream consumers are compile-checked without replaying unrelated test suites;
+- SQLDelight changes run migration verification;
+- `supabase/**` changes run the Supabase backend lane without a full Gradle suite;
+- torrent/native paths run a package gate;
+- `[ci-full]` is the only automatic full-verification token and includes release compilation;
+- legacy `[full-ci]` is retired;
+- runtime-v2 Dev A/B/C/integration/torrent branches have APK lanes;
+- planner behavior is regression-tested.
+
+Only after this wave is green and merged should Wave 0 begin.
 
 ### Wave 0 — serial foundation
 
