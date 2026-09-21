@@ -63,8 +63,16 @@ class ReconcileChapterEvidenceTest {
         fixture.reconciler.execute(
             "title",
             listOf(
-                fixture.addonEvidence(rawLabel = "Chapter 12.5", externalKey = "decimal"),
-                fixture.addonEvidence(rawLabel = "Extra 12", externalKey = "extra"),
+                fixture.addonEvidence(
+                    id = "decimal-observation",
+                    rawLabel = "Chapter 12.5",
+                    externalKey = "decimal",
+                ),
+                fixture.addonEvidence(
+                    id = "extra-observation",
+                    rawLabel = "Extra 12",
+                    externalKey = "extra",
+                ),
             ),
         )
 
