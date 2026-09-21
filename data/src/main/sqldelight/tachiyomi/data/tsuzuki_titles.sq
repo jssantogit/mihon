@@ -11,6 +11,11 @@ SELECT *
 FROM tsuzuki_titles
 WHERE id = :id;
 
+getAllTsuzukiTitles:
+SELECT *
+FROM tsuzuki_titles
+ORDER BY id ASC;
+
 insertTsuzukiTitle:
 INSERT INTO tsuzuki_titles(
     id,
