@@ -1,6 +1,5 @@
 package tachiyomi.domain.tsuzuki.sync.service
 
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -37,6 +36,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncTransportResult
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
+import java.util.UUID
 
 enum class SupabaseConflictResolution {
     KEEP_LOCAL,
@@ -995,15 +995,14 @@ class SupabaseSyncOrchestrator(
 
     private suspend fun reconcileCanonicalIdentities(): SyncFailure? {
         val remapped = mutableMapOf<String, String>()
-        for (
-            identity in identityRepository.getVerifiedIdentities()
-                .sortedWith(
-                    compareBy(
-                        VerifiedCanonicalIdentity::provider,
-                        VerifiedCanonicalIdentity::externalId,
-                    ),
-                )
-        ) {
+        val identities = identityRepository.getVerifiedIdentities()
+            .sortedWith(
+                compareBy(
+                    VerifiedCanonicalIdentity::provider,
+                    VerifiedCanonicalIdentity::externalId,
+                ),
+            )
+        for (identity in identities) {
             val proposed = remapped[identity.canonicalTitleId] ?: identity.canonicalTitleId
             val claimed = when (
                 val result = identityClaimTransport.claim(
