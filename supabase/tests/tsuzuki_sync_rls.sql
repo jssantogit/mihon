@@ -84,6 +84,17 @@ values (
     '00000000-0000-0000-0000-00000000b001'::uuid
 );
 
+select set_config(
+    'test.foreign_conflict_id',
+    (
+        select conflict_id::text
+        from public.tsuzuki_sync_conflicts
+        where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
+        limit 1
+    ),
+    true
+);
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', true);
 select set_config(
@@ -110,12 +121,7 @@ where user_id = '00000000-0000-0000-0000-00000000000b'::uuid;
 
 select is(
     public.sync_ack_conflict(
-        (
-            select conflict_id
-            from public.tsuzuki_sync_conflicts
-            where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
-            limit 1
-        )
+        current_setting('test.foreign_conflict_id')::bigint
     ),
     false,
     'conflict acknowledgement cannot cross user scope'
