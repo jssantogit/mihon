@@ -1,6 +1,5 @@
 package tachiyomi.domain.tsuzuki.sync.service
 
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,6 +32,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncTransportResult
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncOutboxRepository
 import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
+import java.util.UUID
 
 class SupabaseConflictResolver(
     private val accountRepository: AccountRepository,
