@@ -146,7 +146,7 @@ git commit -m "feat(tsuzuki): add optional Supabase account"
 - Modify: `.github/workflows/ci-v2.yml`
 
 **Interfaces:**
-- Produces RPCs: `sync_apply_mutation_batch`, `sync_pull_delta`, `sync_snapshot_domain`, `sync_get_cursor`.
+- Produces RPCs: `sync_claim_external_identity`, `sync_apply_mutation_batch`, `sync_pull_delta`, `sync_snapshot_domain`, `sync_get_cursor`, `sync_ack_conflict`.
 - Consumes authenticated Supabase `auth.uid()`.
 
 - [ ] **Step 1: Write the backend schema in one migration**
@@ -196,7 +196,7 @@ create table public.tsuzuki_sync_mutations (
   user_id uuid not null references auth.users(id) on delete cascade,
   mutation_id uuid not null,
   request_hash text not null,
-  result_cursor bigint not null,
+  result_cursor bigint,
   created_at timestamptz not null default now(),
   primary key (user_id, mutation_id)
 );
@@ -265,6 +265,8 @@ Cross-provider equivalence is not inferred here. A second provider is attached t
 
 - [ ] **Step 4: Implement `sync_apply_mutation_batch` transaction semantics**
 
+Enable `pgcrypto` in the migration and compute a SHA-256 request hash from the canonical JSON input inside PostgreSQL.
+
 Input JSON contains:
 
 ~~~json
@@ -280,24 +282,30 @@ Input JSON contains:
 ~~~
 
 Rules:
-1. compute stable request hash inside SQL;
-2. insert `(auth.uid(), mutation_id, request_hash)` atomically;
-3. if same mutation exists with same hash, return stored cursor;
-4. if same mutation ID exists with another hash, raise a validation error;
-5. for each field op, compare its `last_event_id` to `baseCursor`;
-6. if later remote event exists with equivalent requested value/removal, collapse;
-7. if later remote event differs, insert FIELD_DIVERGENCE and do not overwrite that field;
-8. independent fields apply and emit events;
-9. delete concurrent with later field edit emits DELETE_EDIT;
-10. return highest emitted/known event cursor.
+1. compute the stable request hash inside SQL;
+2. atomically insert `(auth.uid(), mutation_id, request_hash, result_cursor = null)`;
+3. a concurrent replay of the same key waits on the unique row; after the first transaction commits, the replay reads the committed result;
+4. if the same mutation exists with the same hash and non-null result cursor, return that cursor without applying operations again;
+5. if the same mutation ID exists with another hash, raise a validation error;
+6. reject duplicate operations for the same `recordId + fieldPath` within one request;
+7. for each field op, compare its `last_event_id` to `baseCursor`;
+8. if a later remote event exists with equivalent requested value/removal, collapse it;
+9. if a later remote event differs, insert FIELD_DIVERGENCE and do not overwrite that field;
+10. independent fields apply and emit events;
+11. delete concurrent with later field edit emits DELETE_EDIT;
+12. update `result_cursor` before the RPC transaction commits and return that cursor.
 
-- [ ] **Step 5: Implement delta/snapshot RPCs**
+If the RPC fails before commit, both the provisional idempotency row and field changes roll back together. A committed row with null `result_cursor` is treated as malformed backend state, not replayed as success.
+
+- [ ] **Step 5: Implement delta/snapshot/conflict-ack RPCs**
 
 `sync_pull_delta(p_domain, p_since_event_id, p_limit)` returns only caller-owned events ordered ascending.
 
 `sync_get_cursor(p_domain)` returns max event ID for caller/domain, or 0.
 
 `sync_snapshot_domain(p_domain)` returns materialized records plus a snapshot cursor captured consistently enough that subsequent delta pull from that cursor cannot miss committed events.
+
+`sync_ack_conflict(p_conflict_id)` is idempotent, owner-scoped, and only sets `resolved_at` on an unresolved conflict owned by `auth.uid()`. It does not select a value. Local-vs-remote choice remains an explicit client action.
 
 - [ ] **Step 6: Write RLS and concurrency tests**
 
@@ -306,6 +314,7 @@ Rules:
 `tsuzuki_sync_conflicts.sql` proves:
 - same mutation replay = one effect;
 - same mutation ID/different request = error;
+- a committed idempotency record always has a result cursor;
 - independent fields merge;
 - same-field concurrent different value produces conflict;
 - concurrent delete/edit produces conflict;
@@ -703,9 +712,13 @@ git commit -m "feat(tsuzuki): make Home user composed"
 **Files:**
 - Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAccountScreen.kt`
 - Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/account/TsuzukiAccountScreenModel.kt`
+- Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiSyncScreen.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/sync/TsuzukiSyncScreenModel.kt`
+- Create: `app/src/main/java/eu/kanade/presentation/tsuzuki/sync/SyncConflictResolutionScreen.kt`
 - Modify/Reuse: `app/src/main/java/eu/kanade/presentation/tsuzuki/collections/CollectionsScreen.kt`
 - Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiHomeScreen.kt`
 - Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/account/TsuzukiAccountScreenModelTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/sync/TsuzukiSyncScreenModelTest.kt`
 
 **Interfaces:**
 - Produces: standalone Account and Home/Collections settings destinations.
@@ -726,23 +739,44 @@ Authenticated screen shows e-mail, Sync Now, logout.
 
 Registration and login validate nonblank e-mail/password client-side, map backend errors to typed screen errors, and never log passwords/tokens.
 
-- [ ] **Step 3: Implement Home/Collections settings entry**
+- [ ] **Step 3: Implement Sync diagnostics and explicit conflict resolution**
+
+Settings → Sync shows:
+- cloud enabled/logged-out state;
+- pending mutation count;
+- last successful sync;
+- unresolved conflict count;
+- Sync Now.
+
+For each `FIELD_DIVERGENCE` or `DELETE_EDIT`, show the affected domain/record/field and the local vs remote values.
+
+User actions:
+- **Keep remote:** apply current remote field/delete locally, clear the matching local dirty field, then call `sync_ack_conflict`;
+- **Keep local:** create a fresh mutation using the latest remote cursor, push it as a causally later edit, then call `sync_ack_conflict` only after that push succeeds.
+
+Neither button uses timestamps to choose for the user. Failed resolution keeps the conflict visible and leaves local state/outbox consistent.
+
+- [ ] **Step 4: Implement Home/Collections settings entry**
 
 Expose the existing collection editor/manager here.
 
 Creating the first collection is what causes the first configurable discovery section to appear on Home.
 
-- [ ] **Step 4: Run tests and commit**
+- [ ] **Step 5: Run tests and commit**
 
 ~~~bash
 ./gradlew :app:testDebugUnitTest --tests '*TsuzukiAccountScreenModelTest' \
+  :app:testDebugUnitTest --tests '*TsuzukiSyncScreenModelTest' \
   :app:compileDebugKotlin \
   spotlessCheck
 git add app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAccountScreen.kt \
   app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiHomeScreen.kt \
   app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/account \
+  app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/sync \
+  app/src/main/java/eu/kanade/presentation/tsuzuki/sync \
   app/src/main/java/eu/kanade/presentation/tsuzuki/collections \
-  app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/account
+  app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/account \
+  app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/sync
 git commit -m "feat(tsuzuki): add optional account and Home settings"
 ~~~
 
@@ -819,7 +853,7 @@ Settings entries include:
 - Home & Collections → C screen;
 - Reading;
 - Downloads;
-- Sync/account status;
+- Sync → C Sync screen;
 - Appearance and retained app settings.
 
 Remove Google Account entry.
