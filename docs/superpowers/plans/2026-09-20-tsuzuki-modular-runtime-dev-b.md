@@ -251,6 +251,8 @@ ContentProvider returns options only for releases that reconcile to the requeste
 
 ChapterProbeProvider may report all observed source chapter labels as provisional evidence; Dev A’s reconciler owns whether those observations create/promote canonical chapters.
 
+For background probes, if the Add-on has no persisted ContentBinding for the canonical title, return an empty evidence list. Do not perform broad title search from a periodic/background probe.
+
 - [ ] **Step 4: Verify no source inventory mutates canonical chapters directly**
 
 Add a test using a fake CanonicalChapterRepository and assert the Mihon provider/probe never calls \`upsert\` on it.
@@ -419,6 +421,8 @@ Test that a \`ContentDelivery.Mihon\` becomes \`PreparedChapterContent.MihonOper
 
 Do not create fake Mihon source/manga objects for LocalArchive/LocalDirectory/CanonicalDownload variants.
 
+When canonical progress marks a newly observed chapter as read, also acknowledge that chapter in the chapter-update-state repository so a Home badge can move from +3 → +2 → +1 → none without treating the entire unread backlog as “new”.
+
 - [ ] **Step 5: Run tests and commit**
 
 ~~~bash
@@ -479,7 +483,23 @@ Reader toolbar action “Trocar fonte” resolves the current CanonicalChapter a
 
 Choosing another option rematerializes operational content for the same canonical chapter and resumes canonical page/progress state where valid.
 
-- [ ] **Step 4: Implement Add-ons Settings facade**
+- [ ] **Step 4: Implement empty/error selector behavior**
+
+If no ContentOption exists, show “Nenhuma opção de leitura encontrada” with:
+- Retry;
+- open Add-ons Settings.
+
+A network/Add-on failure for one provider must not suppress successful options from other providers.
+
+- [ ] **Step 5: Add global reading preferences**
+
+Extend the existing Reader Settings screen with:
+- preferred languages, ordered list, affecting ranking only;
+- Automatic fallback switch, default OFF.
+
+Do not add per-title language controls.
+
+- [ ] **Step 6: Implement Add-ons Settings facade**
 
 Show:
 - repositories entry;
@@ -490,7 +510,7 @@ Show:
 
 Do not expose Sources as top-level cards.
 
-- [ ] **Step 5: Run tests and compile**
+- [ ] **Step 7: Run tests and compile**
 
 ~~~bash
 ./gradlew :app:testDebugUnitTest --tests '*ContentSelectorScreenModelTest' \
@@ -498,13 +518,14 @@ Do not expose Sources as top-level cards.
   spotlessCheck
 ~~~
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ~~~bash
 git add app/src/main/java/eu/kanade/presentation/tsuzuki/content \
   app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content \
   app/src/main/java/eu/kanade/presentation/reader \
   app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderViewModel.kt \
+  app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsReaderScreen.kt \
   app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAddonsScreen.kt \
   app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/content
 git commit -m "feat(tsuzuki): add chapter content selector"
