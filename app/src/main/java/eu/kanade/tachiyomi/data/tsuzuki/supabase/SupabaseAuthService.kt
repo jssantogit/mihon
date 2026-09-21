@@ -38,7 +38,11 @@ class SupabaseAuthService(
         postRaw(
             path = "auth/v1/recover",
             body = json.encodeToString(RecoveryRequest.serializer(), RecoveryRequest(email)),
-        )
+        ).use { response ->
+            check(response.isSuccessful) {
+                "Supabase auth request failed with HTTP ${response.code}"
+            }
+        }
     }
 
     suspend fun logout(accessToken: String) {
