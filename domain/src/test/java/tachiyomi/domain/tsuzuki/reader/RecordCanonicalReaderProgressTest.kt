@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.chapter.update.model.CanonicalChapterUpdateState
+import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.RecordCanonicalReaderProgress
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
@@ -38,6 +40,26 @@ class RecordCanonicalReaderProgressTest {
             lastVariantId = "variant-1",
             updatedAt = 500L,
         )
+    }
+
+    @Test
+    fun `page checkpoint acknowledges new chapter update`() = runTest {
+        val repository = FakeCanonicalReadingRepository()
+        val updateStateRepository = FakeChapterUpdateStateRepository()
+        val recorder = RecordCanonicalReaderProgress(
+            repository = repository,
+            chapterUpdateStateRepository = updateStateRepository,
+            clock = { 700L },
+        )
+
+        recorder.recordPage(
+            canonicalChapterId = "chapter-1",
+            variantId = "variant-1",
+            pageIndex = 0,
+            completed = false,
+        )
+
+        updateStateRepository.acknowledged shouldBe "chapter-1" to 700L
     }
 
     @Test
@@ -138,6 +160,31 @@ class RecordCanonicalReaderProgressTest {
         val readAt: Long,
         val sessionReadDuration: Long,
     )
+
+    private class FakeChapterUpdateStateRepository : ChapterUpdateStateRepository {
+        var acknowledged: Pair<String, Long>? = null
+
+        override suspend fun getAll(): List<CanonicalChapterUpdateState> = emptyList()
+
+        override suspend fun getByTitle(
+            canonicalTitleId: String,
+        ): List<CanonicalChapterUpdateState> = emptyList()
+
+        override fun observeByTitle(
+            canonicalTitleId: String,
+        ): Flow<List<CanonicalChapterUpdateState>> = MutableStateFlow(emptyList())
+
+        override suspend fun upsert(state: CanonicalChapterUpdateState) = Unit
+
+        override suspend fun acknowledge(
+            canonicalChapterId: String,
+            acknowledgedAt: Long,
+        ) {
+            acknowledged = canonicalChapterId to acknowledgedAt
+        }
+
+        override suspend fun delete(canonicalChapterId: String) = Unit
+    }
 
     private class FakeCanonicalReadingRepository : CanonicalReadingRepository {
         var progress: CanonicalChapterProgress? = null
