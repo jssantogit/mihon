@@ -118,7 +118,7 @@ On 401 from later Supabase requests, refresh once using the stored refresh token
 
 Logout clears local session but does not delete local Tsuzuki user data.
 
-- [ ] **Step 8: Run tests and commit**
+- [ ] **Step 7: Run tests and commit**
 
 ~~~bash
 ./gradlew :app:testDebugUnitTest --tests '*SupabaseAccountRepositoryTest' \
@@ -401,7 +401,7 @@ Do not send any request when logged out. Logged-out sync reports `AuthorizationR
 Before pushing canonical Library/title state for an authenticated account:
 1. enumerate locally verified external identities;
 2. call `sync_claim_external_identity` with the local CanonicalTitle ID;
-3. if the returned ID differs, call Dev A `MergeCanonicalTitles.execute(survivorId = returnedId, duplicateId = localId)`;
+3. if the returned ID differs, call Dev A `MergeCanonicalTitles.execute(targetId = returnedId, localId = localId)`;
 4. export/diff only after the local graph has converged to the claimed ID.
 
 Add a client test where device A proposes `canon-a`, device B proposes `canon-b` for `kitsu:1`, and both local graphs end on the same returned canonical ID without title-string matching.
@@ -542,7 +542,7 @@ git grep -n "SettingsGoogleAccountScreen\|GoogleDriveAppDataTransport\|DriveSync
 
 Expected: no target runtime references.
 
-- [ ] **Step 7: Run tests and commit**
+- [ ] **Step 6: Run tests and commit**
 
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*AvailableSupabaseSyncAdaptersTest' \
@@ -637,7 +637,7 @@ After Dev A merge, resolve a CollectionList `providerId` through enabled Integra
 
 If provider is disabled, render that configured row as unavailable without deleting its definition.
 
-- [ ] **Step 6: Run tests and commit**
+- [ ] **Step 7: Run tests and commit**
 
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*GetConfiguredHomeSectionsTest' \
