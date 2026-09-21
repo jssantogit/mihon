@@ -34,3 +34,10 @@ VALUES (
     :verified,
     :createdAt
 );
+
+
+getVerifiedTsuzukiExternalIdentities:
+SELECT canonical_title_id, provider, external_id
+FROM tsuzuki_external_identities
+WHERE verified = 1
+ORDER BY provider ASC, external_id ASC;
