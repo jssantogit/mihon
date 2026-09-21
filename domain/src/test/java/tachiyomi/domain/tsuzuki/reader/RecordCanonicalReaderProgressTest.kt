@@ -59,7 +59,7 @@ class RecordCanonicalReaderProgressTest {
             completed = false,
         )
 
-        updateStateRepository.acknowledged shouldBe "chapter-1" to 700L
+        updateStateRepository.acknowledged shouldBe ("chapter-1" to 700L)
     }
 
     @Test
