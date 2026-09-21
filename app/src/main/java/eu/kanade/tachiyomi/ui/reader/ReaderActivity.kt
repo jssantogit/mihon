@@ -77,6 +77,7 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
+import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.openInBrowser
@@ -371,7 +372,11 @@ class ReaderActivity : BaseActivity() {
                     onOpenAddonsSettings = {
                         startActivity(
                             Intent(this@ReaderActivity, MainActivity::class.java)
-                                .setAction(Intent.ACTION_APPLICATION_PREFERENCES),
+                                .setAction(Intent.ACTION_APPLICATION_PREFERENCES)
+                                .putExtra(
+                                    SettingsScreen.EXTRA_DESTINATION,
+                                    SettingsScreen.Destination.TsuzukiAddons.id,
+                                ),
                         )
                     },
                     onDismissRequest = viewModel::dismissContentSelector,
