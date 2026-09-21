@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(16);
 
 insert into auth.users (
     id,
@@ -183,6 +183,32 @@ select is(
     ),
     '10'::jsonb,
     'same-field conflict does not overwrite accepted remote value'
+);
+
+select ok(
+    public.sync_ack_conflict(
+        (
+            select conflict_id
+            from public.tsuzuki_sync_conflicts
+            where record_id = 'progress-title'
+              and field_path = 'chapter'
+            limit 1
+        )
+    ),
+    'conflict acknowledgement succeeds for the owner'
+);
+
+select ok(
+    public.sync_ack_conflict(
+        (
+            select conflict_id
+            from public.tsuzuki_sync_conflicts
+            where record_id = 'progress-title'
+              and field_path = 'chapter'
+            limit 1
+        )
+    ),
+    'conflict acknowledgement is idempotent'
 );
 
 select public.sync_apply_mutation_batch(
