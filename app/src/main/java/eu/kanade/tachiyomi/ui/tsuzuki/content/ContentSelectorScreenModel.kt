@@ -107,6 +107,7 @@ class ContentSelectorScreenModel internal constructor(
         return load(refresh = true)
     }
 
+    // First selection becomes the per-title preference; replacing an existing preference requires confirmation.
     fun select(item: ContentOptionPresentation): SelectionResult {
         val state = _state.value as? ContentSelectorScreenState.Ready
             ?: error("Content options are not ready")
