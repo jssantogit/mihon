@@ -36,8 +36,7 @@ import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher
 import eu.kanade.tachiyomi.data.coil.MangaCoverKeyer
 import eu.kanade.tachiyomi.data.coil.MangaKeyer
 import eu.kanade.tachiyomi.data.notification.Notifications
-import eu.kanade.tachiyomi.data.tsuzuki.drivesync.DriveSyncJob
-import eu.kanade.tachiyomi.data.tsuzuki.googleauth.GoogleAuthSessionManager
+import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncJob
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
@@ -94,8 +93,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     @Inject private lateinit var sourceManager: SourceManager
 
-    @Inject private lateinit var googleAuthSessionManager: GoogleAuthSessionManager
-
     @Inject private lateinit var widgetManager: WidgetManager
 
     @Inject private lateinit var injektMetroInteropModule: MetroInteropModule
@@ -133,11 +130,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
         val scope = ProcessLifecycleOwner.get().lifecycleScope
 
-        scope.launch {
-            googleAuthSessionManager.restore()
-        }
-
-        DriveSyncJob.setupTask(this)
+        SupabaseSyncJob.setupTask(this)
 
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()
