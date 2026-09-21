@@ -147,7 +147,9 @@ class CanonicalTitleScreenModelTest {
 
     private class FakeReadingRepository : CanonicalReadingRepository {
         override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? = null
-        override fun observeProgress(canonicalChapterId: String): Flow<CanonicalChapterProgress?> = MutableStateFlow(null)
+        override fun observeProgress(
+            canonicalChapterId: String,
+        ): Flow<CanonicalChapterProgress?> = MutableStateFlow(null)
         override suspend fun getProgressByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapterProgress> =
             emptyList()
         override suspend fun upsertProgress(progress: CanonicalChapterProgress) = Unit
