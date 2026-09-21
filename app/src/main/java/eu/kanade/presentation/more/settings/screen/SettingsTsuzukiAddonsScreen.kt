@@ -83,7 +83,7 @@ object SettingsTsuzukiAddonsScreen : SearchableSettings {
                 .map { packageId ->
                     Preference.PreferenceItem.TextPreference(
                         title = packageId,
-                        subtitle = "Needs installation · Install manually from Extension Stores",
+                        subtitle = stringResource(MR.strings.tsuzuki_addon_needs_installation),
                     )
                 }
         val addonItems = (installedItems + missingItems).ifEmpty {
