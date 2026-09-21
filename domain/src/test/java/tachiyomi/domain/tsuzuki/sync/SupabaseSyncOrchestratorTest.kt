@@ -40,7 +40,6 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentityClaimTransport
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
-import tachiyomi.domain.tsuzuki.sync.service.SupabaseConflictResolution
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncOrchestrator
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncStateStore
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncTransport
