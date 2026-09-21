@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(9);
 
 insert into auth.users (
     id,
@@ -112,9 +112,16 @@ select is(
     'RLS hides another user sync field'
 );
 
-update public.tsuzuki_sync_fields
-set value = '"HACKED"'::jsonb
-where user_id = '00000000-0000-0000-0000-00000000000b'::uuid;
+select throws_ok(
+    $
+    update public.tsuzuki_sync_fields
+    set value = '"HACKED"'::jsonb
+    where user_id = '00000000-0000-0000-0000-00000000000b'::uuid
+    $,
+    '42501',
+    null,
+    'authenticated clients cannot mutate sync tables directly'
+);
 
 select is(
     public.sync_ack_conflict(
