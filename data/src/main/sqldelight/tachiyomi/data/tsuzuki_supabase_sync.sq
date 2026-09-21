@@ -1,0 +1,89 @@
+CREATE TABLE tsuzuki_supabase_sync_cursor(
+    domain TEXT NOT NULL PRIMARY KEY,
+    event_cursor INTEGER NOT NULL,
+    last_successful_sync_at INTEGER
+);
+
+CREATE TABLE tsuzuki_supabase_pending_mutation(
+    mutation_id TEXT NOT NULL PRIMARY KEY,
+    domain TEXT NOT NULL,
+    base_cursor INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL,
+    next_attempt_at INTEGER
+);
+
+getTsuzukiSupabaseSyncCursor:
+SELECT *
+FROM tsuzuki_supabase_sync_cursor
+WHERE domain = :domain
+LIMIT 1;
+
+getAllTsuzukiSupabaseSyncCursors:
+SELECT *
+FROM tsuzuki_supabase_sync_cursor
+ORDER BY domain ASC;
+
+upsertTsuzukiSupabaseSyncCursor:
+INSERT INTO tsuzuki_supabase_sync_cursor(
+    domain,
+    event_cursor,
+    last_successful_sync_at
+)
+VALUES (
+    :domain,
+    :eventCursor,
+    :lastSuccessfulSyncAt
+)
+ON CONFLICT(domain) DO UPDATE SET
+    event_cursor = excluded.event_cursor,
+    last_successful_sync_at = excluded.last_successful_sync_at;
+
+getTsuzukiSupabasePendingMutation:
+SELECT *
+FROM tsuzuki_supabase_pending_mutation
+WHERE mutation_id = :mutationId
+LIMIT 1;
+
+getTsuzukiSupabasePendingMutations:
+SELECT *
+FROM tsuzuki_supabase_pending_mutation
+ORDER BY created_at ASC, mutation_id ASC;
+
+getReadyTsuzukiSupabasePendingMutations:
+SELECT *
+FROM tsuzuki_supabase_pending_mutation
+WHERE next_attempt_at IS NULL
+OR next_attempt_at <= :now
+ORDER BY created_at ASC, mutation_id ASC;
+
+upsertTsuzukiSupabasePendingMutation:
+INSERT INTO tsuzuki_supabase_pending_mutation(
+    mutation_id,
+    domain,
+    base_cursor,
+    payload_json,
+    created_at,
+    attempt_count,
+    next_attempt_at
+)
+VALUES (
+    :mutationId,
+    :domain,
+    :baseCursor,
+    :payloadJson,
+    :createdAt,
+    :attemptCount,
+    :nextAttemptAt
+)
+ON CONFLICT(mutation_id) DO UPDATE SET
+    domain = excluded.domain,
+    base_cursor = excluded.base_cursor,
+    payload_json = excluded.payload_json,
+    attempt_count = excluded.attempt_count,
+    next_attempt_at = excluded.next_attempt_at;
+
+deleteTsuzukiSupabasePendingMutation:
+DELETE FROM tsuzuki_supabase_pending_mutation
+WHERE mutation_id = :mutationId;
