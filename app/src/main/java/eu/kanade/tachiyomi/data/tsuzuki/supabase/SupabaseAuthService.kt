@@ -231,7 +231,6 @@ private data class UserResponse(
     val email: String? = null,
 )
 
-
 internal fun supabaseSafeClient(client: OkHttpClient): OkHttpClient {
     return client.newBuilder()
         .apply {
