@@ -209,12 +209,10 @@ class TsuzukiSyncScreenModel(
         SyncFailureReason.AUTHORIZATION_REQUIRED ->
             TsuzukiSyncScreenError.AUTHORIZATION_REQUIRED
         SyncFailureReason.NETWORK_UNAVAILABLE,
-        SyncFailureReason.RATE_LIMITED,
-        -> TsuzukiSyncScreenError.NETWORK_UNAVAILABLE
+        SyncFailureReason.RATE_LIMITED -> TsuzukiSyncScreenError.NETWORK_UNAVAILABLE
         SyncFailureReason.REMOTE_UNAVAILABLE,
         SyncFailureReason.REMOTE_ACCESS_DENIED,
-        SyncFailureReason.REMOTE_NOT_FOUND,
-        -> TsuzukiSyncScreenError.REMOTE_UNAVAILABLE
+        SyncFailureReason.REMOTE_NOT_FOUND -> TsuzukiSyncScreenError.REMOTE_UNAVAILABLE
         else -> TsuzukiSyncScreenError.UNKNOWN
     }
 
