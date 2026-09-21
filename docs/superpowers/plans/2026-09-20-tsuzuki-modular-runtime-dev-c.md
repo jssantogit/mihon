@@ -1,6 +1,6 @@
 # Tsuzuki Modular Runtime — Dev C Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace Google/Drive with optional Supabase account + local-first sync, make Home/Collections empty-by-default and capability-driven, and perform the final Home/Search/Library/Settings shell integration after Dev A and Dev B are merged.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin, OkHttp 5, kotlinx.serialization, SQLDelight, PostgreSQL/Supabase Auth/PostgREST RPC, Jetpack Compose, GitHub Actions CI v2, Supabase CLI for backend tests.
 
-**Spec:** \`docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md\`
+**Spec:** `docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md`
 
 ## Global Constraints
 
@@ -24,9 +24,9 @@
 - Service-role keys never ship in app code or CI artifacts.
 - Synced Add-on state cannot install/trust executable code.
 - Home discovery is empty by default; Continue Reading is automatic only after real progress.
-- Dev C owns \`HomeScreen.kt\`, \`SettingsMainScreen.kt\`, Gradle dependency/config changes, Google/Drive deletion, and final navigation wiring.
+- Dev C owns `HomeScreen.kt`, `SettingsMainScreen.kt`, Gradle dependency/config changes, Google/Drive deletion, and final navigation wiring.
 - Dev C must not implement search identity, content resolution, or Reader selection.
-- Fast CI per app task; backend/RLS changes also run Supabase database tests; final shell uses \`[ci-full]\` and \`[apk]\`.
+- Fast CI per app task; backend/RLS changes also run Supabase database tests; final shell uses `[ci-full]` and `[apk]`.
 
 ## Review Focus
 
@@ -41,20 +41,20 @@
 ### Task C1: Add Supabase configuration and optional account domain
 
 **Files:**
-- Modify: \`gradle/libs.versions.toml\` only if a new helper dependency is actually required; prefer existing OkHttp/serialization so no Supabase SDK dependency is necessary.
-- Modify: \`app/build.gradle.kts\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/account/model/TsuzukiAccount.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/account/model/AccountState.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/account/repository/AccountRepository.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseConfiguration.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAuthService.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAccountRepository.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/AndroidKeystoreSessionStore.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAccountRepositoryTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/AndroidKeystoreSessionStoreTest.kt\`
+- Modify: `gradle/libs.versions.toml` only if a new helper dependency is actually required; prefer existing OkHttp/serialization so no Supabase SDK dependency is necessary.
+- Modify: `app/build.gradle.kts`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/account/model/TsuzukiAccount.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/account/model/AccountState.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/account/repository/AccountRepository.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseConfiguration.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAuthService.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAccountRepository.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/AndroidKeystoreSessionStore.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseAccountRepositoryTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/AndroidKeystoreSessionStoreTest.kt`
 
 **Interfaces:**
-- Produces: \`AccountRepository.state: StateFlow<AccountState>\`, register/login/logout/refresh/recovery.
+- Produces: `AccountRepository.state: StateFlow<AccountState>`, register/login/logout/refresh/recovery.
 - Consumes: Supabase project URL + publishable key injected through BuildConfig/Gradle properties.
 
 - [ ] **Step 1: Write logged-out-local behavior tests**
@@ -76,15 +76,15 @@ interface AccountRepository {
 }
 ~~~
 
-Test that constructing the repository without a stored session starts \`LoggedOut\` and performs no network request.
+Test that constructing the repository without a stored session starts `LoggedOut` and performs no network request.
 
 - [ ] **Step 2: Write authentication request tests with MockWebServer/fake OkHttp chain**
 
 Verify:
-- signup uses \`/auth/v1/signup\`;
-- password sign-in uses \`/auth/v1/token?grant_type=password\`;
-- refresh uses \`grant_type=refresh_token\`;
-- recovery uses \`/auth/v1/recover\`;
+- signup uses `/auth/v1/signup`;
+- password sign-in uses `/auth/v1/token?grant_type=password`;
+- refresh uses `grant_type=refresh_token`;
+- recovery uses `/auth/v1/recover`;
 - all requests carry only the publishable key and never a service-role key.
 
 - [ ] **Step 3: Implement build-time configuration**
@@ -98,7 +98,7 @@ data class SupabaseConfiguration(
 )
 ~~~
 
-Use Gradle properties such as \`TSUZUKI_SUPABASE_URL\` and \`TSUZUKI_SUPABASE_PUBLISHABLE_KEY\` to populate BuildConfig. The app must compile with blank values; blank config means cloud/account UI reports “not configured” in development rather than blocking local app use.
+Use Gradle properties such as `TSUZUKI_SUPABASE_URL` and `TSUZUKI_SUPABASE_PUBLISHABLE_KEY` to populate BuildConfig. The app must compile with blank values; blank config means cloud/account UI reports “not configured” in development rather than blocking local app use.
 
 - [ ] **Step 4: Implement Keystore-backed session persistence**
 
@@ -137,15 +137,15 @@ git commit -m "feat(tsuzuki): add optional Supabase account"
 ### Task C2: Create Supabase sync schema, RLS, idempotent RPC, and delta API
 
 **Files:**
-- Create: \`supabase/config.toml\`
-- Create: \`supabase/migrations/20260920000100_tsuzuki_sync.sql\`
-- Create: \`supabase/tests/tsuzuki_sync_rls.sql\`
-- Create: \`supabase/tests/tsuzuki_sync_conflicts.sql\`
-- Modify: \`.github/workflows/ci-v2.yml\`
+- Create: `supabase/config.toml`
+- Create: `supabase/migrations/20260920000100_tsuzuki_sync.sql`
+- Create: `supabase/tests/tsuzuki_sync_rls.sql`
+- Create: `supabase/tests/tsuzuki_sync_conflicts.sql`
+- Modify: `.github/workflows/ci-v2.yml`
 
 **Interfaces:**
-- Produces RPCs: \`sync_apply_mutation_batch\`, \`sync_pull_delta\`, \`sync_snapshot_domain\`, \`sync_get_cursor\`.
-- Consumes authenticated Supabase \`auth.uid()\`.
+- Produces RPCs: `sync_apply_mutation_batch`, `sync_pull_delta`, `sync_snapshot_domain`, `sync_get_cursor`.
+- Consumes authenticated Supabase `auth.uid()`.
 
 - [ ] **Step 1: Write the backend schema in one migration**
 
@@ -229,9 +229,9 @@ with check (user_id = auth.uid());
 
 Repeat for records/events/mutations/conflicts.
 
-RPCs use \`security invoker\` where practical. Any \`security definer\` helper must explicitly compare its user scope to \`auth.uid()\` and use a locked \`search_path\`.
+RPCs use `security invoker` where practical. Any `security definer` helper must explicitly compare its user scope to `auth.uid()` and use a locked `search_path`.
 
-- [ ] **Step 3: Implement \`sync_apply_mutation_batch\` transaction semantics**
+- [ ] **Step 3: Implement `sync_apply_mutation_batch` transaction semantics**
 
 Input JSON contains:
 
@@ -249,10 +249,10 @@ Input JSON contains:
 
 Rules:
 1. compute stable request hash inside SQL;
-2. insert \`(auth.uid(), mutation_id, request_hash)\` atomically;
+2. insert `(auth.uid(), mutation_id, request_hash)` atomically;
 3. if same mutation exists with same hash, return stored cursor;
 4. if same mutation ID exists with another hash, raise a validation error;
-5. for each field op, compare its \`last_event_id\` to \`baseCursor\`;
+5. for each field op, compare its `last_event_id` to `baseCursor`;
 6. if later remote event exists with equivalent requested value/removal, collapse;
 7. if later remote event differs, insert FIELD_DIVERGENCE and do not overwrite that field;
 8. independent fields apply and emit events;
@@ -261,17 +261,17 @@ Rules:
 
 - [ ] **Step 4: Implement delta/snapshot RPCs**
 
-\`sync_pull_delta(p_domain, p_since_event_id, p_limit)\` returns only caller-owned events ordered ascending.
+`sync_pull_delta(p_domain, p_since_event_id, p_limit)` returns only caller-owned events ordered ascending.
 
-\`sync_get_cursor(p_domain)\` returns max event ID for caller/domain, or 0.
+`sync_get_cursor(p_domain)` returns max event ID for caller/domain, or 0.
 
-\`sync_snapshot_domain(p_domain)\` returns materialized records plus a snapshot cursor captured consistently enough that subsequent delta pull from that cursor cannot miss committed events.
+`sync_snapshot_domain(p_domain)` returns materialized records plus a snapshot cursor captured consistently enough that subsequent delta pull from that cursor cannot miss committed events.
 
 - [ ] **Step 5: Write RLS and concurrency tests**
 
-\`supabase/tests/tsuzuki_sync_rls.sql\` proves user A cannot select/update user B state.
+`supabase/tests/tsuzuki_sync_rls.sql` proves user A cannot select/update user B state.
 
-\`tsuzuki_sync_conflicts.sql\` proves:
+`tsuzuki_sync_conflicts.sql` proves:
 - same mutation replay = one effect;
 - same mutation ID/different request = error;
 - independent fields merge;
@@ -280,7 +280,7 @@ Rules:
 
 - [ ] **Step 6: Add backend CI**
 
-Extend CI v2 with a database-backend job triggered when \`supabase/**\` changes. Use the Supabase CLI to start the local stack and execute:
+Extend CI v2 with a database-backend job triggered when `supabase/**` changes. Use the Supabase CLI to start the local stack and execute:
 
 ~~~bash
 supabase db reset
@@ -303,24 +303,24 @@ Push and require both normal CI v2 and Supabase database tests green.
 ### Task C3: Replace Drive transport with Supabase mutation/delta client
 
 **Files:**
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/model/SupabaseMutationBatch.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/SupabaseSyncTransport.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/SupabaseSyncOrchestrator.kt\`
-- Create: \`data/src/main/java/tachiyomi/data/tsuzuki/sync/SupabaseSyncStateRepository.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseSyncHttpTransport.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SyncClientIdentityStore.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/sync/SupabaseSyncOrchestratorTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseSyncHttpTransportTest.kt\`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/model/SupabaseMutationBatch.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/SupabaseSyncTransport.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/SupabaseSyncOrchestrator.kt`
+- Create: `data/src/main/java/tachiyomi/data/tsuzuki/sync/SupabaseSyncStateRepository.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseSyncHttpTransport.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SyncClientIdentityStore.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/sync/SupabaseSyncOrchestratorTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/supabase/SupabaseSyncHttpTransportTest.kt`
 
 **Interfaces:**
-- Consumes: existing \`SyncMutation\`, \`SyncDocumentDiffer\`, \`SyncDocumentAdapter\`, \`SyncOutboxRepository\`; Wave 0 Supabase cursor/pending-mutation tables; AccountRepository.
+- Consumes: existing `SyncMutation`, `SyncDocumentDiffer`, `SyncDocumentAdapter`, `SyncOutboxRepository`; Wave 0 Supabase cursor/pending-mutation tables; AccountRepository.
 - Produces: pull-first local-first sync without Drive files.
 
 - [ ] **Step 1: Write idempotent ambiguous-push test**
 
 ~~~kotlin
 @Test
-fun \`timeout after server apply reuses persisted mutation id on retry\`() = runTest {
+fun `timeout after server apply reuses persisted mutation id on retry`() = runTest {
     transport.firstPushOutcome = AppliedButResponseLost(cursor = 12L)
 
     orchestrator.sync(SyncDocumentKind.LIBRARY)
@@ -353,13 +353,13 @@ Mutation ID is generated once per intent and persisted before network send.
 
 - [ ] **Step 3: Implement stable client identity**
 
-Store a random installation ID in \`noBackupFilesDir\`, separate from account ID. Reinstall gets a new client identity.
+Store a random installation ID in `noBackupFilesDir`, separate from account ID. Reinstall gets a new client identity.
 
 - [ ] **Step 4: Implement transport RPC calls**
 
 Use current authenticated Supabase access token from AccountRepository.
 
-Do not send any request when logged out. Logged-out sync reports \`AuthorizationRequired\` while leaving outbox/pending state intact.
+Do not send any request when logged out. Logged-out sync reports `AuthorizationRequired` while leaving outbox/pending state intact.
 
 - [ ] **Step 5: Implement orchestrator**
 
@@ -367,7 +367,7 @@ For each dirty document/domain:
 1. pull current remote delta from accepted cursor;
 2. materialize/apply remote changes through the existing adapter;
 3. export current local document;
-4. diff accepted materialized state → local state using \`SyncDocumentDiffer\`;
+4. diff accepted materialized state → local state using `SyncDocumentDiffer`;
 5. persist one mutation batch with base cursor;
 6. push the exact persisted batch;
 7. store returned cursor;
@@ -400,16 +400,16 @@ git commit -m "feat(tsuzuki): sync canonical state through Supabase"
 ### Task C4: Migrate sync domains and retire Google/Drive target path
 
 **Files:**
-- Modify: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/CanonicalLibrarySyncAdapter.kt\`
-- Modify: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ChapterOverridesSyncAdapter.kt\`
-- Modify: \`data/src/main/java/tachiyomi/data/tsuzuki/sync/CollectionsSyncAdapter.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ContentPreferencesSyncAdapter.kt\` after Dev B merge during final integration if the type is not yet available on Dev C branch.
-- Delete target-path files: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/**\`
-- Delete target-path files: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/**\`
-- Delete target-path files: \`domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/**\`
-- Delete/replace: \`domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/DriveSyncTransport.kt\`
-- Remove target Settings entry: \`app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsGoogleAccountScreen.kt\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/sync/AvailableSupabaseSyncAdaptersTest.kt\`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/CanonicalLibrarySyncAdapter.kt`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ChapterOverridesSyncAdapter.kt`
+- Modify: `data/src/main/java/tachiyomi/data/tsuzuki/sync/CollectionsSyncAdapter.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ContentPreferencesSyncAdapter.kt` after Dev B merge during final integration if the type is not yet available on Dev C branch.
+- Delete target-path files: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/**`
+- Delete target-path files: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/googleauth/**`
+- Delete target-path files: `domain/src/main/java/tachiyomi/domain/tsuzuki/googleauth/**`
+- Delete/replace: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/service/DriveSyncTransport.kt`
+- Remove target Settings entry: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsGoogleAccountScreen.kt`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/sync/AvailableSupabaseSyncAdaptersTest.kt`
 
 **Interfaces:**
 - Produces: target sync domains without Drive/Google dependencies.
@@ -419,7 +419,7 @@ git commit -m "feat(tsuzuki): sync canonical state through Supabase"
 
 Assert active sync kinds include canonical Library, Collections, Chapter Overrides, reading progress/Continue Reading state, and later Content Preferences.
 
-Assert \`SOURCE_MAPPINGS\` is no longer a target sync document because provider bindings are recomputable/device-runtime state.
+Assert `SOURCE_MAPPINGS` is no longer a target sync document because provider bindings are recomputable/device-runtime state.
 
 - [ ] **Step 2: Route SyncRuntimeController to Supabase orchestrator**
 
@@ -435,7 +435,7 @@ Do not write a Drive importer or dual-write bridge.
 
 - [ ] **Step 4: Preserve old sync domain models only if still used by local diff/conflict logic**
 
-Remove \`SyncReplicaJournal\`, \`SyncFrontier\`, manifest/Drive-specific codecs only after reference search proves no target caller remains.
+Remove `SyncReplicaJournal`, `SyncFrontier`, manifest/Drive-specific codecs only after reference search proves no target caller remains.
 
 - [ ] **Step 5: Add no-Google regression test/search gate**
 
@@ -466,24 +466,24 @@ git commit -m "refactor(tsuzuki): retire Google Drive sync"
 ### Task C5: Make Home empty-by-default and driven by Continue Reading + Collections
 
 **Files:**
-- Modify: \`domain/src/main/java/tachiyomi/domain/tsuzuki/home/model/HomeModels.kt\`
-- Replace behavior: \`domain/src/main/java/tachiyomi/domain/tsuzuki/home/interactor/GetHomeCatalogFeed.kt\`
-- Create: \`domain/src/main/java/tachiyomi/domain/tsuzuki/home/interactor/GetConfiguredHomeSections.kt\`
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/home/TsuzukiHomeScreenModel.kt\`
-- Modify: \`app/src/main/java/eu/kanade/presentation/tsuzuki/home/TsuzukiHomeScreen.kt\`
-- Reuse: \`domain/src/main/java/tachiyomi/domain/tsuzuki/collections/**\`
-- Test: \`domain/src/test/java/tachiyomi/domain/tsuzuki/home/GetConfiguredHomeSectionsTest.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/home/TsuzukiHomeScreenModelTest.kt\`
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/home/model/HomeModels.kt`
+- Replace behavior: `domain/src/main/java/tachiyomi/domain/tsuzuki/home/interactor/GetHomeCatalogFeed.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/home/interactor/GetConfiguredHomeSections.kt`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/home/TsuzukiHomeScreenModel.kt`
+- Modify: `app/src/main/java/eu/kanade/presentation/tsuzuki/home/TsuzukiHomeScreen.kt`
+- Reuse: `domain/src/main/java/tachiyomi/domain/tsuzuki/collections/**`
+- Test: `domain/src/test/java/tachiyomi/domain/tsuzuki/home/GetConfiguredHomeSectionsTest.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/home/TsuzukiHomeScreenModelTest.kt`
 
 **Interfaces:**
-- Produces: \`HomeSection\` list built from user Collections plus system Continue Reading.
-- Consumes: existing Collections execution engine and \`ObserveHomeContinueReading\`.
+- Produces: `HomeSection` list built from user Collections plus system Continue Reading.
+- Consumes: existing Collections execution engine and `ObserveHomeContinueReading`.
 
 - [ ] **Step 1: Write fresh-install Home test**
 
 ~~~kotlin
 @Test
-fun \`home has no discovery rows when user has no collections\`() = runTest {
+fun `home has no discovery rows when user has no collections`() = runTest {
     val sections = getConfiguredHomeSections.execute()
     assertTrue(sections.isEmpty())
 }
@@ -493,7 +493,7 @@ fun \`home has no discovery rows when user has no collections\`() = runTest {
 
 ~~~kotlin
 @Test
-fun \`continue reading appears only after actual reading progress\`() = runTest {
+fun `continue reading appears only after actual reading progress`() = runTest {
     assertTrue(screenModel.state.value.continueReading.isEmpty())
 
     progressRepository.record(partialProgress("chapter-1"))
@@ -518,7 +518,7 @@ Continue Reading remains a dedicated system field/section, not a user Collection
 
 - [ ] **Step 4: Remove automatic Kitsu refresh**
 
-Delete \`refresh()\` from \`TsuzukiHomeScreenModel.init\`.
+Delete `refresh()` from `TsuzukiHomeScreenModel.init`.
 
 Home does not fetch Trending/Popular unless the user has created/configured Collections whose provider query requests them.
 
@@ -536,7 +536,7 @@ Starting/resuming reading after the suppression point may make the title eligibl
 
 - [ ] **Step 6: Make Collection provider registry capability-driven**
 
-After Dev A merge, resolve a CollectionList \`providerId\` through enabled Integration discovery/search capability adapters instead of hardcoded \`KitsuCollectionQueryProvider\`.
+After Dev A merge, resolve a CollectionList `providerId` through enabled Integration discovery/search capability adapters instead of hardcoded `KitsuCollectionQueryProvider`.
 
 If provider is disabled, render that configured row as unavailable without deleting its definition.
 
@@ -562,11 +562,11 @@ git commit -m "feat(tsuzuki): make Home user composed"
 ### Task C6: Add Account and Home/Collections Settings destinations
 
 **Files:**
-- Create: \`app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAccountScreen.kt\`
-- Create: \`app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/account/TsuzukiAccountScreenModel.kt\`
-- Modify/Reuse: \`app/src/main/java/eu/kanade/presentation/tsuzuki/collections/CollectionsScreen.kt\`
-- Create: \`app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiHomeScreen.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/account/TsuzukiAccountScreenModelTest.kt\`
+- Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiAccountScreen.kt`
+- Create: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/account/TsuzukiAccountScreenModel.kt`
+- Modify/Reuse: `app/src/main/java/eu/kanade/presentation/tsuzuki/collections/CollectionsScreen.kt`
+- Create: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiHomeScreen.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/account/TsuzukiAccountScreenModelTest.kt`
 
 **Interfaces:**
 - Produces: standalone Account and Home/Collections settings destinations.
@@ -611,16 +611,16 @@ git commit -m "feat(tsuzuki): add optional account and Home settings"
 
 ### Task C7: Final integration-steward merge and four-tab shell
 
-**Prerequisite:** Dev A and Dev B branches are already merged together and green on \`tsuzuki/runtime-v2-integration\`.
+**Prerequisite:** Dev A and Dev B branches are already merged together and green on `tsuzuki/runtime-v2-integration`.
 
 **Files:**
-- Modify: \`app/src/main/java/eu/kanade/tachiyomi/ui/home/HomeScreen.kt\`
-- Modify: \`app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsMainScreen.kt\`
-- Modify as needed: \`app/src/main/java/eu/kanade/tachiyomi/ui/main/MainActivity.kt\`
-- Consume from Dev A: \`TsuzukiSearchTab\`, \`SettingsTsuzukiIntegrationsScreen\`, \`CanonicalTitleScreen\`
-- Consume from Dev B: \`SettingsTsuzukiAddonsScreen\`, content selector route
-- Create if needed: \`app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/settings/TsuzukiSettingsTab.kt\`
-- Test: \`app/src/test/java/eu/kanade/tachiyomi/ui/home/TsuzukiNavigationContractTest.kt\`
+- Modify: `app/src/main/java/eu/kanade/tachiyomi/ui/home/HomeScreen.kt`
+- Modify: `app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsMainScreen.kt`
+- Modify as needed: `app/src/main/java/eu/kanade/tachiyomi/ui/main/MainActivity.kt`
+- Consume from Dev A: `TsuzukiSearchTab`, `SettingsTsuzukiIntegrationsScreen`, `CanonicalTitleScreen`
+- Consume from Dev B: `SettingsTsuzukiAddonsScreen`, content selector route
+- Create if needed: `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/settings/TsuzukiSettingsTab.kt`
+- Test: `app/src/test/java/eu/kanade/tachiyomi/ui/home/TsuzukiNavigationContractTest.kt`
 
 **Interfaces:**
 - Produces: final product navigation.
@@ -648,7 +648,7 @@ listOf(
 )
 ~~~
 
-Assert \`UpdatesTab\`, \`HistoryTab\`, and \`BrowseTab\` are absent from \`HomeScreen.TABS\`.
+Assert `UpdatesTab`, `HistoryTab`, and `BrowseTab` are absent from `HomeScreen.TABS`.
 
 - [ ] **Step 3: Wire four-tab shell**
 
