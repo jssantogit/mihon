@@ -45,6 +45,50 @@ class MihonAddonRepositoryTest {
     }
 
     @Test
+    fun `update state is exposed at addon level`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.update",
+            name = "Example",
+            sources = listOf(FakeSource(id = 1L, lang = "en")),
+            hasUpdate = true,
+        )
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+        )
+
+        repository.snapshot().single().hasUpdate shouldBe true
+    }
+
+    @Test
+    fun `uninstall delegates by addon package rather than source`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.remove",
+            name = "Example",
+            sources = listOf(
+                FakeSource(id = 10L, lang = "en"),
+                FakeSource(id = 20L, lang = "pt-BR"),
+            ),
+        )
+        var removed: Extension.Installed? = null
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+            uninstallExtension = { removed = it },
+        )
+
+        repository.uninstall(AddonId("pkg.remove"))
+
+        removed shouldBe extension
+    }
+
+    @Test
     fun `disabling addon disables all internal mihon sources`() = runTest {
         val extension = installedExtension(
             pkgName = "pkg",
@@ -73,6 +117,7 @@ class MihonAddonRepositoryTest {
         pkgName: String,
         name: String,
         sources: List<Source>,
+        hasUpdate: Boolean = false,
     ) = Extension.Installed(
         name = name,
         pkgName = pkgName,
@@ -84,6 +129,7 @@ class MihonAddonRepositoryTest {
         pkgFactory = null,
         sources = sources,
         icon = null,
+        hasUpdate = hasUpdate,
         isShared = false,
     )
 
