@@ -52,7 +52,7 @@ class MihonChapterContentPreparer(
                 )
 
                 is ContentDelivery.Torrent -> Result.failure(
-                    UnsupportedOperationException("Torrent preparation is not implemented in the Mihon compatibility layer"),
+                    UnsupportedOperationException(\n                        "Torrent preparation is not implemented in the Mihon compatibility layer",\n                    ),
                 )
             }
         } catch (error: CancellationException) {
