@@ -22,7 +22,7 @@
 - Language preferences order options; they never hide other languages.
 - Removing an Add-on must not erase canonical chapter/progress/download state.
 - Reader progress remains keyed by CanonicalChapter.
-- Production torrent networking is a separate delivery subproject after the provider-neutral content seam is green; this plan defines the stable torrent delivery contract and artifact preparation boundary so the later engine does not reshape Core.
+- Production torrent networking is implemented only after the provider-neutral content seam and the integrated A+B+C runtime are green; it must remain behind `TorrentArtifactEngine` so native code never becomes a Core identity concern.
 - Fast CI per task; `[ci-full]` on the Dev B final checkpoint.
 
 ## Review Focus
@@ -716,14 +716,14 @@ data class PreparedTorrentArtifact(
 
 `PrepareTorrentArtifact` converts a completed supported archive/directory artifact into provider-neutral Reader preparation.
 
-- [ ] **Step 4: Keep production networking out of this task**
+- [ ] **Step 4: Keep native networking out of this contract task**
 
-This task is complete only when:
+This task is complete when:
 - Core can represent torrent delivery without Mihon Source identity;
 - malicious paths/unsupported formats are rejected;
 - a fake engine proves the end-to-end preparation contract.
 
-Selecting/embedding a production libtorrent/JNI engine requires a separate external-dependency/security plan and does not block the modular runtime merge.
+The production native engine is Task B10 and runs only on the post-C7 integrated baseline.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -740,13 +740,13 @@ git commit -m "feat(tsuzuki): define remote addon and torrent delivery contracts
 
 ---
 
-### Task B9: Dev B verification and handoff
+### Task B9: Dev B core verification and A+B handoff
 
 **Files:**
 - Modify only Dev B-owned files if verification exposes regressions.
 
 **Interfaces:**
-- Produces: stable content branch for A+B integration.
+- Produces: stable content branch for A+B integration before native torrent dependencies are added.
 - Consumes: Tasks B1-B8.
 
 - [ ] **Step 1: Run Dev B acceptance suite**
@@ -802,3 +802,210 @@ LocalContentProvider
 RemoteAddonManifest
 TorrentArtifactEngine
 ~~~
+
+
+---
+
+### Task B10: Implement the production Android torrent artifact engine
+
+**Prerequisite:** Dev C Task C7 and the core device smoke are green. Start from the integrated head, not the old Dev B branch.
+
+**Branch:**
+
+~~~bash
+git switch tsuzuki/runtime-v2-dev-c
+git pull --ff-only
+git switch -c tsuzuki/runtime-v2-torrent
+~~~
+
+**Files:**
+- Modify: \`settings.gradle.kts\`
+- Modify: \`gradle/libs.versions.toml\`
+- Modify: \`app/build.gradle.kts\`
+- Modify: \`app/proguard-rules.pro\`
+- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/torrent/JlibtorrentArtifactEngine.kt\`
+- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/torrent/TorrentSessionController.kt\`
+- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/torrent/TorrentArtifactStore.kt\`
+- Create: \`app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/torrent/TorrentDownloadWorker.kt\`
+- Modify: \`app/src/main/AndroidManifest.xml\` only if the WorkManager/foreground-service metadata required by the existing downloader pattern needs an explicit declaration.
+- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/torrent/TorrentArtifactStoreTest.kt\`
+- Test: \`app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/torrent/TorrentSessionControllerTest.kt\`
+
+**Interfaces:**
+- Implements: \`TorrentArtifactEngine\` from B8.
+- Consumes: \`ContentDelivery.Torrent\`, existing \`DownloadPreferences.downloadOnlyOverWifi\`, WorkManager/foreground notification patterns from \`DownloadJob\`, provider-neutral Reader preparation.
+
+- [ ] **Step 1: Pin the native dependency and repository**
+
+Use the verified stable FrostWire jlibtorrent release \`2.0.12.9\`.
+
+Add the FrostWire Maven repository with group filtering:
+
+~~~kotlin
+maven("https://dl.frostwire.com/maven") {
+    content {
+        includeGroup("com.frostwire")
+    }
+}
+~~~
+
+Add version-catalog aliases for:
+- \`com.frostwire:jlibtorrent:2.0.12.9\`;
+- \`jlibtorrent-android-arm\`;
+- \`jlibtorrent-android-arm64\`;
+- \`jlibtorrent-android-x86\`;
+- \`jlibtorrent-android-x86_64\`.
+
+Keep Tsuzuki minSdk at 26. Do not raise minSdk for torrent support.
+
+Add the JNI keep rule documented by jlibtorrent:
+
+~~~text
+-keep class com.frostwire.jlibtorrent.swig.libtorrent_jni { *; }
+~~~
+
+Verify the dependency is surfaced by the app’s existing AboutLibraries license generation and that the MIT license is visible.
+
+- [ ] **Step 2: Write artifact-store safety tests**
+
+Cover:
+- all session paths remain under an app-private torrent root;
+- \`../\` traversal and absolute external paths are rejected;
+- only the requested file is promoted to the Reader/canonical-download artifact store;
+- temporary artifacts are deleted by cleanup after the final reader lease is released;
+- a canonical downloaded artifact is not deleted by temporary-cache cleanup.
+
+- [ ] **Step 3: Implement one-session acquisition controller**
+
+\`TorrentSessionController\` owns one jlibtorrent \`SessionManager\` lifecycle and serializes native startup/shutdown.
+
+For \`TorrentArtifactRequest\`:
+1. add magnet/info-hash and wait for metadata;
+2. validate the explicit \`fileIndex\` against torrent metadata;
+3. if both \`fileIndex\` and \`filePath\` are provided, require them to identify the same torrent file;
+4. set every file priority to zero except the requested file;
+5. set requested file to high priority;
+6. download into app-private storage;
+7. expose progress through a Flow;
+8. complete only when the requested file is fully available and passes the path/type checks from B8;
+9. pause/remove the torrent after acquisition; initial Tsuzuki does not continue seeding in background.
+
+Cancellation must release the caller lease. It must not delete an artifact already promoted into CanonicalDownloadRepository.
+
+- [ ] **Step 4: Implement \`JlibtorrentArtifactEngine\`**
+
+Map the completed requested file into:
+
+~~~kotlin
+PreparedTorrentArtifact(
+    localUri = artifactStore.uriFor(file),
+    format = artifactStore.detectSupportedFormat(file),
+)
+~~~
+
+Supported first milestone:
+- CBZ/ZIP-compatible archive;
+- EPUB;
+- directory only when the Add-on explicitly resolves a directory artifact after acquisition.
+
+Unsupported media returns a typed failure before Reader launch.
+
+- [ ] **Step 5: Integrate persistent torrent downloads with WorkManager**
+
+Use the same network policy as normal downloads:
+
+~~~kotlin
+downloadPreferences.downloadOnlyOverWifi
+~~~
+
+\`TorrentDownloadWorker\`:
+- runs foreground using the downloader notification channel/pattern;
+- reacquires/resumes the selected torrent artifact;
+- reports progress;
+- on completion promotes the artifact into \`CanonicalDownloadArtifact\`;
+- stops when network policy becomes invalid;
+- retries only with the same canonical chapter + content-option intent.
+
+Do not sync torrent bytes or resume data to Supabase.
+
+- [ ] **Step 6: Run unit/build checks**
+
+~~~bash
+./gradlew \
+  :app:testDebugUnitTest --tests '*TorrentArtifactStoreTest' \
+  :app:testDebugUnitTest --tests '*TorrentSessionControllerTest' \
+  :app:compileDebugKotlin \
+  spotlessCheck
+~~~
+
+Expected: PASS on JVM/unit layers and Android compilation with all native artifacts packaged.
+
+- [ ] **Step 7: Commit and request full CI + APK**
+
+~~~bash
+git add settings.gradle.kts gradle/libs.versions.toml app/build.gradle.kts \
+  app/proguard-rules.pro \
+  app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/torrent \
+  app/src/main/AndroidManifest.xml \
+  app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/torrent
+git commit -m "feat(tsuzuki): add torrent content delivery [ci-full] [apk]"
+~~~
+
+---
+
+### Task B11: Torrent device smoke and final delivery handoff
+
+**Files:**
+- No production changes unless smoke exposes a reproducible torrent-runtime defect.
+
+- [ ] **Step 1: Install the ARM64 APK built from B10**
+
+Confirm the packaged app loads the native library on the same API range supported by the release test device.
+
+- [ ] **Step 2: Smoke explicit-file acquisition**
+
+Use a legal test torrent containing multiple files.
+
+Verify:
+- the Add-on-provided explicit file index/path selects the intended chapter artifact;
+- unrelated files are not fully downloaded;
+- acquisition progress is visible;
+- the selected CBZ/ZIP opens in the existing Reader;
+- closing a non-downloaded read eventually releases/cleans its temporary artifact.
+
+- [ ] **Step 3: Smoke canonical torrent download**
+
+Download the same chapter for offline use, remove/disable the originating Add-on, then open the canonical downloaded artifact offline.
+
+Expected: Reader still opens it.
+
+- [ ] **Step 4: Smoke network policy**
+
+With “Wi-Fi only” enabled, persistent torrent acquisition stops/does not start on metered mobile connectivity and resumes when allowed.
+
+- [ ] **Step 5: Verify no background seeding**
+
+After the requested artifact completes and no reader/download lease remains, inspect the torrent session state and confirm the torrent is removed/paused rather than continuing to upload indefinitely.
+
+- [ ] **Step 6: Run final full verification and handoff**
+
+~~~bash
+./gradlew \
+  :domain:testDebugUnitTest \
+  :data:testDebugUnitTest \
+  :app:testDebugUnitTest \
+  :app:compileDebugKotlin \
+  verifySqlDelightMigration \
+  spotlessCheck
+~~~
+
+Push and require CI v2 full green.
+
+Handoff includes:
+- exact B10/B11 HEAD SHA;
+- CI run ID;
+- APK run/artifact;
+- legal test torrent description;
+- device/API/ABI used;
+- reader/download/network-policy smoke result;
+- known native-runtime limitations.
