@@ -56,7 +56,6 @@ object CanonicalVariantSyncKey {
     }
 }
 
-
 object ChapterEvidenceSyncKey {
     fun from(
         producerKind: String,
