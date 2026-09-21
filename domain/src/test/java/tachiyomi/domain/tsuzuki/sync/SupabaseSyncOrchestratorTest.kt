@@ -22,6 +22,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncOperation
 import tachiyomi.domain.tsuzuki.sync.model.SupabaseSyncSnapshot
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
 import tachiyomi.domain.tsuzuki.sync.model.SyncConflictKind
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflictValue
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentKind
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentResult
@@ -185,6 +186,77 @@ class SupabaseSyncOrchestratorTest {
         conflicts.getForDocument(SyncDocumentKind.LIBRARY).shouldHaveSize(1)
         outbox.get(SyncDocumentKind.LIBRARY) shouldNotBe null
         cloudState.getPending(SyncDocumentKind.LIBRARY) shouldBe null
+    }
+
+    @Test
+    fun `unresolved conflict blocks repush while independent remote fields still apply`() = runTest {
+        val adapter = FakeAdapter(document(status = "READING"))
+        val accepted = document(status = "COMPLETED", score = 8)
+        val stored = FakeStoredState().apply {
+            put(
+                SyncStoredState(
+                    documentKind = SyncDocumentKind.LIBRARY,
+                    acceptedBase = accepted,
+                    remoteRevision = null,
+                    lastSuccessfulSyncAtEpochMillis = 1,
+                ),
+            )
+        }
+        val cloudState = FakeCloudState().apply {
+            putCursor(
+                SyncDocumentKind.LIBRARY,
+                eventCursor = 7,
+                lastSuccessfulSyncAtEpochMillis = 1,
+            )
+        }
+        val outbox = FakeOutbox().apply {
+            markDirty(SyncDocumentKind.LIBRARY, 1)
+        }
+        val conflicts = FakeConflictRepository().apply {
+            replaceForDocument(
+                documentKind = SyncDocumentKind.LIBRARY,
+                conflicts = listOf(
+                    SyncConflict(
+                        documentKind = SyncDocumentKind.LIBRARY,
+                        recordId = "title-1",
+                        propertyPath = listOf("status"),
+                        kind = SyncConflictKind.FIELD_DIVERGENCE,
+                        base = SyncConflictValue.Present(JsonPrimitive("PLANNING")),
+                        local = SyncConflictValue.Present(JsonPrimitive("READING")),
+                        remote = SyncConflictValue.Present(JsonPrimitive("COMPLETED")),
+                    ),
+                ),
+                createdAtEpochMillis = 1,
+            )
+        }
+        val transport = FakeTransport().apply {
+            events += event(
+                id = 8,
+                recordId = "title-1",
+                fieldPath = "note",
+                value = JsonPrimitive("remote-note"),
+            )
+        }
+        val orchestrator = orchestrator(
+            adapter = adapter,
+            outbox = outbox,
+            storedState = stored,
+            cloudState = cloudState,
+            transport = transport,
+            conflicts = conflicts,
+        )
+
+        val result = orchestrator.sync(SyncDocumentKind.LIBRARY)
+
+        result shouldBe SyncDocumentResult.Conflict(
+            documentKind = SyncDocumentKind.LIBRARY,
+            conflictCount = 1,
+        )
+        adapter.field("status") shouldBe JsonPrimitive("READING")
+        adapter.field("score") shouldBe JsonPrimitive(8)
+        adapter.field("note") shouldBe JsonPrimitive("remote-note")
+        transport.mutationIds shouldBe emptyList()
+        outbox.get(SyncDocumentKind.LIBRARY) shouldNotBe null
     }
 
     @Test
