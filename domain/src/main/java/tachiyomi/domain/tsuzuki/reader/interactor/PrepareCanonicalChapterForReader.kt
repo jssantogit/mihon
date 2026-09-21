@@ -6,6 +6,7 @@ import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.model.ContentResolution
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
@@ -15,6 +16,7 @@ class PrepareCanonicalChapterForReader(
     private val resolveChapterContent: ResolveChapterContent,
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val canonicalReadingRepository: CanonicalReadingRepository,
+    private val canonicalDownloadRepository: CanonicalDownloadRepository,
     private val chapterContentPreparer: ChapterContentPreparer,
 ) {
 
@@ -25,6 +27,19 @@ class PrepareCanonicalChapterForReader(
         return try {
             val chapter = canonicalChapterRepository.getById(canonicalChapterId)
                 ?: return CanonicalReaderPreparation.Unavailable(canonicalChapterId)
+
+            if (selectedOption == null) {
+                canonicalDownloadRepository.get(canonicalChapterId)?.let { artifact ->
+                    return CanonicalReaderPreparation.Ready(
+                        canonicalChapterId = canonicalChapterId,
+                        target = tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent.CanonicalDownload(
+                            uri = artifact.localUri,
+                            format = artifact.format,
+                        ),
+                        usedFallback = false,
+                    )
+                }
+            }
 
             val resolution = if (selectedOption != null) {
                 require(selectedOption.canonicalChapterId == canonicalChapterId) {

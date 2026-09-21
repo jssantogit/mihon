@@ -7,8 +7,8 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
-import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderGateway
 import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
