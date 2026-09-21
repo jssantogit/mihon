@@ -36,8 +36,8 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleSyncSource
-import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
 import tachiyomi.domain.tsuzuki.sync.service.ChapterSyncEvidenceRepository
+import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseConflictResolver
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncOrchestrator
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncStateStore
@@ -46,8 +46,8 @@ import tachiyomi.domain.tsuzuki.sync.service.SyncRevisionSource
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeController
 import tachiyomi.domain.tsuzuki.sync.service.SyncRuntimeState
 import tachiyomi.domain.tsuzuki.sync.service.SyncTrigger
-import kotlin.time.Clock
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Clock
 
 @Inject
 @SingleIn(AppScope::class)
