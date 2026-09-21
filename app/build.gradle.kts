@@ -27,7 +27,7 @@ if (Config.includeTelemetry) {
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 
-fun String.asBuildConfigString(): String = "\\"" + replace("\\", "\\\\").replace("\\"", "\\\\"") + "\\""
+fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 val tsuzukiSupabaseUrl = providers.gradleProperty("TSUZUKI_SUPABASE_URL")
     .orElse(providers.environmentVariable("TSUZUKI_SUPABASE_URL"))
