@@ -8,7 +8,6 @@ insert into auth.users (
     role,
     email,
     encrypted_password,
-    email_confirmed_at,
     created_at,
     updated_at
 )
@@ -18,7 +17,6 @@ values (
     'authenticated',
     'sync-user@example.com',
     '',
-    now(),
     now(),
     now()
 );
