@@ -23,6 +23,7 @@ class DefaultAddonRegistry private constructor(
     private val installedAddons: () -> List<InstalledAddon>,
     private val contentProviderFor: (AddonId) -> ContentProvider?,
     private val chapterProbeProviderFor: (AddonId) -> ChapterProbeProvider?,
+    private val localContentProvider: ContentProvider?,
     @Suppress("unused")
     private val desiredAddonIds: () -> Set<AddonId>,
 ) : AddonRegistry {
@@ -31,6 +32,7 @@ class DefaultAddonRegistry private constructor(
         installedAddons: () -> List<InstalledAddon>,
         contentProviderCandidates: List<ContentProvider>,
         chapterProbeProviderCandidates: List<ChapterProbeProvider>,
+        localContentProvider: ContentProvider? = null,
         desiredAddonIds: () -> Set<AddonId> = { emptySet() },
     ) : this(
         installedAddons = installedAddons,
@@ -38,6 +40,7 @@ class DefaultAddonRegistry private constructor(
         chapterProbeProviderFor = { addonId ->
             chapterProbeProviderCandidates.firstOrNull { it.addonId == addonId }
         },
+        localContentProvider = localContentProvider,
         desiredAddonIds = desiredAddonIds,
     )
 
@@ -45,17 +48,22 @@ class DefaultAddonRegistry private constructor(
     constructor(
         addonRepository: AddonRepository,
         providerFactory: MihonAddonProviderFactory,
-    ) : this(RuntimeState(addonRepository, providerFactory))
+        localContentProvider: LocalContentProvider,
+    ) : this(RuntimeState(addonRepository, providerFactory, localContentProvider))
 
     private constructor(runtimeState: RuntimeState) : this(
         installedAddons = { runtimeState.installedAddons.value },
         contentProviderFor = runtimeState.providerFactory::contentProvider,
         chapterProbeProviderFor = runtimeState.providerFactory::chapterProbeProvider,
+        localContentProvider = runtimeState.localContentProvider,
         desiredAddonIds = { emptySet() },
     )
 
     override fun contentProviders(): List<ContentProvider> {
-        return enabledInstalledAddons().mapNotNull { contentProviderFor(it.id) }
+        return buildList {
+            localContentProvider?.let(::add)
+            addAll(enabledInstalledAddons().mapNotNull { contentProviderFor(it.id) })
+        }
     }
 
     override fun chapterProbeProviders(): List<ChapterProbeProvider> {
@@ -69,6 +77,7 @@ class DefaultAddonRegistry private constructor(
     private class RuntimeState(
         addonRepository: AddonRepository,
         val providerFactory: MihonAddonProviderFactory,
+        val localContentProvider: LocalContentProvider,
     ) {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val installedAddons: StateFlow<List<InstalledAddon>> = addonRepository.observeInstalled()

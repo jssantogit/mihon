@@ -14,11 +14,11 @@ class RankContentOptions {
         preferredLanguages: List<String>,
     ): List<ContentOption> {
         return options.sortedWith(
-            compareBy<ContentOption> { option ->
-                if (preferredAddonId != null && option.addonId == preferredAddonId) 0 else 1
-            }
+            compareBy<ContentOption> { option -> deliveryRank(option.delivery) }
+                .thenBy { option ->
+                    if (preferredAddonId != null && option.addonId == preferredAddonId) 0 else 1
+                }
                 .thenBy { option -> languageRank(option.language, preferredLanguages) }
-                .thenBy { option -> deliveryRank(option.delivery) }
                 .thenByDescending { option -> option.releaseDate ?: Long.MIN_VALUE }
                 .thenBy { option -> option.addonId.value }
                 .thenBy { option -> option.key },
