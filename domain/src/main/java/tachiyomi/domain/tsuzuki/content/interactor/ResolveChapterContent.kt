@@ -104,6 +104,42 @@ class ResolveChapterContent(
         )
     }
 
+    suspend fun resolveOptions(
+        canonicalTitleId: String,
+        canonicalChapterId: String,
+        refresh: Boolean = false,
+    ): List<ContentOption> {
+        if (refresh) {
+            contentOptionCache.invalidateChapter(
+                canonicalTitleId = canonicalTitleId,
+                canonicalChapterId = canonicalChapterId,
+            )
+        }
+
+        val providers = addonRegistry.contentProviders()
+        if (providers.isEmpty()) return emptyList()
+
+        val preferredAddonId = contentPreferenceRepository.get(canonicalTitleId)?.preferredAddonId
+        val preferredLanguages = readerPreferences.preferredLanguages.get()
+        val options = coroutineScope {
+            providers.map { provider ->
+                async {
+                    resolveProvider(
+                        provider = provider,
+                        canonicalTitleId = canonicalTitleId,
+                        canonicalChapterId = canonicalChapterId,
+                    ).optionsOrEmpty()
+                }
+            }.awaitAll().flatten()
+        }
+
+        return rankContentOptions.execute(
+            options = options,
+            preferredAddonId = preferredAddonId,
+            preferredLanguages = preferredLanguages,
+        )
+    }
+
     suspend fun invalidateAddon(addonId: AddonId) {
         contentOptionCache.invalidateAddon(addonId)
     }
