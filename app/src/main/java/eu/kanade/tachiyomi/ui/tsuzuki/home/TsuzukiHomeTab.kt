@@ -35,7 +35,6 @@ data object TsuzukiHomeTab : Tab {
 
         TsuzukiHomeScreen(
             state = state,
-            onRefresh = screenModel::refresh,
             onContinueReading = { item ->
                 context.startActivity(
                     ReaderActivity.newCanonicalIntent(
@@ -44,6 +43,7 @@ data object TsuzukiHomeTab : Tab {
                     ),
                 )
             },
+            onRemoveFromContinueReading = screenModel::removeFromContinueReading,
         )
 
         LaunchedEffect(Unit) {
