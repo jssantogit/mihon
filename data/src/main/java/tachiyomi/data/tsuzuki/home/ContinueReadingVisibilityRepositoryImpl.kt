@@ -49,12 +49,12 @@ class ContinueReadingVisibilityRepositoryImpl(
             .getAllTsuzukiContinueReadingState()
             .subscribeToList()
             .map { rows ->
-                    rows.map { row ->
-                        ContinueReadingVisibility(
-                            canonicalTitleId = row.canonical_title_id,
-                            hiddenAt = row.hidden_at,
-                        )
-            }
+                rows.map { row ->
+                    ContinueReadingVisibility(
+                        canonicalTitleId = row.canonical_title_id,
+                        hiddenAt = row.hidden_at,
+                    )
+                }
             }
     }
 
