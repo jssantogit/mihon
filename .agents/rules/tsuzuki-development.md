@@ -14,8 +14,8 @@ For each task:
 4. Delegate implementation when useful.
 5. Review the diff before pushing.
 6. Push a small commit.
-7. Wait for Fast CI evidence.
-8. Accept only if the relevant CI jobs are green.
+7. Wait for CI v2.1 evidence.
+8. Accept only if the planner-selected CI jobs are green.
 9. On failure, issue a delta retry using only the demonstrated failure evidence.
 10. Stop after at most two correction cycles and report BLOCKED if acceptance still fails.
 
@@ -28,8 +28,11 @@ For each task:
 - Do not perform unrelated cleanup.
 - Do not claim verification without CI or an actually executed local check.
 - Do not repeatedly poll CI; use a single run wait/watch when possible.
-- Fast CI is the normal acceptance gate.
-- Request `[full-ci]` only for meaningful integration checkpoints or when the active plan/reviewer requires it.
+- CI v2.1 affected mode is the normal acceptance gate.
+- Request `[ci-full]` only for meaningful integration checkpoints or when the active plan/reviewer requires it.
+- `[ci-full]` means one full verification contract: all primary unit-test shards, SQLDelight migrations, Supabase backend tests when present, and release compilation.
+- Do not use the retired `[full-ci]` token; the legacy release workflow is manual-only.
+- Tsuzuki-only changes should stay on filtered Tsuzuki test shards plus downstream compile checks unless the planner deliberately fails safe to full.
 - Request `[apk]` only when an installable artifact or physical-device validation is useful.
 - Do not upload APK artifacts for invisible domain/data/test-only work without a concrete runtime reason.
 
