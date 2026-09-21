@@ -114,7 +114,7 @@ class TsuzukiHomeScreenModelTest {
         every { history.getHistory("") } returns MutableStateFlow(emptyList())
 
         val importLegacy = mockk<ImportLegacyCanonicalProgress>()
-        coEvery { importLegacy.execute(any()) } returns Unit
+        coEvery { importLegacy.execute(any()) } returns 0
 
         return TsuzukiHomeScreenModel(
             observeHomeContinueReading = observeHome,
