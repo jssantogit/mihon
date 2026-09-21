@@ -58,7 +58,7 @@ select is(
 select is(
     (
         select count(*)::integer
-        from public.tsuzuki_sync_events
+        from tsuzuki_private.tsuzuki_sync_events
         where record_id = 'replay-title'
     ),
     1,
@@ -87,7 +87,7 @@ select throws_ok(
 select ok(
     (
         select result_cursor is not null
-        from public.tsuzuki_sync_mutations
+        from tsuzuki_private.tsuzuki_sync_mutations
         where mutation_id = '10000000-0000-0000-0000-000000000001'::uuid
     ),
     'committed idempotency row has a result cursor'
@@ -130,7 +130,7 @@ select lives_ok(
 select is(
     (
         select count(*)::integer
-        from public.tsuzuki_sync_conflicts
+        from tsuzuki_private.tsuzuki_sync_conflicts
         where record_id = 'merge-title'
     ),
     0,
@@ -164,7 +164,7 @@ select public.sync_apply_mutation_batch(
 select is(
     (
         select count(*)::integer
-        from public.tsuzuki_sync_conflicts
+        from tsuzuki_private.tsuzuki_sync_conflicts
         where record_id = 'progress-title'
           and field_path = 'chapter'
           and conflict_type = 'FIELD_DIVERGENCE'
@@ -176,7 +176,7 @@ select is(
 select is(
     (
         select value
-        from public.tsuzuki_sync_fields
+        from tsuzuki_private.tsuzuki_sync_fields
         where domain = 'PROGRESS'
           and record_id = 'progress-title'
           and field_path = 'chapter'
@@ -189,7 +189,7 @@ select ok(
     public.sync_ack_conflict(
         (
             select conflict_id
-            from public.tsuzuki_sync_conflicts
+            from tsuzuki_private.tsuzuki_sync_conflicts
             where record_id = 'progress-title'
               and field_path = 'chapter'
             limit 1
@@ -202,7 +202,7 @@ select ok(
     public.sync_ack_conflict(
         (
             select conflict_id
-            from public.tsuzuki_sync_conflicts
+            from tsuzuki_private.tsuzuki_sync_conflicts
             where record_id = 'progress-title'
               and field_path = 'chapter'
             limit 1
@@ -255,7 +255,7 @@ select public.sync_apply_mutation_batch(
 select is(
     (
         select count(*)::integer
-        from public.tsuzuki_sync_conflicts
+        from tsuzuki_private.tsuzuki_sync_conflicts
         where record_id = 'delete-edit-title'
           and conflict_type = 'DELETE_EDIT'
     ),
