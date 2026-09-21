@@ -163,22 +163,23 @@ class GetConfiguredHomeSectionsTest {
         }
     }
 
-    private fun list(
-        id: String,
-        enabled: Boolean,
-        sortOrder: Long,
-    ) = CollectionList(
-        id = id,
-        collectionId = "collection-1",
-        folderId = "folder-1",
-        title = id,
-        providerId = "kitsu",
-        query = null,
-        sort = CatalogSort.POPULARITY_DESC,
-        sortOrder = sortOrder,
-        enabled = enabled,
-        origin = CollectionOrigin.USER,
-        createdAt = 1,
-        updatedAt = 1,
-    )
 }
+
+private fun list(
+    id: String,
+    enabled: Boolean,
+    sortOrder: Long,
+) = CollectionList(
+    id = id,
+    collectionId = "collection-1",
+    folderId = "folder-1",
+    title = id,
+    providerId = "kitsu",
+    query = null,
+    sort = CatalogSort.POPULARITY_DESC,
+    sortOrder = sortOrder,
+    enabled = enabled,
+    origin = CollectionOrigin.USER,
+    createdAt = 1,
+    updatedAt = 1,
+)
