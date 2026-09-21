@@ -7,6 +7,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.tsuzuki.home.model.ContinueReadingVisibility
@@ -47,15 +48,13 @@ class ContinueReadingVisibilityRepositoryImpl(
         return database.tsuzuki_continue_reading_stateQueries
             .getAllTsuzukiContinueReadingState()
             .subscribeToList()
-            .let { flow ->
-                kotlinx.coroutines.flow.map(flow) { rows ->
+            .map { rows ->
                     rows.map { row ->
                         ContinueReadingVisibility(
                             canonicalTitleId = row.canonical_title_id,
                             hiddenAt = row.hidden_at,
                         )
-                    }
-                }
+            }
             }
     }
 
