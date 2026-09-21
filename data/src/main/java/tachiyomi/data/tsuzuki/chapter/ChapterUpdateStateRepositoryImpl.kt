@@ -6,6 +6,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.tsuzuki.chapter.update.model.CanonicalChapterUpdateState
@@ -54,8 +55,7 @@ class ChapterUpdateStateRepositoryImpl(
         return database.tsuzuki_chapter_update_stateQueries
             .getTsuzukiChapterUpdateStateByTitle(canonicalTitleId)
             .subscribeToList()
-            .let { flow ->
-                kotlinx.coroutines.flow.map(flow) { rows ->
+            .map { rows ->
                     rows.map { row ->
                         CanonicalChapterUpdateState(
                             canonicalChapterId = row.canonical_chapter_id,
@@ -63,8 +63,7 @@ class ChapterUpdateStateRepositoryImpl(
                             firstSeenAt = row.first_seen_at,
                             acknowledgedAt = row.acknowledged_at,
                         )
-                    }
-                }
+            }
             }
     }
 
