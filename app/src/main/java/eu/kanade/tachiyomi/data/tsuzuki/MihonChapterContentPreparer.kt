@@ -13,22 +13,17 @@ import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderGateway
 import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
 
+@Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
-class MihonChapterContentPreparer internal constructor(
+class MihonChapterContentPreparer(
     private val canonicalReaderGateway: CanonicalReaderGateway,
-    private val canonicalDownloadRepository: CanonicalDownloadRepository?,
+    private val canonicalDownloadRepository: CanonicalDownloadRepository,
 ) : ChapterContentPreparer {
-
-    @Inject
-    constructor(
-        canonicalReaderGateway: CanonicalReaderGateway,
-        canonicalDownloadRepository: CanonicalDownloadRepository,
-    ) : this(canonicalReaderGateway, canonicalDownloadRepository)
 
     internal constructor(
         canonicalReaderGateway: CanonicalReaderGateway,
-    ) : this(canonicalReaderGateway, null)
+    ) : this(canonicalReaderGateway, EmptyCanonicalDownloadRepository)
 
     override suspend fun prepare(
         option: ContentOption,
@@ -56,7 +51,7 @@ class MihonChapterContentPreparer internal constructor(
 
                 is ContentDelivery.LocalArchive -> {
                     val artifact = canonicalDownloadRepository
-                        ?.get(option.canonicalChapterId)
+                        .get(option.canonicalChapterId)
                         ?.takeIf { it.localUri == delivery.uri }
                     Result.success(
                         artifact?.let {
@@ -70,7 +65,7 @@ class MihonChapterContentPreparer internal constructor(
 
                 is ContentDelivery.LocalDirectory -> {
                     val artifact = canonicalDownloadRepository
-                        ?.get(option.canonicalChapterId)
+                        .get(option.canonicalChapterId)
                         ?.takeIf { it.localUri == delivery.uri }
                     Result.success(
                         artifact?.let {
@@ -93,5 +88,16 @@ class MihonChapterContentPreparer internal constructor(
         } catch (error: Throwable) {
             Result.failure(error)
         }
+    }
+
+    private object EmptyCanonicalDownloadRepository : CanonicalDownloadRepository {
+        override suspend fun get(canonicalChapterId: String) = null
+        override suspend fun upsert(
+            artifact: tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact,
+        ) = Unit
+        override suspend fun delete(canonicalChapterId: String) = Unit
+        override suspend fun deleteOriginMetadata(
+            addonId: tachiyomi.domain.tsuzuki.addon.AddonId,
+        ) = Unit
     }
 }
