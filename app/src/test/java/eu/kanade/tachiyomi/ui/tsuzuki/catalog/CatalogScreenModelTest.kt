@@ -23,7 +23,14 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
-import tachiyomi.domain.tsuzuki.catalog.service.CatalogProvider
+import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
+import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.SearchProvider
+import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.interactor.AddCatalogItemToLibrary
@@ -51,7 +58,7 @@ class CatalogScreenModelTest {
     }
 
     private fun createScreenModel(
-        provider: CatalogProvider,
+        provider: CatalogCapabilityProvider,
         titleRepository: FakeCanonicalTitleRepository = FakeCanonicalTitleRepository(),
         libraryRepository: CanonicalLibraryRepository = FakeCanonicalLibraryRepository(),
         addCatalogItemToLibrary: AddCatalogItemToLibrary = createFakeAddCatalogItemToLibrary(
@@ -59,8 +66,8 @@ class CatalogScreenModelTest {
             libraryRepository = libraryRepository,
         ),
     ) = CatalogScreenModel(
-        searchCatalog = SearchCatalog(provider),
-        getDiscoverFeed = GetDiscoverFeed(provider),
+        searchCatalog = SearchCatalog(registry(provider)),
+        getDiscoverFeed = GetDiscoverFeed(registry(provider)),
         addCatalogItemToLibrary = addCatalogItemToLibrary,
         canonicalTitleRepository = titleRepository,
         canonicalLibraryRepository = libraryRepository,
@@ -397,24 +404,23 @@ class CatalogScreenModelTest {
 
     @Test
     fun `cancellation exception is propagated and preserves coroutine cancellation`() = runTest(testDispatcher) {
-        val cancellingProvider = object : CatalogProvider {
-            override val providerId: String = "fake"
-            override val displayName: String = "Fake"
+        val cancellingProvider = object : CatalogCapabilityProvider {
+            override val integrationId = IntegrationId("fake")
 
             override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
                 throw CancellationException("Search coroutine cancelled")
             }
 
-            override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> {
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> {
                 throw CancellationException("Trending coroutine cancelled")
             }
 
-            override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> {
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> {
                 return Result.success(CatalogPage(emptyList(), false))
             }
 
-            override suspend fun getDetails(providerId: String): Result<CatalogItem> {
-                return Result.failure(UnsupportedOperationException())
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> {
+                return Result.success(CatalogPage(emptyList(), false))
             }
         }
 
@@ -429,23 +435,36 @@ class CatalogScreenModelTest {
         }
     }
 
+    private interface CatalogCapabilityProvider : SearchProvider, DiscoveryProvider
+
+    private fun registry(provider: CatalogCapabilityProvider) = object : IntegrationRegistry {
+        override fun searchProviders(): List<SearchProvider> = listOf(provider)
+        override fun discoveryProviders(): List<DiscoveryProvider> = listOf(provider)
+        override fun metadataProviders(): List<MetadataProvider> = emptyList()
+        override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun trackingProviders(): List<TrackingProvider> = emptyList()
+    }
+
     private class FakeCatalogProvider(
         var searchResult: Result<CatalogPage> = Result.success(CatalogPage(emptyList(), false)),
         var trendingResult: Result<CatalogPage> = Result.success(CatalogPage(emptyList(), false)),
         var popularResult: Result<CatalogPage> = Result.success(CatalogPage(emptyList(), false)),
-    ) : CatalogProvider {
-        override val providerId: String = "fake"
-        override val displayName: String = "Fake"
+    ) : CatalogCapabilityProvider {
+        override val integrationId = IntegrationId("fake")
         val searchQueries = mutableListOf<String?>()
 
         override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
             searchQueries += query.query
             return searchResult
         }
-        override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> = trendingResult
-        override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> = popularResult
-        override suspend fun getDetails(providerId: String): Result<CatalogItem> =
-            Result.failure(UnsupportedOperationException())
+
+        override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> = trendingResult
+
+        override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> = popularResult
+
+        override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+            Result.success(CatalogPage(emptyList(), false))
     }
 
     private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
