@@ -155,9 +155,23 @@ class RecordCanonicalReaderProgress internal constructor(
     }
 
     private object NoopChapterUpdateStateRepository : ChapterUpdateStateRepository {
+        override suspend fun getByCanonicalTitleId(
+            canonicalTitleId: String,
+        ) = emptyList<tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState>()
+
+        override suspend fun getUnacknowledgedByCanonicalTitleId(
+            canonicalTitleId: String,
+        ) = emptyList<tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState>()
+
+        override suspend fun upsert(
+            state: tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState,
+        ) = Unit
+
         override suspend fun acknowledge(
             canonicalChapterId: String,
             acknowledgedAt: Long,
         ) = Unit
+
+        override suspend fun delete(canonicalChapterId: String) = Unit
     }
 }
