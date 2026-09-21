@@ -893,6 +893,10 @@
     <string name="tsuzuki_content_languages_hint">Comma-separated language codes</string>
     <string name="tsuzuki_content_automatic_fallback">Automatic fallback</string>
     <string name="tsuzuki_content_automatic_fallback_summary">Automatically use another Add-on when the preferred one cannot provide a chapter.</string>
+    <string name="tsuzuki_account_title">Account</string>
+    <string name="tsuzuki_integrations_title">Integrations</string>
+    <string name="tsuzuki_home_collections_title">Home &amp; Collections</string>
+    <string name="tsuzuki_sync_title">Sync</string>
     <string name="tsuzuki_addons_title">Add-ons</string>
     <string name="tsuzuki_addons_repositories">Repositories</string>
     <string name="tsuzuki_addons_installed">Installed Add-ons</string>
