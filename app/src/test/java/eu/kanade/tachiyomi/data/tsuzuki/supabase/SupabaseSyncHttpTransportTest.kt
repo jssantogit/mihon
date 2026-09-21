@@ -69,12 +69,12 @@ class SupabaseSyncHttpTransportTest {
                     """
                     [
                       {
-                        "conflict_id":99,
-                        "record_id":"title-1",
-                        "field_path":"progress/chapter~1number",
-                        "conflict_type":"FIELD_DIVERGENCE",
-                        "local_value":{"removed":false,"value":3},
-                        "remote_value":{"removed":false,"value":2}
+                        "conflictId":99,
+                        "recordId":"title-1",
+                        "fieldPath":"progress/chapter~1number",
+                        "kind":"FIELD_DIVERGENCE",
+                        "localValue":{"removed":false,"value":3},
+                        "remoteValue":{"removed":false,"value":2}
                       }
                     ]
                     """.trimIndent(),
@@ -114,10 +114,10 @@ class SupabaseSyncHttpTransportTest {
         body.contains("\"recordUpdatedAtEpochMillis\"") shouldBe false
 
         val conflicts = server.takeRequest()
-        conflicts.url.encodedPath shouldBe "/rest/v1/tsuzuki_sync_conflicts"
-        conflicts.url.queryParameter("local_mutation_id") shouldBe
-            "eq.10000000-0000-0000-0000-000000000001"
-        conflicts.url.queryParameter("resolved_at") shouldBe "is.null"
+        conflicts.url.encodedPath shouldBe "/rest/v1/rpc/sync_get_mutation_conflicts"
+        conflicts.body!!.utf8().contains(
+            "\"p_mutation_id\":\"10000000-0000-0000-0000-000000000001\"",
+        ) shouldBe true
     }
 
     @Test
