@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
  * Runtime boundary for optional cloud sync surfaces.
  *
  * Local reading and library flows do not depend on an authenticated cloud session.
+ * Cloud failures must never gate local reading or library use.
  */
 interface CloudSyncRuntime {
     val state: StateFlow<SyncRuntimeState>
