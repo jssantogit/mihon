@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.tsuzuki.supabase
 
 import android.content.Context
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -36,6 +37,7 @@ import tachiyomi.domain.tsuzuki.sync.repository.SyncStateRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleSyncSource
+import tachiyomi.domain.tsuzuki.sync.service.CloudSyncRuntime
 import tachiyomi.domain.tsuzuki.sync.service.ChapterSyncEvidenceRepository
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseConflictResolver
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncOrchestrator
@@ -49,6 +51,7 @@ import kotlin.time.Clock
 
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class SupabaseSyncRuntime(
     context: Context,
     networkHelper: NetworkHelper,
@@ -71,7 +74,7 @@ class SupabaseSyncRuntime(
     collectionStore: CollectionStore,
     chapterOverrideRepository: ChapterOverrideRepository,
     readerPreferenceRepository: CanonicalReaderPreferenceRepository,
-) {
+) : CloudSyncRuntime {
 
     private val clock: SyncClock = AndroidSupabaseSyncClock
     private val clientIdentity = SyncClientIdentityStore(context)
@@ -163,13 +166,13 @@ class SupabaseSyncRuntime(
         clock = clock,
     )
 
-    val state: StateFlow<SyncRuntimeState>
+    override val state: StateFlow<SyncRuntimeState>
         get() = controller.state
 
-    suspend fun run(trigger: SyncTrigger): SyncCycleReport =
+    override suspend fun run(trigger: SyncTrigger): SyncCycleReport =
         controller.run(trigger)
 
-    suspend fun resolveConflict(
+    override suspend fun resolveConflict(
         conflict: SyncConflict,
         choice: SyncConflictResolutionChoice,
     ): SyncConflictResolutionResult =
