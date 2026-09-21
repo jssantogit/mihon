@@ -14,6 +14,7 @@ data class SyncConflict(
     val base: SyncConflictValue,
     val local: SyncConflictValue,
     val remote: SyncConflictValue,
+    val remoteConflictId: Long? = null,
 ) {
     init {
         require(remoteConflictId == null || remoteConflictId > 0) {
@@ -22,6 +23,9 @@ data class SyncConflict(
         require(recordId.isNotBlank()) { "Sync conflict record ID must not be blank" }
         require(propertyPath.none(String::isBlank)) {
             "Sync conflict property path segments must not be blank"
+        }
+        require(remoteConflictId == null || remoteConflictId > 0) {
+            "Remote sync conflict ID must be positive"
         }
     }
 }
