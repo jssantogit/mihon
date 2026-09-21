@@ -410,18 +410,32 @@ Dev C then owns:
 
 Run full CI and request APK.
 
-### Wave 5 — Delivery expansion
+### Wave 5 — Production torrent delivery
 
-After the core Nuvio-style flow is green on device, Dev B continues the provider-neutral delivery tasks:
+After Dev C’s integrated four-tab runtime is green on device, freeze shared-shell/Gradle changes and create a final delivery branch from that integrated head:
 
-- canonical downloaded artifacts;
-- local content;
-- remote manifest protocol;
-- torrent artifact delivery contract.
+~~~bash
+git switch tsuzuki/runtime-v2-dev-c
+git switch -c tsuzuki/runtime-v2-torrent
+~~~
 
-The native production torrent engine is deliberately split into a follow-up delivery subproject because choosing/embedding a libtorrent implementation adds native dependency, ABI, licensing, battery/network, and security decisions that are independent from the modular Core. Dev B Task B8 freezes the Core contract first so that follow-up can be implemented without changing canonical identity or Reader APIs.
+Dev B executes the production torrent task from the Dev B plan against this integrated baseline. This phase is serial with respect to top-level Gradle files because the torrent runtime adds native dependencies.
 
-Dev A and C may simultaneously address polish only in their owned files, but no architecture changes occur without amending the spec.
+The planned production engine is FrostWire jlibtorrent 2.0.12.9:
+- MIT-licensed Java/SWIG wrapper;
+- Android artifacts for arm, arm64, x86, x86_64;
+- the maintained 2.0.12 line supports Android API 26, matching Tsuzuki’s current minSdk 26;
+- the engine remains hidden behind `TorrentArtifactEngine`, so it can be replaced without changing Core/Reader APIs.
+
+Initial torrent behavior:
+- acquire only the explicitly selected torrent file/artifact;
+- prioritize that file and disable unwanted files;
+- respect existing Wi-Fi-only download preference for persistent downloads;
+- no persistent background seeding after acquisition completes;
+- store temporary reader artifacts in app-private cache and canonical downloads in the canonical download path;
+- reuse Archive/Directory/EPUB Reader loaders after acquisition.
+
+Run full CI and an ARM64 device smoke before the final program merge.
 
 ---
 
@@ -535,10 +549,12 @@ After all three plans are complete:
 
 - [ ] Merge Dev A then Dev B into the integration branch.
 - [ ] Merge the A+B integration branch into Dev C.
-- [ ] Complete the Dev C integration-steward task.
-- [ ] Run CI v2 full.
+- [ ] Complete the Dev C integration-steward task and core device smoke.
+- [ ] Branch `tsuzuki/runtime-v2-torrent` from the integrated Dev C head.
+- [ ] Complete Dev B production torrent delivery and torrent device smoke.
+- [ ] Run CI v2 full on the final integrated/torrent head.
 - [ ] Build one ARM64 release APK.
-- [ ] Execute the human smoke matrix from Section 6.
+- [ ] Execute the full human smoke matrix from Section 6 plus torrent acquisition/read.
 - [ ] Review the full diff against the design spec.
 - [ ] Remove only dead legacy routes proven unused by the target shell; do not perform unrelated cleanup.
-- [ ] Merge the verified integrated branch into `tsuzuki/bootstrap`.
+- [ ] Merge the verified final branch into `tsuzuki/bootstrap`.
