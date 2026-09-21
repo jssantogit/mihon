@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -25,17 +28,17 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
-import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
 
 @Immutable
 sealed interface CanonicalLibraryScreenState {
     data object Loading : CanonicalLibraryScreenState
     data class Success(
-        val items: List<CanonicalLibraryItem>,
+        val items: List<CanonicalLibraryCardModel>,
         val searchQuery: String? = null,
         val selectedCategoryId: Long? = null,
     ) : CanonicalLibraryScreenState
@@ -43,10 +46,7 @@ sealed interface CanonicalLibraryScreenState {
 
 sealed interface CanonicalLibraryEvent {
     data class OpenReader(val canonicalChapterId: String) : CanonicalLibraryEvent
-    data class ResolveReadingSource(
-        val canonicalTitleId: String,
-        val title: String,
-    ) : CanonicalLibraryEvent
+    data class OpenCanonicalTitle(val canonicalTitleId: String) : CanonicalLibraryEvent
 }
 
 @Inject
@@ -58,6 +58,7 @@ class CanonicalLibraryScreenModel(
     private val removeUnifiedLibraryTitle: RemoveUnifiedLibraryTitle,
     private val migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
     private val resolveCanonicalReadingStart: CanonicalReadingStartResolver,
+    private val canonicalReadingRepository: CanonicalReadingRepository,
 ) : ViewModel() {
 
     private val eventChannel = Channel<CanonicalLibraryEvent>()
@@ -75,9 +76,24 @@ class CanonicalLibraryScreenModel(
             logcat(LogPriority.WARN, e) { "Mihon library migration failed non-blockingly" }
         }
 
+        val cards = observeCanonicalLibrary.subscribe()
+            .flatMapLatest { libraryItems ->
+                if (libraryItems.isEmpty()) {
+                    flowOf(emptyList())
+                } else {
+                    combine(
+                        libraryItems.map { item ->
+                            canonicalReadingRepository
+                                .observeProgressByCanonicalTitleId(item.id)
+                                .map { progress -> item.toCardModel(progress) }
+                        },
+                    ) { values -> values.toList() }
+                }
+            }
+
         emitAll(
             combine(
-                observeCanonicalLibrary.subscribe(),
+                cards,
                 searchQuery,
                 selectedCategoryId,
             ) { items, query, categoryId ->
@@ -93,7 +109,7 @@ class CanonicalLibraryScreenModel(
                     categoryFilteredItems
                 } else {
                     categoryFilteredItems.filter {
-                        it.title.displayTitle.contains(normalizedQuery, ignoreCase = true)
+                        it.title.contains(normalizedQuery, ignoreCase = true)
                     }
                 }
                 CanonicalLibraryScreenState.Success(
@@ -141,7 +157,7 @@ class CanonicalLibraryScreenModel(
         }
     }
 
-    fun readOrContinue(canonicalTitleId: String, title: String) {
+    fun readOrContinue(canonicalTitleId: String) {
         viewModelScope.launch {
             when (val result = resolveCanonicalReadingStart.execute(canonicalTitleId)) {
                 is CanonicalReadingStart.Ready -> {
@@ -149,10 +165,7 @@ class CanonicalLibraryScreenModel(
                 }
                 is CanonicalReadingStart.Unavailable -> {
                     eventChannel.send(
-                        CanonicalLibraryEvent.ResolveReadingSource(
-                            canonicalTitleId = canonicalTitleId,
-                            title = title,
-                        ),
+                        CanonicalLibraryEvent.OpenCanonicalTitle(canonicalTitleId),
                     )
                 }
             }
