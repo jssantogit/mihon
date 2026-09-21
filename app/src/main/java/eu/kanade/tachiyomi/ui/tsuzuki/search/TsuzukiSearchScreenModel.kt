@@ -73,38 +73,15 @@ sealed interface TsuzukiSearchEvent {
     ) : TsuzukiSearchEvent
 }
 
+@Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
-class TsuzukiSearchScreenModel private constructor(
+class TsuzukiSearchScreenModel(
     private val searchIntegrations: SearchIntegrations,
     private val registry: IntegrationRegistry,
     private val searchPreferences: TsuzukiSearchPreferences,
-    private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog?,
+    private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
 ) : ViewModel() {
-
-    internal constructor(
-        searchIntegrations: SearchIntegrations,
-        registry: IntegrationRegistry,
-        searchPreferences: TsuzukiSearchPreferences,
-    ) : this(
-        searchIntegrations = searchIntegrations,
-        registry = registry,
-        searchPreferences = searchPreferences,
-        materializeCanonicalTitleFromCatalog = null,
-    )
-
-    @Inject
-    constructor(
-        searchIntegrations: SearchIntegrations,
-        registry: IntegrationRegistry,
-        searchPreferences: TsuzukiSearchPreferences,
-        materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
-    ) : this(
-        searchIntegrations = searchIntegrations,
-        registry = registry,
-        searchPreferences = searchPreferences,
-        materializeCanonicalTitleFromCatalog = materializeCanonicalTitleFromCatalog,
-    )
 
     private val _state = MutableStateFlow<SearchState>(SearchState.Loading)
     val state: StateFlow<SearchState> = _state.asStateFlow()
