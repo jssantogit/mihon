@@ -16,6 +16,11 @@ FROM tsuzuki_chapter_update_state
 WHERE canonical_title_id = :canonicalTitleId
 ORDER BY first_seen_at ASC, canonical_chapter_id ASC;
 
+getAllTsuzukiChapterUpdateState:
+SELECT *
+FROM tsuzuki_chapter_update_state
+ORDER BY canonical_title_id ASC, first_seen_at ASC, canonical_chapter_id ASC;
+
 getTsuzukiUnacknowledgedChapterUpdatesByTitle:
 SELECT *
 FROM tsuzuki_chapter_update_state
