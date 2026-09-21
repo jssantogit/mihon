@@ -84,6 +84,9 @@ class ContentSelectorScreenModelTest {
         dex.scanlationGroup shouldBe "Group A"
         dex.releaseDate shouldBe 100L
 
+        val firstReadSelection = model.select(dex)
+        firstReadSelection.offerSetAsPreferred shouldBe false
+
         val fire = state.options.first { it.option.key == second.key }
         fire.addonDisplayName shouldBe "MangaFire"
         fire.language shouldBe "pt-BR"
