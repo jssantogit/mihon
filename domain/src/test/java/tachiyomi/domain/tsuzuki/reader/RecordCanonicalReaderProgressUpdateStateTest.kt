@@ -11,6 +11,7 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderCompatibilityGateway
+import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateState
 import tachiyomi.domain.tsuzuki.updates.repository.ChapterUpdateStateRepository
 
 class RecordCanonicalReaderProgressUpdateStateTest {
@@ -62,10 +63,22 @@ class RecordCanonicalReaderProgressUpdateStateTest {
         var acknowledgedChapterId: String? = null
         var acknowledgedAt: Long? = null
 
+        override suspend fun getByCanonicalTitleId(
+            canonicalTitleId: String,
+        ): List<ChapterUpdateState> = emptyList()
+
+        override suspend fun getUnacknowledgedByCanonicalTitleId(
+            canonicalTitleId: String,
+        ): List<ChapterUpdateState> = emptyList()
+
+        override suspend fun upsert(state: ChapterUpdateState) = Unit
+
         override suspend fun acknowledge(canonicalChapterId: String, acknowledgedAt: Long) {
             acknowledgedChapterId = canonicalChapterId
             this.acknowledgedAt = acknowledgedAt
         }
+
+        override suspend fun delete(canonicalChapterId: String) = Unit
     }
 
     private class FakeCanonicalReadingRepository : CanonicalReadingRepository {
