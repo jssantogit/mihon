@@ -6,7 +6,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -161,7 +160,7 @@ class SupabaseSyncHttpTransport(
         return executeAuthenticated(
             request = rpcRequest("sync_claim_external_identity", body),
         ) { raw ->
-            json.decodeFromString(String.serializer(), raw)
+            json.decodeFromString<String>(raw)
         }
     }
 
@@ -253,7 +252,7 @@ class SupabaseSyncHttpTransport(
 
                 runCatching { decode(raw) }
                     .fold(
-                        onSuccess = SyncTransportResult<T>::Success,
+                        onSuccess = { value -> SyncTransportResult.Success(value) },
                         onFailure = {
                             SyncTransportResult.Failure(
                                 SyncFailure(SyncFailureReason.MALFORMED_REMOTE_DOCUMENT),
