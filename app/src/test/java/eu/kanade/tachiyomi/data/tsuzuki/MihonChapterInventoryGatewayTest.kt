@@ -134,6 +134,37 @@ class MihonChapterInventoryGatewayTest {
         mangaRepository.writeCount shouldBe 0
     }
 
+    @Test
+    fun `materialize operational chapter reuses existing legacy row without duplicate write`() = runTest {
+        val legacy = Chapter.create().copy(
+            id = 100L,
+            mangaId = 42L,
+            url = "/known",
+            name = "Chapter 3",
+        )
+        val chapterRepository = FakeChapterRepository(listOf(legacy))
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            chapterRepository = chapterRepository,
+            sourceManager = FakeSourceManager(null),
+        )
+
+        val chapterId = gateway.materializeOperationalChapter(
+            tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot(
+                sourceId = 7L,
+                sourceMappingId = "binding",
+                sourceChapterId = "/known",
+                sourceChapterUrl = "/known",
+                rawName = "Chapter 3",
+                mihonMangaId = 42L,
+                mihonChapterId = 100L,
+            ),
+        ).getOrThrow()
+
+        chapterId shouldBe 100L
+        chapterRepository.writeCount shouldBe 0
+    }
+
     private fun mapping() = SourceTitleMapping(
         id = "mapping-7",
         canonicalTitleId = "title-1",
