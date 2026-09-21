@@ -82,15 +82,9 @@ fun TsuzukiHomeScreen(
                         item(key = "collection_header_${section.collectionId}") {
                             SectionHeader(section.title)
                         }
-                        if (section.rows.isEmpty()) {
-                            item(key = "collection_empty_${section.collectionId}") {
-                                SectionMessage("No Home rows configured")
-                            }
-                        } else {
-                            section.rows.forEach { row ->
-                                item(key = "row_${row.listId}") {
-                                    CollectionRow(row)
-                                }
+                        section.rows.forEach { row ->
+                            item(key = "collection_row_${section.collectionId}_${row.listId}") {
+                                ConfiguredHomeRow(row)
                             }
                         }
                     }
@@ -179,38 +173,35 @@ private fun ContinueReadingCard(
 }
 
 @Composable
-private fun CollectionRow(row: HomeRow) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+private fun ConfiguredHomeRow(row: HomeRow) {
+    if (row.title.isNotBlank()) {
         Text(
             text = row.title,
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
+    }
 
-        when (val content = row.content) {
-            is HomeRowContent.Content -> {
-                if (content.items.isEmpty()) {
-                    SectionMessage("No matching titles")
-                } else {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(
-                            items = content.items,
-                            key = { "${it.provider}:${it.providerId}" },
-                        ) { item ->
-                            CatalogHomeCard(item)
-                        }
+    when (val content = row.content) {
+        is HomeRowContent.Content -> {
+            if (content.items.isEmpty()) {
+                SectionMessage("No matching titles")
+            } else {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(
+                        items = content.items,
+                        key = { "${row.listId}:${it.provider}:${it.providerId}" },
+                    ) { item ->
+                        CatalogHomeCard(item)
                     }
                 }
             }
-            is HomeRowContent.Unavailable -> {
-                SectionMessage(content.reason)
-            }
+        }
+        is HomeRowContent.Unavailable -> {
+            SectionMessage(content.reason)
         }
     }
 }
