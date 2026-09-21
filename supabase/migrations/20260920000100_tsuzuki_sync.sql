@@ -1,3 +1,4 @@
+create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
 
 create table public.tsuzuki_sync_fields (
@@ -272,6 +273,7 @@ begin
         or v_domain is null
         or v_base_cursor is null
         or v_base_cursor < 0
+        or v_operations is null
         or jsonb_typeof(v_operations) <> 'array'
         or jsonb_array_length(v_operations) = 0
     then
@@ -294,7 +296,10 @@ begin
         v_record_id := nullif(btrim(v_operation ->> 'recordId'), '');
         v_field_path := nullif(btrim(v_operation ->> 'fieldPath'), '');
 
-        if v_record_id is null or v_operation_type not in ('set', 'remove', 'delete') then
+        if v_record_id is null
+            or v_operation_type is null
+            or v_operation_type not in ('set', 'remove', 'delete')
+        then
             raise exception using
                 errcode = '22023',
                 message = 'invalid mutation operation';
