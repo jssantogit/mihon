@@ -632,12 +632,20 @@ class SupabaseSyncOrchestrator(
     ): SyncDocumentEnvelope {
         val revision = SyncRevision("supabase", cursor)
         val mapped = records.associate { record ->
+            var materializedFields = JsonObject(emptyMap())
+            record.fields.forEach { (fieldPath, value) ->
+                materializedFields = setPath(
+                    root = materializedFields,
+                    path = SupabaseFieldPathCodec.decode(fieldPath),
+                    value = value,
+                )
+            }
             record.recordId to SyncRecordEnvelope(
                 id = record.recordId,
                 revision = revision,
                 updatedAtEpochMillis = now,
                 deletedAtEpochMillis = now.takeIf { record.isDeleted },
-                fields = record.fields,
+                fields = materializedFields,
             )
         }
         return SyncDocumentEnvelope(
