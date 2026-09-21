@@ -61,14 +61,16 @@ class ReconcileChapterEvidence internal constructor(
                 )
             }
             val previousEvidence = externalEvidence ?: persistedEvidence[observation.id]
-            val mappedChapter = previousEvidence
-                ?.mappedCanonicalChapterId
-                ?.let(canonicalChapterRepository::getById)
-                ?.also { chapter ->
+            val mappedChapterId = previousEvidence?.mappedCanonicalChapterId
+            val mappedChapter = if (mappedChapterId != null) {
+                canonicalChapterRepository.getById(mappedChapterId)?.also { chapter ->
                     require(chapter.canonicalTitleId == canonicalTitleId) {
                         "Evidence mapping points to chapter from another canonical title"
                     }
                 }
+            } else {
+                null
+            }
 
             val mappedIdentityConflicts = mappedChapter != null &&
                 parsedIdentityIsReliable &&
