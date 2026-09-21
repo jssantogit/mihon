@@ -60,16 +60,16 @@ class ContentPreferencesSyncAdapterTest {
                 "title:title-1" to exported.records.getValue("title:title-1").copy(
                     updatedAtEpochMillis = 80,
                     fields = buildJsonObject {
-                        put("recordType", "title")
-                        put("canonicalTitleId", "title-1")
+                        put("recordType", JsonPrimitive("title"))
+                        put("canonicalTitleId", JsonPrimitive("title-1"))
                         put("preferredAddonId", JsonNull)
                     },
                 ),
                 "global" to exported.records.getValue("global").copy(
                     updatedAtEpochMillis = 81,
                     fields = buildJsonObject {
-                        put("recordType", "global")
-                        put("automaticFallback", false)
+                        put("recordType", JsonPrimitive("global"))
+                        put("automaticFallback", JsonPrimitive(false))
                         put(
                             "preferredLanguages",
                             JsonArray(listOf(JsonPrimitive("ja"), JsonPrimitive("en"))),
