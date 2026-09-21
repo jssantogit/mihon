@@ -90,6 +90,40 @@ class ResolveChapterContentTest {
         result.usedFallback shouldBe true
     }
 
+    @Test
+    fun `switching provider preserves canonical chapter identity used by progress`() = runTest {
+        val preferenceRepository = FakeContentPreferenceRepository(
+            ContentPreference("title", AddonId("mangadex"), 1L),
+        )
+        val preferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
+        val resolver = ResolveChapterContent(
+            addonRegistry = FakeAddonRegistry(
+                listOf(
+                    provider("mangadex", option("mangadex", "en")),
+                    provider("mangafire", option("mangafire", "pt-BR")),
+                ),
+            ),
+            contentPreferenceRepository = preferenceRepository,
+            readerPreferences = preferences,
+            rankContentOptions = RankContentOptions(),
+            contentOptionCache = ContentOptionCache(),
+            inFlightContentResolution = InFlightContentResolution(),
+        )
+
+        val first = resolver.execute("title", "chapter-37")
+            .shouldBeInstanceOf<ContentResolution.Direct>()
+        preferenceRepository.upsert(
+            ContentPreference("title", AddonId("mangafire"), 2L),
+        )
+        val second = resolver.execute("title", "chapter-37")
+            .shouldBeInstanceOf<ContentResolution.Direct>()
+
+        first.option.addonId shouldBe AddonId("mangadex")
+        second.option.addonId shouldBe AddonId("mangafire")
+        first.option.canonicalChapterId shouldBe "chapter-37"
+        second.option.canonicalChapterId shouldBe first.option.canonicalChapterId
+    }
+
     private fun fixture(
         preference: ContentPreference?,
         automaticFallback: Boolean,
