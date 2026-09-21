@@ -281,8 +281,19 @@ Update the SQLDelight schema definition, `CanonicalChapter`, and `CanonicalChapt
 
 ~~~kotlin
 data class CanonicalChapter(
-    // keep every existing field unchanged
+    val id: String,
+    val canonicalTitleId: String,
+    val displayNumber: String,
+    val volume: Int? = null,
+    val title: String? = null,
+    val type: CanonicalChapterType = CanonicalChapterType.UNKNOWN,
+    val baseNumber: Int? = null,
+    val part: Int? = null,
+    val alphaSuffix: String? = null,
+    val confidence: Double = 0.0,
     val confirmation: CanonicalChapterConfirmation = CanonicalChapterConfirmation.PROVISIONAL,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
 )
 ~~~
 
@@ -587,9 +598,7 @@ fun `two concurrent materializations of same verified identity converge`() = run
 
     val ids = listOf(first.await().canonicalTitleId, second.await().canonicalTitleId)
     assertEquals(1, ids.distinct().size)
-    assertEquals(1, repository.getAll().count { title ->
-        repository.getByExternalIdentity("kitsu", "1")?.id == title.id
-    })
+    assertEquals(ids.single(), repository.getByExternalIdentity("kitsu", "1")?.id)
 }
 ~~~
 
@@ -639,7 +648,7 @@ fun `verified duplicate title can be rekeyed without losing canonical user state
     seedChapterProgress(chapterId = "chapter-37", page = 12)
     seedContentPreference(titleId = "duplicate", addonId = "mangadex")
 
-    mergeRepository.mergeInto(survivorId = "winner", duplicateId = "duplicate")
+    mergeRepository.convergeTo(targetId = "winner", localId = "duplicate")
 
     assertNull(titleRepository.getById("duplicate"))
     assertNotNull(titleRepository.getById("winner"))
@@ -653,34 +662,35 @@ fun `verified duplicate title can be rekeyed without losing canonical user state
 
 - [ ] **Step 6: Implement `MergeCanonicalTitles` as one SQLDelight transaction**
 
-The merge primitive is used **only** when equivalence is already proven by a verified external-identity claim. It never decides equivalence itself.
+The convergence primitive is used **only** when equivalence is already proven by a verified external-identity claim. It never decides equivalence itself.
 
 Within one transaction:
-1. reject `survivorId == duplicateId`;
-2. require both CanonicalTitles to exist;
-3. move every external identity from duplicate to survivor, collapsing identical `provider + externalId` rows;
-4. merge Library membership/status/categories with the existing canonical merge rules rather than dropping either side;
-5. repoint source/content bindings, canonical chapters, chapter evidence, content preference, update state, Continue Reading suppression, and canonical-download provenance to the survivor;
-6. preserve CanonicalChapter IDs, so chapter progress/history continue to reference the same chapter IDs;
-7. when both titles already contain equivalent canonical chapters, invoke the chapter reconciler/override policy before deleting a duplicate chapter rather than selecting by timestamp;
-8. delete the duplicate CanonicalTitle only after all dependent rows are safely repointed.
+1. reject `targetId == localId`;
+2. require the local CanonicalTitle to exist;
+3. if `targetId` does not exist locally, create the target title row from the local title, repoint all dependent rows, then delete `localId`; this is the normal cross-device rekey path;
+4. if both IDs exist locally, move every external identity from local to target, collapsing identical `provider + externalId` rows;
+5. union categories and preserve Library membership; if both titles have incompatible singleton values such as distinct non-default status or distinct preferred Add-on, abort the transaction with a typed `CanonicalTitleMergeConflict` instead of choosing by timestamp;
+6. repoint source/content bindings, canonical chapters, chapter evidence, update state, Continue Reading suppression, and canonical-download provenance to the target;
+7. preserve CanonicalChapter IDs, so chapter progress/history continue to reference the same chapter IDs;
+8. when both titles already contain equivalent canonical chapters, invoke the chapter reconciler/override policy before removing one; ambiguous chapter pairs abort with a typed conflict;
+9. delete the old CanonicalTitle only after all dependent rows are safely repointed.
 
 Expose:
 
 ~~~kotlin
 interface CanonicalTitleMergeRepository {
-    suspend fun mergeInto(survivorId: String, duplicateId: String)
+    suspend fun convergeTo(targetId: String, localId: String)
 }
 
 class MergeCanonicalTitles(
     private val repository: CanonicalTitleMergeRepository,
 ) {
-    suspend fun execute(survivorId: String, duplicateId: String) =
-        repository.mergeInto(survivorId, duplicateId)
+    suspend fun execute(targetId: String, localId: String) =
+        repository.convergeTo(targetId, localId)
 }
 ~~~
 
-This primitive is deliberately independent of Supabase; Dev C calls it after the cloud identity claim returns the authoritative canonical ID.
+This primitive is deliberately independent of Supabase. Dev C can invoke it after a cloud identity claim returns a different Tsuzuki canonical ID.
 
 - [ ] **Step 7: Run tests, format, commit**
 
