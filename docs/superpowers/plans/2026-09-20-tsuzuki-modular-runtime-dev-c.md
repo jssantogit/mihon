@@ -475,10 +475,18 @@ git commit -m "feat(tsuzuki): sync canonical state through Supabase"
 ### Task C4: Migrate sync domains and retire Google/Drive target path
 
 **Files:**
+- Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/model/SyncDocumentKind.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/CanonicalTitlesSyncAdapter.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/CanonicalLibrarySyncAdapter.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/CanonicalReadingProgressSyncAdapter.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ChapterUpdateStateSyncAdapter.kt`
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ContinueReadingStateSyncAdapter.kt`
 - Modify: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ChapterOverridesSyncAdapter.kt`
 - Modify: `data/src/main/java/tachiyomi/data/tsuzuki/sync/CollectionsSyncAdapter.kt`
 - Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/adapter/ContentPreferencesSyncAdapter.kt` after Dev B merge during final integration if the type is not yet available on Dev C branch.
+- Create: `domain/src/main/java/tachiyomi/domain/tsuzuki/sync/model/CanonicalChapterSyncKey.kt`
+- Modify: `app/build.gradle.kts`
+- Modify: `gradle/libs.versions.toml`
 - Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/DriveSyncJob.kt`
 - Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/DriveSyncRuntime.kt`
 - Delete: `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/drivesync/GoogleDriveAppDataTransport.kt`
@@ -510,29 +518,61 @@ git commit -m "feat(tsuzuki): sync canonical state through Supabase"
 - Produces: target sync domains without Drive/Google dependencies.
 - Consumes: SupabaseSyncOrchestrator.
 
-- [ ] **Step 1: Write adapter inventory test**
+- [ ] **Step 1: Write adapter inventory and portability tests**
 
-Assert active sync kinds include canonical Library, Collections, Chapter Overrides, reading progress/Continue Reading state, and later Content Preferences.
+The target durable sync kinds are:
 
-Assert `SOURCE_MAPPINGS` is no longer a target sync document because provider bindings are recomputable/device-runtime state.
+~~~text
+TITLES
+LIBRARY
+READING_PROGRESS
+CHAPTER_UPDATE_STATE
+CONTINUE_READING_STATE
+COLLECTIONS
+CHAPTER_OVERRIDES
+INTEGRATION_SETTINGS
+CONTENT_PREFERENCES
+ADDON_STATE
+~~~
 
-- [ ] **Step 2: Route SyncRuntimeController to Supabase orchestrator**
+`SOURCE_MAPPINGS` is not a target sync document because provider/content bindings are recomputable device-runtime state.
+
+Add a progress portability test proving two local CanonicalChapter UUIDs with the same structured `CanonicalChapterIdentity` produce the same `CanonicalChapterSyncKey`. For numbered/specific chapters, the key is built from the converged CanonicalTitle ID plus `CanonicalChapterIdentity.sortKey`, never from the local chapter UUID. For an UNKNOWN/unstructured chapter with no stable mapped evidence key, do not publish that progress record yet; keep its sync domain dirty until evidence becomes portable rather than guessing by title text.
+
+- [ ] **Step 2: Implement title/bootstrap and reading-state adapters**
+
+`CanonicalTitlesSyncAdapter` exports durable canonical title metadata plus verified external identities. Before export, C3 identity claims have converged the local CanonicalTitle ID to the account-wide claimed ID.
+
+On pull:
+1. exact claimed CanonicalTitle ID wins;
+2. otherwise an exact verified external identity may identify an existing local title and trigger `MergeCanonicalTitles`;
+3. display-title equality never identifies a title.
+
+`CanonicalReadingProgressSyncAdapter` uses `CanonicalChapterSyncKey`, preserves canonical read state, and carries the last provider-variant evidence key alongside page position for diagnostics/compatibility. It must not use Mihon manga/chapter database IDs as remote identity.
+
+Add separate adapters for new-chapter acknowledgment and Continue Reading suppression so `+N` and “Remove from Continue Reading” converge independently from History.
+
+- [ ] **Step 3: Route SyncRuntimeController to Supabase orchestrator**
+
+- [ ] **Step 3: Route SyncRuntimeController to Supabase orchestrator**
 
 Manual Sync Now and background jobs use the account-aware Supabase runtime.
 
 Logged out UI state is “Cloud sync off / sign in to enable”, not an error banner blocking local usage.
 
-- [ ] **Step 3: Remove Google account/Drive runtime wiring**
+- [ ] **Step 4: Remove Google account/Drive runtime wiring**
 
 Delete Google/Drive DI bindings, jobs, account settings route, and app-data transport.
 
+Remove `implementation(libs.google.playServicesAuth)` from `app/build.gradle.kts`. Remove the `google-play-services-auth` version/library aliases from `gradle/libs.versions.toml` only after `git grep` proves no non-Tsuzuki feature still consumes them. Google Services/Firebase telemetry configuration is unrelated and must not be removed accidentally.
+
 Do not write a Drive importer or dual-write bridge.
 
-- [ ] **Step 4: Preserve old sync domain models only if still used by local diff/conflict logic**
+- [ ] **Step 5: Preserve old sync domain models only if still used by local diff/conflict logic**
 
 Remove `SyncReplicaJournal`, `SyncFrontier`, manifest/Drive-specific codecs only after reference search proves no target caller remains.
 
-- [ ] **Step 5: Add no-Google regression test/search gate**
+- [ ] **Step 6: Add no-Google regression test/search gate**
 
 Test compilation without Google auth Tsuzuki classes and run:
 
@@ -542,10 +582,11 @@ git grep -n "SettingsGoogleAccountScreen\|GoogleDriveAppDataTransport\|DriveSync
 
 Expected: no target runtime references.
 
-- [ ] **Step 6: Run tests and commit**
+- [ ] **Step 7: Run tests and commit**
 
 ~~~bash
 ./gradlew :domain:testDebugUnitTest --tests '*AvailableSupabaseSyncAdaptersTest' \
+  :domain:testDebugUnitTest --tests '*CanonicalReadingProgressSyncAdapterTest' \
   :app:compileDebugKotlin \
   spotlessCheck
 git add -A app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki \
