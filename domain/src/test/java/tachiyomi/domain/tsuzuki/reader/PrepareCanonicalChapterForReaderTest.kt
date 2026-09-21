@@ -23,6 +23,8 @@ import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
@@ -62,6 +64,33 @@ class PrepareCanonicalChapterForReaderTest {
         )
         fixture.preparer.lastOption shouldBe option
         fixture.preparer.lastProgress shouldBe fixture.reading.progress
+    }
+
+    @Test
+    fun `canonical download opens before addon resolution`() = runTest {
+        val artifact = CanonicalDownloadArtifact(
+            canonicalChapterId = "chapter-1",
+            localUri = "content://downloads/chapter-1.cbz",
+            format = "CBZ",
+            originatingAddonId = AddonId("removed-addon"),
+            originatingOptionKey = "old-option",
+            completedAt = 100L,
+            checksum = null,
+        )
+        val fixture = fixture(
+            preference = ContentPreference("title-1", AddonId("mangadex"), 1L),
+            providers = listOf(provider(option("mangadex"))),
+            downloadArtifact = artifact,
+        )
+
+        val result = fixture.prepare.execute("chapter-1")
+
+        result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
+        result.target shouldBe PreparedChapterContent.CanonicalDownload(
+            uri = artifact.localUri,
+            format = artifact.format,
+        )
+        fixture.preparer.calls shouldBe 0
     }
 
     @Test
@@ -123,6 +152,7 @@ class PrepareCanonicalChapterForReaderTest {
     private fun fixture(
         preference: ContentPreference?,
         providers: List<ContentProvider>,
+        downloadArtifact: CanonicalDownloadArtifact? = null,
     ): Fixture {
         val readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
         val resolver = ResolveChapterContent(
@@ -140,6 +170,7 @@ class PrepareCanonicalChapterForReaderTest {
             resolveChapterContent = resolver,
             canonicalChapterRepository = chapters,
             canonicalReadingRepository = reading,
+            canonicalDownloadRepository = FakeCanonicalDownloadRepository(downloadArtifact),
             chapterContentPreparer = preparer,
         )
         return Fixture(prepare, reading, preparer)
@@ -236,6 +267,23 @@ class PrepareCanonicalChapterForReaderTest {
             chapters: List<CanonicalChapter>,
             variants: List<ChapterVariant>,
         ) = Unit
+    }
+
+    private class FakeCanonicalDownloadRepository(
+        private var artifact: CanonicalDownloadArtifact?,
+    ) : CanonicalDownloadRepository {
+        override suspend fun get(canonicalChapterId: String): CanonicalDownloadArtifact? =
+            artifact?.takeIf { it.canonicalChapterId == canonicalChapterId }
+
+        override suspend fun upsert(artifact: CanonicalDownloadArtifact) {
+            this.artifact = artifact
+        }
+
+        override suspend fun delete(canonicalChapterId: String) {
+            if (artifact?.canonicalChapterId == canonicalChapterId) artifact = null
+        }
+
+        override suspend fun deleteOriginMetadata(addonId: AddonId) = Unit
     }
 
     private class FakeCanonicalReadingRepository : CanonicalReadingRepository {
