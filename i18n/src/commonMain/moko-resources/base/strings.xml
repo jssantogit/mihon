@@ -901,6 +901,7 @@
     <string name="tsuzuki_addons_repositories">Repositories</string>
     <string name="tsuzuki_addons_installed">Installed Add-ons</string>
     <string name="tsuzuki_addons_none_installed">No Add-ons installed</string>
+    <string name="tsuzuki_addon_needs_installation">Needs installation · Install manually from Extension Stores</string>
     <string name="tsuzuki_addon_update_available">Update available</string>
     <string name="tsuzuki_addon_enabled">Enabled</string>
     <string name="tsuzuki_addon_disabled">Disabled</string>
