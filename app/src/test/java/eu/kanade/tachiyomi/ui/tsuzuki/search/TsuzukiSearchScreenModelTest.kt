@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.ui.tsuzuki.search
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -20,6 +22,11 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
+import tachiyomi.domain.tsuzuki.model.ExternalIdentity
+import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TsuzukiSearchScreenModelTest {
@@ -43,6 +50,9 @@ class TsuzukiSearchScreenModelTest {
             searchIntegrations = SearchIntegrations(registry),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+            ),
         )
         advanceUntilIdle()
 
@@ -50,6 +60,27 @@ class TsuzukiSearchScreenModelTest {
         advanceUntilIdle()
 
         model.state.value.shouldBeInstanceOf<SearchState.NeedsIntegration>()
+    }
+
+    private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
+        override suspend fun getById(id: String): CanonicalTitle? = null
+
+        override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> =
+            MutableStateFlow(null)
+
+        override suspend fun getByExternalIdentity(
+            provider: String,
+            externalId: String,
+        ): CanonicalTitle? = null
+
+        override suspend fun getOrCreateByExternalIdentity(
+            title: CanonicalTitle,
+            identity: ExternalIdentity,
+        ): CanonicalTitle = title
+
+        override suspend fun insert(title: CanonicalTitle) = Unit
+
+        override suspend fun addExternalIdentity(identity: ExternalIdentity) = Unit
     }
 
     private fun emptyRegistry() = object : IntegrationRegistry {
