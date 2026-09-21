@@ -38,7 +38,14 @@ class ChapterUpdateStateRepositoryImpl(
         return database.tsuzuki_chapter_update_stateQueries
             .getTsuzukiChapterUpdateStateByTitle(canonicalTitleId)
             .awaitAsList()
-            .map(::mapState)
+            .map { row ->
+                CanonicalChapterUpdateState(
+                    canonicalChapterId = row.canonical_chapter_id,
+                    canonicalTitleId = row.canonical_title_id,
+                    firstSeenAt = row.first_seen_at,
+                    acknowledgedAt = row.acknowledged_at,
+                )
+            }
     }
 
     override fun observeByTitle(
@@ -49,7 +56,14 @@ class ChapterUpdateStateRepositoryImpl(
             .subscribeToList()
             .let { flow ->
                 kotlinx.coroutines.flow.map(flow) { rows ->
-                    rows.map(::mapState)
+                    rows.map { row ->
+                        CanonicalChapterUpdateState(
+                            canonicalChapterId = row.canonical_chapter_id,
+                            canonicalTitleId = row.canonical_title_id,
+                            firstSeenAt = row.first_seen_at,
+                            acknowledgedAt = row.acknowledged_at,
+                        )
+                    }
                 }
             }
     }
@@ -80,14 +94,4 @@ class ChapterUpdateStateRepositoryImpl(
             .deleteTsuzukiChapterUpdateState(canonicalChapterId)
     }
 
-    private fun mapState(
-        row: tachiyomi.data.Tsuzuki_chapter_update_state,
-    ): CanonicalChapterUpdateState {
-        return CanonicalChapterUpdateState(
-            canonicalChapterId = row.canonical_chapter_id,
-            canonicalTitleId = row.canonical_title_id,
-            firstSeenAt = row.first_seen_at,
-            acknowledgedAt = row.acknowledged_at,
-        )
-    }
 }
