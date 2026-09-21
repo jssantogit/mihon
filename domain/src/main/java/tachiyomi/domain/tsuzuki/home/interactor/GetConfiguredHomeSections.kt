@@ -4,8 +4,10 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.mapLatest
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
@@ -66,8 +68,75 @@ class GetConfiguredHomeSections(
 
     fun subscribe(pageSize: Int = DEFAULT_PAGE_SIZE): Flow<List<HomeSection>> {
         require(pageSize > 0) { "Home Collection page size must be positive" }
-        return store.observeCollections().flatMapLatest {
-            flow { emit(execute(pageSize)) }
+
+        return store.observeCollections().flatMapLatest { collections ->
+            val userCollections = collections
+                .filter { it.origin == CollectionOrigin.USER }
+                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+
+            if (userCollections.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                combine(
+                    userCollections.map { collection ->
+                        observeCollection(collection, pageSize)
+                    },
+                ) { sections ->
+                    sections.toList()
+                }
+            }
+        }
+    }
+
+    private fun observeCollection(
+        collection: tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection,
+        pageSize: Int,
+    ): Flow<HomeSection.CollectionSection> {
+        return store.observeFolders(collection.id).flatMapLatest { folders ->
+            val orderedFolders = folders.sortedWith(
+                compareBy({ it.sortOrder }, { it.id }),
+            )
+
+            if (orderedFolders.isEmpty()) {
+                flowOf(
+                    HomeSection.CollectionSection(
+                        collectionId = collection.id,
+                        title = collection.title,
+                        rows = emptyList(),
+                    ),
+                )
+            } else {
+                combine(
+                    orderedFolders.map { folder ->
+                        store.observeLists(folder.id).mapLatest { lists ->
+                            lists
+                                .filter(CollectionList::enabled)
+                                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+                        }
+                    },
+                ) { folderLists ->
+                    folderLists
+                        .flatMap { it }
+                        .map { list ->
+                            HomeRow(
+                                listId = list.id,
+                                title = list.title,
+                                providerId = list.providerId,
+                                layoutType = list.layoutType,
+                                content = loader.load(
+                                    listId = list.id,
+                                    pageSize = pageSize,
+                                ),
+                            )
+                        }
+                }.mapLatest { rows ->
+                    HomeSection.CollectionSection(
+                        collectionId = collection.id,
+                        title = collection.title,
+                        rows = rows,
+                    )
+                }
+            }
         }
     }
 
