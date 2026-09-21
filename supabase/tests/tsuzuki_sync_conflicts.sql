@@ -1,6 +1,6 @@
 begin;
 
-select plan(16);
+select plan(17);
 
 insert into auth.users (
     id,
@@ -183,6 +183,16 @@ select is(
     ),
     '10'::jsonb,
     'same-field conflict does not overwrite accepted remote value'
+);
+
+select is(
+    jsonb_array_length(
+        public.sync_get_mutation_conflicts(
+            '10000000-0000-0000-0000-000000000005'::uuid
+        )
+    ),
+    1,
+    'mutation conflict RPC returns the unresolved conflict'
 );
 
 select ok(
