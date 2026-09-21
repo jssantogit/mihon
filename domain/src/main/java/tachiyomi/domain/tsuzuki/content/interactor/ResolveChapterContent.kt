@@ -122,9 +122,9 @@ class ResolveChapterContent(
             return Result.success(cached)
         }
 
-        return inFlightContentResolution.execute(key) {
+        return inFlightContentResolution.execute(key) resolution@{
             contentOptionCache.get(key)?.let { cached ->
-                return@execute Result.success(cached)
+                return@resolution Result.success(cached)
             }
             val result = provider.resolve(canonicalTitleId, canonicalChapterId)
                 .map { options ->
