@@ -25,6 +25,9 @@ import tachiyomi.domain.tsuzuki.sync.adapter.CanonicalTitlesSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.ChapterOverridesSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.ChapterUpdateStateSyncAdapter
 import tachiyomi.domain.tsuzuki.sync.adapter.ContinueReadingStateSyncAdapter
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflict
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionChoice
+import tachiyomi.domain.tsuzuki.sync.model.SyncConflictResolutionResult
 import tachiyomi.domain.tsuzuki.sync.model.SyncCycleReport
 import tachiyomi.domain.tsuzuki.sync.model.SyncRevision
 import tachiyomi.domain.tsuzuki.sync.repository.SyncConflictRepository
@@ -34,6 +37,7 @@ import tachiyomi.domain.tsuzuki.sync.service.CanonicalIdentitySyncRepository
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleMergePort
 import tachiyomi.domain.tsuzuki.sync.service.CanonicalTitleSyncSource
 import tachiyomi.domain.tsuzuki.sync.service.ChapterSyncEvidenceRepository
+import tachiyomi.domain.tsuzuki.sync.service.SupabaseConflictResolver
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncOrchestrator
 import tachiyomi.domain.tsuzuki.sync.service.SupabaseSyncStateStore
 import tachiyomi.domain.tsuzuki.sync.service.SyncClock
@@ -80,66 +84,82 @@ class SupabaseSyncRuntime(
         accountRepository = accountRepository,
         json = json,
     )
-    private val controller = SyncRuntimeController(
-        runner = SupabaseSyncOrchestrator(
-            accountRepository = accountRepository,
-            transport = transport,
-            identityClaimTransport = transport,
-            identityRepository = identityRepository,
+    private val adapters = listOf(
+        CanonicalTitlesSyncAdapter(
+            titleSource = titleSource,
+            identitySource = identityRepository,
+            titleRepository = titleRepository,
             canonicalTitleMergePort = canonicalTitleMergePort,
-            outboxRepository = outboxRepository,
-            stateRepository = stateRepository,
-            supabaseStateStore = supabaseStateStore,
-            conflictRepository = conflictRepository,
-            adapters = listOf(
-                CanonicalTitlesSyncAdapter(
-                    titleSource = titleSource,
-                    identitySource = identityRepository,
-                    titleRepository = titleRepository,
-                    canonicalTitleMergePort = canonicalTitleMergePort,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-                CanonicalLibrarySyncAdapter(
-                    libraryRepository = libraryRepository,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-                CanonicalReadingProgressSyncAdapter(
-                    titleSource = titleSource,
-                    chapterRepository = chapterRepository,
-                    readingRepository = readingRepository,
-                    evidenceRepository = evidenceRepository,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-                ChapterUpdateStateSyncAdapter(
-                    stateRepository = chapterUpdateStateRepository,
-                    chapterRepository = chapterRepository,
-                    evidenceRepository = evidenceRepository,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-                ContinueReadingStateSyncAdapter(
-                    visibilityRepository = continueReadingVisibilityRepository,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-                CollectionsSyncAdapter(
-                    store = collectionStore,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-                ChapterOverridesSyncAdapter(
-                    overrideRepository = chapterOverrideRepository,
-                    readerPreferenceRepository = readerPreferenceRepository,
-                    revisionSource = revisionSource,
-                    clock = clock,
-                ),
-            ),
-            clientIdentityProvider = clientIdentity,
+            revisionSource = revisionSource,
             clock = clock,
         ),
+        CanonicalLibrarySyncAdapter(
+            libraryRepository = libraryRepository,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        CanonicalReadingProgressSyncAdapter(
+            titleSource = titleSource,
+            chapterRepository = chapterRepository,
+            readingRepository = readingRepository,
+            evidenceRepository = evidenceRepository,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        ChapterUpdateStateSyncAdapter(
+            stateRepository = chapterUpdateStateRepository,
+            chapterRepository = chapterRepository,
+            evidenceRepository = evidenceRepository,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        ContinueReadingStateSyncAdapter(
+            visibilityRepository = continueReadingVisibilityRepository,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        CollectionsSyncAdapter(
+            store = collectionStore,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+        ChapterOverridesSyncAdapter(
+            overrideRepository = chapterOverrideRepository,
+            readerPreferenceRepository = readerPreferenceRepository,
+            revisionSource = revisionSource,
+            clock = clock,
+        ),
+    )
+
+    private val orchestrator = SupabaseSyncOrchestrator(
+        accountRepository = accountRepository,
+        transport = transport,
+        identityClaimTransport = transport,
+        identityRepository = identityRepository,
+        canonicalTitleMergePort = canonicalTitleMergePort,
+        outboxRepository = outboxRepository,
+        stateRepository = stateRepository,
+        supabaseStateStore = supabaseStateStore,
+        conflictRepository = conflictRepository,
+        adapters = adapters,
+        clientIdentityProvider = clientIdentity,
+        clock = clock,
+    )
+
+    private val conflictResolver = SupabaseConflictResolver(
+        accountRepository = accountRepository,
+        transport = transport,
+        outboxRepository = outboxRepository,
+        stateRepository = stateRepository,
+        supabaseStateStore = supabaseStateStore,
+        conflictRepository = conflictRepository,
+        adapters = adapters,
+        clientIdentityProvider = clientIdentity,
+        clock = clock,
+    )
+
+    private val controller = SyncRuntimeController(
+        runner = orchestrator,
         clock = clock,
     )
 
@@ -148,6 +168,12 @@ class SupabaseSyncRuntime(
 
     suspend fun run(trigger: SyncTrigger): SyncCycleReport =
         controller.run(trigger)
+
+    suspend fun resolveConflict(
+        conflict: SyncConflict,
+        choice: SyncConflictResolutionChoice,
+    ): SyncConflictResolutionResult =
+        conflictResolver.resolve(conflict, choice)
 }
 
 private data object AndroidSupabaseSyncClock : SyncClock {
