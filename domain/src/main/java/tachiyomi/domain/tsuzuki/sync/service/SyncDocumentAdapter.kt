@@ -9,4 +9,6 @@ interface SyncDocumentAdapter {
     suspend fun exportDocument(): SyncDocumentEnvelope
 
     suspend fun applyDocument(document: SyncDocumentEnvelope)
+
+    suspend fun hasUnportableLocalState(): Boolean = false
 }
