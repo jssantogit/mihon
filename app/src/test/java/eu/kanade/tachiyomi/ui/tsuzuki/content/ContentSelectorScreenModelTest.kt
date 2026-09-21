@@ -61,6 +61,7 @@ class ContentSelectorScreenModelTest {
             scanlationGroup = "Grupo B",
             releaseDate = 200L,
         )
+        val preferences = FakeContentPreferenceRepository(null)
         val model = model(
             providers = listOf(
                 provider("mangadex", Result.success(listOf(first))),
@@ -70,6 +71,7 @@ class ContentSelectorScreenModelTest {
                 addon("mangadex", "MangaDex"),
                 addon("mangafire", "MangaFire"),
             ),
+            preferenceRepository = preferences,
         )
 
         model.start("title-1", "chapter-1")
@@ -86,6 +88,9 @@ class ContentSelectorScreenModelTest {
 
         val firstReadSelection = model.select(dex)
         firstReadSelection.offerSetAsPreferred shouldBe false
+        advanceUntilIdle()
+        preferences.value?.preferredAddonId shouldBe AddonId("mangadex")
+        preferences.value?.updatedAt shouldBe 500L
 
         val fire = state.options.first { it.option.key == second.key }
         fire.addonDisplayName shouldBe "MangaFire"
