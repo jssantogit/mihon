@@ -895,7 +895,9 @@ fun `detail exposes provisional state without hiding chapter`() = runTest {
 
 Empty query:
 - recent searches stored locally with a bounded list of 20 distinct queries, newest first;
-- configured Discover blocks from enabled DiscoveryProviders.
+- system Discover blocks from enabled DiscoveryProviders: Trending, Popular, and Recently Updated.
+
+Those three Search Discover blocks exist once at least one matching Integration capability is enabled. Their ordering/customization may move into the Collections model later; they are not Home defaults and do not violate the empty-by-default Home rule.
 
 Typed query:
 - aggregate Integration search;
