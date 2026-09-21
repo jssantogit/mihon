@@ -74,7 +74,8 @@ object SettingsTsuzukiAccountScreen : Screen() {
 
                 when (state.accountState) {
                     AccountState.LoggedOut,
-                    is AccountState.EmailConfirmationRequired -> {
+                    is AccountState.EmailConfirmationRequired,
+                    -> {
                         item {
                             OutlinedTextField(
                                 modifier = Modifier.fillMaxWidth(),
