@@ -76,6 +76,12 @@ ON CONFLICT(id) DO UPDATE SET
     runtime_payload = excluded.runtime_payload,
     updated_at = excluded.updated_at;
 
+markTsuzukiContentBindingUnavailable:
+UPDATE tsuzuki_content_bindings
+SET availability = 'UNAVAILABLE',
+    updated_at = :updatedAt
+WHERE id = :id;
+
 deleteTsuzukiContentBinding:
 DELETE FROM tsuzuki_content_bindings
 WHERE id = :id;

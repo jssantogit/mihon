@@ -54,6 +54,7 @@ class ResolveContentBindingTest {
                 sourceId = 7L,
                 sourceUrl = "/new",
                 language = "en",
+                runtimePayload = byteArrayOf(7, 9, 11),
             ),
         )
         val resolver = resolver(repository, gateway)

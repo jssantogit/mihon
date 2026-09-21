@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -146,6 +147,13 @@ class MihonReadingSourceGatewayTest {
         materialized.sourceId shouldBe candidate.sourceId
         materialized.sourceUrl shouldBe candidate.sourceUrl
         materialized.language shouldBe candidate.language
+        materialized.providerTitleKey shouldBe "100:/manga/berserk"
+
+        val payload = MihonContentBindingPayloadCodec.decode(materialized.runtimePayload)
+        payload.sourceId shouldBe candidate.sourceId
+        payload.mihonMangaId shouldBe 1L
+        payload.sourceUrl shouldBe candidate.sourceUrl
+        payload.language shouldBe candidate.language
 
         mangaRepository.insertedCount shouldBe 1
         mangaRepository.lastInsertedManga?.favorite shouldBe false

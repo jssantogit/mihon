@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
@@ -13,6 +16,8 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 
+@SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class MihonAddonRepository internal constructor(
     private val installedExtensionsFlow: Flow<List<Extension.Installed>>,
     private val installedExtensionsSnapshot: suspend () -> List<Extension.Installed>,
