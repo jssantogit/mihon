@@ -148,7 +148,7 @@ class MihonCanonicalDownloadGateway internal constructor(
             return CanonicalDownloadArtifact(
                 canonicalChapterId = option.canonicalChapterId,
                 localUri = file.uri.toString(),
-                format = canonicalFormat(file.name, file.isDirectory),
+                format = canonicalFormat(file.name.orEmpty(), file.isDirectory),
                 originatingAddonId = option.addonId,
                 originatingOptionKey = option.key,
                 completedAt = Clock.System.now().toEpochMilliseconds(),
