@@ -206,7 +206,11 @@ class ParseCanonicalChapterLabel {
             part = part,
             alphaSuffix = suffix,
             displayNumber = display,
-            confidence = if (hasExplicitChapterPrefix) 1.0 else 0.95,
+            confidence = when {
+                decimalPart != null && decimalPart.length > 1 -> 0.80
+                hasExplicitChapterPrefix -> 1.0
+                else -> 0.95
+            },
         )
     }
 
