@@ -51,8 +51,7 @@ import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 class RuntimeV2SmokeReadinessTest {
 
     @Test
-    fun `installed multi-source Add-on provisions chapters and content options from canonical detail refresh`() =
-        runTest {
+    fun `multi-source Add-on provisions canonical chapters and content options`() = runTest {
         val addonId = AddonId("mangadex")
         val bindings = FakeContentBindingRepository()
         val chapters = FakeCanonicalChapterRepository()
