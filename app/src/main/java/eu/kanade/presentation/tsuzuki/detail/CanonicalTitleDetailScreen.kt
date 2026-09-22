@@ -35,6 +35,7 @@ fun CanonicalTitleDetailScreen(
     onAddToLibrary: () -> Unit,
     onRemoveFromLibrary: () -> Unit,
     onOpenChapter: (String) -> Unit,
+    onDownloadChapter: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -114,7 +115,9 @@ fun CanonicalTitleDetailScreen(
                         ) { item ->
                             CanonicalChapterRow(
                                 item = item,
+                                downloading = state.downloadInProgressChapterId == item.chapter.id,
                                 onOpenChapter = onOpenChapter,
+                                onDownloadChapter = onDownloadChapter,
                             )
                             HorizontalDivider()
                         }
@@ -179,13 +182,22 @@ private fun TitleHeader(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+        state.downloadError?.let {
+            Text(
+                text = it.message ?: "Unable to download chapter.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 }
 
 @Composable
 private fun CanonicalChapterRow(
     item: CanonicalChapterDetailItem,
+    downloading: Boolean,
     onOpenChapter: (String) -> Unit,
+    onDownloadChapter: (String) -> Unit,
 ) {
     ListItem(
         headlineContent = {
@@ -211,22 +223,38 @@ private fun CanonicalChapterRow(
             }
         },
         trailingContent = {
-            when (item.confirmation) {
-                CanonicalChapterConfirmation.PROVISIONAL -> {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("Provisional") },
+            Column(
+                horizontalAlignment = Alignment.End,
+            ) {
+                when (item.confirmation) {
+                    CanonicalChapterConfirmation.PROVISIONAL -> {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("Provisional") },
+                        )
+                    }
+
+                    CanonicalChapterConfirmation.CONFLICTED -> {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("Conflicted") },
+                        )
+                    }
+
+                    CanonicalChapterConfirmation.CONFIRMED -> Unit
+                }
+                TextButton(
+                    enabled = !item.downloaded && !downloading,
+                    onClick = { onDownloadChapter(item.chapter.id) },
+                ) {
+                    Text(
+                        when {
+                            item.downloaded -> "Downloaded"
+                            downloading -> "Downloading…"
+                            else -> "Download"
+                        },
                     )
                 }
-
-                CanonicalChapterConfirmation.CONFLICTED -> {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("Conflicted") },
-                    )
-                }
-
-                CanonicalChapterConfirmation.CONFIRMED -> Unit
             }
         },
         modifier = Modifier.clickable {
