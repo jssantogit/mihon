@@ -36,6 +36,7 @@ fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
     onRemoveFromContinueReading: (HomeContinueReadingItem) -> Unit,
+    onCatalogItem: (CatalogItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -84,7 +85,10 @@ fun TsuzukiHomeScreen(
                         }
                         section.rows.forEach { row ->
                             item(key = "collection_row_${section.collectionId}_${row.listId}") {
-                                ConfiguredHomeRow(row)
+                                ConfiguredHomeRow(
+                                    row = row,
+                                    onCatalogItem = onCatalogItem,
+                                )
                             }
                         }
                     }
@@ -173,7 +177,10 @@ private fun ContinueReadingCard(
 }
 
 @Composable
-private fun ConfiguredHomeRow(row: HomeRow) {
+private fun ConfiguredHomeRow(
+    row: HomeRow,
+    onCatalogItem: (CatalogItem) -> Unit,
+) {
     if (row.title.isNotBlank()) {
         Text(
             text = row.title,
@@ -207,9 +214,14 @@ private fun ConfiguredHomeRow(row: HomeRow) {
 }
 
 @Composable
-private fun CatalogHomeCard(item: CatalogItem) {
+private fun CatalogHomeCard(
+    item: CatalogItem,
+    onClick: () -> Unit,
+) {
     Card(
-        modifier = Modifier.width(180.dp),
+        modifier = Modifier
+            .width(180.dp)
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
