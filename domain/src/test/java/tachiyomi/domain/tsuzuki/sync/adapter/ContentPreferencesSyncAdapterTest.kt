@@ -29,6 +29,7 @@ class ContentPreferencesSyncAdapterTest {
                     canonicalTitleId = "title-1",
                     preferredAddonId = AddonId("pkg.one"),
                     updatedAt = 30,
+                    preferredLanguage = "pt-BR",
                 ),
             ),
         )
@@ -48,6 +49,8 @@ class ContentPreferencesSyncAdapterTest {
         exported.kind shouldBe SyncDocumentKind.CONTENT_PREFERENCES
         exported.records.getValue("title:title-1")
             .fields["preferredAddonId"] shouldBe JsonPrimitive("pkg.one")
+        exported.records.getValue("title:title-1")
+            .fields["preferredLanguage"] shouldBe JsonPrimitive("pt-BR")
         exported.records.getValue("global")
             .fields["automaticFallback"] shouldBe JsonPrimitive(true)
         exported.records.getValue("global")
@@ -63,6 +66,7 @@ class ContentPreferencesSyncAdapterTest {
                         put("recordType", JsonPrimitive("title"))
                         put("canonicalTitleId", JsonPrimitive("title-1"))
                         put("preferredAddonId", JsonNull)
+                        put("preferredLanguage", JsonPrimitive("ja"))
                     },
                 ),
                 "global" to exported.records.getValue("global").copy(
@@ -82,6 +86,7 @@ class ContentPreferencesSyncAdapterTest {
         adapter.applyDocument(remote)
 
         repository.get("title-1")?.preferredAddonId shouldBe null
+        repository.get("title-1")?.preferredLanguage shouldBe "ja"
         repository.get("title-1")?.updatedAt shouldBe 80
         readerPreferences.automaticFallback.get() shouldBe false
         readerPreferences.preferredLanguages.get() shouldBe listOf("ja", "en")

@@ -154,6 +154,52 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
+    fun `same addon language switch offers title language preference separately`() = runTest(dispatcher) {
+        val preferences = FakeContentPreferenceRepository(
+            ContentPreference("title-1", AddonId("mangafire"), 10L, "en"),
+        )
+        val en = option("mangafire", "en", null, 200L).copy(key = "mf:en")
+        val pt = option("mangafire", "pt-BR", null, 100L).copy(key = "mf:pt")
+        val model = model(
+            providers = listOf(provider("mangafire", Result.success(listOf(en, pt)))),
+            addons = listOf(addon("mangafire", "MangaFire")),
+            preferenceRepository = preferences,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        val state = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        val selection = model.select(state.options.first { it.option.key == "mf:pt" })
+        selection.offerSetAsPreferred shouldBe false
+        selection.offerSetLanguagePreferred shouldBe true
+        preferences.value?.preferredLanguage shouldBe "en"
+        model.confirmPreferredLanguage(selection)
+        advanceUntilIdle()
+        preferences.value?.preferredAddonId shouldBe AddonId("mangafire")
+        preferences.value?.preferredLanguage shouldBe "pt-BR"
+    }
+
+    @Test
+    fun `changing addon keeps title language preference`() = runTest(dispatcher) {
+        val preferences = FakeContentPreferenceRepository(
+            ContentPreference("title-1", AddonId("mangadex"), 10L, "pt-BR"),
+        )
+        val model = model(
+            providers = listOf(provider("mangafire", Result.success(listOf(option("mangafire", "en", null, 10L))))),
+            addons = listOf(addon("mangafire", "MangaFire")),
+            preferenceRepository = preferences,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        val selection = model.select(
+            model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>().options.single(),
+        )
+        model.confirmPreferred(selection)
+        advanceUntilIdle()
+        preferences.value?.preferredAddonId shouldBe AddonId("mangafire")
+        preferences.value?.preferredLanguage shouldBe "pt-BR"
+    }
+
+    @Test
     fun `provider failure does not hide successful alternatives`() = runTest(dispatcher) {
         val healthy = option("healthy", "en", null, 100L)
         val model = model(

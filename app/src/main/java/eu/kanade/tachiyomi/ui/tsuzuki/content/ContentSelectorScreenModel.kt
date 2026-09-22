@@ -41,6 +41,7 @@ sealed interface ContentSelectorScreenState {
         val options: List<ContentOptionPresentation>,
         val preferredAddonId: AddonId?,
         val preferredOptionKey: String?,
+        val preferredLanguage: String?,
         val preferredUnavailable: Boolean,
     ) : ContentSelectorScreenState
 
@@ -61,6 +62,8 @@ data class SelectionResult(
     val option: ContentOption,
     val offerSetAsPreferred: Boolean,
     val rememberFirstPreference: Boolean = false,
+    val offerSetLanguagePreferred: Boolean = false,
+    val addonDisplayName: String? = null,
 )
 
 @ViewModelKey
@@ -125,6 +128,9 @@ class ContentSelectorScreenModel internal constructor(
             offerSetAsPreferred = hasExistingPreference &&
                 state.preferredAddonId != item.option.addonId,
             rememberFirstPreference = !hasExistingPreference,
+            offerSetLanguagePreferred = item.language != null &&
+                !item.language.equals(state.preferredLanguage, ignoreCase = true),
+            addonDisplayName = item.addonDisplayName,
         )
     }
 
@@ -136,6 +142,8 @@ class ContentSelectorScreenModel internal constructor(
                     ContentPreference(
                         canonicalTitleId = selection.canonicalTitleId,
                         preferredAddonId = selection.option.addonId,
+                        preferredLanguage = contentPreferenceRepository
+                            .get(selection.canonicalTitleId)?.preferredLanguage,
                         updatedAt = clock(),
                     ),
                 )
@@ -145,10 +153,28 @@ class ContentSelectorScreenModel internal constructor(
 
     fun confirmPreferred(selection: SelectionResult): Job {
         return viewModelScope.launch {
+            val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
             contentPreferenceRepository.upsert(
                 ContentPreference(
                     canonicalTitleId = selection.canonicalTitleId,
                     preferredAddonId = selection.option.addonId,
+                    preferredLanguage = existing?.preferredLanguage,
+                    updatedAt = clock(),
+                ),
+            )
+        }
+    }
+
+    fun confirmPreferredLanguage(selection: SelectionResult): Job {
+        val language = requireNotNull(selection.option.language).trim()
+        require(language.isNotEmpty()) { "Preferred language cannot be blank" }
+        return viewModelScope.launch {
+            val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
+            contentPreferenceRepository.upsert(
+                ContentPreference(
+                    canonicalTitleId = selection.canonicalTitleId,
+                    preferredAddonId = existing?.preferredAddonId,
+                    preferredLanguage = language,
                     updatedAt = clock(),
                 ),
             )
@@ -194,6 +220,7 @@ class ContentSelectorScreenModel internal constructor(
                     preferredOptionKey = preferredAddonId?.let { preferred ->
                         options.firstOrNull { it.addonId == preferred }?.key
                     },
+                    preferredLanguage = preference?.preferredLanguage,
                     preferredUnavailable = preferredAddonId != null &&
                         options.none { it.addonId == preferredAddonId },
                 )

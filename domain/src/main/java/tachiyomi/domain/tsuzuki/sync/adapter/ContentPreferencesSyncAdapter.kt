@@ -50,6 +50,10 @@ class ContentPreferencesSyncAdapter(
                                 ?.let(::JsonPrimitive)
                                 ?: JsonNull,
                         )
+                        put(
+                            "preferredLanguage",
+                            preference.preferredLanguage?.let(::JsonPrimitive) ?: JsonNull,
+                        )
                     },
                 )
             }
@@ -116,10 +120,18 @@ class ContentPreferencesSyncAdapter(
             AddonId(addonElement.jsonPrimitive.content)
         }
 
+        val languageElement = record.fields["preferredLanguage"]
+        val preferredLanguage = if (languageElement == null || languageElement is JsonNull) {
+            null // Older sync documents do not contain this field.
+        } else {
+            languageElement.jsonPrimitive.content.trim().takeIf(String::isNotEmpty)
+        }
+
         repository.upsert(
             ContentPreference(
                 canonicalTitleId = canonicalTitleId,
                 preferredAddonId = preferredAddonId,
+                preferredLanguage = preferredLanguage,
                 updatedAt = record.updatedAtEpochMillis,
             ),
         )
