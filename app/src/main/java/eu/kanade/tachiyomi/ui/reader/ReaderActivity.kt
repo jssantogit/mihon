@@ -249,6 +249,14 @@ class ReaderActivity : BaseActivity() {
                     ReaderViewModel.Event.CloseReader -> {
                         finish()
                     }
+                    is ReaderViewModel.Event.ContentSelectionReady -> {
+                        if (event.selection.rememberFirstPreference) {
+                            contentSelectorViewModel.confirmInitialPreferred(event.selection)
+                        }
+                    }
+                    is ReaderViewModel.Event.ContentSwitchFailed -> {
+                        toast(event.message)
+                    }
                     is ReaderViewModel.Event.SetOrientation -> {
                         setOrientation(event.orientation)
                     }
