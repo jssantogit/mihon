@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.RecordingChapterInventoryDiagnostics
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
+import java.net.SocketTimeoutException
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -27,10 +29,100 @@ import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 
 class MihonChapterInventoryGatewayTest {
+
+    @Test
+    fun `diagnostic records complete raw inventory range without changing mapped snapshots`() = runTest {
+        val rawChapters = (1..234).map { number ->
+            chapter("/private/chapter/$number", "Chapter $number", number.toFloat(), "Group", number.toLong())
+        }
+        val diagnostics = RecordingChapterInventoryDiagnostics()
+        diagnostics.start("title-1")
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(TestSource(7L) { rawChapters }),
+            diagnostics = diagnostics,
+        )
+
+        val inventory = gateway.fetch(mapping(), refresh = true).getOrThrow()
+
+        inventory.chapters.size shouldBe 234
+        inventory.chapters.first().rawNumberHint shouldBe 1.0
+        inventory.chapters.last().rawNumberHint shouldBe 234.0
+        val event = diagnostics.events.single()
+        event.stage shouldBe ChapterInventoryDiagnosticStage.INVENTORY
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.SUCCESS
+        event.sourceId shouldBe 7L
+        event.language shouldBe "en"
+        event.received shouldBe 234
+        event.labels shouldContainExactly listOf("1", "234")
+        event.gaps shouldBe emptyList()
+        diagnostics.report().contains("/private/chapter/") shouldBe false
+    }
+
+    @Test
+    fun `diagnostic exposes a 138 start rather than implying chapters before it were returned`() = runTest {
+        val diagnostics = RecordingChapterInventoryDiagnostics()
+        diagnostics.start("title-1")
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(
+                TestSource(7L) {
+                    (138..234).map { number ->
+                        chapter("/private/chapter/$number", "Chapter $number", number.toFloat(), null, number.toLong())
+                    }
+                },
+            ),
+            diagnostics = diagnostics,
+        )
+
+        val inventory = gateway.fetch(mapping(), refresh = true).getOrThrow()
+
+        inventory.chapters.size shouldBe 97
+        inventory.chapters.first().rawNumberHint shouldBe 138.0
+        inventory.chapters.last().rawNumberHint shouldBe 234.0
+        val event = diagnostics.events.single()
+        event.received shouldBe 97
+        event.labels shouldContainExactly listOf("138", "234")
+    }
+
+    @Test
+    fun `diagnostic distinguishes empty source inventory from extension timeout`() = runTest {
+        val diagnostics = RecordingChapterInventoryDiagnostics()
+        diagnostics.start("title-1")
+        val timeoutGateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(TestSource(7L) { throw SocketTimeoutException("private timeout") }),
+            diagnostics = diagnostics,
+        )
+        timeoutGateway.fetch(mapping(), refresh = true).isFailure shouldBe true
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+
+        diagnostics.clear()
+        diagnostics.start("title-1")
+        val emptyGateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(TestSource(7L) { emptyList() }),
+            diagnostics = diagnostics,
+        )
+
+        emptyGateway.fetch(mapping(), refresh = true).getOrThrow().chapters shouldBe emptyList()
+
+        val event = diagnostics.events.single()
+        event.stage shouldBe ChapterInventoryDiagnosticStage.INVENTORY
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.EMPTY
+        event.received shouldBe 0
+        diagnostics.report().contains("private timeout") shouldBe false
+    }
 
     @Test
     fun `fetch reads legacy chapters passes them to source and never writes mihon rows`() = runTest {
