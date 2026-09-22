@@ -168,6 +168,26 @@ class ParseCanonicalChapterLabelTest {
     }
 
     @Test
+    fun `numeric hint disambiguates compact volume chapter labels without fabricating structure`() {
+        val compact = parse.execute("9.46", numericHint = 46.0)
+        val genuineDecimal = parse.execute("9.46", numericHint = 9.46)
+        val shortDecimal = parse.execute("12.5", numericHint = 5.0)
+
+        compact.type shouldBe CanonicalChapterType.REGULAR
+        compact.baseNumber shouldBe 46
+        compact.part.shouldBeNull()
+        compact.displayNumber shouldBe "46"
+
+        genuineDecimal.baseNumber shouldBe 9
+        genuineDecimal.part shouldBe 46
+        genuineDecimal.displayNumber shouldBe "9.46"
+
+        shortDecimal.baseNumber shouldBe 12
+        shortDecimal.part shouldBe 5
+        shortDecimal.displayNumber shouldBe "12.5"
+    }
+
+    @Test
     fun `numeric hint is auxiliary and does not override an explicit label`() {
         val chapter = parse.execute("Chapter 12", numericHint = 99.0)
 
