@@ -44,6 +44,7 @@ class RefreshChapterEvidence private constructor(
 
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
         return try {
+            registry.awaitReady()
             val integrationEvidence = collectIntegrationEvidence(canonicalTitleId)
             val addonEvidence = collectAddonEvidence(canonicalTitleId)
             reconcileChapterEvidence.execute(
