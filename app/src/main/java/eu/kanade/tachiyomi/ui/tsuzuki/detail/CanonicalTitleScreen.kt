@@ -31,6 +31,8 @@ data class CanonicalTitleScreen(
             state = state,
             navigateUp = navigator::pop,
             onRefresh = { screenModel.refresh() },
+            onAddToLibrary = { screenModel.addToLibrary() },
+            onRemoveFromLibrary = { screenModel.removeFromLibrary() },
             onOpenChapter = { canonicalChapterId ->
                 context.startActivity(
                     ReaderActivity.newCanonicalIntent(
