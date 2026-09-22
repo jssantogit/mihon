@@ -12,6 +12,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.isInferredChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -71,7 +72,10 @@ class MihonContentProvider internal constructor(
             // Never infer a title binding from matching chapter numbers alone.
             val allowIdentityFallback = canonicalChapter.identity.isSpecific &&
                 canonicalChapter.confirmation != CanonicalChapterConfirmation.CONFLICTED &&
-                canonicalChapter.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE
+                (
+                    canonicalChapter.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE ||
+                        isInferredChapter(canonicalChapter)
+                    )
             if (sourceIdentities.isEmpty() &&
                 (!allowIdentityFallback || bindings.none(::trustedBinding))
             ) {

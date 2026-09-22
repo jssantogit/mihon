@@ -13,6 +13,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.inferredChapterId
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -291,6 +292,69 @@ class MihonContentProviderTest {
 
         provider.resolve("title", "canonical-chapter-37")
             .exceptionOrNull()?.message shouldBe "English source offline"
+    }
+
+    @Test
+    fun `count-only chapter resolves an exact release from trusted bound Add-on`() = runTest {
+        val linked = binding(id = "binding-pt", sourceKey = "7:/death-note")
+        val placeholder = CanonicalChapter(
+            id = inferredChapterId("title", 37),
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 0.0,
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), placeholder),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(inventory(it.id, 7L, "en", snapshot(7L, it.id, "/chapter-37", "en")))
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(7L, 99L, 370L))
+            },
+        )
+
+        val available = provider.resolve("title", placeholder.id).getOrThrow()
+        available.single().delivery shouldBe ContentDelivery.Mihon(7L, 99L, 370L)
+    }
+
+    @Test
+    fun `count-only number never resolves to mismatched upstream chapter`() = runTest {
+        val linked = binding(id = "binding-pt", sourceKey = "7:/death-note")
+        val placeholder = CanonicalChapter(
+            id = inferredChapterId("title", 37),
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 0.0,
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), placeholder),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-138", "en").copy(
+                            rawName = "Chapter 138",
+                            rawNumberHint = 138.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ -> error("must not materialize a mismatched chapter") },
+        )
+
+        provider.resolve("title", placeholder.id).getOrThrow() shouldBe emptyList()
     }
 
     @Test
