@@ -57,6 +57,28 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `ambiguous provisional decimal evidence does not create canonical structure`() = runTest {
+        val fixture = fixture()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    rawLabel = "Chapter 9.46",
+                    externalKey = "suspicious-9-46",
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 0
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "suspicious-9-46",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `decimal and extra evidence remain distinct logical chapters`() = runTest {
         val fixture = fixture()
 
