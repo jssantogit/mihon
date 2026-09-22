@@ -576,15 +576,6 @@ private fun ListRow(
         }
     }
 
-    DisposableEffect(list.id, list.enabled) {
-        if (list.enabled) {
-            onAction(CollectionsAction.ListVisibilityChanged(list.id, visible = true))
-        }
-        onDispose {
-            onAction(CollectionsAction.ListVisibilityChanged(list.id, visible = false))
-        }
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
