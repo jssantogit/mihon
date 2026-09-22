@@ -88,6 +88,12 @@ class ContentSelectorScreenModelTest {
 
         val firstReadSelection = model.select(dex)
         firstReadSelection.offerSetAsPreferred shouldBe false
+        firstReadSelection.rememberFirstPreference shouldBe true
+        advanceUntilIdle()
+        preferences.value shouldBe null
+
+        // The Reader calls this only after successful page preparation.
+        model.confirmInitialPreferred(firstReadSelection)
         advanceUntilIdle()
         preferences.value?.preferredAddonId shouldBe AddonId("mangadex")
         preferences.value?.updatedAt shouldBe 500L
@@ -97,6 +103,28 @@ class ContentSelectorScreenModelTest {
         fire.language shouldBe "pt-BR"
         fire.scanlationGroup shouldBe "Grupo B"
         fire.releaseDate shouldBe 200L
+    }
+
+    @Test
+    fun `failed first content choice never becomes preferred`() = runTest(dispatcher) {
+        val preferences = FakeContentPreferenceRepository(null)
+        val candidate = option("mangafire", "en", null, 10L)
+        val model = model(
+            providers = listOf(provider("mangafire", Result.success(listOf(candidate)))),
+            addons = listOf(addon("mangafire", "MangaFire")),
+            preferenceRepository = preferences,
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        val choice = model.select(
+            model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>().options.single(),
+        )
+        choice.rememberFirstPreference shouldBe true
+
+        // A Reader preparation failure does not call confirmInitialPreferred.
+        advanceUntilIdle()
+        preferences.value shouldBe null
     }
 
     @Test
