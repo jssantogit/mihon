@@ -53,6 +53,18 @@ class ReconcileChapterEvidence internal constructor(
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.identity.isSpecific
 
+            if (
+                observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+                !parsedIdentityIsReliable
+            ) {
+                val persisted = evidenceRepository.upsert(
+                    evidence = observation,
+                    mappedCanonicalChapterId = null,
+                )
+                persistedEvidence[persisted.evidence.id] = persisted
+                continue
+            }
+
             val externalEvidence = observation.externalChapterKey?.let { externalKey ->
                 evidenceRepository.getByProducerExternalKey(
                     producerKind = observation.producerKind,
