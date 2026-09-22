@@ -21,7 +21,11 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
+import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
@@ -42,6 +46,9 @@ sealed interface CanonicalTitleScreenState {
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
         val libraryMutationError: Throwable? = null,
+        val downloadInProgressChapterId: String? = null,
+        val downloadSelectionChapterId: String? = null,
+        val downloadError: Throwable? = null,
     ) : CanonicalTitleScreenState
 
     data class Error(
@@ -68,6 +75,8 @@ class CanonicalTitleScreenModel(
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val getCanonicalChapterDownloadState: GetCanonicalChapterDownloadState,
+    private val downloadCanonicalChapter: DownloadCanonicalChapter,
+    private val canonicalDownloadRepository: CanonicalDownloadRepository,
     private val refreshChapterEvidence: RefreshChapterEvidence,
 ) : ViewModel() {
 
@@ -79,6 +88,7 @@ class CanonicalTitleScreenModel(
 
     private var canonicalTitleId: String? = null
     private var operation: Job? = null
+    private var downloadOperation: Job? = null
 
     fun start(canonicalTitleId: String): Job {
         this.canonicalTitleId = canonicalTitleId
@@ -144,6 +154,81 @@ class CanonicalTitleScreenModel(
         }
     }
 
+    fun requestDownload(canonicalChapterId: String): Job? {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return null
+        if (loaded.chapters.none { it.chapter.id == canonicalChapterId }) return null
+        downloadOperation?.cancel()
+        _state.value = loaded.copy(
+            downloadInProgressChapterId = canonicalChapterId,
+            downloadSelectionChapterId = null,
+            downloadError = null,
+        )
+        downloadOperation = viewModelScope.launch {
+            val result = downloadCanonicalChapter.execute(canonicalChapterId)
+            applyDownloadResult(result)
+        }
+        return downloadOperation
+    }
+
+    fun downloadSelectedOption(option: ContentOption): Job? {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return null
+        val chapterId = loaded.downloadSelectionChapterId ?: option.canonicalChapterId
+        if (option.canonicalChapterId != chapterId) return null
+
+        downloadOperation?.cancel()
+        _state.value = loaded.copy(
+            downloadInProgressChapterId = chapterId,
+            downloadSelectionChapterId = null,
+            downloadError = null,
+        )
+        downloadOperation = viewModelScope.launch {
+            val result = downloadCanonicalChapter.execute(
+                canonicalChapterId = chapterId,
+                selectedOption = option,
+            )
+            applyDownloadResult(result)
+        }
+        return downloadOperation
+    }
+
+    fun dismissDownloadSelector() {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
+        _state.value = loaded.copy(downloadSelectionChapterId = null)
+    }
+
+    private fun applyDownloadResult(result: CanonicalDownloadPreparation) {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
+        _state.value = when (result) {
+            is CanonicalDownloadPreparation.Complete -> loaded.copy(
+                chapters = loaded.chapters.map { item ->
+                    if (item.chapter.id == result.canonicalChapterId) {
+                        item.copy(downloaded = true)
+                    } else {
+                        item
+                    }
+                },
+                downloadInProgressChapterId = null,
+                downloadSelectionChapterId = null,
+                downloadError = null,
+            )
+            is CanonicalDownloadPreparation.SelectionRequired -> loaded.copy(
+                downloadInProgressChapterId = null,
+                downloadSelectionChapterId = result.canonicalChapterId,
+                downloadError = null,
+            )
+            is CanonicalDownloadPreparation.Unavailable -> loaded.copy(
+                downloadInProgressChapterId = null,
+                downloadSelectionChapterId = null,
+                downloadError = IllegalStateException("No content option is available for this chapter."),
+            )
+            is CanonicalDownloadPreparation.Failed -> loaded.copy(
+                downloadInProgressChapterId = null,
+                downloadSelectionChapterId = null,
+                downloadError = result.error,
+            )
+        }
+    }
+
     private fun updateLibraryState(entry: CanonicalLibraryEntry?) {
         val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
         _state.value = loaded.copy(
@@ -182,11 +267,12 @@ class CanonicalTitleScreenModel(
                     async {
                         val progress =
                             canonicalReadingRepository.getProgress(chapter.id)
-                        val downloaded = runCatching {
-                            getCanonicalChapterDownloadState
-                                .execute(chapter.id)
-                                .hasDownload
-                        }.getOrDefault(false)
+                        val downloaded = canonicalDownloadRepository.get(chapter.id) != null ||
+                            runCatching {
+                                getCanonicalChapterDownloadState
+                                    .execute(chapter.id)
+                                    .hasDownload
+                            }.getOrDefault(false)
                         CanonicalChapterDetailItem(
                             chapter = chapter,
                             progress = progress,
