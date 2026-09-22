@@ -263,11 +263,13 @@ class CanonicalTitleMergeRepositoryImplTest {
         database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
             canonicalTitleId = "winner",
             preferredAddonId = "addon-a",
+            preferredLanguage = null,
             updatedAt = 1L,
         )
         database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
             canonicalTitleId = "duplicate",
             preferredAddonId = "addon-b",
+            preferredLanguage = null,
             updatedAt = 2L,
         )
 
@@ -303,10 +305,10 @@ class CanonicalTitleMergeRepositoryImplTest {
         titleRepository.getById("winner")?.id shouldBe "winner"
         titleRepository.getById("duplicate")?.id shouldBe "duplicate"
         database.tsuzuki_content_preferencesQueries
-            .getTsuzukiContentPreference("winner") { _, _, preferredLanguage, _ -> preferredLanguage }
+            .getTsuzukiContentPreference("winner") { _, _, preferredLanguage, _ -> preferredLanguage.orEmpty() }
             .awaitAsOneOrNull() shouldBe "en"
         database.tsuzuki_content_preferencesQueries
-            .getTsuzukiContentPreference("duplicate") { _, _, preferredLanguage, _ -> preferredLanguage }
+            .getTsuzukiContentPreference("duplicate") { _, _, preferredLanguage, _ -> preferredLanguage.orEmpty() }
             .awaitAsOneOrNull() shouldBe "pt-BR"
     }
 
