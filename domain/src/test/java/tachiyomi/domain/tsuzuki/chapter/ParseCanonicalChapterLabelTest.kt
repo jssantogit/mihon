@@ -182,6 +182,7 @@ class ParseCanonicalChapterLabelTest {
         genuineDecimal.baseNumber shouldBe 9
         genuineDecimal.part shouldBe 46
         genuineDecimal.displayNumber shouldBe "9.46"
+        genuineDecimal.confidence shouldBe 0.80
 
         shortDecimal.baseNumber shouldBe 12
         shortDecimal.part shouldBe 5
