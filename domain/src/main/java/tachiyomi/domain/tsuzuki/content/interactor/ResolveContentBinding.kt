@@ -2,6 +2,11 @@ package tachiyomi.domain.tsuzuki.content.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
@@ -97,35 +102,47 @@ class ResolveContentBinding internal constructor(
 
         val selected = mutableListOf<ScoredSourceCandidate>()
         val confirmationCandidates = mutableListOf<ScoredSourceCandidate>()
+        val searchGate = Semaphore(MAX_CONCURRENT_SOURCE_SEARCHES)
 
-        addon.mihonSourceIds.distinct().forEachIndexed { sourceRank, sourceId ->
-            val results = try {
-                readingSourceGateway.search(sourceId, canonicalTitle.displayTitle)
-                    .getOrElse { failure ->
-                        if (failure is CancellationException) throw failure
-                        return@forEachIndexed
+        val candidatesBySource = coroutineScope {
+            addon.mihonSourceIds
+                .distinct()
+                .mapIndexed { sourceRank, sourceId ->
+                    async {
+                        val results = searchGate.withPermit {
+                            try {
+                                readingSourceGateway.search(sourceId, canonicalTitle.displayTitle)
+                                    .getOrElse { failure ->
+                                        if (failure is CancellationException) throw failure
+                                        emptyList()
+                                    }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Throwable) {
+                                emptyList()
+                            }
+                        }
+
+                        sourceRank to results
+                            .distinctBy { it.sourceId to it.sourceUrl }
+                            .map { candidate ->
+                                ScoredSourceCandidate(
+                                    candidate = candidate,
+                                    confidence = scoreSourceTitleMatch(
+                                        targetTitle = canonicalTitle.displayTitle,
+                                        candidateTitle = candidate.title,
+                                    ),
+                                    sourcePreferenceRank = sourceRank,
+                                )
+                            }
+                            .sortedByDescending { it.confidence }
                     }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Throwable) {
-                return@forEachIndexed
-            }
-
-            val candidates = results
-                .distinctBy { it.sourceId to it.sourceUrl }
-                .map { candidate ->
-                    ScoredSourceCandidate(
-                        candidate = candidate,
-                        confidence = scoreSourceTitleMatch(
-                            targetTitle = canonicalTitle.displayTitle,
-                            candidateTitle = candidate.title,
-                        ),
-                        sourcePreferenceRank = sourceRank,
-                    )
                 }
-                .sortedByDescending { it.confidence }
+                .awaitAll()
+        }
 
-            val best = candidates.firstOrNull() ?: return@forEachIndexed
+        for ((_, candidates) in candidatesBySource) {
+            val best = candidates.firstOrNull() ?: continue
             val second = candidates.getOrNull(1)
             val highConfidence = best.confidence >= AUTO_MATCH_THRESHOLD
             val unambiguousWithinSource =
@@ -206,6 +223,7 @@ class ResolveContentBinding internal constructor(
         const val AUTO_MATCH_MARGIN = 0.08
         const val CONFIRMATION_THRESHOLD = 0.70
         const val MAX_CONFIRMATION_CANDIDATES = 5
+        const val MAX_CONCURRENT_SOURCE_SEARCHES = 4
     }
 }
 
