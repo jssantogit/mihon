@@ -28,6 +28,7 @@ import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
@@ -85,6 +86,7 @@ class RuntimeV2SmokeReadinessTest {
             ),
             addonRegistry = addonRegistry,
             resolveContentBinding = bindingResolver,
+            contentOptionCache = ContentOptionCache(),
         )
 
         refresh.execute(TITLE_ID).isSuccess shouldBe true
