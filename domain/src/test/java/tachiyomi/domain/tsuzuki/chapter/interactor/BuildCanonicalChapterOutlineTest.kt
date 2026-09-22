@@ -84,7 +84,7 @@ class BuildCanonicalChapterOutlineTest {
         ReportedChapterCount(title, provider, value, 1L)
 
     private fun chapter(number: Int, part: Int? = null): CanonicalChapter = CanonicalChapter(
-        id = "chapter-$number-${part ?: "base"}",
+        id = "chapter-$number" + (part?.let { "-$it" } ?: ""),
         canonicalTitleId = "title",
         displayNumber = number.toString() + (part?.let { ".$it" } ?: ""),
         type = CanonicalChapterType.REGULAR,
