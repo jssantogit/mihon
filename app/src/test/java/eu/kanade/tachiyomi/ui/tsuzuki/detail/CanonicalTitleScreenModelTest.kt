@@ -18,6 +18,9 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
@@ -91,6 +94,7 @@ class CanonicalTitleScreenModelTest {
             downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
             canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
             reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
@@ -180,6 +184,7 @@ class CanonicalTitleScreenModelTest {
             downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
             canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
             reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
         )
@@ -190,6 +195,8 @@ class CanonicalTitleScreenModelTest {
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
         state.chapters.single().confirmation shouldBe CanonicalChapterConfirmation.PROVISIONAL
         state.chapters.single().chapter.id shouldBe "chapter-37"
+        state.addonCoverage.single().displayName shouldBe "MangaFire"
+        state.addonCoverage.single().firstKnownNumber shouldBe 37
     }
 
     @Test
@@ -234,6 +241,7 @@ class CanonicalTitleScreenModelTest {
             downloadCanonicalChapter = mockk(relaxed = true),
             canonicalDownloadRepository = downloads,
             reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
@@ -300,6 +308,7 @@ class CanonicalTitleScreenModelTest {
             downloadCanonicalChapter = downloader,
             canonicalDownloadRepository = downloads,
             reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
@@ -377,6 +386,7 @@ class CanonicalTitleScreenModelTest {
             downloadCanonicalChapter = mockk(relaxed = true),
             canonicalDownloadRepository = downloads,
             reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
@@ -435,6 +445,7 @@ class CanonicalTitleScreenModelTest {
             downloadCanonicalChapter = mockk(relaxed = true),
             canonicalDownloadRepository = downloads,
             reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
@@ -452,6 +463,23 @@ class CanonicalTitleScreenModelTest {
         model.state.value
             .shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters shouldBe emptyList()
+    }
+
+    private class FakeAddonRepository : AddonRepository {
+        private val addons = listOf(
+            InstalledAddon(
+                id = AddonId("mangafire"),
+                displayName = "MangaFire",
+                enabled = true,
+                versionName = "1.0",
+                mihonSourceIds = emptyList(),
+                hasSettings = false,
+            ),
+        )
+
+        override fun observeInstalled(): Flow<List<InstalledAddon>> = MutableStateFlow(addons)
+        override suspend fun snapshot(): List<InstalledAddon> = addons
+        override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
     }
 
     private fun metadataRefresh(

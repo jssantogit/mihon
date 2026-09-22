@@ -176,6 +176,20 @@ private fun TitleHeader(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        state.addonCoverage.forEach { coverage ->
+            val observedRange = when {
+                coverage.firstKnownNumber == null -> ""
+                coverage.firstKnownNumber == coverage.lastKnownNumber ->
+                    ", chapter ${coverage.firstKnownNumber}"
+                else -> ", chapters ${coverage.firstKnownNumber}–${coverage.lastKnownNumber}"
+            }
+            Text(
+                text = "${coverage.displayName}: ${coverage.observedChapterCount} chapters recorded" +
+                    "$observedRange (availability not guaranteed)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         val firstDiscovered = firstDiscoveredChapterNumber(state.chapters.map { it.chapter })
         if (firstDiscovered != null && firstDiscovered > 1) {
             Text(

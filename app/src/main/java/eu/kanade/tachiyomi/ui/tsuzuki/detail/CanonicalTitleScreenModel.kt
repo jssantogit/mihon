@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
@@ -52,6 +53,7 @@ sealed interface CanonicalTitleScreenState {
         val libraryEntry: CanonicalLibraryEntry?,
         val chapters: List<CanonicalChapterDetailItem>,
         val reportedChapterCounts: List<ReportedChapterCount> = emptyList(),
+        val addonCoverage: List<ObservedAddonCoverage> = emptyList(),
         val isRefreshing: Boolean = false,
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
@@ -89,6 +91,7 @@ class CanonicalTitleScreenModel(
     private val downloadCanonicalChapter: DownloadCanonicalChapter,
     private val canonicalDownloadRepository: CanonicalDownloadRepository,
     private val reportedChapterCountRepository: ReportedChapterCountRepository,
+    private val addonRepository: AddonRepository,
     private val refreshReportedChapterCounts: RefreshReportedChapterCounts,
     private val refreshChapterEvidence: RefreshChapterEvidence,
 ) : ViewModel() {
@@ -319,10 +322,17 @@ class CanonicalTitleScreenModel(
             ?: throw NoSuchElementException("Canonical title not found: $canonicalTitleId")
         val libraryEntry = canonicalLibraryRepository.get(canonicalTitleId)
         val chapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
-        val supportedChapterIds = chapterEvidenceRepository
-            .getByCanonicalTitleId(canonicalTitleId)
+        val persistedEvidence = chapterEvidenceRepository.getByCanonicalTitleId(canonicalTitleId)
+        val supportedChapterIds = persistedEvidence
             .mapNotNull { it.mappedCanonicalChapterId }
             .toSet()
+        val addonNames = try {
+            addonRepository.snapshot().associate { it.id.value to it.displayName }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            emptyMap()
+        }
         val progressByChapter = canonicalReadingRepository
             .getProgressByCanonicalTitleId(canonicalTitleId)
             .associateBy(CanonicalChapterProgress::canonicalChapterId)
@@ -392,6 +402,7 @@ class CanonicalTitleScreenModel(
             libraryEntry = libraryEntry,
             chapters = details,
             reportedChapterCounts = reportedCounts,
+            addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )
