@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.search
 
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +65,12 @@ class TsuzukiSearchScreenModelTest {
         registry.release()
         advanceUntilIdle()
 
-        model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        val discover = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        discover.blocks.map(DiscoverBlock::kind) shouldBe listOf(
+            DiscoverKind.TRENDING,
+            DiscoverKind.POPULAR,
+            DiscoverKind.RECENTLY_UPDATED,
+        )
     }
 
     @Test
