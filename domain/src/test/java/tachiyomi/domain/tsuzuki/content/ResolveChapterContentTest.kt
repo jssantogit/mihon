@@ -174,10 +174,18 @@ class ResolveChapterContentTest {
                 canonicalChapterId: String,
             ): Result<List<ContentOption>> = Result.failure(IllegalStateException("timeout"))
         }
+        val empty = object : ContentProvider {
+            override val addonId = AddonId("empty")
+
+            override suspend fun resolve(
+                canonicalTitleId: String,
+                canonicalChapterId: String,
+            ): Result<List<ContentOption>> = Result.success(emptyList())
+        }
         val resolver = fixture(
             preference = null,
             automaticFallback = false,
-            providers = listOf(failed, provider("empty")),
+            providers = listOf(failed, empty),
         )
 
         val result = resolver.lookupOptions("title", "chapter-37")
