@@ -18,6 +18,13 @@ import tachiyomi.domain.tsuzuki.content.model.ContentResolution
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
+/** Keeps provider failures separate from a genuine no-chapters result. */
+data class ContentOptionLookup(
+    val options: List<ContentOption>,
+    val failedProviders: List<AddonId>,
+    val queriedProviderCount: Int,
+)
+
 @Inject
 class ResolveChapterContent(
     private val addonRegistry: AddonRegistry,
@@ -118,7 +125,17 @@ class ResolveChapterContent(
         canonicalTitleId: String,
         canonicalChapterId: String,
         refresh: Boolean = false,
-    ): List<ContentOption> {
+    ): List<ContentOption> = lookupOptions(
+        canonicalTitleId = canonicalTitleId,
+        canonicalChapterId = canonicalChapterId,
+        refresh = refresh,
+    ).options
+
+    suspend fun lookupOptions(
+        canonicalTitleId: String,
+        canonicalChapterId: String,
+        refresh: Boolean = false,
+    ): ContentOptionLookup {
         addonRegistry.awaitReady()
         if (refresh) {
             contentOptionCache.invalidateChapter(
@@ -128,7 +145,7 @@ class ResolveChapterContent(
         }
 
         val providers = addonRegistry.contentProviders()
-        if (providers.isEmpty()) return emptyList()
+        if (providers.isEmpty()) return ContentOptionLookup(emptyList(), emptyList(), 0)
 
         val titlePreference = contentPreferenceRepository.get(canonicalTitleId)
         val preferredAddonId = titlePreference?.preferredAddonId
@@ -136,25 +153,35 @@ class ResolveChapterContent(
             titlePreference?.preferredLanguage,
             readerPreferences.preferredLanguages.get(),
         )
-        val options = coroutineScope {
+        val resolved = coroutineScope {
             val gate = Semaphore(MAX_CONCURRENT_PROVIDER_RESOLUTIONS)
             providers.map { provider ->
                 async {
                     gate.withPermit {
-                        resolveProvider(
+                        provider.addonId to resolveProvider(
                             provider = provider,
                             canonicalTitleId = canonicalTitleId,
                             canonicalChapterId = canonicalChapterId,
-                        ).optionsOrEmpty()
+                        )
                     }
                 }
-            }.awaitAll().flatten()
+            }.awaitAll()
         }
 
-        return rankContentOptions.execute(
-            options = options,
-            preferredAddonId = preferredAddonId,
-            preferredLanguages = preferredLanguages,
+        val failed = resolved.mapNotNull { (addonId, result) ->
+            result.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
+                addonId
+            }
+        }
+        return ContentOptionLookup(
+            options = rankContentOptions.execute(
+                options = resolved.flatMap { (_, result) -> result.getOrNull().orEmpty() },
+                preferredAddonId = preferredAddonId,
+                preferredLanguages = preferredLanguages,
+            ),
+            failedProviders = failed,
+            queriedProviderCount = providers.size,
         )
     }
 

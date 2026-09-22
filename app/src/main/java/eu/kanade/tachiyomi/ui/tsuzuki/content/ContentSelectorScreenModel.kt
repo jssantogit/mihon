@@ -45,6 +45,7 @@ sealed interface ContentSelectorScreenState {
         val preferredOptionKey: String?,
         val preferredLanguage: String?,
         val preferredUnavailable: Boolean,
+        val failedProviderCount: Int = 0,
     ) : ContentSelectorScreenState
 
     data class Empty(
@@ -199,11 +200,22 @@ class ContentSelectorScreenModel internal constructor(
         loadJob = viewModelScope.launch {
             try {
                 val preference = contentPreferenceRepository.get(titleId)
-                val options = resolveChapterContent.resolveOptions(
+                val lookup = resolveChapterContent.lookupOptions(
                     canonicalTitleId = titleId,
                     canonicalChapterId = chapterId,
                     refresh = refresh,
                 )
+                val options = lookup.options
+                if (options.isEmpty() && lookup.failedProviders.isNotEmpty()) {
+                    _state.value = ContentSelectorScreenState.Error(
+                        canonicalTitleId = titleId,
+                        canonicalChapterId = chapterId,
+                        error = IllegalStateException(
+                            "Could not query ${lookup.failedProviders.size} reading Add-on(s). Retry or choose another source.",
+                        ),
+                    )
+                    return@launch
+                }
                 if (options.isEmpty()) {
                     _state.value = ContentSelectorScreenState.Empty(
                         canonicalTitleId = titleId,
@@ -237,6 +249,7 @@ class ContentSelectorScreenModel internal constructor(
                     preferredLanguage = preference?.preferredLanguage,
                     preferredUnavailable = preferredAddonId != null &&
                         options.none { it.addonId == preferredAddonId },
+                    failedProviderCount = lookup.failedProviders.size,
                 )
             } catch (error: CancellationException) {
                 throw error

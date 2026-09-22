@@ -60,6 +60,14 @@ fun ContentOptionSelectorSheet(
                 }
 
                 is ContentSelectorScreenState.Ready -> {
+                    if (state.failedProviderCount > 0) {
+                        Text(
+                            text = "${state.failedProviderCount} reading Add-on(s) could not be queried. " +
+                                "Available alternatives are shown below.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()

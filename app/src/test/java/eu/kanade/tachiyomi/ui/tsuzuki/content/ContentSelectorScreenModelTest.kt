@@ -215,6 +215,23 @@ class ContentSelectorScreenModelTest {
 
         val state = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
         state.options.map { it.option.key } shouldBe listOf(healthy.key)
+        state.failedProviderCount shouldBe 1
+    }
+
+    @Test
+    fun `all provider failures show a retryable error instead of no chapters`() = runTest(dispatcher) {
+        val model = model(
+            providers = listOf(
+                provider("offline", Result.failure(IllegalStateException("network timeout"))),
+            ),
+            addons = listOf(addon("offline", "Offline Add-on")),
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val state = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Error>()
+        state.error.message shouldBe "Could not query 1 reading Add-on(s). Retry or choose another source."
     }
 
     @Test

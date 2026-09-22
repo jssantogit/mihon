@@ -165,6 +165,29 @@ class ResolveChapterContentTest {
     }
 
     @Test
+    fun `content lookup distinguishes provider failure from empty successful inventory`() = runTest {
+        val failed = object : ContentProvider {
+            override val addonId = AddonId("unavailable")
+
+            override suspend fun resolve(
+                canonicalTitleId: String,
+                canonicalChapterId: String,
+            ): Result<List<ContentOption>> = Result.failure(IllegalStateException("timeout"))
+        }
+        val resolver = fixture(
+            preference = null,
+            automaticFallback = false,
+            providers = listOf(failed, provider("empty")),
+        )
+
+        val result = resolver.lookupOptions("title", "chapter-37")
+
+        result.options shouldBe emptyList()
+        result.failedProviders shouldBe listOf(AddonId("unavailable"))
+        result.queriedProviderCount shouldBe 2
+    }
+
+    @Test
     fun `switching provider preserves canonical chapter identity used by progress`() = runTest {
         val preferenceRepository = FakeContentPreferenceRepository(
             ContentPreference("title", AddonId("mangadex"), 1L),
