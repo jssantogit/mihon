@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -78,7 +79,10 @@ class CatalogScreenModelTest {
         libraryRepository: CanonicalLibraryRepository = FakeCanonicalLibraryRepository(),
     ): AddCatalogItemToLibrary {
         val materializeCanonicalTitle = MaterializeCanonicalTitle(repository = titleRepository)
-        val materializeFromCatalog = MaterializeCanonicalTitleFromCatalog(materializeCanonicalTitle)
+        val materializeFromCatalog = MaterializeCanonicalTitleFromCatalog(
+            materializeCanonicalTitle,
+            mockk(relaxed = true),
+        )
         return AddCatalogItemToLibrary(
             materializeCanonicalTitleFromCatalog = materializeFromCatalog,
             canonicalLibraryRepository = libraryRepository,
@@ -378,6 +382,7 @@ class CatalogScreenModelTest {
         val failingInteractor = AddCatalogItemToLibrary(
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
                 MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
             ),
             canonicalLibraryRepository = object : CanonicalLibraryRepository {
                 override suspend fun get(canonicalTitleId: String): CanonicalLibraryEntry? = null
