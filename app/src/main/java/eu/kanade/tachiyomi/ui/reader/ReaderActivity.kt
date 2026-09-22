@@ -413,7 +413,7 @@ class ReaderActivity : BaseActivity() {
             is ReaderViewModel.Dialog.SetPreferredAddon -> {
                 val preference = state.dialog as ReaderViewModel.Dialog.SetPreferredAddon
                 AlertDialog(
-                    onDismissRequest = viewModel::closeDialog,
+                    onDismissRequest = { viewModel.finishAddonPreferencePrompt(preference.selection) },
                     title = {
                         Text(stringResource(MR.strings.tsuzuki_content_set_preferred_title))
                     },
