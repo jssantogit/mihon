@@ -13,7 +13,7 @@
 
 ## Evidence snapshot
 
-Six work records were re-queried directly against each of the four APIs (24 record GETs, all HTTP 200); MangaDex additionally had six aggregate GETs (also HTTP 200). Values are in CSV with IDs, endpoints, dates and scopes. The four provider values for the focus works demonstrate that concordance is not proof of independent origin. Primary official pages support VIZ OPM #237, Tonari OPM #257, WEBTOON FMA Episode 150, Shonen Jump+ Chainsaw Man #232, Magazine Pocket Blue Lock #342 (dated 2026-04-08), and Shonen Jump+ Kingdom #871 (2026-09-10). The Berserk exact #401 remains unverified from a primary enumerated chapter page.
+Direct HTTP query count: 48 attempts — 24 provider detail GETs (HTTP 200), 18 focused MangaDex aggregate GETs (HTTP 200), and six exploratory MangaDex chapter-list GETs (HTTP 400 from incompatible query parameters, discarded). Values are in CSV with IDs, endpoints, dates and scopes. The four provider values for the focus works demonstrate that concordance is not proof of independent origin. Primary official pages support VIZ OPM #237, Tonari OPM #257, WEBTOON FMA Episode 150, Shonen Jump+ Chainsaw Man #232, Magazine Pocket Blue Lock #342 (dated 2026-04-08), and Shonen Jump+ Kingdom #871 (2026-09-10). The Berserk exact #401 remains unverified from a primary enumerated chapter page.
 
 ## Pending decisions / stop conditions
 
