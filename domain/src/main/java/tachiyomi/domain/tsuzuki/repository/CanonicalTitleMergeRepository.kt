@@ -24,6 +24,13 @@ sealed class CanonicalTitleMergeConflict(
         "Cannot merge canonical titles with different preferred Add-ons: target=$targetAddonId, local=$localAddonId",
     )
 
+    class PreferredLanguageConflict(
+        val targetLanguage: String,
+        val localLanguage: String,
+    ) : CanonicalTitleMergeConflict(
+        "Cannot merge canonical titles with different preferred languages: target=$targetLanguage, local=$localLanguage",
+    )
+
     class PreferredSourceConflict(
         val targetMappingId: String,
         val localMappingId: String,

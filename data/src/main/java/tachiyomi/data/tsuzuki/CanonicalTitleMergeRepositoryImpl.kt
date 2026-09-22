@@ -193,6 +193,7 @@ class CanonicalTitleMergeRepositoryImpl(
                 database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
                     canonicalTitleId = targetId,
                     preferredAddonId = preference.preferredAddonId,
+                    preferredLanguage = preference.preferredLanguage,
                     updatedAt = preference.updatedAt,
                 )
             }
@@ -288,8 +289,8 @@ class CanonicalTitleMergeRepositoryImpl(
 
     private suspend fun getContentPreference(id: String): ContentPreferenceRow? =
         database.tsuzuki_content_preferencesQueries
-            .getTsuzukiContentPreference(id) { canonicalTitleId, preferredAddonId, updatedAt ->
-                ContentPreferenceRow(canonicalTitleId, preferredAddonId, updatedAt)
+            .getTsuzukiContentPreference(id) { canonicalTitleId, preferredAddonId, preferredLanguage, updatedAt ->
+                ContentPreferenceRow(canonicalTitleId, preferredAddonId, preferredLanguage, updatedAt)
             }
             .awaitAsOneOrNull()
 
@@ -306,9 +307,17 @@ class CanonicalTitleMergeRepositoryImpl(
         if (targetAddon != null && localAddon != null && targetAddon != localAddon) {
             throw CanonicalTitleMergeConflict.PreferredAddonConflict(targetAddon, localAddon)
         }
+        val targetLanguage = target.preferredLanguage
+        val localLanguage = local.preferredLanguage
+        if (targetLanguage != null && localLanguage != null &&
+            !targetLanguage.equals(localLanguage, ignoreCase = true)
+        ) {
+            throw CanonicalTitleMergeConflict.PreferredLanguageConflict(targetLanguage, localLanguage)
+        }
         return ContentPreferenceRow(
             canonicalTitleId = targetId,
             preferredAddonId = targetAddon ?: localAddon,
+            preferredLanguage = targetLanguage ?: localLanguage,
             updatedAt = maxOf(target.updatedAt, local.updatedAt),
         )
     }
@@ -587,6 +596,7 @@ class CanonicalTitleMergeRepositoryImpl(
     private data class ContentPreferenceRow(
         val canonicalTitleId: String,
         val preferredAddonId: String?,
+        val preferredLanguage: String?,
         val updatedAt: Long,
     )
 
