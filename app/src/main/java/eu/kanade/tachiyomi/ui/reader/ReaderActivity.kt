@@ -306,14 +306,15 @@ class ReaderActivity : BaseActivity() {
 
             ContentOverlay(state = state)
 
-            if (!state.menuVisible && state.activeContentLabel != null) {
+            val activeContentLabel = state.activeContentLabel
+            if (!state.menuVisible && activeContentLabel != null) {
                 Surface(
                     modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     Text(
-                        text = state.activeContentLabel,
+                        text = activeContentLabel,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                     )
