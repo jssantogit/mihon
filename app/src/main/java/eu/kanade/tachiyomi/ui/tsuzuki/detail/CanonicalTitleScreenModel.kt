@@ -24,10 +24,12 @@ import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
+import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import kotlin.time.Clock
 
 @Immutable
 sealed interface CanonicalTitleScreenState {
@@ -38,6 +40,8 @@ sealed interface CanonicalTitleScreenState {
         val libraryEntry: CanonicalLibraryEntry?,
         val chapters: List<CanonicalChapterDetailItem>,
         val refreshError: Throwable? = null,
+        val libraryMutationInProgress: Boolean = false,
+        val libraryMutationError: Throwable? = null,
     ) : CanonicalTitleScreenState
 
     data class Error(
@@ -88,6 +92,73 @@ class CanonicalTitleScreenModel(
     fun refresh(): Job? {
         val id = canonicalTitleId ?: return null
         return start(id)
+    }
+
+    fun addToLibrary(): Job? {
+        val id = canonicalTitleId ?: return null
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return null
+        if (loaded.libraryEntry != null) return null
+
+        _state.value = loaded.copy(
+            libraryMutationInProgress = true,
+            libraryMutationError = null,
+        )
+        return viewModelScope.launch {
+            try {
+                val now = Clock.System.now().toEpochMilliseconds()
+                val entry = CanonicalLibraryEntry(
+                    canonicalTitleId = id,
+                    status = LibraryStatus.PLANNING,
+                    favorite = true,
+                    addedAt = now,
+                    updatedAt = now,
+                )
+                canonicalLibraryRepository.upsert(entry)
+                updateLibraryState(entry)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                updateLibraryError(error)
+            }
+        }
+    }
+
+    fun removeFromLibrary(): Job? {
+        val id = canonicalTitleId ?: return null
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return null
+        if (loaded.libraryEntry == null) return null
+
+        _state.value = loaded.copy(
+            libraryMutationInProgress = true,
+            libraryMutationError = null,
+        )
+        return viewModelScope.launch {
+            try {
+                canonicalLibraryRepository.remove(id)
+                updateLibraryState(null)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                updateLibraryError(error)
+            }
+        }
+    }
+
+    private fun updateLibraryState(entry: CanonicalLibraryEntry?) {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
+        _state.value = loaded.copy(
+            libraryEntry = entry,
+            libraryMutationInProgress = false,
+            libraryMutationError = null,
+        )
+    }
+
+    private fun updateLibraryError(error: Throwable) {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
+        _state.value = loaded.copy(
+            libraryMutationInProgress = false,
+            libraryMutationError = error,
+        )
     }
 
     private suspend fun load(canonicalTitleId: String) {
