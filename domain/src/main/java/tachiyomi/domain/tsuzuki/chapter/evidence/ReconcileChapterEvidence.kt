@@ -115,7 +115,11 @@ class ReconcileChapterEvidence internal constructor(
 
             val persisted = evidenceRepository.upsert(
                 evidence = observation,
-                mappedCanonicalChapterId = reconciled.id,
+                // A stable external key that suddenly claims a different reliable
+                // chapter identity is unsafe to keep attached to the old chapter.
+                // Preserve the conflicted chapter/user state, but fail closed for
+                // content resolution until a later observation can reconcile it.
+                mappedCanonicalChapterId = if (mappedIdentityConflicts) null else reconciled.id,
             )
             persistedEvidence[persisted.evidence.id] = persisted
         }
