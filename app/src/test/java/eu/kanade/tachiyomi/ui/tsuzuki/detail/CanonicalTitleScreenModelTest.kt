@@ -31,6 +31,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.MaterializeInferredChapter
+import tachiyomi.domain.tsuzuki.chapter.interactor.inferredChapterId
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -472,6 +473,65 @@ class CanonicalTitleScreenModelTest {
             .shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters shouldBe emptyList()
     }
+
+    @Test
+    fun `Kitsu count produces unified rows before source discovery and selected slot keeps identity`() =
+        runTest(dispatcher) {
+            val chapters = FakeChapterRepository(emptyList())
+            val reported = FakeReportedChapterCountRepository(
+                listOf(ReportedChapterCount("title", "kitsu", 108, 1L)),
+            )
+            val downloads = mockk<CanonicalDownloadRepository>()
+            coEvery { downloads.getAll() } returns emptyList()
+            val materializer = MaterializeInferredChapter(chapters, ChapterMutationGate())
+            val model = CanonicalTitleScreenModel(
+                canonicalTitleRepository = FakeTitleRepository(),
+                canonicalLibraryRepository = FakeLibraryRepository(),
+                canonicalChapterRepository = chapters,
+                materializeInferredChapter = materializer,
+                chapterEvidenceRepository = FakeEvidenceRepository(),
+                canonicalReadingRepository = FakeReadingRepository(),
+                getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                    canonicalChapterRepository = chapters,
+                    canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                        override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                    },
+                ),
+                downloadCanonicalChapter = mockk(relaxed = true),
+                canonicalDownloadRepository = downloads,
+                reportedChapterCountRepository = reported,
+                addonRepository = FakeAddonRepository(),
+                refreshReportedChapterCounts = metadataRefresh(reported),
+                refreshChapterEvidence = RefreshChapterEvidence(
+                    registry = emptyRegistry(),
+                    reconcileChapterEvidence = ReconcileChapterEvidence(
+                        parser = ParseCanonicalChapterLabel(),
+                        canonicalChapterRepository = chapters,
+                        evidenceRepository = FakeEvidenceRepository(),
+                    ),
+                ),
+            )
+            model.start("title")
+            advanceUntilIdle()
+
+            val current = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+            current.chapters.size shouldBe 108
+            current.chapters.first().chapter.displayNumber shouldBe "1"
+            current.chapters.last().chapter.displayNumber shouldBe "108"
+            current.chapters.all(CanonicalChapterDetailItem::inferredFromCount) shouldBe true
+            chapters.getByCanonicalTitleId("title") shouldBe emptyList()
+
+            val opened = mutableListOf<String>()
+            model.openChapter(inferredChapterId("title", 37), opened::add)
+            advanceUntilIdle()
+            opened shouldBe listOf(inferredChapterId("title", 37))
+            chapters.getByCanonicalTitleId("title").single().id shouldBe opened.single()
+
+            model.openChapter(inferredChapterId("title", 37), opened::add)
+            advanceUntilIdle()
+            opened.size shouldBe 2
+            chapters.getByCanonicalTitleId("title").size shouldBe 1
+        }
 
     private class FakeAddonRepository : AddonRepository {
         private val addons = listOf(
