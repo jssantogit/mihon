@@ -21,6 +21,8 @@ import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.core.common.util.system.logcat
+import kotlin.time.TimeSource
 
 /**
  * Reads Mihon's source/chapter boundary into neutral Tsuzuki observations.
@@ -66,6 +68,7 @@ class MihonChapterInventoryGateway(
         mapping: SourceTitleMapping,
         mihonMangaId: Long,
     ): Result<SourceChapterInventory> {
+        val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
             val source = sourceManager.get(mapping.sourceId)
@@ -74,6 +77,7 @@ class MihonChapterInventoryGateway(
 
             val legacyChapters = chapterRepository.getChapterByMangaId(mihonMangaId)
             val legacyByUrl = legacyChapters.associateBy { it.url }
+            val networkStart = TimeSource.Monotonic.markNow()
             val update = source.getMangaUpdate(
                 manga = manga.toSManga(),
                 chapters = legacyChapters.map(Chapter::toSChapter),
@@ -81,6 +85,7 @@ class MihonChapterInventoryGateway(
                 fetchChapters = true,
             )
 
+            val networkTime = networkStart.elapsedNow()
             val snapshots = update.chapters.mapIndexed { index, chapter ->
                 val legacy = legacyByUrl[chapter.url]
                 chapter.toSnapshot(
@@ -89,6 +94,10 @@ class MihonChapterInventoryGateway(
                     mihonChapterId = legacy?.id,
                     sourceOrder = legacy?.sourceOrder ?: index.toLong(),
                 )
+            }
+            logcat {
+                "TsuzukiPerf inventory source=${mapping.sourceId} chapters=${snapshots.size} " +
+                    "network=$networkTime total=${totalStart.elapsedNow()}"
             }
             Result.success(
                 SourceChapterInventory(
@@ -103,6 +112,10 @@ class MihonChapterInventoryGateway(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            logcat {
+                "TsuzukiPerf inventory source=${mapping.sourceId} failed=${error.javaClass.simpleName} " +
+                    "total=${totalStart.elapsedNow()}"
+            }
             Result.failure(error)
         }
     }

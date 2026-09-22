@@ -40,6 +40,8 @@ import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import kotlin.time.Clock
+import kotlin.time.TimeSource
+import tachiyomi.core.common.util.system.logcat
 
 @Immutable
 sealed interface CanonicalTitleScreenState {
@@ -215,6 +217,7 @@ class CanonicalTitleScreenModel(
     }
 
     private suspend fun loadCachedFirst(canonicalTitleId: String) {
+        val initialStart = TimeSource.Monotonic.markNow()
         _state.value = CanonicalTitleScreenState.Loading
         try {
             // Render only local/cached state first. Network/provider refresh must
@@ -224,6 +227,11 @@ class CanonicalTitleScreenModel(
                 includeLegacyDownloadChecks = false,
                 isRefreshing = true,
             )
+            logcat {
+                "TsuzukiPerf detail cached chapters=" +
+                    "${(_state.value as? CanonicalTitleScreenState.Loaded)?.chapters?.size ?: 0} " +
+                    "elapsed=${initialStart.elapsedNow()}"
+            }
             refreshInBackground(canonicalTitleId)
         } catch (error: CancellationException) {
             throw error
@@ -233,6 +241,7 @@ class CanonicalTitleScreenModel(
     }
 
     private suspend fun refreshInBackground(canonicalTitleId: String) {
+        val refreshStart = TimeSource.Monotonic.markNow()
         val before = _state.value as? CanonicalTitleScreenState.Loaded
         if (before != null) {
             _state.value = before.copy(isRefreshing = true, refreshError = null)
@@ -247,6 +256,7 @@ class CanonicalTitleScreenModel(
             }
 
             val metadataError = metadataRefresh.await()
+            val metadataElapsed = refreshStart.elapsedNow()
             val current = _state.value as? CanonicalTitleScreenState.Loaded
             if (current?.title?.id == canonicalTitleId) {
                 _state.value = current.copy(
@@ -255,7 +265,13 @@ class CanonicalTitleScreenModel(
                 )
             }
 
-            listOfNotNull(metadataError, chapterRefresh.await())
+            val chapterError = chapterRefresh.await()
+            logcat {
+                "TsuzukiPerf detail refresh metadataElapsed=$metadataElapsed " +
+                    "chapterElapsed=${refreshStart.elapsedNow()} " +
+                    "metadataError=${metadataError != null} chapterError=${chapterError != null}"
+            }
+            listOfNotNull(metadataError, chapterError)
         }
 
         try {
@@ -265,6 +281,10 @@ class CanonicalTitleScreenModel(
                 isRefreshing = false,
                 refreshError = errors.firstOrNull(),
             )
+            logcat {
+                "TsuzukiPerf detail ready chapters=${refreshed.chapters.size} " +
+                    "elapsed=${refreshStart.elapsedNow()}"
+            }
             val current = _state.value as? CanonicalTitleScreenState.Loaded
             _state.value = if (current == null || current.title.id != canonicalTitleId) {
                 refreshed
