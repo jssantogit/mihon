@@ -62,6 +62,48 @@ class CanonicalTitleScreenModelTest {
     }
 
     @Test
+    fun `detail can add and remove canonical title from Library without replacing title`() = runTest(dispatcher) {
+        val library = FakeLibraryRepository()
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = library,
+            canonicalChapterRepository = FakeChapterRepository(emptyList()),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = FakeChapterRepository(emptyList()),
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = FakeChapterRepository(emptyList()),
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>().libraryEntry shouldBe null
+
+        model.addToLibrary()
+        advanceUntilIdle()
+
+        val added = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+        added.libraryEntry?.canonicalTitleId shouldBe "title"
+        library.get("title")?.canonicalTitleId shouldBe "title"
+
+        model.removeFromLibrary()
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>().libraryEntry shouldBe null
+        library.get("title") shouldBe null
+    }
+
+    @Test
     fun `detail exposes provisional state without hiding chapter`() = runTest(dispatcher) {
         val chapters = FakeChapterRepository(
             listOf(
@@ -138,11 +180,18 @@ class CanonicalTitleScreenModelTest {
     }
 
     private class FakeLibraryRepository : CanonicalLibraryRepository {
-        override suspend fun get(canonicalTitleId: String): CanonicalLibraryEntry? = null
-        override fun getAllAsFlow(): Flow<List<CanonicalLibraryEntry>> = MutableStateFlow(emptyList())
+        private val entries = linkedMapOf<String, CanonicalLibraryEntry>()
+
+        override suspend fun get(canonicalTitleId: String): CanonicalLibraryEntry? = entries[canonicalTitleId]
+        override fun getAllAsFlow(): Flow<List<CanonicalLibraryEntry>> =
+            MutableStateFlow(entries.values.toList())
         override fun getAllItemsAsFlow(): Flow<List<LibraryTitle>> = MutableStateFlow(emptyList())
-        override suspend fun upsert(entry: CanonicalLibraryEntry) = Unit
-        override suspend fun remove(canonicalTitleId: String) = Unit
+        override suspend fun upsert(entry: CanonicalLibraryEntry) {
+            entries[entry.canonicalTitleId] = entry
+        }
+        override suspend fun remove(canonicalTitleId: String) {
+            entries.remove(canonicalTitleId)
+        }
     }
 
     private class FakeReadingRepository : CanonicalReadingRepository {
