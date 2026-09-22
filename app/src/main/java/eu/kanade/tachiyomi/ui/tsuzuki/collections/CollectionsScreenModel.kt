@@ -35,6 +35,7 @@ import tachiyomi.domain.tsuzuki.collections.interactor.ImportCollectionsResult
 import tachiyomi.domain.tsuzuki.collections.interactor.ManageCollectionDefinitions
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
+import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
@@ -166,11 +167,12 @@ class CollectionsScreenModel(
 
     private val collectionsFlow: Flow<List<CollectionUiModel>> = store.observeCollections()
         .flatMapLatest { collections ->
-            if (collections.isEmpty()) {
+            val userCollections = collections.filter { it.origin == CollectionOrigin.USER }
+            if (userCollections.isEmpty()) {
                 flowOf(emptyList())
             } else {
                 combine(
-                    collections.map(::observeCollection),
+                    userCollections.map(::observeCollection),
                 ) { graphs ->
                     graphs
                         .sortedWith(
@@ -201,20 +203,6 @@ class CollectionsScreenModel(
             started = SharingStarted.Eagerly,
             initialValue = CollectionsScreenState.Loading,
         )
-
-    init {
-        viewModelScope.launch {
-            try {
-                manager.ensureSystemDefinitions()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                transferState.value = CollectionsTransferState.Error(
-                    error.message ?: "Failed to initialize built-in Collections",
-                )
-            }
-        }
-    }
 
     fun dispatch(action: CollectionsAction) {
         when (action) {

@@ -27,6 +27,7 @@ import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.browse.ExtensionStoresScreen
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.ui.browse.extension.details.ExtensionDetailsScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.addon.TsuzukiAvailableAddonsScreen
 import kotlinx.coroutines.launch
 import mihon.app.di.appGraph
 import tachiyomi.domain.tsuzuki.addon.model.AddonSyncIntent
@@ -98,6 +99,11 @@ object SettingsTsuzukiAddonsScreen : SearchableSettings {
             Preference.PreferenceGroup(
                 title = stringResource(MR.strings.tsuzuki_addons_repositories),
                 preferenceItems = listOf(
+                    Preference.PreferenceItem.TextPreference(
+                        title = "Browse Add-ons",
+                        subtitle = "Install Add-ons from configured repositories",
+                        onClick = { navigator.push(TsuzukiAvailableAddonsScreen()) },
+                    ),
                     Preference.PreferenceItem.TextPreference(
                         title = stringResource(MR.strings.extensionStores),
                         onClick = { navigator.push(ExtensionStoresScreen()) },

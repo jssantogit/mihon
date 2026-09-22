@@ -32,6 +32,8 @@ fun CanonicalTitleDetailScreen(
     state: CanonicalTitleScreenState,
     navigateUp: () -> Unit,
     onRefresh: () -> Unit,
+    onAddToLibrary: () -> Unit,
+    onRemoveFromLibrary: () -> Unit,
     onOpenChapter: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -92,7 +94,11 @@ fun CanonicalTitleDetailScreen(
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     item {
-                        TitleHeader(state)
+                        TitleHeader(
+                            state = state,
+                            onAddToLibrary = onAddToLibrary,
+                            onRemoveFromLibrary = onRemoveFromLibrary,
+                        )
                     }
                     if (state.chapters.isEmpty()) {
                         item {
@@ -122,6 +128,8 @@ fun CanonicalTitleDetailScreen(
 @Composable
 private fun TitleHeader(
     state: CanonicalTitleScreenState.Loaded,
+    onAddToLibrary: () -> Unit,
+    onRemoveFromLibrary: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -141,6 +149,29 @@ private fun TitleHeader(
                 ?: "Not in Library",
             style = MaterialTheme.typography.bodyMedium,
         )
+        TextButton(
+            enabled = !state.libraryMutationInProgress,
+            onClick = if (state.libraryEntry == null) {
+                onAddToLibrary
+            } else {
+                onRemoveFromLibrary
+            },
+        ) {
+            Text(
+                if (state.libraryEntry == null) {
+                    "Add to Library"
+                } else {
+                    "Remove from Library"
+                },
+            )
+        }
+        state.libraryMutationError?.let {
+            Text(
+                text = it.message ?: "Unable to update Library.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         state.refreshError?.let {
             Text(
                 text = "Chapter refresh is temporarily unavailable.",

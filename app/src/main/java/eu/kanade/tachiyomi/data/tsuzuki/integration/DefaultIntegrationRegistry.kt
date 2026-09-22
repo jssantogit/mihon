@@ -4,10 +4,15 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -33,14 +38,27 @@ class DefaultIntegrationRegistry(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
-    @Volatile
-    private var settings: List<IntegrationSettings> = emptyList()
+    private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
+    private val ready = CompletableDeferred<Unit>()
 
     init {
         settingsRepository.observeAll()
-            .onEach { settings = it }
+            .onEach {
+                settings.value = it
+                if (!ready.isCompleted) {
+                    ready.complete(Unit)
+                }
+            }
             .launchIn(scope)
     }
+
+    override suspend fun awaitReady() {
+        ready.await()
+    }
+
+    override fun observeChanges(): Flow<Unit> = settings
+        .drop(1)
+        .map { Unit }
 
     override fun searchProviders(): List<SearchProvider> {
         val enabledIds = enabledIntegrationIds()
@@ -72,7 +90,7 @@ class DefaultIntegrationRegistry(
         return trackingProviders.filter { it.integrationId.value in enabledIds }
     }
 
-    private fun enabledIntegrationIds(): Set<String> = settings
+    private fun enabledIntegrationIds(): Set<String> = settings.value
         .groupBy { it.integrationId.value }
         .mapNotNull { (integrationId, values) ->
             values.maxByOrNull(IntegrationSettings::updatedAt)
