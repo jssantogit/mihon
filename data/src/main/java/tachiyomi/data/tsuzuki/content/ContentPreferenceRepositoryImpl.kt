@@ -44,6 +44,7 @@ class ContentPreferenceRepositoryImpl(
         database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
             canonicalTitleId = preference.canonicalTitleId,
             preferredAddonId = preference.preferredAddonId?.value,
+            preferredLanguage = preference.preferredLanguage,
             updatedAt = preference.updatedAt,
         )
     }
@@ -55,10 +56,12 @@ class ContentPreferenceRepositoryImpl(
     private fun mapPreference(
         canonicalTitleId: String,
         preferredAddonId: String?,
+        preferredLanguage: String?,
         updatedAt: Long,
     ) = ContentPreference(
         canonicalTitleId = canonicalTitleId,
         preferredAddonId = preferredAddonId?.let(::AddonId),
+        preferredLanguage = preferredLanguage,
         updatedAt = updatedAt,
     )
 }

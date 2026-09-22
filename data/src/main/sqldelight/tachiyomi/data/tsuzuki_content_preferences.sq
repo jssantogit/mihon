@@ -1,6 +1,7 @@
 CREATE TABLE tsuzuki_content_preferences(
     canonical_title_id TEXT NOT NULL PRIMARY KEY,
     preferred_addon_id TEXT,
+    preferred_language TEXT,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
 );
@@ -26,15 +27,18 @@ upsertTsuzukiContentPreference:
 INSERT INTO tsuzuki_content_preferences(
     canonical_title_id,
     preferred_addon_id,
+    preferred_language,
     updated_at
 )
 VALUES (
     :canonicalTitleId,
     :preferredAddonId,
+    :preferredLanguage,
     :updatedAt
 )
 ON CONFLICT(canonical_title_id) DO UPDATE SET
     preferred_addon_id = excluded.preferred_addon_id,
+    preferred_language = excluded.preferred_language,
     updated_at = excluded.updated_at;
 
 deleteTsuzukiContentPreference:

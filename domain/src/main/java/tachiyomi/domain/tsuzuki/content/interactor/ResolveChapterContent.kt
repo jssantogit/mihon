@@ -31,8 +31,12 @@ class ResolveChapterContent(
         canonicalChapterId: String,
     ): ContentResolution {
         addonRegistry.awaitReady()
-        val preferredAddonId = contentPreferenceRepository.get(canonicalTitleId)?.preferredAddonId
-        val preferredLanguages = readerPreferences.preferredLanguages.get()
+        val titlePreference = contentPreferenceRepository.get(canonicalTitleId)
+        val preferredAddonId = titlePreference?.preferredAddonId
+        val preferredLanguages = titlePreferredLanguages(
+            titlePreference?.preferredLanguage,
+            readerPreferences.preferredLanguages.get(),
+        )
         val providers = addonRegistry.contentProviders()
         if (providers.isEmpty()) return ContentResolution.Unavailable
 
@@ -121,8 +125,12 @@ class ResolveChapterContent(
         val providers = addonRegistry.contentProviders()
         if (providers.isEmpty()) return emptyList()
 
-        val preferredAddonId = contentPreferenceRepository.get(canonicalTitleId)?.preferredAddonId
-        val preferredLanguages = readerPreferences.preferredLanguages.get()
+        val titlePreference = contentPreferenceRepository.get(canonicalTitleId)
+        val preferredAddonId = titlePreference?.preferredAddonId
+        val preferredLanguages = titlePreferredLanguages(
+            titlePreference?.preferredLanguage,
+            readerPreferences.preferredLanguages.get(),
+        )
         val options = coroutineScope {
             providers.map { provider ->
                 async {
@@ -144,6 +152,17 @@ class ResolveChapterContent(
 
     suspend fun invalidateAddon(addonId: AddonId) {
         contentOptionCache.invalidateAddon(addonId)
+    }
+
+    private fun titlePreferredLanguages(
+        titleLanguage: String?,
+        globalLanguages: List<String>,
+    ): List<String> {
+        val selected = titleLanguage?.trim()?.takeIf(String::isNotEmpty)
+            ?: return globalLanguages
+        return listOf(selected) + globalLanguages.filterNot {
+            it.equals(selected, ignoreCase = true)
+        }
     }
 
     private suspend fun resolveProvider(

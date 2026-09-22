@@ -38,6 +38,33 @@ class ResolveChapterContentTest {
     }
 
     @Test
+    fun `title language overrides global ranking without hiding alternatives`() = runTest {
+        val resolver = fixture(
+            preference = ContentPreference(
+                canonicalTitleId = "title",
+                preferredAddonId = AddonId("mangafire"),
+                updatedAt = 2L,
+                preferredLanguage = "en",
+            ),
+            automaticFallback = false,
+            preferredLanguages = listOf("pt-BR"),
+            providers = listOf(
+                provider(
+                    "mangafire",
+                    option("mangafire", "pt-BR"),
+                    option("mangafire", "en"),
+                ),
+            ),
+        )
+
+        val available = resolver.resolveOptions("title", "chapter-37")
+        available.map { it.language } shouldBe listOf("en", "pt-BR")
+        resolver.execute("title", "chapter-37")
+            .shouldBeInstanceOf<ContentResolution.Direct>()
+            .option.language shouldBe "en"
+    }
+
+    @Test
     fun `preferred addon opens directly when chapter is available`() = runTest {
         val resolver = fixture(
             preference = ContentPreference("title", AddonId("mangadex"), 1L),
