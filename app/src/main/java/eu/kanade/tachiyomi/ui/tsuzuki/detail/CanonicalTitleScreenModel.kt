@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
@@ -332,13 +334,20 @@ class CanonicalTitleScreenModel(
             }
         } else {
             coroutineScope {
+                val downloadCheckGate = Semaphore(MAX_CONCURRENT_DOWNLOAD_CHECKS)
                 chapters.map { chapter ->
                     async {
                         val progress = progressByChapter[chapter.id]
                         val downloaded = chapter.id in canonicalDownloadIds ||
-                            runCatching {
-                                getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
-                            }.getOrDefault(false)
+                            downloadCheckGate.withPermit {
+                                try {
+                                    getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (_: Throwable) {
+                                    false
+                                }
+                            }
                         if (
                             chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
                             chapter.id !in supportedChapterIds &&
@@ -416,5 +425,9 @@ class CanonicalTitleScreenModel(
             libraryMutationInProgress = false,
             libraryMutationError = error,
         )
+    }
+
+    private companion object {
+        const val MAX_CONCURRENT_DOWNLOAD_CHECKS = 8
     }
 }

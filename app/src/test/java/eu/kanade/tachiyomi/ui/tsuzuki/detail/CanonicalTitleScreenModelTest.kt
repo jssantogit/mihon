@@ -4,12 +4,14 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -320,6 +322,86 @@ class CanonicalTitleScreenModelTest {
     }
 
     @Test
+    fun `detail bounds legacy download checks for large chapter lists`() = runTest(dispatcher) {
+        val chapterList = (1..24).map { index ->
+            CanonicalChapter(
+                id = "chapter-$index",
+                canonicalTitleId = "title",
+                displayNumber = index.toString(),
+                baseNumber = index,
+                confidence = 1.0,
+                createdAt = 1L,
+                updatedAt = 1L,
+                confirmation = CanonicalChapterConfirmation.CONFIRMED,
+            )
+        }
+        val chapterRepo = FakeChapterRepository(
+            chapterList,
+            variants = chapterList.associate { chapter ->
+                chapter.id to listOf(
+                    ChapterVariant(
+                        id = "variant-${chapter.id}",
+                        canonicalChapterId = chapter.id,
+                        sourceId = 7L,
+                        sourceChapterId = chapter.id,
+                    ),
+                )
+            },
+        )
+        val releaseChecks = CompletableDeferred<Unit>()
+        var concurrent = 0
+        var peak = 0
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getAll() } returns emptyList()
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapterRepo,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapterRepo,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean {
+                        concurrent++
+                        peak = maxOf(peak, concurrent)
+                        try {
+                            releaseChecks.await()
+                            return false
+                        } finally {
+                            concurrent--
+                        }
+                    }
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = chapterRepo,
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+        )
+
+        model.start("title")
+        runCurrent()
+        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+            .chapters.size shouldBe 24
+        peak shouldBe 8
+
+        releaseChecks.complete(Unit)
+        advanceUntilIdle()
+        concurrent shouldBe 0
+        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+            .chapters.size shouldBe 24
+    }
+
+    @Test
     fun `unsupported provisional artifact is hidden without progress or download`() = runTest(dispatcher) {
         val chapters = FakeChapterRepository(
             listOf(
@@ -489,6 +571,7 @@ class CanonicalTitleScreenModelTest {
 
     private class FakeChapterRepository(
         initial: List<CanonicalChapter>,
+        private val variants: Map<String, List<ChapterVariant>> = emptyMap(),
     ) : CanonicalChapterRepository {
         private val chapters = initial.associateByTo(linkedMapOf()) { it.id }
 
@@ -499,7 +582,7 @@ class CanonicalTitleScreenModelTest {
         override suspend fun getById(id: String): CanonicalChapter? = chapters[id]
         override suspend fun getVariantBySourceIdentity(sourceId: Long, sourceChapterId: String): ChapterVariant? = null
         override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> =
-            emptyList()
+            variants[canonicalChapterId].orEmpty()
         override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> = emptyList()
         override suspend fun upsert(chapter: CanonicalChapter) {
             chapters[chapter.id] = chapter
