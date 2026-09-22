@@ -4,8 +4,13 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
@@ -20,6 +25,7 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RefreshChapterEvidenceTest {
 
     @Test
@@ -126,6 +132,39 @@ class RefreshChapterEvidenceTest {
 
         refresh.execute("canonical-title").isSuccess shouldBe true
         ready shouldBe true
+    }
+
+    @Test
+    fun `editorial refresh bounds simultaneous provider requests`() = runTest {
+        val unblock = CompletableDeferred<Unit>()
+        var concurrent = 0
+        var peak = 0
+        val providers = (1..12).map { index ->
+            object : ChapterEvidenceProvider {
+                override val producerId = "integration-$index"
+
+                override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                    concurrent++
+                    peak = maxOf(peak, concurrent)
+                    try {
+                        unblock.await()
+                        return Result.success(emptyList())
+                    } finally {
+                        concurrent--
+                    }
+                }
+            }
+        }
+        val refresh = refresh(FakeCanonicalChapterRepository(), providers)
+
+        val pending = async { refresh.execute("canonical-title") }
+        runCurrent()
+        peak shouldBe 4
+        unblock.complete(Unit)
+        advanceUntilIdle()
+
+        pending.await().isSuccess shouldBe true
+        concurrent shouldBe 0
     }
 
     @Test

@@ -5,6 +5,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -70,11 +72,13 @@ class RefreshChapterEvidence private constructor(
     private suspend fun collectIntegrationEvidence(
         canonicalTitleId: String,
     ): List<ChapterEvidence> = coroutineScope {
+        val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
         registry.chapterEvidenceProviders()
             .map { provider ->
                 async {
-                    try {
-                        provider.evidenceFor(canonicalTitleId)
+                    gate.withPermit {
+                        try {
+                            provider.evidenceFor(canonicalTitleId)
                             .fold(
                                 onSuccess = { observations ->
                                     observations.takeIf {
@@ -90,8 +94,9 @@ class RefreshChapterEvidence private constructor(
                             )
                     } catch (error: CancellationException) {
                         throw error
-                    } catch (_: Throwable) {
-                        emptyList()
+                        } catch (_: Throwable) {
+                            emptyList()
+                        }
                     }
                 }
             }
@@ -107,10 +112,12 @@ class RefreshChapterEvidence private constructor(
         addonRegistry.awaitReady()
 
         return coroutineScope {
+            val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
             addonRegistry.chapterProbeProviders()
                 .map { provider ->
                     async {
-                        try {
+                        gate.withPermit {
+                            try {
                             val bindings = resolver
                                 .executeAll(canonicalTitleId, provider.addonId)
                                 .getOrElse { error ->
@@ -135,8 +142,9 @@ class RefreshChapterEvidence private constructor(
                                 )
                         } catch (error: CancellationException) {
                             throw error
-                        } catch (_: Throwable) {
-                            emptyList()
+                            } catch (_: Throwable) {
+                                emptyList()
+                            }
                         }
                     }
                 }
@@ -161,5 +169,8 @@ class RefreshChapterEvidence private constructor(
         } catch (error: Throwable) {
             Result.failure(error)
         }
+    }
+    private companion object {
+        const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
     }
 }
