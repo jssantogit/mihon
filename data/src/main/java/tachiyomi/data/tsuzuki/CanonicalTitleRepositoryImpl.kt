@@ -36,7 +36,12 @@ class CanonicalTitleRepositoryImpl(
     override suspend fun getExternalIdentities(canonicalTitleId: String): List<ExternalIdentity> {
         return database.tsuzuki_external_identitiesQueries
             .getTsuzukiExternalIdentitiesByTitle(canonicalTitleId) {
-                titleId, provider, externalId, verified, createdAt ->
+                    titleId,
+                    provider,
+                    externalId,
+                    verified,
+                    createdAt,
+                ->
                 ExternalIdentity(
                     canonicalTitleId = titleId,
                     provider = provider,
