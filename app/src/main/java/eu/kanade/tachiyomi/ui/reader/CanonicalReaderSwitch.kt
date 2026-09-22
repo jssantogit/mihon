@@ -10,8 +10,10 @@ import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 internal suspend fun stageCanonicalReaderChapter(
     loader: ReaderChapterLoader,
     chapter: ReaderChapter,
+    onStaged: suspend () -> Unit = {},
 ): ReaderChapter {
     loader.loadChapter(chapter)
     require(!chapter.pages.isNullOrEmpty()) { "The selected source returned no chapter pages" }
+    onStaged()
     return chapter
 }

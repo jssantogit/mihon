@@ -516,6 +516,7 @@ class ReaderViewModel(
         target: PreparedChapterContent,
         resetPage: Boolean,
         selectedOption: ContentOption? = null,
+        recordPreviousHistory: Boolean = false,
     ) {
         when (val plan = planCanonicalReaderTarget(canonicalChapterId, target)) {
             is CanonicalReaderTargetPlan.Mihon -> {
@@ -537,7 +538,9 @@ class ReaderViewModel(
                 val nextChapter = stageCanonicalReaderChapter(
                     nextLoader,
                     ReaderChapter(chapter.toDbChapter()),
-                )
+                ) {
+                    if (recordPreviousHistory) updateHistory()
+                }
                 publishCanonicalReaderChapter(
                     session = CanonicalReaderSession(
                         canonicalChapterId = plan.canonicalChapterId,
@@ -583,7 +586,9 @@ class ReaderViewModel(
                     },
                 )
                 val nextLoader = LocalChapterLoader.from(context, plan)
-                stageCanonicalReaderChapter(nextLoader, nextChapter)
+                stageCanonicalReaderChapter(nextLoader, nextChapter) {
+                    if (recordPreviousHistory) updateHistory()
+                }
                 publishCanonicalReaderChapter(
                     session = CanonicalReaderSession(
                         canonicalChapterId = plan.canonicalChapterId,
@@ -724,6 +729,7 @@ class ReaderViewModel(
                             target = preparation.target,
                             resetPage = hadActiveSession,
                             selectedOption = selection.option,
+                            recordPreviousHistory = hadActiveSession,
                         )
                         restartReadTimer()
                         withUIContext {
@@ -1209,12 +1215,12 @@ class ReaderViewModel(
                 )
             ) {
                 is CanonicalReaderPreparation.Ready -> {
-                    updateHistory()
                     loadCanonicalTarget(
                         canonicalChapterId = preparation.canonicalChapterId,
                         target = preparation.target,
                         resetPage = true,
                         selectedOption = preparation.selectedOption,
+                        recordPreviousHistory = true,
                     )
                     restartReadTimer()
                 }

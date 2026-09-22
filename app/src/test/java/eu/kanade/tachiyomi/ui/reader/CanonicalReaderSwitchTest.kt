@@ -22,7 +22,12 @@ class CanonicalReaderSwitchTest {
             }
         }
 
-        stageCanonicalReaderChapter(loader, replacement) shouldBe replacement
+        var committedPreviousHistory = false
+        stageCanonicalReaderChapter(loader, replacement) {
+            committedPreviousHistory = true
+        } shouldBe replacement
+
+        committedPreviousHistory shouldBe true
 
         previous.pages?.size shouldBe 1
         replacement.pages?.size shouldBe 2
@@ -39,8 +44,14 @@ class CanonicalReaderSwitchTest {
             }
         }
 
-        val error = runCatching { stageCanonicalReaderChapter(loader, replacement) }.exceptionOrNull()
+        var committedPreviousHistory = false
+        val error = runCatching {
+            stageCanonicalReaderChapter(loader, replacement) {
+                committedPreviousHistory = true
+            }
+        }.exceptionOrNull()
         error.shouldBeInstanceOf<IllegalArgumentException>()
+        committedPreviousHistory shouldBe false
         previous.pages?.size shouldBe 1
     }
 
@@ -54,8 +65,14 @@ class CanonicalReaderSwitchTest {
                 throw IllegalStateException("Source unavailable")
         }
 
-        val error = runCatching { stageCanonicalReaderChapter(loader, replacement) }.exceptionOrNull()
+        var committedPreviousHistory = false
+        val error = runCatching {
+            stageCanonicalReaderChapter(loader, replacement) {
+                committedPreviousHistory = true
+            }
+        }.exceptionOrNull()
         error.shouldBeInstanceOf<IllegalStateException>()
+        committedPreviousHistory shouldBe false
         previous.pages?.size shouldBe 1
     }
 
