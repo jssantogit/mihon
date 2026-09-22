@@ -41,7 +41,7 @@ class MaterializeCanonicalTitleFromCatalog internal constructor(
             ReportedChapterCount(
                 canonicalTitleId = title.id,
                 provider = catalogItem.provider,
-                chapterCount = catalogItem.chapterCount,
+                chapterCount = catalogItem.chapterCount?.takeIf { it > 0 },
                 updatedAt = clock(),
             ),
         )
