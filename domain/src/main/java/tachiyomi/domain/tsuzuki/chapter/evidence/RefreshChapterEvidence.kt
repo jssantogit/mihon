@@ -58,7 +58,7 @@ class RefreshChapterEvidence private constructor(
             )
             // Chapter mappings may have changed; never serve stale provider
             // options that were resolved against a previous evidence graph.
-            contentOptionCache?.clear()
+            contentOptionCache?.invalidateTitle(canonicalTitleId)
             Result.success(Unit)
         } catch (error: CancellationException) {
             throw error

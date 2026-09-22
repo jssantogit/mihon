@@ -85,6 +85,32 @@ class ContentResolutionCacheTest {
         cache.get(key) shouldBe null
     }
 
+    @Test
+    fun `refresh invalidates only options belonging to the affected title`() = runTest {
+        val cache = ContentOptionCache()
+        val affected = ContentOptionCacheKey("title-a", "chapter-1", AddonId("mangadex"))
+        val otherChapter = affected.copy(canonicalChapterId = "chapter-2")
+        val unaffected = affected.copy(canonicalTitleId = "title-b")
+        val option = ContentOption(
+            key = "cached",
+            canonicalChapterId = "chapter-1",
+            addonId = AddonId("mangadex"),
+            language = "en",
+            scanlationGroup = null,
+            releaseDate = null,
+            delivery = ContentDelivery.LocalArchive("content://cached"),
+        )
+        cache.put(affected, listOf(option))
+        cache.put(otherChapter, listOf(option))
+        cache.put(unaffected, listOf(option))
+
+        cache.invalidateTitle("title-a")
+
+        cache.get(affected) shouldBe null
+        cache.get(otherChapter) shouldBe null
+        cache.get(unaffected) shouldBe listOf(option)
+    }
+
     private fun resolver(
         provider: ContentProvider,
         cache: ContentOptionCache = ContentOptionCache(),
