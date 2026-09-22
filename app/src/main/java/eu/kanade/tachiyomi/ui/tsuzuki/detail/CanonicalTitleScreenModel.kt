@@ -235,11 +235,24 @@ class CanonicalTitleScreenModel(
         }
 
         val errors = coroutineScope {
-            listOf(
-                async { refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull() },
-                async { refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull() },
-            ).awaitAll()
-        }.filterNotNull()
+            val chapterRefresh = async {
+                refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull()
+            }
+            val metadataRefresh = async {
+                refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull()
+            }
+
+            val metadataError = metadataRefresh.await()
+            val current = _state.value as? CanonicalTitleScreenState.Loaded
+            if (current?.title?.id == canonicalTitleId) {
+                _state.value = current.copy(
+                    reportedChapterCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId),
+                    refreshError = metadataError,
+                )
+            }
+
+            listOfNotNull(metadataError, chapterRefresh.await())
+        }
 
         try {
             val refreshed = loadLocalState(
