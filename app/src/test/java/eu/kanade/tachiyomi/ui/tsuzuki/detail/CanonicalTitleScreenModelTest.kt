@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.tsuzuki.detail
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +26,9 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -75,6 +78,8 @@ class CanonicalTitleScreenModelTest {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
             ),
+            downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
+            canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -138,6 +143,8 @@ class CanonicalTitleScreenModelTest {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
             ),
+            downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
+            canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
             refreshChapterEvidence = refresh,
         )
 
