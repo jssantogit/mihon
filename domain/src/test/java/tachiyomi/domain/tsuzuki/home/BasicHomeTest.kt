@@ -18,8 +18,9 @@ import tachiyomi.domain.tsuzuki.chapter.update.model.CanonicalChapterUpdateState
 import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.ContinueReadingVisibility
+import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingSeed
 import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
-import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
+import tachiyomi.domain.tsuzuki.home.repository.HomeContinueReadingSource
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
@@ -207,17 +208,19 @@ class BasicHomeTest {
         progress: Map<String, List<CanonicalChapterProgress>>,
         updates: Map<String, List<CanonicalChapterUpdateState>> = emptyMap(),
     ): Fixture {
-        val libraryRepository = FakeCanonicalLibraryRepository(libraryItems)
         val chapterRepository = FakeCanonicalChapterRepository(chapters)
         val readingRepository = FakeCanonicalReadingRepository(progress)
         val visibilityRepository = FakeContinueReadingVisibilityRepository()
         val updateRepository = FakeChapterUpdateStateRepository(updates)
+        val source = FakeHomeContinueReadingSource(
+            titles = libraryItems.associate { it.title.id to it.title.displayTitle },
+            chapters = chapters,
+            readingRepository = readingRepository,
+        )
 
         return Fixture(
             observer = ObserveHomeContinueReading(
-                observeCanonicalLibrary = ObserveCanonicalLibrary(libraryRepository),
-                canonicalChapterRepository = chapterRepository,
-                canonicalReadingRepository = readingRepository,
+                source = source,
                 visibilityRepository = visibilityRepository,
                 chapterUpdateStateRepository = updateRepository,
             ),
@@ -284,6 +287,38 @@ class BasicHomeTest {
         canonicalTitleId = titleId,
         firstSeenAt = 100L,
     )
+
+    private class FakeHomeContinueReadingSource(
+        private val titles: Map<String, String>,
+        private val chapters: Map<String, List<CanonicalChapter>>,
+        private val readingRepository: CanonicalReadingRepository,
+    ) : HomeContinueReadingSource {
+        override fun observe(): Flow<List<HomeContinueReadingSeed>> {
+            if (titles.isEmpty()) return MutableStateFlow(emptyList())
+            return combine(
+                titles.keys.map { titleId ->
+                    readingRepository.observeProgressByCanonicalTitleId(titleId)
+                },
+            ) { progressByTitle ->
+                titles.keys.zip(progressByTitle.asList()).flatMap { (titleId, progress) ->
+                    val chaptersById = chapters[titleId].orEmpty().associateBy { it.id }
+                    progress.mapNotNull { item ->
+                        val chapter = chaptersById[item.canonicalChapterId] ?: return@mapNotNull null
+                        HomeContinueReadingSeed(
+                            canonicalTitleId = titleId,
+                            title = titles.getValue(titleId),
+                            canonicalChapterId = chapter.id,
+                            chapterDisplayNumber = chapter.displayNumber,
+                            lastPageRead = item.lastPageRead,
+                            read = item.read,
+                            updatedAt = item.updatedAt,
+                            lastVariantId = item.lastVariantId,
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     private class FakeCanonicalLibraryRepository(
         items: List<CanonicalLibraryItem>,
