@@ -288,12 +288,7 @@ private fun CanonicalChapterRow(
                 horizontalAlignment = Alignment.End,
             ) {
                 when (item.confirmation) {
-                    CanonicalChapterConfirmation.PROVISIONAL -> {
-                        AssistChip(
-                            onClick = {},
-                            label = { Text("Provisional") },
-                        )
-                    }
+                    CanonicalChapterConfirmation.PROVISIONAL -> Unit
 
                     CanonicalChapterConfirmation.CONFLICTED -> {
                         AssistChip(

@@ -33,6 +33,7 @@ fun ContentOptionSelectorSheet(
     state: ContentSelectorScreenState,
     onSelect: (ContentOptionPresentation) -> Unit,
     activeOptionKey: String? = null,
+    activeContentLabel: String? = null,
     onRetry: () -> Unit,
     onOpenAddonsSettings: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -48,6 +49,13 @@ fun ContentOptionSelectorSheet(
                 text = stringResource(MR.strings.tsuzuki_content_selector_title),
                 style = MaterialTheme.typography.titleLarge,
             )
+            activeContentLabel?.takeIf(String::isNotBlank)?.let { label ->
+                Text(
+                    text = "Reading now: $label",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             when (state) {
                 ContentSelectorScreenState.Loading -> {
