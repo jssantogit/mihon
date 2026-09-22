@@ -235,6 +235,33 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
+    fun `a throwing provider does not prevent healthy Add-ons from appearing`() = runTest(dispatcher) {
+        val throwing = object : ContentProvider {
+            override val addonId = AddonId("throwing")
+
+            override suspend fun resolve(
+                canonicalTitleId: String,
+                canonicalChapterId: String,
+            ): Result<List<ContentOption>> = throw IllegalStateException("Provider crashed")
+        }
+        val healthy = option("healthy", "en", null, 100L)
+        val model = model(
+            providers = listOf(
+                throwing,
+                provider("healthy", Result.success(listOf(healthy))),
+            ),
+            addons = listOf(addon("healthy", "Healthy Add-on")),
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val state = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        state.options.map { it.option.key } shouldBe listOf(healthy.key)
+        state.failedProviderCount shouldBe 1
+    }
+
+    @Test
     fun `manual fallback offers preference change without mutating until confirmation`() = runTest(dispatcher) {
         val preferences = FakeContentPreferenceRepository(
             ContentPreference(

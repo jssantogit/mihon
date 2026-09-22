@@ -218,13 +218,18 @@ class ResolveChapterContent(
             contentOptionCache.get(key)?.let { cached ->
                 return@resolution Result.success(cached)
             }
-            val result = provider.resolve(canonicalTitleId, canonicalChapterId)
-                .map { options ->
-                    options.filter { option ->
-                        option.canonicalChapterId == canonicalChapterId &&
-                            option.addonId == provider.addonId
-                    }
+            val result = try {
+                provider.resolve(canonicalTitleId, canonicalChapterId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Result.failure(error)
+            }.map { options ->
+                options.filter { option ->
+                    option.canonicalChapterId == canonicalChapterId &&
+                        option.addonId == provider.addonId
                 }
+            }
             result.getOrNull()?.let { options ->
                 contentOptionCache.put(key, options)
             }
