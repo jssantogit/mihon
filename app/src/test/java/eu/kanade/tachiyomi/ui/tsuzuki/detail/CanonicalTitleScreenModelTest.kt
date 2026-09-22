@@ -81,7 +81,6 @@ class CanonicalTitleScreenModelTest {
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = FakeChapterRepository(emptyList()),
-                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
@@ -150,7 +149,6 @@ class CanonicalTitleScreenModelTest {
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
-                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
@@ -205,7 +203,6 @@ class CanonicalTitleScreenModelTest {
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
-                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
@@ -271,7 +268,6 @@ class CanonicalTitleScreenModelTest {
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
-                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
