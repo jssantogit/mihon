@@ -182,11 +182,13 @@ class ReconcileChapterEvidenceTest {
         )
 
         fixture.chapterRepository.getById(chapter4.id)?.confirmation shouldBe CanonicalChapterConfirmation.CONFLICTED
+        val chapter126 = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.baseNumber == 126 }
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "addon",
             externalChapterKey = "stable-key",
-        )?.mappedCanonicalChapterId shouldBe null
+        )?.mappedCanonicalChapterId shouldBe chapter126.id
     }
 
     @Test
@@ -211,11 +213,13 @@ class ReconcileChapterEvidenceTest {
 
         fixture.chapterRepository.getById(chapter4.id)?.confirmation shouldBe
             CanonicalChapterConfirmation.PROVISIONAL
+        val chapter126 = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.baseNumber == 126 }
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "addon",
             externalChapterKey = "en-stable",
-        )?.mappedCanonicalChapterId shouldBe null
+        )?.mappedCanonicalChapterId shouldBe chapter126.id
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "addon",
