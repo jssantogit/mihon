@@ -77,9 +77,11 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = library,
             canonicalChapterRepository = FakeChapterRepository(emptyList()),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = FakeChapterRepository(emptyList()),
+                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
@@ -144,9 +146,11 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
+                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
@@ -197,9 +201,11 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
+                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
@@ -261,9 +267,11 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
+                chapterEvidenceRepository = FakeEvidenceRepository(),
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
