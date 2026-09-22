@@ -265,6 +265,7 @@ class CanonicalTitleScreenModelTest {
                     confidence = 1.0,
                     createdAt = 1L,
                     updatedAt = 1L,
+                    confirmation = CanonicalChapterConfirmation.CONFIRMED,
                 ),
             ),
         )
