@@ -79,8 +79,11 @@ class MihonInventorySnapshotCacheTest {
         var attempts = 0
         val fetch: suspend () -> Result<SourceChapterInventory> = {
             attempts++
-            if (attempts == 1) Result.failure(IllegalStateException("offline"))
-            else Result.success(inventory)
+            if (attempts == 1) {
+                Result.failure(IllegalStateException("offline"))
+            } else {
+                Result.success(inventory)
+            }
         }
         cache.getOrFetch(key, fetch = fetch).isFailure shouldBe true
         cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
