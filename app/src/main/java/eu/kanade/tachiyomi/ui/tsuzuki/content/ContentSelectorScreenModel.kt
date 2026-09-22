@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.content.ContentOption
@@ -94,6 +96,7 @@ class ContentSelectorScreenModel internal constructor(
     private var canonicalTitleId: String? = null
     private var canonicalChapterId: String? = null
     private var loadJob: Job? = null
+    private val preferenceWriteMutex = Mutex()
 
     fun start(
         canonicalTitleId: String,
@@ -138,6 +141,7 @@ class ContentSelectorScreenModel internal constructor(
     fun confirmInitialPreferred(selection: SelectionResult): Job {
         require(selection.rememberFirstPreference) { "Only an initial selection can set this preference" }
         return viewModelScope.launch {
+            preferenceWriteMutex.withLock {
             if (contentPreferenceRepository.get(selection.canonicalTitleId)?.preferredAddonId == null) {
                 contentPreferenceRepository.upsert(
                     ContentPreference(
@@ -149,11 +153,13 @@ class ContentSelectorScreenModel internal constructor(
                     ),
                 )
             }
+            }
         }
     }
 
     fun confirmPreferred(selection: SelectionResult): Job {
         return viewModelScope.launch {
+            preferenceWriteMutex.withLock {
             val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
             contentPreferenceRepository.upsert(
                 ContentPreference(
@@ -163,6 +169,7 @@ class ContentSelectorScreenModel internal constructor(
                     updatedAt = clock(),
                 ),
             )
+            }
         }
     }
 
@@ -170,6 +177,7 @@ class ContentSelectorScreenModel internal constructor(
         val language = requireNotNull(selection.option.language).trim()
         require(language.isNotEmpty()) { "Preferred language cannot be blank" }
         return viewModelScope.launch {
+            preferenceWriteMutex.withLock {
             val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
             contentPreferenceRepository.upsert(
                 ContentPreference(
@@ -179,6 +187,7 @@ class ContentSelectorScreenModel internal constructor(
                     updatedAt = clock(),
                 ),
             )
+            }
         }
     }
 
