@@ -29,6 +29,8 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
+import tachiyomi.domain.tsuzuki.chapter.interactor.MaterializeInferredChapter
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -83,6 +85,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = library,
             canonicalChapterRepository = FakeChapterRepository(emptyList()),
+            materializeInferredChapter = mockk(relaxed = true),
             chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
@@ -173,6 +176,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
             chapterEvidenceRepository = evidenceRepository,
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
@@ -230,6 +234,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
             chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
@@ -297,6 +302,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
             chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
@@ -366,6 +372,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapterRepo,
+            materializeInferredChapter = mockk(relaxed = true),
             chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
@@ -434,6 +441,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
             chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(

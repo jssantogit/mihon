@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
-import eu.kanade.tachiyomi.ui.tsuzuki.detail.firstDiscoveredChapterNumber
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 
 @Composable
@@ -105,24 +104,8 @@ fun CanonicalTitleDetailScreen(
                     }
                     if (state.chapters.isEmpty()) {
                         item {
-                            val knownCounts = state.reportedChapterCounts
-                                .filter { it.chapterCount != null }
                             Text(
-                                text = if (knownCounts.isEmpty()) {
-                                    if (state.isRefreshing) {
-                                        "Loading chapter evidence…"
-                                    } else {
-                                        "No canonical chapters yet."
-                                    }
-                                } else {
-                                    knownCounts.joinToString(
-                                        prefix = "Reported chapter count: ",
-                                        separator = " · ",
-                                        postfix = ". Chapter structure is not available yet.",
-                                    ) { count ->
-                                        "${providerLabel(count.provider)}: ${count.chapterCount}"
-                                    }
-                                },
+                                text = if (state.isRefreshing) "Loading chapters…" else "No chapters found.",
                                 modifier = Modifier.padding(16.dp),
                             )
                             if (!state.isRefreshing) {
@@ -167,38 +150,6 @@ private fun TitleHeader(
             text = state.title.displayTitle,
             style = MaterialTheme.typography.headlineSmall,
         )
-        val knownCounts = state.reportedChapterCounts.filter { it.chapterCount != null }
-        if (knownCounts.isNotEmpty()) {
-            Text(
-                text = knownCounts.joinToString(separator = " · ") { count ->
-                    "${providerLabel(count.provider)}: ${count.chapterCount} chapters"
-                },
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        state.addonCoverage.forEach { coverage ->
-            val observedRange = when {
-                coverage.firstKnownNumber == null -> ""
-                coverage.firstKnownNumber == coverage.lastKnownNumber ->
-                    ", chapter ${coverage.firstKnownNumber}"
-                else -> ", chapters ${coverage.firstKnownNumber}–${coverage.lastKnownNumber}"
-            }
-            Text(
-                text = "${coverage.displayName}: ${coverage.observedChapterCount} chapters recorded" +
-                    "$observedRange (availability not guaranteed)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        val firstDiscovered = firstDiscoveredChapterNumber(state.chapters.map { it.chapter })
-        if (firstDiscovered != null && firstDiscovered > 1) {
-            Text(
-                text = "Discovered chapters currently start at $firstDiscovered. " +
-                    "Earlier chapters have not been discovered from connected providers.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         if (state.isRefreshing) {
             Text(
                 text = "Refreshing chapter data…",
@@ -246,6 +197,13 @@ private fun TitleHeader(
         state.downloadError?.let {
             Text(
                 text = it.message ?: "Unable to download chapter.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        state.chapterActionError?.let {
+            Text(
+                text = it.message ?: "Unable to open chapter.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -319,8 +277,3 @@ private fun CanonicalChapterRow(
     )
 }
 
-private fun providerLabel(provider: String): String = when (provider.lowercase()) {
-    "kitsu" -> "Kitsu"
-    "mal" -> "MyAnimeList"
-    else -> provider
-}

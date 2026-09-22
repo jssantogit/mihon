@@ -54,12 +54,14 @@ data class CanonicalTitleScreen(
                 screenModel.requestDownload(canonicalChapterId)
             },
             onOpenChapter = { canonicalChapterId ->
-                context.startActivity(
-                    ReaderActivity.newCanonicalIntent(
-                        context = context,
-                        canonicalChapterId = canonicalChapterId,
-                    ),
-                )
+                screenModel.openChapter(canonicalChapterId) { actualChapterId ->
+                    context.startActivity(
+                        ReaderActivity.newCanonicalIntent(
+                            context = context,
+                            canonicalChapterId = actualChapterId,
+                        ),
+                    )
+                }
             },
         )
 

@@ -24,6 +24,8 @@ import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.interactor.MaterializeInferredChapter
+import tachiyomi.domain.tsuzuki.chapter.interactor.buildCanonicalChapterOutline
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentOption
@@ -61,6 +63,7 @@ sealed interface CanonicalTitleScreenState {
         val downloadInProgressChapterId: String? = null,
         val downloadSelectionChapterId: String? = null,
         val downloadError: Throwable? = null,
+        val chapterActionError: Throwable? = null,
     ) : CanonicalTitleScreenState
 
     data class Error(
@@ -73,6 +76,7 @@ data class CanonicalChapterDetailItem(
     val chapter: CanonicalChapter,
     val progress: CanonicalChapterProgress?,
     val downloaded: Boolean,
+    val inferredFromCount: Boolean = false,
 ) {
     val confirmation: CanonicalChapterConfirmation
         get() = chapter.confirmation
@@ -85,6 +89,7 @@ class CanonicalTitleScreenModel(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val canonicalLibraryRepository: CanonicalLibraryRepository,
     private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val materializeInferredChapter: MaterializeInferredChapter,
     private val chapterEvidenceRepository: ChapterEvidenceRepository,
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val getCanonicalChapterDownloadState: GetCanonicalChapterDownloadState,
@@ -177,6 +182,48 @@ class CanonicalTitleScreenModel(
         }
     }
 
+    fun openChapter(canonicalChapterId: String, onReady: (String) -> Unit): Job? {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return null
+        val row = loaded.chapters.firstOrNull { it.chapter.id == canonicalChapterId } ?: return null
+        return viewModelScope.launch {
+            try {
+                val resolved = materializeIfRequired(row)
+                val state = _state.value as? CanonicalTitleScreenState.Loaded
+                if (state?.title?.id == resolved.canonicalTitleId) {
+                    _state.value = state.copy(chapterActionError = null)
+                }
+                onReady(resolved.id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val state = _state.value as? CanonicalTitleScreenState.Loaded
+                if (state != null) _state.value = state.copy(chapterActionError = error)
+            }
+        }
+    }
+
+    private suspend fun materializeIfRequired(row: CanonicalChapterDetailItem): CanonicalChapter {
+        if (!row.inferredFromCount) return row.chapter
+        val resolved = materializeInferredChapter.execute(row.chapter)
+        if (resolved.id != row.chapter.id) {
+            val state = _state.value as? CanonicalTitleScreenState.Loaded
+            if (state != null) {
+                _state.value = state.copy(
+                    chapters = state.chapters.map {
+                        if (it.chapter.id == row.chapter.id) {
+                            it.copy(chapter = resolved, inferredFromCount = false)
+                        } else {
+                            it
+                        }
+                    },
+                    downloadInProgressChapterId = state.downloadInProgressChapterId
+                        ?.let { if (it == row.chapter.id) resolved.id else it },
+                )
+            }
+        }
+        return resolved
+    }
+
     fun requestDownload(canonicalChapterId: String): Job? {
         val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return null
         if (loaded.chapters.none { it.chapter.id == canonicalChapterId }) return null
@@ -187,8 +234,22 @@ class CanonicalTitleScreenModel(
             downloadError = null,
         )
         downloadOperation = viewModelScope.launch {
-            val result = downloadCanonicalChapter.execute(canonicalChapterId)
-            applyDownloadResult(result)
+            try {
+                val resolved = materializeIfRequired(
+                    loaded.chapters.first { it.chapter.id == canonicalChapterId },
+                )
+                applyDownloadResult(downloadCanonicalChapter.execute(resolved.id))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val state = _state.value as? CanonicalTitleScreenState.Loaded
+                if (state != null) {
+                    _state.value = state.copy(
+                        downloadInProgressChapterId = null,
+                        downloadError = error,
+                    )
+                }
+            }
         }
         return downloadOperation
     }
@@ -262,8 +323,14 @@ class CanonicalTitleScreenModel(
             val metadataElapsed = refreshStart.elapsedNow()
             val current = _state.value as? CanonicalTitleScreenState.Loaded
             if (current?.title?.id == canonicalTitleId) {
+                val refreshedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
                 _state.value = current.copy(
-                    reportedChapterCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId),
+                    reportedChapterCounts = refreshedCounts,
+                    chapters = withMetadataSlots(
+                        canonicalTitleId,
+                        current.chapters.filterNot(CanonicalChapterDetailItem::inferredFromCount),
+                        refreshedCounts,
+                    ),
                     refreshError = metadataError,
                 )
             }
@@ -299,6 +366,7 @@ class CanonicalTitleScreenModel(
                     downloadInProgressChapterId = current.downloadInProgressChapterId,
                     downloadSelectionChapterId = current.downloadSelectionChapterId,
                     downloadError = current.downloadError,
+                    chapterActionError = current.chapterActionError,
                 )
             }
         } catch (error: CancellationException) {
@@ -400,12 +468,29 @@ class CanonicalTitleScreenModel(
         return CanonicalTitleScreenState.Loaded(
             title = title,
             libraryEntry = libraryEntry,
-            chapters = details,
+            chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )
+    }
+
+    private fun withMetadataSlots(
+        titleId: String,
+        realRows: List<CanonicalChapterDetailItem>,
+        reportedCounts: List<ReportedChapterCount>,
+    ): List<CanonicalChapterDetailItem> {
+        val byId = realRows.associateBy { it.chapter.id }
+        return buildCanonicalChapterOutline(titleId, realRows.map { it.chapter }, reportedCounts)
+            .map { entry ->
+                byId[entry.chapter.id] ?: CanonicalChapterDetailItem(
+                    chapter = entry.chapter,
+                    progress = null,
+                    downloaded = false,
+                    inferredFromCount = entry.inferredFromReportedCount,
+                )
+            }
     }
 
     private fun applyDownloadResult(result: CanonicalDownloadPreparation) {
