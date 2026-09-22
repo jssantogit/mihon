@@ -103,8 +103,24 @@ fun CanonicalTitleDetailScreen(
                     }
                     if (state.chapters.isEmpty()) {
                         item {
+                            val knownCounts = state.reportedChapterCounts
+                                .filter { it.chapterCount != null }
                             Text(
-                                text = "No canonical chapters yet.",
+                                text = if (knownCounts.isEmpty()) {
+                                    if (state.isRefreshing) {
+                                        "Loading chapter evidence…"
+                                    } else {
+                                        "No canonical chapters yet."
+                                    }
+                                } else {
+                                    knownCounts.joinToString(
+                                        prefix = "Reported chapter count: ",
+                                        separator = " · ",
+                                        postfix = ". Chapter structure is not available yet.",
+                                    ) { count ->
+                                        "${providerLabel(count.provider)}: ${count.chapterCount}"
+                                    }
+                                },
                                 modifier = Modifier.padding(16.dp),
                             )
                         }
@@ -144,6 +160,21 @@ private fun TitleHeader(
             text = state.title.displayTitle,
             style = MaterialTheme.typography.headlineSmall,
         )
+        val knownCounts = state.reportedChapterCounts.filter { it.chapterCount != null }
+        if (knownCounts.isNotEmpty()) {
+            Text(
+                text = knownCounts.joinToString(separator = " · ") { count ->
+                    "${providerLabel(count.provider)}: ${count.chapterCount} chapters"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (state.isRefreshing) {
+            Text(
+                text = "Refreshing chapter data…",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         Text(
             text = state.libraryEntry
                 ?.status
@@ -261,4 +292,11 @@ private fun CanonicalChapterRow(
             onOpenChapter(item.chapter.id)
         },
     )
+}
+
+
+private fun providerLabel(provider: String): String = when (provider.lowercase()) {
+    "kitsu" -> "Kitsu"
+    "mal" -> "MyAnimeList"
+    else -> provider
 }
