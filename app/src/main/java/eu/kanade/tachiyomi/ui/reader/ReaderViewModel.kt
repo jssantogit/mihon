@@ -711,9 +711,6 @@ class ReaderViewModel(
                     )
                 ) {
                     is CanonicalReaderPreparation.Ready -> {
-                        if (hadActiveSession) {
-                            updateHistory()
-                        }
                         loadCanonicalTarget(
                             canonicalChapterId = preparation.canonicalChapterId,
                             target = preparation.target,
@@ -747,11 +744,8 @@ class ReaderViewModel(
                 eventChannel.trySend(
                     Event.ContentSwitchFailed(error.message ?: "Could not load the selected source"),
                 )
-                if (!hadActiveSession) {
-                    // Keep the selector open so the user can pick another source.
-                    // Initial launch failures are still exposed to the Reader UI.
-                    mutableState.update { it.copy(initError = error) }
-                }
+                // The selector remains open on failure, including an initial
+                // selection: initError would finish the ReaderActivity instead.
             } finally {
                 contentSelectionInProgress = false
             }
