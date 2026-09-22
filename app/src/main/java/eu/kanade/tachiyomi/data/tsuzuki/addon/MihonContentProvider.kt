@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.data.tsuzuki.addon
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -22,6 +24,7 @@ class MihonContentProvider internal constructor(
         ContentBinding,
         SourceChapterSnapshot,
     ) -> Result<ContentDelivery.Mihon>,
+    private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
 ) : ContentProvider {
 
     override suspend fun resolve(
@@ -33,8 +36,23 @@ class MihonContentProvider internal constructor(
                 .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
             if (bindings.isEmpty()) return Result.success(emptyList())
 
-            val variants = canonicalChapterRepository.getVariantsByCanonicalChapterId(canonicalChapterId)
-            val sourceIdentities = variants.mapNotNull(::sourceIdentity).toSet()
+            val variantIdentities = canonicalChapterRepository
+                .getVariantsByCanonicalChapterId(canonicalChapterId)
+                .mapNotNull(::sourceIdentity)
+            val evidenceIdentities = chapterEvidenceRepository
+                ?.getByCanonicalTitleId(canonicalTitleId)
+                .orEmpty()
+                .asSequence()
+                .filter {
+                    it.mappedCanonicalChapterId == canonicalChapterId &&
+                        it.evidence.producerKind == ProducerKind.ADDON &&
+                        it.evidence.producerId == addonId.value
+                }
+                .mapNotNull { persisted ->
+                    persisted.evidence.externalChapterKey?.let(::sourceIdentity)
+                }
+                .toList()
+            val sourceIdentities = (variantIdentities + evidenceIdentities).toSet()
             if (sourceIdentities.isEmpty()) return Result.success(emptyList())
 
             val options = mutableListOf<ContentOption>()
@@ -96,6 +114,14 @@ class MihonContentProvider internal constructor(
             ?: snapshot.sourceChapterUrl.takeIf(String::isNotBlank)
             ?: return null
         return snapshot.sourceId to chapterKey
+    }
+
+    private fun sourceIdentity(externalChapterKey: String): Pair<Long, String>? {
+        val separator = externalChapterKey.indexOf(':')
+        if (separator <= 0 || separator == externalChapterKey.lastIndex) return null
+        val sourceId = externalChapterKey.substring(0, separator).toLongOrNull() ?: return null
+        val chapterKey = externalChapterKey.substring(separator + 1)
+        return sourceId to chapterKey
     }
 
     private fun contentKey(snapshot: SourceChapterSnapshot): String {
