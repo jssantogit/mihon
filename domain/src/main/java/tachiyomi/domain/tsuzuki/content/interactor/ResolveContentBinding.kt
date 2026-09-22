@@ -188,7 +188,8 @@ class ResolveContentBinding internal constructor(
             val now = clock()
             val existing = existingBindings.firstOrNull {
                 it.providerTitleKey == materialized.providerTitleKey
-            }
+            } ?: existingBindings.singleOrNull()
+                ?.takeIf { selected.size == 1 }
             val binding = ContentBinding(
                 id = existing?.id ?: idFactory(),
                 canonicalTitleId = canonicalTitleId,
