@@ -8,6 +8,7 @@ interface CanonicalTitleRepository {
     suspend fun getById(id: String): CanonicalTitle?
     fun getByIdAsFlow(id: String): Flow<CanonicalTitle?>
     suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle?
+    suspend fun getExternalIdentities(canonicalTitleId: String): List<ExternalIdentity> = emptyList()
     suspend fun getOrCreateByExternalIdentity(
         title: CanonicalTitle,
         identity: ExternalIdentity,
