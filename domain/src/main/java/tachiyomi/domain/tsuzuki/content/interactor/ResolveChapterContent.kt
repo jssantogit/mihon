@@ -30,6 +30,7 @@ class ResolveChapterContent(
         canonicalTitleId: String,
         canonicalChapterId: String,
     ): ContentResolution {
+        addonRegistry.awaitReady()
         val preferredAddonId = contentPreferenceRepository.get(canonicalTitleId)?.preferredAddonId
         val preferredLanguages = readerPreferences.preferredLanguages.get()
         val providers = addonRegistry.contentProviders()
@@ -109,6 +110,7 @@ class ResolveChapterContent(
         canonicalChapterId: String,
         refresh: Boolean = false,
     ): List<ContentOption> {
+        addonRegistry.awaitReady()
         if (refresh) {
             contentOptionCache.invalidateChapter(
                 canonicalTitleId = canonicalTitleId,
