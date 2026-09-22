@@ -316,7 +316,7 @@ class CanonicalTitleScreenModel(
                 val progress = progressByChapter[chapter.id]
                 val downloaded = chapter.id in canonicalDownloadIds
                 if (
-                    chapter.confirmation == CanonicalChapterConfirmation.CONFLICTED &&
+                    chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
                     chapter.id !in supportedChapterIds &&
                     progress == null &&
                     !downloaded
@@ -340,7 +340,7 @@ class CanonicalTitleScreenModel(
                                 getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
                             }.getOrDefault(false)
                         if (
-                            chapter.confirmation == CanonicalChapterConfirmation.CONFLICTED &&
+                            chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
                             chapter.id !in supportedChapterIds &&
                             progress == null &&
                             !downloaded
