@@ -78,7 +78,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = library,
             canonicalChapterRepository = FakeChapterRepository(emptyList()),
-            chapterEvidenceRepository = evidenceRepository,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = FakeChapterRepository(emptyList()),
@@ -167,7 +167,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
-            chapterEvidenceRepository = FakeEvidenceRepository(),
+            chapterEvidenceRepository = evidenceRepository,
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
