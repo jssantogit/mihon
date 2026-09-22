@@ -79,6 +79,4 @@ ON C.id = P.canonical_chapter_id
 JOIN tsuzuki_titles T
 ON T.id = C.canonical_title_id
 WHERE P.updated_at > 0
-AND P.read = 0
-AND (P.last_page_read > 0 OR P.last_variant_id IS NOT NULL)
 ORDER BY P.updated_at DESC, C.id ASC;
