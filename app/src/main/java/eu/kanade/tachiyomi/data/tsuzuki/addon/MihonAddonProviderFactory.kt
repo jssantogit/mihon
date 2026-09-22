@@ -38,7 +38,7 @@ class MihonAddonProviderFactory(
         addonId = addonId,
         contentBindingRepository = contentBindingRepository,
         parser = parser,
-        fetchInventory = { binding -> chapterInventoryGateway.fetch(binding) },
+        fetchInventory = { binding -> chapterInventoryGateway.fetch(binding, refresh = true) },
     )
 
     private suspend fun materializeDelivery(

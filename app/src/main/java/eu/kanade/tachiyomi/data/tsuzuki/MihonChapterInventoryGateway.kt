@@ -35,14 +35,37 @@ class MihonChapterInventoryGateway(
     private val mangaRepository: MangaRepository,
     private val chapterRepository: ChapterRepository,
     private val sourceManager: SourceManager,
+    private val inventoryCache: MihonInventorySnapshotCache = MihonInventorySnapshotCache(),
 ) : ChapterInventoryGateway {
 
-    override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> {
+    override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> =
+        fetch(mapping, refresh = false)
+
+    suspend fun fetch(
+        mapping: SourceTitleMapping,
+        refresh: Boolean,
+    ): Result<SourceChapterInventory> {
         val mihonMangaId = mapping.mihonMangaId
             ?: return Result.failure(
                 IllegalArgumentException("Source mapping " + mapping.id + " is not materialized"),
             )
+        val key = MihonInventoryKey(
+            canonicalTitleId = mapping.canonicalTitleId,
+            mappingId = mapping.id,
+            sourceId = mapping.sourceId,
+            mangaId = mihonMangaId,
+            sourceUrl = mapping.sourceUrl,
+            language = mapping.language,
+        )
+        return inventoryCache.getOrFetch(key, refresh) {
+            fetchLive(mapping, mihonMangaId)
+        }
+    }
 
+    private suspend fun fetchLive(
+        mapping: SourceTitleMapping,
+        mihonMangaId: Long,
+    ): Result<SourceChapterInventory> {
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
             val source = sourceManager.get(mapping.sourceId)
@@ -84,7 +107,10 @@ class MihonChapterInventoryGateway(
         }
     }
 
-    suspend fun fetch(binding: ContentBinding): Result<SourceChapterInventory> {
+    suspend fun fetch(
+        binding: ContentBinding,
+        refresh: Boolean = false,
+    ): Result<SourceChapterInventory> {
         return try {
             val payload = MihonContentBindingPayloadCodec.decode(binding.runtimePayload)
             fetch(
@@ -102,6 +128,7 @@ class MihonChapterInventoryGateway(
                     createdAt = binding.createdAt,
                     updatedAt = binding.updatedAt,
                 ),
+                refresh = refresh,
             )
         } catch (error: CancellationException) {
             throw error
