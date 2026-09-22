@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.tsuzuki.search
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,6 +57,7 @@ class TsuzukiSearchScreenModelTest {
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
                 MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
             ),
         )
 
@@ -82,6 +84,7 @@ class TsuzukiSearchScreenModelTest {
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
                 MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
             ),
         )
         advanceUntilIdle()
