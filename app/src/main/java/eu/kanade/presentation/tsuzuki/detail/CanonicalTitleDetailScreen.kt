@@ -276,4 +276,3 @@ private fun CanonicalChapterRow(
         },
     )
 }
-
