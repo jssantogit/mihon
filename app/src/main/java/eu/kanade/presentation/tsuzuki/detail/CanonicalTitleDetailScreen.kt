@@ -294,7 +294,6 @@ private fun CanonicalChapterRow(
     )
 }
 
-
 private fun providerLabel(provider: String): String = when (provider.lowercase()) {
     "kitsu" -> "Kitsu"
     "mal" -> "MyAnimeList"
