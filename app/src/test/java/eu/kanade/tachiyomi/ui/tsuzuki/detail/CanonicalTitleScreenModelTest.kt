@@ -40,6 +40,9 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
+import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
+import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
 import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
@@ -83,6 +86,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
             canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -148,6 +153,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
             canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
         )
 
@@ -197,6 +204,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = mockk(relaxed = true),
             canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -259,6 +268,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = downloader,
             canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -277,6 +288,27 @@ class CanonicalTitleScreenModelTest {
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
         state.downloadSelectionChapterId shouldBe "chapter-37"
         state.downloadInProgressChapterId shouldBe null
+    }
+
+    private fun metadataRefresh(
+        repository: ReportedChapterCountRepository = FakeReportedChapterCountRepository(),
+    ) = RefreshReportedChapterCounts(
+        canonicalTitleRepository = FakeTitleRepository(),
+        registry = emptyRegistry(),
+        repository = repository,
+    )
+
+    private class FakeReportedChapterCountRepository(
+        initial: List<ReportedChapterCount> = emptyList(),
+    ) : ReportedChapterCountRepository {
+        private val values = initial.associateByTo(linkedMapOf()) { it.provider }
+
+        override suspend fun getByTitle(canonicalTitleId: String): List<ReportedChapterCount> =
+            values.values.filter { it.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun upsert(value: ReportedChapterCount) {
+            values[value.provider] = value
+        }
     }
 
     private fun emptyRegistry() = object : IntegrationRegistry {
