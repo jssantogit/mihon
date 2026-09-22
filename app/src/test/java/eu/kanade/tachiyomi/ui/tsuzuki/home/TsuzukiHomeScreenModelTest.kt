@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
@@ -123,6 +124,7 @@ class TsuzukiHomeScreenModelTest {
             observeCanonicalLibrary = observeLibrary,
             historyRepository = history,
             importLegacyCanonicalProgress = importLegacy,
+            materializeCanonicalTitleFromCatalog = mockk<MaterializeCanonicalTitleFromCatalog>(relaxed = true),
         )
     }
 
