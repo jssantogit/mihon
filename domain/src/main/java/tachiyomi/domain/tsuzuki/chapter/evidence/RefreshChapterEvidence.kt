@@ -92,6 +92,7 @@ class RefreshChapterEvidence internal constructor(
     ): List<ChapterEvidence> {
         val addonRegistry = addonRegistry ?: return emptyList()
         val resolver = resolveContentBinding ?: return emptyList()
+        addonRegistry.awaitReady()
 
         return coroutineScope {
             addonRegistry.chapterProbeProviders()
