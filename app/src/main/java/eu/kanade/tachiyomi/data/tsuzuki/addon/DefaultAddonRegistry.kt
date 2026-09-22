@@ -4,12 +4,17 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
@@ -26,6 +31,8 @@ class DefaultAddonRegistry private constructor(
     private val internalContentProviders: List<ContentProvider>,
     @Suppress("unused")
     private val desiredAddonIds: () -> Set<AddonId>,
+    private val awaitReadyBlock: suspend () -> Unit,
+    private val changes: () -> Flow<Unit>,
 ) : AddonRegistry {
 
     internal constructor(
@@ -34,6 +41,8 @@ class DefaultAddonRegistry private constructor(
         chapterProbeProviderCandidates: List<ChapterProbeProvider>,
         internalContentProviders: List<ContentProvider> = emptyList(),
         desiredAddonIds: () -> Set<AddonId> = { emptySet() },
+        awaitReadyBlock: suspend () -> Unit = {},
+        changes: () -> Flow<Unit> = { emptyFlow() },
     ) : this(
         installedAddons = installedAddons,
         contentProviderFor = { addonId -> contentProviderCandidates.firstOrNull { it.addonId == addonId } },
@@ -42,6 +51,8 @@ class DefaultAddonRegistry private constructor(
         },
         internalContentProviders = internalContentProviders,
         desiredAddonIds = desiredAddonIds,
+        awaitReadyBlock = awaitReadyBlock,
+        changes = changes,
     )
 
     @Inject
@@ -57,7 +68,15 @@ class DefaultAddonRegistry private constructor(
         chapterProbeProviderFor = runtimeState.providerFactory::chapterProbeProvider,
         internalContentProviders = runtimeState.internalContentProviders,
         desiredAddonIds = { emptySet() },
+        awaitReadyBlock = runtimeState::awaitReady,
+        changes = runtimeState::observeChanges,
     )
+
+    override suspend fun awaitReady() {
+        awaitReadyBlock()
+    }
+
+    override fun observeChanges(): Flow<Unit> = changes()
 
     override fun contentProviders(): List<ContentProvider> {
         return internalContentProviders + enabledInstalledAddons().mapNotNull { contentProviderFor(it.id) }
@@ -78,7 +97,26 @@ class DefaultAddonRegistry private constructor(
     ) {
         val internalContentProviders: List<ContentProvider> = listOf(localContentProvider)
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val installedAddons: StateFlow<List<InstalledAddon>> = addonRepository.observeInstalled()
-            .stateIn(scope, SharingStarted.Eagerly, emptyList())
+        private val ready = CompletableDeferred<Unit>()
+        val installedAddons = MutableStateFlow<List<InstalledAddon>>(emptyList())
+
+        init {
+            addonRepository.observeInstalled()
+                .onEach { addons ->
+                    installedAddons.value = addons
+                    if (!ready.isCompleted) {
+                        ready.complete(Unit)
+                    }
+                }
+                .launchIn(scope)
+        }
+
+        suspend fun awaitReady() {
+            ready.await()
+        }
+
+        fun observeChanges(): Flow<Unit> = installedAddons
+            .drop(1)
+            .map { Unit }
     }
 }
