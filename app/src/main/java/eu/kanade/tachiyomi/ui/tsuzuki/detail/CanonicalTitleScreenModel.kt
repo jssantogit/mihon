@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -78,6 +79,7 @@ class CanonicalTitleScreenModel(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val canonicalLibraryRepository: CanonicalLibraryRepository,
     private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val chapterEvidenceRepository: ChapterEvidenceRepository,
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val getCanonicalChapterDownloadState: GetCanonicalChapterDownloadState,
     private val downloadCanonicalChapter: DownloadCanonicalChapter,
@@ -295,6 +297,10 @@ class CanonicalTitleScreenModel(
             ?: throw NoSuchElementException("Canonical title not found: $canonicalTitleId")
         val libraryEntry = canonicalLibraryRepository.get(canonicalTitleId)
         val chapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+        val supportedChapterIds = chapterEvidenceRepository
+            .getByCanonicalTitleId(canonicalTitleId)
+            .mapNotNull { it.mappedCanonicalChapterId }
+            .toSet()
         val progressByChapter = canonicalReadingRepository
             .getProgressByCanonicalTitleId(canonicalTitleId)
             .associateBy(CanonicalChapterProgress::canonicalChapterId)
@@ -306,28 +312,49 @@ class CanonicalTitleScreenModel(
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
 
         val details = if (!includeLegacyDownloadChecks) {
-            chapters.map { chapter ->
-                CanonicalChapterDetailItem(
-                    chapter = chapter,
-                    progress = progressByChapter[chapter.id],
-                    downloaded = chapter.id in canonicalDownloadIds,
-                )
+            chapters.mapNotNull { chapter ->
+                val progress = progressByChapter[chapter.id]
+                val downloaded = chapter.id in canonicalDownloadIds
+                if (
+                    chapter.confirmation == CanonicalChapterConfirmation.CONFLICTED &&
+                    chapter.id !in supportedChapterIds &&
+                    progress == null &&
+                    !downloaded
+                ) {
+                    null
+                } else {
+                    CanonicalChapterDetailItem(
+                        chapter = chapter,
+                        progress = progress,
+                        downloaded = downloaded,
+                    )
+                }
             }
         } else {
             coroutineScope {
                 chapters.map { chapter ->
                     async {
+                        val progress = progressByChapter[chapter.id]
                         val downloaded = chapter.id in canonicalDownloadIds ||
                             runCatching {
                                 getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
                             }.getOrDefault(false)
-                        CanonicalChapterDetailItem(
-                            chapter = chapter,
-                            progress = progressByChapter[chapter.id],
-                            downloaded = downloaded,
-                        )
+                        if (
+                            chapter.confirmation == CanonicalChapterConfirmation.CONFLICTED &&
+                            chapter.id !in supportedChapterIds &&
+                            progress == null &&
+                            !downloaded
+                        ) {
+                            null
+                        } else {
+                            CanonicalChapterDetailItem(
+                                chapter = chapter,
+                                progress = progress,
+                                downloaded = downloaded,
+                            )
+                        }
                     }
-                }.awaitAll()
+                }.awaitAll().filterNotNull()
             }
         }
 
