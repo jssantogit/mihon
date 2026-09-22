@@ -1,6 +1,11 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
@@ -61,12 +66,23 @@ class MihonContentProvider internal constructor(
             val sourceIdentities = (variantIdentities + evidenceIdentities).toSet()
             if (sourceIdentities.isEmpty()) return Result.success(emptyList())
 
+            val fetchGate = Semaphore(MAX_CONCURRENT_INVENTORY_FETCHES)
+            val inventoryResults = coroutineScope {
+                bindings.map { binding ->
+                    async {
+                        binding to fetchGate.withPermit {
+                            fetchInventory(binding)
+                        }
+                    }
+                }.awaitAll()
+            }
+
             val options = mutableListOf<ContentOption>()
             var firstFailure: Throwable? = null
             var successfulInventoryCount = 0
 
-            for (binding in bindings) {
-                val inventory = fetchInventory(binding).getOrElse { error ->
+            for ((binding, inventoryResult) in inventoryResults) {
+                val inventory = inventoryResult.getOrElse { error ->
                     if (error is CancellationException) throw error
                     firstFailure = firstFailure ?: error
                     continue
@@ -144,5 +160,9 @@ class MihonContentProvider internal constructor(
     private fun contentKey(snapshot: SourceChapterSnapshot): String {
         val chapterKey = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
         return addonId.value + ":" + snapshot.sourceId + ":" + chapterKey
+    }
+
+    private companion object {
+        const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
     }
 }
