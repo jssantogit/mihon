@@ -202,7 +202,10 @@ private fun ConfiguredHomeRow(
                         items = content.items,
                         key = { "${row.listId}:${it.provider}:${it.providerId}" },
                     ) { item ->
-                        CatalogHomeCard(item)
+                        CatalogHomeCard(
+                            item = item,
+                            onClick = { onCatalogItem(item) },
+                        )
                     }
                 }
             }
