@@ -46,6 +46,27 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `duplicate rows with the same external identity collapse safely`() = runTest {
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider(
+                    id = "kitsu",
+                    result = Result.success(
+                        page(
+                            CatalogItem("kitsu", "42", "Tokyo Ghoul"),
+                            CatalogItem("kitsu", "42", "Tokyo Ghoul"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val results = search.execute(CatalogQuery(query = "Tokyo Ghoul"))
+
+        results.map { it.provider to it.providerId } shouldContainExactly listOf("kitsu" to "42")
+    }
+
+    @Test
     fun `one provider failure does not erase successful provider results`() = runTest {
         val search = SearchIntegrations(
             registry(
