@@ -182,14 +182,16 @@ class CanonicalTitleScreenModelTest {
             ),
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.get("chapter-37") } returns CanonicalDownloadArtifact(
-            canonicalChapterId = "chapter-37",
-            localUri = "content://downloads/chapter-37",
-            format = "DIRECTORY",
-            originatingAddonId = null,
-            originatingOptionKey = null,
-            completedAt = 100L,
-            checksum = null,
+        coEvery { downloads.getAll() } returns listOf(
+            CanonicalDownloadArtifact(
+                canonicalChapterId = "chapter-37",
+                localUri = "content://downloads/chapter-37",
+                format = "DIRECTORY",
+                originatingAddonId = null,
+                originatingOptionKey = null,
+                completedAt = 100L,
+                checksum = null,
+            ),
         )
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
@@ -254,7 +256,7 @@ class CanonicalTitleScreenModelTest {
             preferredAddonId = null,
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.get(any()) } returns null
+        coEvery { downloads.getAll() } returns emptyList()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
