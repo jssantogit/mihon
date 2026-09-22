@@ -60,6 +60,7 @@ data class SelectionResult(
     val canonicalTitleId: String,
     val option: ContentOption,
     val offerSetAsPreferred: Boolean,
+    val rememberFirstPreference: Boolean = false,
 )
 
 @ViewModelKey
@@ -116,24 +117,30 @@ class ContentSelectorScreenModel internal constructor(
             "Selected option is not part of the current selector"
         }
         val hasExistingPreference = state.preferredAddonId != null
-        if (!hasExistingPreference) {
-            viewModelScope.launch {
-                contentPreferenceRepository.upsert(
-                    ContentPreference(
-                        canonicalTitleId = state.canonicalTitleId,
-                        preferredAddonId = item.option.addonId,
-                        updatedAt = clock(),
-                    ),
-                )
-            }
-        }
-
+        // Selection is provisional until the Reader has successfully prepared
+        // nonempty pages. Never persist an unavailable source as preferred.
         return SelectionResult(
             canonicalTitleId = state.canonicalTitleId,
             option = item.option,
             offerSetAsPreferred = hasExistingPreference &&
                 state.preferredAddonId != item.option.addonId,
+            rememberFirstPreference = !hasExistingPreference,
         )
+    }
+
+    fun confirmInitialPreferred(selection: SelectionResult): Job {
+        require(selection.rememberFirstPreference) { "Only an initial selection can set this preference" }
+        return viewModelScope.launch {
+            if (contentPreferenceRepository.get(selection.canonicalTitleId)?.preferredAddonId == null) {
+                contentPreferenceRepository.upsert(
+                    ContentPreference(
+                        canonicalTitleId = selection.canonicalTitleId,
+                        preferredAddonId = selection.option.addonId,
+                        updatedAt = clock(),
+                    ),
+                )
+            }
+        }
     }
 
     fun confirmPreferred(selection: SelectionResult): Job {
