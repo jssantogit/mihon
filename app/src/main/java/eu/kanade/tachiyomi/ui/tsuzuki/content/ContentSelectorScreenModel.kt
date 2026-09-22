@@ -48,6 +48,7 @@ sealed interface ContentSelectorScreenState {
     data class Empty(
         val canonicalTitleId: String,
         val canonicalChapterId: String,
+        val noEnabledAddon: Boolean = false,
     ) : ContentSelectorScreenState
 
     data class Error(
@@ -195,7 +196,11 @@ class ContentSelectorScreenModel internal constructor(
                     refresh = refresh,
                 )
                 if (options.isEmpty()) {
-                    _state.value = ContentSelectorScreenState.Empty(titleId, chapterId)
+                    _state.value = ContentSelectorScreenState.Empty(
+                        canonicalTitleId = titleId,
+                        canonicalChapterId = chapterId,
+                        noEnabledAddon = addonRepository.snapshot().none { it.enabled },
+                    )
                     return@launch
                 }
 

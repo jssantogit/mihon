@@ -276,6 +276,35 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
+    fun `selector distinguishes no enabled Add-ons from missing chapter matches`() = runTest(dispatcher) {
+        val disabled = addon("offline-addon", "Offline Add-on").copy(enabled = false)
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(disabled),
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+            .noEnabledAddon shouldBe true
+    }
+
+    @Test
+    fun `selector reports missing matches separately when an Add-on is enabled`() = runTest(dispatcher) {
+        val model = model(
+            providers = listOf(provider("enabled", Result.success(emptyList()))),
+            addons = listOf(addon("enabled", "Enabled Add-on")),
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+            .noEnabledAddon shouldBe false
+    }
+
+    @Test
     fun `unexpected selector dependency failure maps to error state`() = runTest(dispatcher) {
         val model = model(
             providers = listOf(provider("healthy", Result.success(listOf(option("healthy", "en", null, 1L))))),

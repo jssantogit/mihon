@@ -81,7 +81,11 @@ fun ContentOptionSelectorSheet(
 
                 is ContentSelectorScreenState.Empty -> {
                     SelectorUnavailableContent(
-                        message = stringResource(MR.strings.tsuzuki_content_no_options),
+                        message = if (state.noEnabledAddon) {
+                            "No reading Add-ons are enabled. Enable or install one to discover chapters."
+                        } else {
+                            stringResource(MR.strings.tsuzuki_content_no_options)
+                        },
                         onRetry = onRetry,
                         onOpenAddonsSettings = onOpenAddonsSettings,
                     )
