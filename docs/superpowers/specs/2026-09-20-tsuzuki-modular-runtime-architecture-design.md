@@ -152,13 +152,15 @@ Provider-specific releases, languages, scanlation groups, URLs, archives, and to
 
 Removing an Add-on must not delete the chapter concept.
 
-### 4.3 Chapter count is not chapter structure
+### 4.3 Chapter count is catalog extent, not proof of the numbering structure
 
-A provider reporting chapterCount = 205 does **not** authorize Tsuzuki to synthesize chapters 1 through 205.
+A provider reporting `chapterCount = 205` provides a useful catalog outline, even when no reading Add-on has been bound yet. Tsuzuki displays **count-derived numbered slots** in the same chapter list as chapters supported by actual evidence. This prevents a work with a known count from appearing to have no chapters merely because no Add-on currently supplies pages.
 
-Counts may be retained as metadata, but CanonicalChapter rows require actual chapter evidence.
+Count-only slots are **provisional presentation**, not 205 confirmed `CanonicalChapter` records and not chapter/release evidence. Their default labels (`1…205`) are tentative; authoritative or reliably parsed evidence can later supply the actual numbering and extra/special/half/zero chapters. Count-only slots have no fabricated source URL, chapter key, pages, content availability, download state or read progress.
 
-This avoids inventing nonexistent numbering structures and mishandling extras, half chapters, chapter zero, negative/special numbering, editions, renumbering, and provider-specific labels.
+When a user explicitly opens or downloads a count-only slot, Tsuzuki may materialize **that single selected slot** as a low-confidence, provenance-distinguishable provisional `CanonicalChapter` with a stable Tsuzuki-owned ID. This allows the normal content selector and canonical read/download state to work without bulk-creating unverified chapter identities. Materialization must be serialized with source-evidence reconciliation, reusing an existing matching canonical identity, never silently overwriting an existing progress key or mapping a mismatched source chapter by number alone. Reliable external evidence can upgrade the slot while preserving the canonical ID.
+
+One list contains the union of reported count-derived slots and observed canonical chapters, ordered by structured identity. Reported totals from different Integrations remain separate metadata; a deterministic display policy (currently the greatest valid count) must not turn disagreement into verified structure. No ordinary "provisional" badges or count-only explanatory block should replace usable chapter rows.
 
 ### 4.4 Local state remains authoritative for immediate behavior
 
