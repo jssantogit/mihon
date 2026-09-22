@@ -1,6 +1,11 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
@@ -28,12 +33,23 @@ class MihonChapterProbeProvider internal constructor(
                 .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
             if (bindings.isEmpty()) return Result.success(emptyList())
 
+            val fetchGate = Semaphore(MAX_CONCURRENT_INVENTORY_FETCHES)
+            val inventoryResults = coroutineScope {
+                bindings.map { binding ->
+                    async {
+                        binding to fetchGate.withPermit {
+                            fetchInventory(binding)
+                        }
+                    }
+                }.awaitAll()
+            }
+
             val evidence = mutableListOf<ChapterEvidence>()
             var firstFailure: Throwable? = null
             var successfulInventoryCount = 0
 
-            for (binding in bindings) {
-                val inventory = fetchInventory(binding).getOrElse { error ->
+            for ((_, inventoryResult) in inventoryResults) {
+                val inventory = inventoryResult.getOrElse { error ->
                     if (error is CancellationException) throw error
                     firstFailure = firstFailure ?: error
                     continue
@@ -83,5 +99,9 @@ class MihonChapterProbeProvider internal constructor(
     ): String {
         val stableKey = addonId.value + "|" + canonicalTitleId + "|" + sourceId + "|" + externalKey
         return UUID.nameUUIDFromBytes(stableKey.encodeToByteArray()).toString()
+    }
+
+    private companion object {
+        const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
     }
 }
