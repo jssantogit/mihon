@@ -5,6 +5,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
@@ -68,13 +70,16 @@ class ResolveChapterContent(
 
         val unresolvedProviders = providers.filter { it.addonId !in resolved }
         val additional = coroutineScope {
+            val gate = Semaphore(MAX_CONCURRENT_PROVIDER_RESOLUTIONS)
             unresolvedProviders.map { provider ->
                 async {
-                    provider.addonId to resolveProvider(
-                        provider = provider,
-                        canonicalTitleId = canonicalTitleId,
-                        canonicalChapterId = canonicalChapterId,
-                    ).optionsOrEmpty()
+                    gate.withPermit {
+                        provider.addonId to resolveProvider(
+                            provider = provider,
+                            canonicalTitleId = canonicalTitleId,
+                            canonicalChapterId = canonicalChapterId,
+                        ).optionsOrEmpty()
+                    }
                 }
             }.awaitAll()
         }
@@ -132,13 +137,16 @@ class ResolveChapterContent(
             readerPreferences.preferredLanguages.get(),
         )
         val options = coroutineScope {
+            val gate = Semaphore(MAX_CONCURRENT_PROVIDER_RESOLUTIONS)
             providers.map { provider ->
                 async {
-                    resolveProvider(
-                        provider = provider,
-                        canonicalTitleId = canonicalTitleId,
-                        canonicalChapterId = canonicalChapterId,
-                    ).optionsOrEmpty()
+                    gate.withPermit {
+                        resolveProvider(
+                            provider = provider,
+                            canonicalTitleId = canonicalTitleId,
+                            canonicalChapterId = canonicalChapterId,
+                        ).optionsOrEmpty()
+                    }
                 }
             }.awaitAll().flatten()
         }
@@ -195,6 +203,10 @@ class ResolveChapterContent(
             }
             result
         }
+    }
+
+    private companion object {
+        const val MAX_CONCURRENT_PROVIDER_RESOLUTIONS = 4
     }
 
     private fun Result<List<ContentOption>>.optionsOrEmpty(): List<ContentOption> {

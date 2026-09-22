@@ -2,8 +2,12 @@ package tachiyomi.domain.tsuzuki.content
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
@@ -115,6 +119,47 @@ class ResolveChapterContentTest {
         result.shouldBeInstanceOf<ContentResolution.Direct>()
         result.option.addonId shouldBe AddonId("mangaball")
         result.usedFallback shouldBe true
+    }
+
+    @Test
+    fun `initial provider fanout is bounded when many Add-ons are enabled`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var concurrent = 0
+        var peak = 0
+        val providers = (1..12).map { index ->
+            object : ContentProvider {
+                override val addonId = AddonId("addon-$index")
+
+                override suspend fun resolve(
+                    canonicalTitleId: String,
+                    canonicalChapterId: String,
+                ): Result<List<ContentOption>> {
+                    concurrent++
+                    peak = maxOf(peak, concurrent)
+                    try {
+                        release.await()
+                        return Result.success(listOf(option(addonId.value, "en")))
+                    } finally {
+                        concurrent--
+                    }
+                }
+            }
+        }
+        val resolver = fixture(
+            preference = null,
+            automaticFallback = false,
+            providers = providers,
+        )
+
+        val pending = async { resolver.execute("title", "chapter-37") }
+        runCurrent()
+        peak shouldBe 4
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        pending.await().shouldBeInstanceOf<ContentResolution.NeedsSelection>()
+            .options.size shouldBe 12
+        concurrent shouldBe 0
     }
 
     @Test
