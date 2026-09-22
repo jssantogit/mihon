@@ -102,6 +102,7 @@ class RuntimeV2SmokeReadinessTest {
             addonId = addonId,
             contentBindingRepository = bindings,
             canonicalChapterRepository = chapters,
+            parser = parser,
             fetchInventory = ::inventoryFor,
             materializeDelivery = { binding, snapshot ->
                 Result.success(
