@@ -9,11 +9,12 @@ import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
-class RefreshChapterEvidence internal constructor(
+class RefreshChapterEvidence private constructor(
     private val registry: IntegrationRegistry,
     private val reconcileChapterEvidence: ReconcileChapterEvidence,
     private val addonRegistry: AddonRegistry?,
     private val resolveContentBinding: ResolveContentBinding?,
+    @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
     @Inject
@@ -27,6 +28,7 @@ class RefreshChapterEvidence internal constructor(
         reconcileChapterEvidence = reconcileChapterEvidence,
         addonRegistry = addonRegistry,
         resolveContentBinding = resolveContentBinding,
+        constructorMarker = Unit,
     )
 
     constructor(
@@ -37,6 +39,7 @@ class RefreshChapterEvidence internal constructor(
         reconcileChapterEvidence = reconcileChapterEvidence,
         addonRegistry = null,
         resolveContentBinding = null,
+        constructorMarker = Unit,
     )
 
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
