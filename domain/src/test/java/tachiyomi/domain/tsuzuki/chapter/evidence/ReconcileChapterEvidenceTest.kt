@@ -135,6 +135,7 @@ class ReconcileChapterEvidenceTest {
         )?.mappedCanonicalChapterId shouldBe original.id
     }
 
+    // Regression for providers that reuse a stable key for a different chapter.
     @Test
     fun `reused external key conflicts old chapter and rehomes evidence`() = runTest {
         val fixture = fixture()
