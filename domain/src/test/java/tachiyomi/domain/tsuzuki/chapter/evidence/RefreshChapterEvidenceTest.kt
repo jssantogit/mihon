@@ -1,10 +1,13 @@
 package tachiyomi.domain.tsuzuki.chapter.evidence
 
 import io.kotest.assertions.throwables.shouldThrow
+import io.mockk.coEvery
+import io.mockk.mockk
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -13,10 +16,17 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
+import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -165,6 +175,58 @@ class RefreshChapterEvidenceTest {
 
         pending.await().isSuccess shouldBe true
         concurrent shouldBe 0
+    }
+
+    @Test
+    fun `integration and Add-on evidence fetch concurrently before reconciliation`() = runTest {
+        val integrationStarted = CompletableDeferred<Unit>()
+        val addonStarted = CompletableDeferred<Unit>()
+        val editorial = object : ChapterEvidenceProvider {
+            override val producerId = "editorial"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                integrationStarted.complete(Unit)
+                addonStarted.await()
+                return Result.success(listOf(editorialEvidence("editorial-1", "1", "Chapter 1")))
+            }
+        }
+        val probe = object : ChapterProbeProvider {
+            override val addonId = AddonId("fallback")
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                addonStarted.complete(Unit)
+                integrationStarted.await()
+                return Result.success(emptyList())
+            }
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery { resolver.executeAll("canonical-title", AddonId("fallback")) } returns
+            Result.success(listOf(mockk<ContentBinding>()))
+        val chapters = FakeCanonicalChapterRepository()
+        val refresh = RefreshChapterEvidence(
+            registry = registry(listOf(editorial)),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = FakeChapterEvidenceRepository(),
+                idFactory = { "chapter-1" },
+                clock = { 100L },
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+        )
+
+        val pending = async { refresh.execute("canonical-title") }
+        withTimeout(1_000L) {
+            pending.await().isSuccess shouldBe true
+        }
+        chapters.getByCanonicalTitleId("canonical-title")
+            .map { it.displayNumber } shouldContainExactly listOf("1")
     }
 
     @Test

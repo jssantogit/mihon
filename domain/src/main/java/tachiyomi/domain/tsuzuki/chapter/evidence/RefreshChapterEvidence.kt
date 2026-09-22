@@ -52,12 +52,14 @@ class RefreshChapterEvidence private constructor(
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
         return try {
             registry.awaitReady()
-            val integrationEvidence = collectIntegrationEvidence(canonicalTitleId)
-            val addonEvidence = collectAddonEvidence(canonicalTitleId)
-            reconcileChapterEvidence.execute(
-                canonicalTitleId,
-                (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id),
-            )
+            // Integration metadata and Add-on inventories are independent until
+            // reconciliation. Running both concurrently avoids serial network waits.
+            val evidence = coroutineScope {
+                val integrations = async { collectIntegrationEvidence(canonicalTitleId) }
+                val addons = async { collectAddonEvidence(canonicalTitleId) }
+                (integrations.await() + addons.await()).distinctBy(ChapterEvidence::id)
+            }
+            reconcileChapterEvidence.execute(canonicalTitleId, evidence)
             // Chapter mappings may have changed; never serve stale provider
             // options that were resolved against a previous evidence graph.
             contentOptionCache?.invalidateTitle(canonicalTitleId)
@@ -170,6 +172,7 @@ class RefreshChapterEvidence private constructor(
             Result.failure(error)
         }
     }
+
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
     }
