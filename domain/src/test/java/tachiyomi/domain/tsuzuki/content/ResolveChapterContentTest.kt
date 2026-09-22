@@ -3,6 +3,7 @@ package tachiyomi.domain.tsuzuki.content
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,7 @@ import tachiyomi.domain.tsuzuki.content.model.ContentResolution
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ResolveChapterContentTest {
 
     @Test
