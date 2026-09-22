@@ -8,6 +8,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.history.repository.HistoryRepository
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -25,6 +27,8 @@ import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
+import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.reader.interactor.ImportLegacyCanonicalProgress
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -95,10 +99,39 @@ class TsuzukiHomeScreenModelTest {
         }
     }
 
+    @Test
+    fun `configured Home catalog item opens canonical detail identity`() = runTest(dispatcher) {
+        val catalogItem = CatalogItem(
+            provider = "kitsu",
+            providerId = "123",
+            title = "Dandadan",
+        )
+        val materializer = mockk<MaterializeCanonicalTitleFromCatalog>()
+        coEvery { materializer.execute(catalogItem) } returns CanonicalTitle(
+            id = "canonical-dandadan",
+            displayTitle = "Dandadan",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val model = createModel(
+            continueReading = MutableStateFlow(emptyList()),
+            sections = MutableStateFlow(emptyList()),
+            materializer = materializer,
+        )
+
+        model.openCatalogItem(catalogItem)
+        advanceUntilIdle()
+
+        model.events.first() shouldBe TsuzukiHomeEvent.OpenCanonicalTitle("canonical-dandadan")
+    }
+
     private fun createModel(
         continueReading: MutableStateFlow<List<HomeContinueReadingItem>>,
         sections: MutableStateFlow<List<HomeSection>>,
         visibility: ContinueReadingVisibilityRepository =
+            mockk(relaxed = true),
+        materializer: MaterializeCanonicalTitleFromCatalog =
             mockk(relaxed = true),
     ): TsuzukiHomeScreenModel {
         val observeHome = mockk<ObserveHomeContinueReading>()
@@ -124,7 +157,7 @@ class TsuzukiHomeScreenModelTest {
             observeCanonicalLibrary = observeLibrary,
             historyRepository = history,
             importLegacyCanonicalProgress = importLegacy,
-            materializeCanonicalTitleFromCatalog = mockk<MaterializeCanonicalTitleFromCatalog>(relaxed = true),
+            materializeCanonicalTitleFromCatalog = materializer,
         )
     }
 
