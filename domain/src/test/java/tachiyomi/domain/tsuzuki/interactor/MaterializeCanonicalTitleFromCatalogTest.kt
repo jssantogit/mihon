@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
+import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
@@ -43,6 +45,38 @@ class MaterializeCanonicalTitleFromCatalogTest {
         identity.provider shouldBe "kitsu"
         identity.externalId shouldBe "999"
         identity.verified shouldBe true
+    }
+
+    @Test
+    fun `catalog materialization caches provider chapter count without synthesizing chapters`() = runTest {
+        val repository = FakeCanonicalTitleRepository()
+        val counts = FakeReportedChapterCountRepository()
+        val materializeCanonicalTitle = MaterializeCanonicalTitle(
+            repository = repository,
+            idFactory = { "uuid-count" },
+            clock = { 5000L },
+        )
+        val interactor = MaterializeCanonicalTitleFromCatalog(
+            materializeCanonicalTitle = materializeCanonicalTitle,
+            reportedChapterCountRepository = counts,
+            clock = { 6000L },
+        )
+
+        interactor.execute(
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "999",
+                title = "Boku no Hero Academia",
+                chapterCount = 430,
+            ),
+        )
+
+        counts.values.single() shouldBe ReportedChapterCount(
+            canonicalTitleId = "uuid-count",
+            provider = "kitsu",
+            chapterCount = 430,
+            updatedAt = 6000L,
+        )
     }
 
     @Test
@@ -120,6 +154,18 @@ class MaterializeCanonicalTitleFromCatalogTest {
         result.id shouldBe "uuid-delegated"
         repository.titles.keys shouldBe setOf("uuid-delegated")
         repository.identities.single().externalId shouldBe "321"
+    }
+
+    private class FakeReportedChapterCountRepository : ReportedChapterCountRepository {
+        val values = mutableListOf<ReportedChapterCount>()
+
+        override suspend fun getByTitle(canonicalTitleId: String): List<ReportedChapterCount> =
+            values.filter { it.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun upsert(value: ReportedChapterCount) {
+            values.removeAll { it.canonicalTitleId == value.canonicalTitleId && it.provider == value.provider }
+            values += value
+        }
     }
 
     private class RacingCanonicalTitleRepository(
