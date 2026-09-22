@@ -18,8 +18,7 @@ class ReportedChapterCountRepositoryImpl(
 
     override suspend fun getByTitle(canonicalTitleId: String): List<ReportedChapterCount> =
         database.tsuzuki_reported_chapter_countsQueries
-            .getTsuzukiReportedChapterCountsByTitle(canonicalTitleId) {
-                titleId, provider, chapterCount, updatedAt ->
+            .getTsuzukiReportedChapterCountsByTitle(canonicalTitleId) { titleId, provider, chapterCount, updatedAt ->
                 ReportedChapterCount(
                     canonicalTitleId = titleId,
                     provider = provider,
