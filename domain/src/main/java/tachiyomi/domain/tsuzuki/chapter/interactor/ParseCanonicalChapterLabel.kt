@@ -243,7 +243,7 @@ class ParseCanonicalChapterLabel {
             part = null,
             alphaSuffix = null,
             displayNumber = hintedChapter.toString(),
-            confidence = parsed.confidence,
+            confidence = maxOf(parsed.confidence, 0.95),
         )
     }
 
