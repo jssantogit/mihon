@@ -138,6 +138,35 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `conflicting stable external key is detached from the old canonical chapter`() = runTest {
+        val fixture = fixture()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.addonEvidence(rawLabel = "Chapter 4", externalKey = "stable-key")),
+        )
+        val chapter4 = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    id = "changed",
+                    rawLabel = "Chapter 126",
+                    externalKey = "stable-key",
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getById(chapter4.id)?.confirmation shouldBe CanonicalChapterConfirmation.CONFLICTED
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "stable-key",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `provider omission never deletes an already materialized canonical chapter`() = runTest {
         val fixture = fixture()
 
