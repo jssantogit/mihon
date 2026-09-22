@@ -276,6 +276,17 @@ class ParseCanonicalChapterLabelTest {
     }
 
     @Test
+    fun `whole zero chapter sorts before zero point five and following chapters`() {
+        val chapters = listOf("0.5", "1", "0", "1.5")
+            .map(parse::execute)
+
+        chapters.sortedBy { it.identity }
+            .map { it.displayNumber } shouldBe listOf("0", "0.5", "1", "1.5")
+        chapters.sortedBy { it.sortKey }
+            .map { it.displayNumber } shouldBe listOf("0", "0.5", "1", "1.5")
+    }
+
+    @Test
     fun `sort keys are deterministic and naturally ordered`() {
         val labels = listOf("10", "2", "12.5", "12a", "12", "Prologue", "Extra 3")
         val first = labels.map(parse::execute).sortedBy { it.sortKey }
