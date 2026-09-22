@@ -190,6 +190,40 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `one conflicting provider release does not poison independently supported canonical chapter`() = runTest {
+        val fixture = fixture()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(id = "pt", rawLabel = "Chapter 4", externalKey = "pt-4"),
+                fixture.addonEvidence(id = "en", rawLabel = "Chapter 4", externalKey = "en-stable"),
+            ),
+        )
+        val chapter4 = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(id = "en-new", rawLabel = "Chapter 126", externalKey = "en-stable"),
+            ),
+        )
+
+        fixture.chapterRepository.getById(chapter4.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.PROVISIONAL
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "en-stable",
+        )?.mappedCanonicalChapterId shouldBe null
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "pt-4",
+        )?.mappedCanonicalChapterId shouldBe chapter4.id
+    }
+
+    @Test
     fun `provider omission never deletes an already materialized canonical chapter`() = runTest {
         val fixture = fixture()
 
