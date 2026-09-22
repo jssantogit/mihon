@@ -28,10 +28,10 @@ class RefreshReportedChapterCounts(
                 identities.mapNotNull { identity ->
                     val provider = providers[identity.provider] ?: return@mapNotNull null
                     async {
-                        val item = provider.getDetails(identity.externalId).getOrElse { error ->
-                            if (error is CancellationException) throw error
-                            return@async
-                        }
+                        val result = provider.getDetails(identity.externalId)
+                        val error = result.exceptionOrNull()
+                        if (error is CancellationException) throw error
+                        val item = result.getOrNull() ?: return@async
                         repository.upsert(
                             ReportedChapterCount(
                                 canonicalTitleId = canonicalTitleId,
