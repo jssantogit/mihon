@@ -136,7 +136,7 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `incompatible high confidence reuse of one external key conflicts old chapter and rehomes evidence`() = runTest {
+    fun `reused external key conflicts old chapter and rehomes evidence`() = runTest {
         val fixture = fixture()
 
         fixture.reconciler.execute(
