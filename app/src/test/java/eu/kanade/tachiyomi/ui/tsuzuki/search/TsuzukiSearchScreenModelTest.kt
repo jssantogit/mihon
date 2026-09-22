@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.search
 
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -15,8 +16,10 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
@@ -41,6 +44,27 @@ class TsuzukiSearchScreenModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `initial discover waits for registry readiness and loads without a prior search`() = runTest(dispatcher) {
+        val registry = DelayedRegistry()
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+            ),
+        )
+
+        dispatcher.scheduler.runCurrent()
+        model.state.value.shouldBeInstanceOf<SearchState.Loading>()
+
+        registry.release()
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<SearchState.Discover>()
     }
 
     @Test
@@ -81,6 +105,38 @@ class TsuzukiSearchScreenModelTest {
         override suspend fun insert(title: CanonicalTitle) = Unit
 
         override suspend fun addExternalIdentity(identity: ExternalIdentity) = Unit
+    }
+
+    private class DelayedRegistry : IntegrationRegistry {
+        private val ready = CompletableDeferred<Unit>()
+
+        private val discovery = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+        }
+
+        fun release() {
+            ready.complete(Unit)
+        }
+
+        override suspend fun awaitReady() {
+            ready.await()
+        }
+
+        override fun searchProviders(): List<SearchProvider> = emptyList()
+        override fun discoveryProviders(): List<DiscoveryProvider> = listOf(discovery)
+        override fun metadataProviders(): List<MetadataProvider> = emptyList()
+        override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun trackingProviders(): List<TrackingProvider> = emptyList()
     }
 
     private fun emptyRegistry() = object : IntegrationRegistry {
