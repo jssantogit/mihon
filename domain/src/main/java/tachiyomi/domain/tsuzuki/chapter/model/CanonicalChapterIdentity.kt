@@ -57,7 +57,9 @@ data class CanonicalChapterIdentity private constructor(
             append('|')
             append(numberKey(baseNumber))
             append('|')
-            append(numberKey(part))
+            // An unsuffixed chapter must precede its fractional installments (0 before 0.5).
+            // The explicit prefix prevents null from colliding with a real part zero.
+            append(part?.let { "1" + numberKey(it) } ?: "0")
             append('|')
             when (val suffix = alphaSuffix?.lowercase()) {
                 null -> append("00|")
@@ -68,7 +70,7 @@ data class CanonicalChapterIdentity private constructor(
     override fun compareTo(other: CanonicalChapterIdentity): Int = when {
         type.sortRank != other.type.sortRank -> type.sortRank.compareTo(other.type.sortRank)
         baseNumber != other.baseNumber -> compareNullableNumbers(baseNumber, other.baseNumber)
-        part != other.part -> compareNullableNumbers(part, other.part)
+        part != other.part -> compareNullableParts(part, other.part)
         alphaSuffix != other.alphaSuffix -> compareNullableStrings(alphaSuffix, other.alphaSuffix)
         else -> 0
     }
@@ -91,6 +93,13 @@ data class CanonicalChapterIdentity private constructor(
             left == null && right == null -> 0
             left == null -> 1
             right == null -> -1
+            else -> left.compareTo(right)
+        }
+
+        fun compareNullableParts(left: Int?, right: Int?): Int = when {
+            left == null && right == null -> 0
+            left == null -> -1
+            right == null -> 1
             else -> left.compareTo(right)
         }
 
