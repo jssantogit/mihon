@@ -44,7 +44,11 @@ class ParseCanonicalChapterLabel {
             return parsed.toParsed(original, hint)
         }
         parseNumberForm(chapterText, hasExplicitChapterPrefix)?.let { parsed ->
-            return parsed.toParsed(original, hint)
+            return disambiguateCompactVolumeChapter(
+                parsed = parsed,
+                hasExplicitChapterPrefix = hasExplicitChapterPrefix,
+                numericHint = numericHint,
+            ).toParsed(original, hint)
         }
 
         return unknown(original, hint)
@@ -203,6 +207,39 @@ class ParseCanonicalChapterLabel {
             alphaSuffix = suffix,
             displayNumber = display,
             confidence = if (hasExplicitChapterPrefix) 1.0 else 0.95,
+        )
+    }
+
+    private fun disambiguateCompactVolumeChapter(
+        parsed: NumericParse,
+        hasExplicitChapterPrefix: Boolean,
+        numericHint: Number?,
+    ): NumericParse {
+        val compactChapter = parsed.part ?: return parsed
+        if (hasExplicitChapterPrefix || parsed.alphaSuffix != null || compactChapter < 10) {
+            return parsed
+        }
+
+        val hint = numericHint?.toDouble() ?: return parsed
+        if (!hint.isFinite() || hint < 0.0 || hint > Int.MAX_VALUE.toDouble() || hint % 1.0 != 0.0) {
+            return parsed
+        }
+
+        val hintedChapter = hint.toInt()
+        if (hintedChapter != compactChapter || hintedChapter == parsed.baseNumber) {
+            return parsed
+        }
+
+        // Some Mihon sources expose compact labels such as "9.46" for
+        // volume 9 / chapter 46 while their parsed chapter_number is 46.
+        // The hint is used only to disambiguate this already-numbered label;
+        // it never fabricates an identity for an otherwise unknown label.
+        return NumericParse(
+            baseNumber = hintedChapter,
+            part = null,
+            alphaSuffix = null,
+            displayNumber = hintedChapter.toString(),
+            confidence = parsed.confidence,
         )
     }
 
