@@ -105,6 +105,10 @@ class MihonInventorySnapshotCache internal constructor(
     suspend fun invalidateTitle(canonicalTitleId: String) {
         mutex.withLock {
             entries.keys.removeAll { it.canonicalTitleId == canonicalTitleId }
+            // Detach obsolete fetches as well: an older in-flight request may
+            // still finish, but must not repopulate the cache or block a fresh
+            // request after the title's binding/evidence graph changes.
+            inFlight.keys.removeAll { it.canonicalTitleId == canonicalTitleId }
         }
     }
 

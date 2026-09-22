@@ -91,6 +91,31 @@ class MihonInventorySnapshotCacheTest {
     }
 
     @Test
+    fun `invalidated in-flight inventory cannot overwrite a fresh snapshot`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val releaseOldFetch = CompletableDeferred<Unit>()
+        var requests = 0
+        val fetch: suspend () -> Result<SourceChapterInventory> = {
+            requests++
+            if (requests == 1) releaseOldFetch.await()
+            Result.success(inventory)
+        }
+
+        val obsolete = async { cache.getOrFetch(key, fetch = fetch) }
+        yield()
+        requests shouldBe 1
+
+        cache.invalidateTitle("title")
+        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
+        requests shouldBe 2
+
+        releaseOldFetch.complete(Unit)
+        obsolete.await().getOrThrow() shouldBe inventory
+        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
+        requests shouldBe 2
+    }
+
+    @Test
     fun `invalidating one title preserves another title's warm inventory`() = runTest {
         val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
         var requests = 0
