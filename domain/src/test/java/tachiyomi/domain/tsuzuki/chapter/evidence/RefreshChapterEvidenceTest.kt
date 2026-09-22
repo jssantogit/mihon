@@ -90,6 +90,45 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `refresh waits for integration registry readiness before reading providers`() = runTest {
+        var ready = false
+        val provider = object : ChapterEvidenceProvider {
+            override val producerId: String = "ready-check"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                ready shouldBe true
+                return Result.success(emptyList())
+            }
+        }
+        val registry = object : IntegrationRegistry {
+            override suspend fun awaitReady() {
+                ready = true
+            }
+
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = listOf(provider)
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val chapters = FakeCanonicalChapterRepository()
+        val refresh = RefreshChapterEvidence(
+            registry = registry,
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = FakeChapterEvidenceRepository(),
+                idFactory = { "unused" },
+                clock = { 100L },
+            ),
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        ready shouldBe true
+    }
+
+    @Test
     fun `caller cancellation is never swallowed as provider failure`() = runTest {
         val cancelling = object : ChapterEvidenceProvider {
             override val producerId: String = "cancel"

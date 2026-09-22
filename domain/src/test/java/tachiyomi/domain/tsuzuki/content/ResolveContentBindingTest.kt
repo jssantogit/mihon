@@ -38,6 +38,45 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `same title in multiple internal sources creates bindings without false ambiguity`() = runTest {
+        val repository = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(sourceId = 7L, sourceUrl = "/en/dandadan", title = "Dandadan")),
+                8L to listOf(candidate(sourceId = 8L, sourceUrl = "/pt/dandadan", title = "Dandadan")),
+            ),
+            materializedBySource = mapOf(
+                7L to MaterializedReadingSource(
+                    mihonMangaId = 70L,
+                    sourceId = 7L,
+                    sourceUrl = "/en/dandadan",
+                    language = "en",
+                    runtimePayload = byteArrayOf(7),
+                ),
+                8L to MaterializedReadingSource(
+                    mihonMangaId = 80L,
+                    sourceId = 8L,
+                    sourceUrl = "/pt/dandadan",
+                    language = "pt-BR",
+                    runtimePayload = byteArrayOf(8),
+                ),
+            ),
+        )
+        val resolver = resolver(
+            repository = repository,
+            gateway = gateway,
+            addonSourceIds = listOf(7L, 8L),
+        )
+
+        val bindings = resolver.executeAll("title", AddonId("mangadex")).getOrThrow()
+
+        bindings.map { it.providerTitleKey }.toSet() shouldBe
+            setOf("7:/en/dandadan", "8:/pt/dandadan")
+        gateway.searchCalls shouldBe 2
+        gateway.materializeCalls shouldBe 2
+    }
+
+    @Test
     fun `stale binding is repaired inside same canonical title`() = runTest {
         val repository = FakeContentBindingRepository(
             binding(
@@ -73,15 +112,19 @@ class ResolveContentBindingTest {
     private fun resolver(
         repository: FakeContentBindingRepository,
         gateway: FakeReadingSourceGateway,
-    ) = ResolveContentBinding(
-        contentBindingRepository = repository,
-        canonicalTitleRepository = FakeCanonicalTitleRepository(),
-        addonRepository = FakeAddonRepository(),
-        readingSourceGateway = gateway,
-        scoreSourceTitleMatch = ScoreSourceTitleMatch(),
-        idFactory = { "new-binding" },
-        clock = { 200L },
-    )
+        addonSourceIds: List<Long> = listOf(7L),
+    ): ResolveContentBinding {
+        var nextId = 0
+        return ResolveContentBinding(
+            contentBindingRepository = repository,
+            canonicalTitleRepository = FakeCanonicalTitleRepository(),
+            addonRepository = FakeAddonRepository(addonSourceIds),
+            readingSourceGateway = gateway,
+            scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+            idFactory = { "new-binding-${nextId++}" },
+            clock = { 200L },
+        )
+    }
 
     private fun binding(
         providerTitleKey: String,
@@ -120,25 +163,33 @@ class ResolveContentBindingTest {
     private class FakeContentBindingRepository(
         initial: ContentBinding?,
     ) : ContentBindingRepository {
-        private var value = initial
+        private val values = mutableListOf<ContentBinding>().apply {
+            initial?.let(::add)
+        }
 
         override suspend fun get(canonicalTitleId: String, addonId: AddonId): ContentBinding? {
-            return value?.takeIf { it.canonicalTitleId == canonicalTitleId && it.addonId == addonId }
+            return values.lastOrNull {
+                it.canonicalTitleId == canonicalTitleId && it.addonId == addonId
+            }
         }
 
         override suspend fun getByTitle(canonicalTitleId: String): List<ContentBinding> {
-            return listOfNotNull(value?.takeIf { it.canonicalTitleId == canonicalTitleId })
+            return values.filter { it.canonicalTitleId == canonicalTitleId }
         }
 
         override suspend fun upsert(binding: ContentBinding) {
-            value = binding
+            values.removeAll { it.id == binding.id }
+            values += binding
         }
 
         override suspend fun markUnavailable(bindingId: String, updatedAt: Long) {
-            value = value?.takeIf { it.id == bindingId }?.copy(
-                availability = ContentBindingAvailability.UNAVAILABLE,
-                updatedAt = updatedAt,
-            )
+            val index = values.indexOfFirst { it.id == bindingId }
+            if (index >= 0) {
+                values[index] = values[index].copy(
+                    availability = ContentBindingAvailability.UNAVAILABLE,
+                    updatedAt = updatedAt,
+                )
+            }
         }
     }
 
@@ -165,13 +216,15 @@ class ResolveContentBindingTest {
             error("unused")
     }
 
-    private class FakeAddonRepository : AddonRepository {
+    private class FakeAddonRepository(
+        sourceIds: List<Long> = listOf(7L),
+    ) : AddonRepository {
         private val addon = InstalledAddon(
             id = AddonId("mangadex"),
             displayName = "MangaDex",
             enabled = true,
             versionName = "1.0",
-            mihonSourceIds = listOf(7L),
+            mihonSourceIds = sourceIds,
             hasSettings = false,
         )
 
@@ -183,6 +236,7 @@ class ResolveContentBindingTest {
     private class FakeReadingSourceGateway(
         private val searchResults: Map<Long, List<ReadingSourceCandidate>> = emptyMap(),
         private val materialized: MaterializedReadingSource? = null,
+        private val materializedBySource: Map<Long, MaterializedReadingSource> = emptyMap(),
     ) : ReadingSourceGateway {
         var searchCalls = 0
         var materializeCalls = 0
@@ -196,7 +250,8 @@ class ResolveContentBindingTest {
 
         override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
             materializeCalls += 1
-            return materialized?.let(Result.Companion::success)
+            return (materializedBySource[candidate.sourceId] ?: materialized)
+                ?.let(Result.Companion::success)
                 ?: Result.failure(IllegalStateException("No materialized source configured"))
         }
     }

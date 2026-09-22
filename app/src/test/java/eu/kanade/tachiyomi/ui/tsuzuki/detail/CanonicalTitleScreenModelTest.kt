@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.ui.tsuzuki.detail
 
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +27,11 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
+import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
+import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -75,6 +81,8 @@ class CanonicalTitleScreenModelTest {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
             ),
+            downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
+            canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -138,6 +146,8 @@ class CanonicalTitleScreenModelTest {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
                 },
             ),
+            downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
+            canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
             refreshChapterEvidence = refresh,
         )
 
@@ -147,6 +157,126 @@ class CanonicalTitleScreenModelTest {
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
         state.chapters.single().confirmation shouldBe CanonicalChapterConfirmation.PROVISIONAL
         state.chapters.single().chapter.id shouldBe "chapter-37"
+    }
+
+    @Test
+    fun `canonical artifact keeps offline download visible without source variants`() = runTest(dispatcher) {
+        val chapters = FakeChapterRepository(
+            listOf(
+                CanonicalChapter(
+                    id = "chapter-37",
+                    canonicalTitleId = "title",
+                    displayNumber = "37",
+                    baseNumber = 37,
+                    confidence = 1.0,
+                    createdAt = 1L,
+                    updatedAt = 1L,
+                ),
+            ),
+        )
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.get("chapter-37") } returns CanonicalDownloadArtifact(
+            canonicalChapterId = "chapter-37",
+            localUri = "content://downloads/chapter-37",
+            format = "DIRECTORY",
+            originatingAddonId = null,
+            originatingOptionKey = null,
+            completedAt = 100L,
+            checksum = null,
+        )
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = chapters,
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+
+        model.state.value
+            .shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+            .chapters
+            .single()
+            .downloaded shouldBe true
+    }
+
+    @Test
+    fun `download without preference exposes content selection to detail UI`() = runTest(dispatcher) {
+        val chapters = FakeChapterRepository(
+            listOf(
+                CanonicalChapter(
+                    id = "chapter-37",
+                    canonicalTitleId = "title",
+                    displayNumber = "37",
+                    baseNumber = 37,
+                    confidence = 1.0,
+                    createdAt = 1L,
+                    updatedAt = 1L,
+                ),
+            ),
+        )
+        val downloader = mockk<DownloadCanonicalChapter>()
+        coEvery {
+            downloader.execute(
+                canonicalChapterId = "chapter-37",
+                selectedOption = null,
+            )
+        } returns CanonicalDownloadPreparation.SelectionRequired(
+            canonicalTitleId = "title",
+            canonicalChapterId = "chapter-37",
+            options = emptyList(),
+            preferredAddonId = null,
+        )
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.get(any()) } returns null
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = downloader,
+            canonicalDownloadRepository = downloads,
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = chapters,
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+        model.requestDownload("chapter-37")
+        advanceUntilIdle()
+
+        val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+        state.downloadSelectionChapterId shouldBe "chapter-37"
+        state.downloadInProgressChapterId shouldBe null
     }
 
     private fun emptyRegistry() = object : IntegrationRegistry {

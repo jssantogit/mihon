@@ -7,6 +7,11 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
@@ -23,7 +28,7 @@ class MihonContentProviderTest {
     fun `matching source release becomes content option for canonical chapter`() = runTest {
         val binding = binding(id = "binding-pt", sourceKey = "7:/dandadan")
         val chapterRepository = FakeCanonicalChapterRepository(
-            variants = listOf(variant(sourceId = 7L, sourceChapterId = "/chapter-37")),
+            variants = emptyList(),
         )
         val provider = MihonContentProvider(
             addonId = AddonId("mangadex"),
@@ -47,6 +52,27 @@ class MihonContentProviderTest {
             materializeDelivery = { _, _ ->
                 Result.success(ContentDelivery.Mihon(sourceId = 7L, mangaId = 99L, chapterId = 123L))
             },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(
+                listOf(
+                    PersistedChapterEvidence(
+                        evidence = ChapterEvidence(
+                            id = "evidence-37",
+                            canonicalTitleId = "title",
+                            producerKind = ProducerKind.ADDON,
+                            producerId = "mangadex",
+                            externalChapterKey = "7:/chapter-37",
+                            rawLabel = "Chapter 37",
+                            rawNumber = 37.0,
+                            volume = null,
+                            title = null,
+                            observedAt = 1L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                        mappedCanonicalChapterId = "canonical-chapter-37",
+                    ),
+                ),
+            ),
         )
 
         val options = provider.resolve("title", "canonical-chapter-37").getOrThrow()
@@ -167,6 +193,28 @@ class MihonContentProviderTest {
 
         override suspend fun upsert(binding: ContentBinding) = error("provider must not write bindings")
         override suspend fun markUnavailable(bindingId: String, updatedAt: Long) = error("provider must not write")
+    }
+
+    private class FakeChapterEvidenceRepository(
+        private val evidence: List<PersistedChapterEvidence>,
+    ) : ChapterEvidenceRepository {
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
+            evidence.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun getByProducerExternalKey(
+            producerKind: ProducerKind,
+            producerId: String,
+            externalChapterKey: String,
+        ): PersistedChapterEvidence? = evidence.firstOrNull {
+            it.evidence.producerKind == producerKind &&
+                it.evidence.producerId == producerId &&
+                it.evidence.externalChapterKey == externalChapterKey
+        }
+
+        override suspend fun upsert(
+            evidence: ChapterEvidence,
+            mappedCanonicalChapterId: String?,
+        ): PersistedChapterEvidence = PersistedChapterEvidence(evidence, mappedCanonicalChapterId)
     }
 
     private class FakeCanonicalChapterRepository(

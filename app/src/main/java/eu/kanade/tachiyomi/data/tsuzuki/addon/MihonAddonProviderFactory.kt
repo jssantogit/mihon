@@ -6,6 +6,7 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -18,6 +19,7 @@ import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 class MihonAddonProviderFactory(
     private val contentBindingRepository: ContentBindingRepository,
     private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val chapterEvidenceRepository: ChapterEvidenceRepository,
     private val parser: ParseCanonicalChapterLabel,
     private val chapterInventoryGateway: MihonChapterInventoryGateway,
 ) {
@@ -27,6 +29,7 @@ class MihonAddonProviderFactory(
         contentBindingRepository = contentBindingRepository,
         canonicalChapterRepository = canonicalChapterRepository,
         fetchInventory = { binding -> chapterInventoryGateway.fetch(binding) },
+        chapterEvidenceRepository = chapterEvidenceRepository,
         materializeDelivery = ::materializeDelivery,
     )
 
