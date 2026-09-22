@@ -142,17 +142,17 @@ class ContentSelectorScreenModel internal constructor(
         require(selection.rememberFirstPreference) { "Only an initial selection can set this preference" }
         return viewModelScope.launch {
             preferenceWriteMutex.withLock {
-            if (contentPreferenceRepository.get(selection.canonicalTitleId)?.preferredAddonId == null) {
-                contentPreferenceRepository.upsert(
-                    ContentPreference(
-                        canonicalTitleId = selection.canonicalTitleId,
-                        preferredAddonId = selection.option.addonId,
-                        preferredLanguage = contentPreferenceRepository
-                            .get(selection.canonicalTitleId)?.preferredLanguage,
-                        updatedAt = clock(),
-                    ),
-                )
-            }
+                val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
+                if (existing?.preferredAddonId == null) {
+                    contentPreferenceRepository.upsert(
+                        ContentPreference(
+                            canonicalTitleId = selection.canonicalTitleId,
+                            preferredAddonId = selection.option.addonId,
+                            preferredLanguage = existing?.preferredLanguage,
+                            updatedAt = clock(),
+                        ),
+                    )
+                }
             }
         }
     }
@@ -160,15 +160,15 @@ class ContentSelectorScreenModel internal constructor(
     fun confirmPreferred(selection: SelectionResult): Job {
         return viewModelScope.launch {
             preferenceWriteMutex.withLock {
-            val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
-            contentPreferenceRepository.upsert(
-                ContentPreference(
-                    canonicalTitleId = selection.canonicalTitleId,
-                    preferredAddonId = selection.option.addonId,
-                    preferredLanguage = existing?.preferredLanguage,
-                    updatedAt = clock(),
-                ),
-            )
+                val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
+                contentPreferenceRepository.upsert(
+                    ContentPreference(
+                        canonicalTitleId = selection.canonicalTitleId,
+                        preferredAddonId = selection.option.addonId,
+                        preferredLanguage = existing?.preferredLanguage,
+                        updatedAt = clock(),
+                    ),
+                )
             }
         }
     }
@@ -178,15 +178,15 @@ class ContentSelectorScreenModel internal constructor(
         require(language.isNotEmpty()) { "Preferred language cannot be blank" }
         return viewModelScope.launch {
             preferenceWriteMutex.withLock {
-            val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
-            contentPreferenceRepository.upsert(
-                ContentPreference(
-                    canonicalTitleId = selection.canonicalTitleId,
-                    preferredAddonId = existing?.preferredAddonId,
-                    preferredLanguage = language,
-                    updatedAt = clock(),
-                ),
-            )
+                val existing = contentPreferenceRepository.get(selection.canonicalTitleId)
+                contentPreferenceRepository.upsert(
+                    ContentPreference(
+                        canonicalTitleId = selection.canonicalTitleId,
+                        preferredAddonId = existing?.preferredAddonId,
+                        preferredLanguage = language,
+                        updatedAt = clock(),
+                    ),
+                )
             }
         }
     }
