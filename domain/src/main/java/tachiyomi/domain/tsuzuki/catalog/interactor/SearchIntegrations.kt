@@ -25,5 +25,8 @@ class SearchIntegrations(
             }
             .awaitAll()
             .flatten()
+            // Provider + external id is the only safe automatic identity-level
+            // dedupe. Never collapse distinct works merely because titles match.
+            .distinctBy { item -> item.provider to item.providerId }
     }
 }

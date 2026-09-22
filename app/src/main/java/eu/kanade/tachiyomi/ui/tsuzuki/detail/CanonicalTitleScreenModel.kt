@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -26,6 +27,9 @@ import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
+import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
+import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
+import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
@@ -43,6 +47,8 @@ sealed interface CanonicalTitleScreenState {
         val title: CanonicalTitle,
         val libraryEntry: CanonicalLibraryEntry?,
         val chapters: List<CanonicalChapterDetailItem>,
+        val reportedChapterCounts: List<ReportedChapterCount> = emptyList(),
+        val isRefreshing: Boolean = false,
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
         val libraryMutationError: Throwable? = null,
@@ -73,17 +79,17 @@ class CanonicalTitleScreenModel(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val canonicalLibraryRepository: CanonicalLibraryRepository,
     private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val chapterEvidenceRepository: ChapterEvidenceRepository,
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val getCanonicalChapterDownloadState: GetCanonicalChapterDownloadState,
     private val downloadCanonicalChapter: DownloadCanonicalChapter,
     private val canonicalDownloadRepository: CanonicalDownloadRepository,
+    private val reportedChapterCountRepository: ReportedChapterCountRepository,
+    private val refreshReportedChapterCounts: RefreshReportedChapterCounts,
     private val refreshChapterEvidence: RefreshChapterEvidence,
 ) : ViewModel() {
 
-    private val _state =
-        MutableStateFlow<CanonicalTitleScreenState>(
-            CanonicalTitleScreenState.Loading,
-        )
+    private val _state = MutableStateFlow<CanonicalTitleScreenState>(CanonicalTitleScreenState.Loading)
     val state: StateFlow<CanonicalTitleScreenState> = _state.asStateFlow()
 
     private var canonicalTitleId: String? = null
@@ -94,14 +100,24 @@ class CanonicalTitleScreenModel(
         this.canonicalTitleId = canonicalTitleId
         operation?.cancel()
         operation = viewModelScope.launch {
-            load(canonicalTitleId)
+            val alreadyLoaded = (_state.value as? CanonicalTitleScreenState.Loaded)
+                ?.takeIf { it.title.id == canonicalTitleId }
+            if (alreadyLoaded == null) {
+                loadCachedFirst(canonicalTitleId)
+            } else {
+                refreshInBackground(canonicalTitleId)
+            }
         }
         return operation!!
     }
 
     fun refresh(): Job? {
         val id = canonicalTitleId ?: return null
-        return start(id)
+        operation?.cancel()
+        operation = viewModelScope.launch {
+            refreshInBackground(id)
+        }
+        return operation
     }
 
     fun addToLibrary(): Job? {
@@ -196,6 +212,162 @@ class CanonicalTitleScreenModel(
         _state.value = loaded.copy(downloadSelectionChapterId = null)
     }
 
+    private suspend fun loadCachedFirst(canonicalTitleId: String) {
+        _state.value = CanonicalTitleScreenState.Loading
+        try {
+            // Render only local/cached state first. Network/provider refresh must
+            // never be on the critical path to opening a title.
+            _state.value = loadLocalState(
+                canonicalTitleId = canonicalTitleId,
+                includeLegacyDownloadChecks = false,
+                isRefreshing = true,
+            )
+            refreshInBackground(canonicalTitleId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            _state.value = CanonicalTitleScreenState.Error(error)
+        }
+    }
+
+    private suspend fun refreshInBackground(canonicalTitleId: String) {
+        val before = _state.value as? CanonicalTitleScreenState.Loaded
+        if (before != null) {
+            _state.value = before.copy(isRefreshing = true, refreshError = null)
+        }
+
+        val errors = coroutineScope {
+            val chapterRefresh = async {
+                refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull()
+            }
+            val metadataRefresh = async {
+                refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull()
+            }
+
+            val metadataError = metadataRefresh.await()
+            val current = _state.value as? CanonicalTitleScreenState.Loaded
+            if (current?.title?.id == canonicalTitleId) {
+                _state.value = current.copy(
+                    reportedChapterCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId),
+                    refreshError = metadataError,
+                )
+            }
+
+            listOfNotNull(metadataError, chapterRefresh.await())
+        }
+
+        try {
+            val refreshed = loadLocalState(
+                canonicalTitleId = canonicalTitleId,
+                includeLegacyDownloadChecks = true,
+                isRefreshing = false,
+                refreshError = errors.firstOrNull(),
+            )
+            val current = _state.value as? CanonicalTitleScreenState.Loaded
+            _state.value = if (current == null || current.title.id != canonicalTitleId) {
+                refreshed
+            } else {
+                refreshed.copy(
+                    libraryEntry = current.libraryEntry,
+                    libraryMutationInProgress = current.libraryMutationInProgress,
+                    libraryMutationError = current.libraryMutationError,
+                    downloadInProgressChapterId = current.downloadInProgressChapterId,
+                    downloadSelectionChapterId = current.downloadSelectionChapterId,
+                    downloadError = current.downloadError,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            val current = _state.value as? CanonicalTitleScreenState.Loaded
+            _state.value = current?.copy(
+                isRefreshing = false,
+                refreshError = error,
+            ) ?: CanonicalTitleScreenState.Error(error)
+        }
+    }
+
+    private suspend fun loadLocalState(
+        canonicalTitleId: String,
+        includeLegacyDownloadChecks: Boolean,
+        isRefreshing: Boolean,
+        refreshError: Throwable? = null,
+    ): CanonicalTitleScreenState.Loaded {
+        val title = canonicalTitleRepository.getById(canonicalTitleId)
+            ?: throw NoSuchElementException("Canonical title not found: $canonicalTitleId")
+        val libraryEntry = canonicalLibraryRepository.get(canonicalTitleId)
+        val chapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+        val supportedChapterIds = chapterEvidenceRepository
+            .getByCanonicalTitleId(canonicalTitleId)
+            .mapNotNull { it.mappedCanonicalChapterId }
+            .toSet()
+        val progressByChapter = canonicalReadingRepository
+            .getProgressByCanonicalTitleId(canonicalTitleId)
+            .associateBy(CanonicalChapterProgress::canonicalChapterId)
+        val canonicalDownloadIds = canonicalDownloadRepository
+            .getAll()
+            .asSequence()
+            .map { it.canonicalChapterId }
+            .toSet()
+        val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
+
+        val details = if (!includeLegacyDownloadChecks) {
+            chapters.mapNotNull { chapter ->
+                val progress = progressByChapter[chapter.id]
+                val downloaded = chapter.id in canonicalDownloadIds
+                if (
+                    chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
+                    chapter.id !in supportedChapterIds &&
+                    progress == null &&
+                    !downloaded
+                ) {
+                    null
+                } else {
+                    CanonicalChapterDetailItem(
+                        chapter = chapter,
+                        progress = progress,
+                        downloaded = downloaded,
+                    )
+                }
+            }
+        } else {
+            coroutineScope {
+                chapters.map { chapter ->
+                    async {
+                        val progress = progressByChapter[chapter.id]
+                        val downloaded = chapter.id in canonicalDownloadIds ||
+                            runCatching {
+                                getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
+                            }.getOrDefault(false)
+                        if (
+                            chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
+                            chapter.id !in supportedChapterIds &&
+                            progress == null &&
+                            !downloaded
+                        ) {
+                            null
+                        } else {
+                            CanonicalChapterDetailItem(
+                                chapter = chapter,
+                                progress = progress,
+                                downloaded = downloaded,
+                            )
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+        }
+
+        return CanonicalTitleScreenState.Loaded(
+            title = title,
+            libraryEntry = libraryEntry,
+            chapters = details,
+            reportedChapterCounts = reportedCounts,
+            isRefreshing = isRefreshing,
+            refreshError = refreshError,
+        )
+    }
+
     private fun applyDownloadResult(result: CanonicalDownloadPreparation) {
         val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
         _state.value = when (result) {
@@ -244,54 +416,5 @@ class CanonicalTitleScreenModel(
             libraryMutationInProgress = false,
             libraryMutationError = error,
         )
-    }
-
-    private suspend fun load(canonicalTitleId: String) {
-        _state.value = CanonicalTitleScreenState.Loading
-        try {
-            val refreshError = refreshChapterEvidence
-                .execute(canonicalTitleId)
-                .exceptionOrNull()
-            val title = canonicalTitleRepository.getById(canonicalTitleId)
-                ?: throw NoSuchElementException(
-                    "Canonical title not found: $canonicalTitleId",
-                )
-            val libraryEntry =
-                canonicalLibraryRepository.get(canonicalTitleId)
-            val chapters =
-                canonicalChapterRepository.getByCanonicalTitleId(
-                    canonicalTitleId,
-                )
-            val details = coroutineScope {
-                chapters.map { chapter ->
-                    async {
-                        val progress =
-                            canonicalReadingRepository.getProgress(chapter.id)
-                        val downloaded = canonicalDownloadRepository.get(chapter.id) != null ||
-                            runCatching {
-                                getCanonicalChapterDownloadState
-                                    .execute(chapter.id)
-                                    .hasDownload
-                            }.getOrDefault(false)
-                        CanonicalChapterDetailItem(
-                            chapter = chapter,
-                            progress = progress,
-                            downloaded = downloaded,
-                        )
-                    }
-                }.awaitAll()
-            }
-
-            _state.value = CanonicalTitleScreenState.Loaded(
-                title = title,
-                libraryEntry = libraryEntry,
-                chapters = details,
-                refreshError = refreshError,
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            _state.value = CanonicalTitleScreenState.Error(error)
-        }
     }
 }

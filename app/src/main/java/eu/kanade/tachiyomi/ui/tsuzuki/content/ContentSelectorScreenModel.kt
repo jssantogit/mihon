@@ -40,6 +40,7 @@ sealed interface ContentSelectorScreenState {
         val canonicalChapterId: String,
         val options: List<ContentOptionPresentation>,
         val preferredAddonId: AddonId?,
+        val preferredOptionKey: String?,
         val preferredUnavailable: Boolean,
     ) : ContentSelectorScreenState
 
@@ -181,6 +182,11 @@ class ContentSelectorScreenModel internal constructor(
                     canonicalChapterId = chapterId,
                     options = presented,
                     preferredAddonId = preferredAddonId,
+                    // Preference remains Add-on scoped. Only the highest-ranked
+                    // option inside that Add-on is the effective automatic choice.
+                    preferredOptionKey = preferredAddonId?.let { preferred ->
+                        options.firstOrNull { it.addonId == preferred }?.key
+                    },
                     preferredUnavailable = preferredAddonId != null &&
                         options.none { it.addonId == preferredAddonId },
                 )

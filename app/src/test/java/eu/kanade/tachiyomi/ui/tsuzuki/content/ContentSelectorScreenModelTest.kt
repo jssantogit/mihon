@@ -100,6 +100,32 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
+    fun `multi-language preferred Add-on exposes only one effective preferred option`() = runTest(dispatcher) {
+        val preferences = FakeContentPreferenceRepository(
+            ContentPreference(
+                canonicalTitleId = "title-1",
+                preferredAddonId = AddonId("mangafire"),
+                updatedAt = 10L,
+            ),
+        )
+        val en = option("mangafire", "en", null, 200L).copy(key = "mangafire:en")
+        val pt = option("mangafire", "pt-BR", null, 100L).copy(key = "mangafire:pt")
+        val model = model(
+            providers = listOf(provider("mangafire", Result.success(listOf(en, pt)))),
+            addons = listOf(addon("mangafire", "MangaFire")),
+            preferenceRepository = preferences,
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.preferredAddonId shouldBe AddonId("mangafire")
+        ready.preferredOptionKey shouldBe ready.options.first().option.key
+        ready.options.count { it.option.key == ready.preferredOptionKey } shouldBe 1
+    }
+
+    @Test
     fun `provider failure does not hide successful alternatives`() = runTest(dispatcher) {
         val healthy = option("healthy", "en", null, 100L)
         val model = model(

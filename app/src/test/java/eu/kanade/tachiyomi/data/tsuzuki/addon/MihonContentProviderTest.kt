@@ -12,7 +12,9 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -34,6 +36,7 @@ class MihonContentProviderTest {
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             canonicalChapterRepository = chapterRepository,
+            parser = ParseCanonicalChapterLabel(),
             fetchInventory = {
                 Result.success(
                     inventory(
@@ -99,6 +102,7 @@ class MihonContentProviderTest {
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(en, pt)),
             canonicalChapterRepository = chapterRepository,
+            parser = ParseCanonicalChapterLabel(),
             fetchInventory = { binding ->
                 val isEnglish = binding.id == "binding-en"
                 val sourceId = if (isEnglish) 7L else 8L
@@ -127,6 +131,60 @@ class MihonContentProviderTest {
         options.map { it.language }.shouldContainExactly("en", "pt-BR")
         options.map { it.addonId }.distinct() shouldBe listOf(AddonId("mangadex"))
         chapterRepository.writeCount shouldBe 0
+    }
+
+    @Test
+    fun `stale mapping never offers a release with a different current chapter identity`() = runTest {
+        val binding = binding(id = "binding-en", sourceKey = "7:/aot")
+        val chapterRepository = FakeCanonicalChapterRepository(
+            variants = listOf(
+                ChapterVariant(
+                    id = "variant-en",
+                    canonicalChapterId = "canonical-chapter-4",
+                    sourceId = 7L,
+                    sourceChapterId = "/stale-key",
+                    sourceChapterUrl = "/stale-key",
+                    rawName = "Chapter 4",
+                ),
+            ),
+            chapter = CanonicalChapter(
+                id = "canonical-chapter-4",
+                canonicalTitleId = "title",
+                displayNumber = "4",
+                type = CanonicalChapterType.REGULAR,
+                baseNumber = 4,
+                confidence = 1.0,
+            ),
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            canonicalChapterRepository = chapterRepository,
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        bindingId = it.id,
+                        sourceId = 7L,
+                        language = "en",
+                        snapshot = SourceChapterSnapshot(
+                            sourceId = 7L,
+                            sourceMappingId = it.id,
+                            sourceChapterId = "/stale-key",
+                            sourceChapterUrl = "/stale-key",
+                            rawName = "Chapter 126",
+                            language = "en",
+                            rawNumberHint = 126.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(7L, 70L, 1260L))
+            },
+        )
+
+        provider.resolve("title", "canonical-chapter-4").getOrThrow() shouldBe emptyList()
     }
 
     private fun binding(id: String, sourceKey: String) = ContentBinding(
@@ -219,12 +277,20 @@ class MihonContentProviderTest {
 
     private class FakeCanonicalChapterRepository(
         private val variants: List<ChapterVariant>,
+        private val chapter: CanonicalChapter = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        ),
     ) : CanonicalChapterRepository {
         var writeCount = 0
 
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> = emptyList()
         override fun observeByCanonicalTitleId(canonicalTitleId: String): Flow<List<CanonicalChapter>> = emptyFlow()
-        override suspend fun getById(id: String): CanonicalChapter? = null
+        override suspend fun getById(id: String): CanonicalChapter? = chapter.takeIf { it.id == id }
         override suspend fun getVariantBySourceIdentity(sourceId: Long, sourceChapterId: String): ChapterVariant? =
             variants.firstOrNull { it.sourceId == sourceId && it.sourceChapterId == sourceChapterId }
 

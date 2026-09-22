@@ -57,6 +57,28 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `ambiguous provisional decimal evidence does not create canonical structure`() = runTest {
+        val fixture = fixture()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    rawLabel = "Chapter 9.46",
+                    externalKey = "suspicious-9-46",
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 0
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "suspicious-9-46",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `decimal and extra evidence remain distinct logical chapters`() = runTest {
         val fixture = fixture()
 
@@ -113,14 +135,16 @@ class ReconcileChapterEvidenceTest {
         )?.mappedCanonicalChapterId shouldBe original.id
     }
 
+    // Regression guard: a provider reusing a stable key must never cross canonical chapter identity.
     @Test
-    fun `incompatible high confidence reuse of one external key marks chapter conflicted`() = runTest {
+    fun `reused external key conflicts old chapter and rehomes evidence`() = runTest {
         val fixture = fixture()
 
         fixture.reconciler.execute(
             "title",
             listOf(fixture.addonEvidence(rawLabel = "Chapter 12", externalKey = "same-key")),
         )
+        val chapter12 = fixture.chapterRepository.getByCanonicalTitleId("title").single()
 
         fixture.reconciler.execute(
             "title",
@@ -133,8 +157,83 @@ class ReconcileChapterEvidenceTest {
             ),
         )
 
-        val chapter = fixture.chapterRepository.getByCanonicalTitleId("title").single()
-        chapter.confirmation shouldBe CanonicalChapterConfirmation.CONFLICTED
+        fixture.chapterRepository.getById(chapter12.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.CONFLICTED
+        val chapter13 = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.baseNumber == 13 }
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "same-key",
+        )?.mappedCanonicalChapterId shouldBe chapter13.id
+    }
+
+    // Post-smoke P1 regression: a provider release must never cross canonical chapter identity.
+    @Test
+    fun `conflicting stable external key is detached from the old canonical chapter`() = runTest {
+        val fixture = fixture()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.addonEvidence(rawLabel = "Chapter 4", externalKey = "stable-key")),
+        )
+        val chapter4 = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    id = "changed",
+                    rawLabel = "Chapter 126",
+                    externalKey = "stable-key",
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getById(chapter4.id)?.confirmation shouldBe CanonicalChapterConfirmation.CONFLICTED
+        val chapter126 = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.baseNumber == 126 }
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "stable-key",
+        )?.mappedCanonicalChapterId shouldBe chapter126.id
+    }
+
+    @Test
+    fun `one conflicting provider release does not poison independently supported canonical chapter`() = runTest {
+        val fixture = fixture()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(id = "pt", rawLabel = "Chapter 4", externalKey = "pt-4"),
+                fixture.addonEvidence(id = "en", rawLabel = "Chapter 4", externalKey = "en-stable"),
+            ),
+        )
+        val chapter4 = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(id = "en-new", rawLabel = "Chapter 126", externalKey = "en-stable"),
+            ),
+        )
+
+        fixture.chapterRepository.getById(chapter4.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.PROVISIONAL
+        val chapter126 = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.baseNumber == 126 }
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "en-stable",
+        )?.mappedCanonicalChapterId shouldBe chapter126.id
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "pt-4",
+        )?.mappedCanonicalChapterId shouldBe chapter4.id
     }
 
     @Test

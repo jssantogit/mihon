@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -59,6 +62,46 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `multi-source inventories start concurrently`() = runTest {
+        val bindings = listOf(
+            binding(id = "binding-en"),
+            binding(id = "binding-pt"),
+        )
+        val release = CompletableDeferred<Unit>()
+        val started = mutableSetOf<String>()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(bindings),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { binding ->
+                started += binding.id
+                release.await()
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = if (binding.id.endsWith("en")) 7L else 8L,
+                        canonicalTitleId = "title",
+                        chapters = emptyList(),
+                        mihonMangaId = 99L,
+                        language = "",
+                    ),
+                )
+            },
+            clock = { 1L },
+        )
+
+        val result = backgroundScope.async {
+            provider.probe("title")
+        }
+        runCurrent()
+
+        started.size shouldBe 2
+
+        release.complete(Unit)
+        result.await().getOrThrow() shouldBe emptyList()
+    }
+
+    @Test
     fun `background probe without persisted binding does not search or fetch broadly`() = runTest {
         var fetchCalls = 0
         val provider = MihonChapterProbeProvider(
@@ -76,11 +119,11 @@ class MihonChapterProbeProviderTest {
         fetchCalls shouldBe 0
     }
 
-    private fun binding() = ContentBinding(
-        id = "binding",
+    private fun binding(id: String = "binding") = ContentBinding(
+        id = id,
         canonicalTitleId = "title",
         addonId = AddonId("mangadex"),
-        providerTitleKey = "7:/dandadan",
+        providerTitleKey = "7:/dandadan/$id",
         matchConfidence = 1.0,
         verifiedByUser = false,
         availability = ContentBindingAvailability.AVAILABLE,

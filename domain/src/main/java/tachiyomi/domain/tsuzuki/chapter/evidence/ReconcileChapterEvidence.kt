@@ -53,6 +53,18 @@ class ReconcileChapterEvidence internal constructor(
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.identity.isSpecific
 
+            if (
+                observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+                !parsedIdentityIsReliable
+            ) {
+                val persisted = evidenceRepository.upsert(
+                    evidence = observation,
+                    mappedCanonicalChapterId = null,
+                )
+                persistedEvidence[persisted.evidence.id] = persisted
+                continue
+            }
+
             val externalEvidence = observation.externalChapterKey?.let { externalKey ->
                 evidenceRepository.getByProducerExternalKey(
                     producerKind = observation.producerKind,
@@ -77,7 +89,10 @@ class ReconcileChapterEvidence internal constructor(
                 mappedChapter.identity.isSpecific &&
                 mappedChapter.identity != parsed.identity
 
-            val reusableByIdentity = if (mappedChapter == null && parsedIdentityIsReliable) {
+            val reusableByIdentity = if (
+                parsedIdentityIsReliable &&
+                (mappedChapter == null || mappedIdentityConflicts)
+            ) {
                 chapters.values.firstOrNull { chapter ->
                     chapter.identity.isSpecific && chapter.identity == parsed.identity
                 }
@@ -85,30 +100,55 @@ class ReconcileChapterEvidence internal constructor(
                 null
             }
 
-            val selected = mappedChapter ?: reusableByIdentity ?: newChapter(
-                canonicalTitleId = canonicalTitleId,
-                observation = observation,
-                parsedIdentity = parsed.identity,
-                displayNumber = parsed.displayNumber.ifBlank { observation.rawLabel.trim() },
-                parsedConfidence = parsed.confidence,
-            )
+            val hasIndependentMappedSupport = mappedChapter != null &&
+                mappedIdentityConflicts &&
+                persistedEvidence.values.any { support ->
+                    support.evidence.id != previousEvidence?.evidence?.id &&
+                        support.mappedCanonicalChapterId == mappedChapter.id &&
+                        isReliableSupportFor(support.evidence, mappedChapter)
+                }
 
-            val reconciled = if (mappedIdentityConflicts) {
-                selected.copy(
+            if (mappedIdentityConflicts && mappedChapter != null && !hasIndependentMappedSupport) {
+                val conflicted = mappedChapter.copy(
                     confirmation = CanonicalChapterConfirmation.CONFLICTED,
                     updatedAt = clock(),
                 )
-            } else {
-                selected.copy(
-                    volume = selected.volume ?: observation.volume,
-                    title = selected.title ?: observation.title,
-                    confirmation = resolveConfirmation(
-                        current = selected.confirmation,
-                        authority = observation.authority,
-                    ),
-                    updatedAt = if (selected.id in chapters) clock() else selected.updatedAt,
+                canonicalChapterRepository.upsert(conflicted)
+                chapters[conflicted.id] = conflicted
+            }
+
+            // A reliable observation whose stable external key changed semantic
+            // identity is re-homed to the correct logical chapter. The old
+            // canonical row/user state is preserved; only the provider evidence
+            // moves, preventing chapter 4 from ever resolving to chapter 126.
+            val selected = when {
+                mappedIdentityConflicts -> reusableByIdentity ?: newChapter(
+                    canonicalTitleId = canonicalTitleId,
+                    observation = observation,
+                    parsedIdentity = parsed.identity,
+                    displayNumber = parsed.displayNumber.ifBlank { observation.rawLabel.trim() },
+                    parsedConfidence = parsed.confidence,
+                )
+                mappedChapter != null -> mappedChapter
+                reusableByIdentity != null -> reusableByIdentity
+                else -> newChapter(
+                    canonicalTitleId = canonicalTitleId,
+                    observation = observation,
+                    parsedIdentity = parsed.identity,
+                    displayNumber = parsed.displayNumber.ifBlank { observation.rawLabel.trim() },
+                    parsedConfidence = parsed.confidence,
                 )
             }
+
+            val reconciled = selected.copy(
+                volume = selected.volume ?: observation.volume,
+                title = selected.title ?: observation.title,
+                confirmation = resolveConfirmation(
+                    current = selected.confirmation,
+                    authority = observation.authority,
+                ),
+                updatedAt = if (selected.id in chapters) clock() else selected.updatedAt,
+            )
 
             canonicalChapterRepository.upsert(reconciled)
             chapters[reconciled.id] = reconciled
@@ -119,6 +159,17 @@ class ReconcileChapterEvidence internal constructor(
             )
             persistedEvidence[persisted.evidence.id] = persisted
         }
+    }
+
+    private fun isReliableSupportFor(
+        evidence: ChapterEvidence,
+        chapter: CanonicalChapter,
+    ): Boolean {
+        val parsed = parser.execute(evidence.rawLabel, evidence.rawNumber)
+        return evidence.confidence >= RELIABLE_CONFIDENCE &&
+            parsed.confidence >= RELIABLE_CONFIDENCE &&
+            parsed.identity.isSpecific &&
+            parsed.identity == chapter.identity
     }
 
     private fun newChapter(

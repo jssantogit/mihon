@@ -5,21 +5,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import kotlinx.coroutines.flow.map
 import tachiyomi.domain.tsuzuki.chapter.update.repository.ChapterUpdateStateRepository
 import tachiyomi.domain.tsuzuki.home.model.ContinueReadingVisibility
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
+import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingSeed
 import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
-import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
-import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
-import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
-import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
+import tachiyomi.domain.tsuzuki.home.repository.HomeContinueReadingSource
 
 @Inject
 class ObserveHomeContinueReading(
-    private val observeCanonicalLibrary: ObserveCanonicalLibrary,
-    private val canonicalChapterRepository: CanonicalChapterRepository,
-    private val canonicalReadingRepository: CanonicalReadingRepository,
+    private val source: HomeContinueReadingSource,
     private val visibilityRepository: ContinueReadingVisibilityRepository,
     private val chapterUpdateStateRepository: ChapterUpdateStateRepository,
 ) {
@@ -28,25 +24,38 @@ class ObserveHomeContinueReading(
         require(limit > 0) { "Continue Reading limit must be positive" }
 
         return combine(
-            observeCanonicalLibrary.subscribe(),
+            source.observe(),
             visibilityRepository.observeAll(),
-        ) { libraryItems, visibility ->
-            libraryItems to visibility.associateBy(ContinueReadingVisibility::canonicalTitleId)
-        }.flatMapLatest { (libraryItems, visibilityByTitle) ->
-            if (libraryItems.isEmpty()) {
+        ) { progress, visibility ->
+            progress to visibility.associateBy(ContinueReadingVisibility::canonicalTitleId)
+        }.flatMapLatest { (progress, visibilityByTitle) ->
+            val progressByTitle = progress.groupBy(HomeContinueReadingSeed::canonicalTitleId)
+            val candidates = progressByTitle.mapNotNull { (titleId, titleProgress) ->
+                val candidate = titleProgress
+                    .filter(::isContinueReadingProgress)
+                    .maxByOrNull(HomeContinueReadingSeed::updatedAt)
+                    ?: return@mapNotNull null
+
+                val hiddenAt = visibilityByTitle[titleId]?.hiddenAt
+                if (hiddenAt != null && candidate.updatedAt <= hiddenAt) {
+                    return@mapNotNull null
+                }
+                candidate
+            }
+
+            if (candidates.isEmpty()) {
                 flowOf(emptyList())
             } else {
                 combine(
-                    libraryItems.map { item ->
+                    candidates.map { candidate ->
                         observeItem(
-                            libraryItem = item,
-                            visibility = visibilityByTitle[item.title.id],
+                            candidate = candidate,
+                            titleProgress = progressByTitle[candidate.canonicalTitleId].orEmpty(),
                         )
                     },
-                ) { candidates ->
-                    candidates
-                        .filterNotNull()
-                        .sortedByDescending { it.updatedAt }
+                ) { items ->
+                    items
+                        .sortedByDescending(HomeContinueReadingItem::updatedAt)
                         .take(limit)
                 }
             }
@@ -54,51 +63,28 @@ class ObserveHomeContinueReading(
     }
 
     private fun observeItem(
-        libraryItem: CanonicalLibraryItem,
-        visibility: ContinueReadingVisibility?,
-    ): Flow<HomeContinueReadingItem?> {
-        val canonicalTitleId = libraryItem.title.id
-        return combine(
-            canonicalChapterRepository.observeByCanonicalTitleId(canonicalTitleId),
-            canonicalReadingRepository.observeProgressByCanonicalTitleId(canonicalTitleId),
-            chapterUpdateStateRepository.observeByTitle(canonicalTitleId),
-        ) { chapters, progressItems, updateStates ->
-            val chapterById = chapters.associateBy { it.id }
-            val progress = progressItems
-                .filter(::isContinueReadingProgress)
-                .maxWithOrNull(
-                    compareBy<CanonicalChapterProgress> { it.updatedAt }
-                        .thenBy { chapterById[it.canonicalChapterId]?.sortKey.orEmpty() },
-                )
-                ?: return@combine null
-
-            val hiddenAt = visibility?.hiddenAt
-            if (hiddenAt != null && progress.updatedAt <= hiddenAt) {
-                return@combine null
-            }
-
-            val chapter = chapterById[progress.canonicalChapterId]
-                ?: return@combine null
-
+        candidate: HomeContinueReadingSeed,
+        titleProgress: List<HomeContinueReadingSeed>,
+    ): Flow<HomeContinueReadingItem> {
+        return chapterUpdateStateRepository.observeByTitle(candidate.canonicalTitleId).map { updateStates ->
             HomeContinueReadingItem(
-                canonicalTitleId = canonicalTitleId,
-                title = libraryItem.title.displayTitle,
-                canonicalChapterId = chapter.id,
-                chapterDisplayNumber = chapter.displayNumber,
-                lastPageRead = progress.lastPageRead,
-                updatedAt = progress.updatedAt,
+                canonicalTitleId = candidate.canonicalTitleId,
+                title = candidate.title,
+                canonicalChapterId = candidate.canonicalChapterId,
+                chapterDisplayNumber = candidate.chapterDisplayNumber,
+                lastPageRead = candidate.lastPageRead,
+                updatedAt = candidate.updatedAt,
                 newChapterCount = updateStates.count { state ->
                     state.acknowledgedAt == null &&
-                        progressItems.none { progress ->
-                            progress.canonicalChapterId == state.canonicalChapterId &&
-                                progress.read
+                        titleProgress.none { progress ->
+                            progress.canonicalChapterId == state.canonicalChapterId && progress.read
                         }
                 },
             )
         }
     }
 
-    private fun isContinueReadingProgress(progress: CanonicalChapterProgress): Boolean {
+    private fun isContinueReadingProgress(progress: HomeContinueReadingSeed): Boolean {
         if (progress.read || progress.updatedAt <= 0L) return false
         return progress.lastPageRead > 0L || progress.lastVariantId != null
     }

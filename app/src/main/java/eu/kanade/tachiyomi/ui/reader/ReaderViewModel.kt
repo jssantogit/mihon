@@ -1213,6 +1213,7 @@ class ReaderViewModel(
      */
     fun getMangaReadingMode(resolveDefault: Boolean = true): Int {
         val default = readerPreferences.defaultReadingMode.get()
+        if (canonicalSession != null) return default
         val readingMode = ReadingMode.fromPreference(manga?.readingMode?.toInt())
         return when {
             resolveDefault && readingMode == ReadingMode.DEFAULT -> default
@@ -1224,6 +1225,16 @@ class ReaderViewModel(
      * Updates the viewer position for the open manga.
      */
     fun setMangaReadingMode(readingMode: ReadingMode) {
+        if (canonicalSession != null) {
+            readerPreferences.defaultReadingMode.set(readingMode.flagValue)
+            runBlocking {
+                state.value.viewerChapters?.currChapter?.let { current ->
+                    current.requestedPage = current.chapter.last_page_read
+                }
+                eventChannel.send(Event.ReloadViewerChapters)
+            }
+            return
+        }
         val manga = manga ?: return
         runBlocking(Dispatchers.IO) {
             setMangaViewerFlags.awaitSetReadingMode(manga.id, readingMode.flagValue.toLong())
@@ -1249,6 +1260,7 @@ class ReaderViewModel(
      */
     fun getMangaOrientation(resolveDefault: Boolean = true): Int {
         val default = readerPreferences.defaultOrientationType.get()
+        if (canonicalSession != null) return default
         val orientation = ReaderOrientation.fromPreference(manga?.readerOrientation?.toInt())
         return when {
             resolveDefault && orientation == ReaderOrientation.DEFAULT -> default
@@ -1260,6 +1272,17 @@ class ReaderViewModel(
      * Updates the orientation type for the open manga.
      */
     fun setMangaOrientationType(orientation: ReaderOrientation) {
+        if (canonicalSession != null) {
+            readerPreferences.defaultOrientationType.set(orientation.flagValue)
+            viewModelScope.launch {
+                state.value.viewerChapters?.currChapter?.let { current ->
+                    current.requestedPage = current.chapter.last_page_read
+                }
+                eventChannel.send(Event.SetOrientation(getMangaOrientation()))
+                eventChannel.send(Event.ReloadViewerChapters)
+            }
+            return
+        }
         val manga = manga ?: return
         viewModelScope.launchIO {
             setMangaViewerFlags.awaitSetOrientation(manga.id, orientation.flagValue.toLong())

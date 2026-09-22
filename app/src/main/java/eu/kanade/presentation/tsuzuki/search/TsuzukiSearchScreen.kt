@@ -33,6 +33,7 @@ import eu.kanade.tachiyomi.ui.tsuzuki.search.DiscoverBlock
 import eu.kanade.tachiyomi.ui.tsuzuki.search.DiscoverKind
 import eu.kanade.tachiyomi.ui.tsuzuki.search.SearchState
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 
 @Composable
 fun TsuzukiSearchScreen(
@@ -343,8 +344,18 @@ private fun ProviderProvenance(
         it.title.equals(item.title, ignoreCase = true)
     } > 1
     if (needsDisambiguation) {
+        val provenance = buildList {
+            add(item.provider)
+            if (item.format != CatalogItemFormat.UNKNOWN) {
+                add(item.format.name.lowercase().replace('_', ' '))
+            }
+            item.startDate
+                ?.takeIf { it.length >= 4 }
+                ?.take(4)
+                ?.let(::add)
+        }.joinToString(" · ")
         Text(
-            text = item.provider,
+            text = provenance,
             style = MaterialTheme.typography.bodySmall,
         )
     }

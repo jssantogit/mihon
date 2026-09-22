@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
@@ -41,6 +42,9 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
+import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
+import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
+import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -74,6 +78,7 @@ class CanonicalTitleScreenModelTest {
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = library,
             canonicalChapterRepository = FakeChapterRepository(emptyList()),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = FakeChapterRepository(emptyList()),
@@ -83,6 +88,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
             canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -127,18 +134,40 @@ class CanonicalTitleScreenModelTest {
                 ),
             ),
         )
+        val evidenceRepository = FakeEvidenceRepository(
+            listOf(
+                PersistedChapterEvidence(
+                    evidence = ChapterEvidence(
+                        id = "evidence-37",
+                        canonicalTitleId = "title",
+                        producerKind = ProducerKind.ADDON,
+                        producerId = "mangafire",
+                        externalChapterKey = "7:/chapter-37",
+                        rawLabel = "Chapter 37",
+                        rawNumber = 37.0,
+                        volume = null,
+                        title = null,
+                        observedAt = 1L,
+                        confidence = 1.0,
+                        authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                    ),
+                    mappedCanonicalChapterId = "chapter-37",
+                ),
+            ),
+        )
         val refresh = RefreshChapterEvidence(
             registry = emptyRegistry(),
             reconcileChapterEvidence = ReconcileChapterEvidence(
                 parser = ParseCanonicalChapterLabel(),
                 canonicalChapterRepository = chapters,
-                evidenceRepository = FakeEvidenceRepository(),
+                evidenceRepository = evidenceRepository,
             ),
         )
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = evidenceRepository,
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
@@ -148,6 +177,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = mockk<DownloadCanonicalChapter>(relaxed = true),
             canonicalDownloadRepository = mockk<CanonicalDownloadRepository>(relaxed = true),
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
         )
 
@@ -175,19 +206,22 @@ class CanonicalTitleScreenModelTest {
             ),
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.get("chapter-37") } returns CanonicalDownloadArtifact(
-            canonicalChapterId = "chapter-37",
-            localUri = "content://downloads/chapter-37",
-            format = "DIRECTORY",
-            originatingAddonId = null,
-            originatingOptionKey = null,
-            completedAt = 100L,
-            checksum = null,
+        coEvery { downloads.getAll() } returns listOf(
+            CanonicalDownloadArtifact(
+                canonicalChapterId = "chapter-37",
+                localUri = "content://downloads/chapter-37",
+                format = "DIRECTORY",
+                originatingAddonId = null,
+                originatingOptionKey = null,
+                completedAt = 100L,
+                checksum = null,
+            ),
         )
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
@@ -197,6 +231,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = mockk(relaxed = true),
             canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -229,6 +265,7 @@ class CanonicalTitleScreenModelTest {
                     confidence = 1.0,
                     createdAt = 1L,
                     updatedAt = 1L,
+                    confirmation = CanonicalChapterConfirmation.CONFIRMED,
                 ),
             ),
         )
@@ -245,11 +282,12 @@ class CanonicalTitleScreenModelTest {
             preferredAddonId = null,
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.get(any()) } returns null
+        coEvery { downloads.getAll() } returns emptyList()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
             canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
             canonicalReadingRepository = FakeReadingRepository(),
             getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
                 canonicalChapterRepository = chapters,
@@ -259,6 +297,8 @@ class CanonicalTitleScreenModelTest {
             ),
             downloadCanonicalChapter = downloader,
             canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = RefreshChapterEvidence(
                 registry = emptyRegistry(),
                 reconcileChapterEvidence = ReconcileChapterEvidence(
@@ -277,6 +317,80 @@ class CanonicalTitleScreenModelTest {
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
         state.downloadSelectionChapterId shouldBe "chapter-37"
         state.downloadInProgressChapterId shouldBe null
+    }
+
+    @Test
+    fun `unsupported provisional artifact is hidden without progress or download`() = runTest(dispatcher) {
+        val chapters = FakeChapterRepository(
+            listOf(
+                CanonicalChapter(
+                    id = "stale-9-46",
+                    canonicalTitleId = "title",
+                    displayNumber = "9.46",
+                    baseNumber = 9,
+                    part = 46,
+                    confidence = 0.8,
+                    createdAt = 1L,
+                    updatedAt = 1L,
+                    confirmation = CanonicalChapterConfirmation.PROVISIONAL,
+                ),
+            ),
+        )
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getAll() } returns emptyList()
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = chapters,
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+
+        model.state.value
+            .shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+            .chapters shouldBe emptyList()
+    }
+
+    private fun metadataRefresh(
+        repository: ReportedChapterCountRepository = FakeReportedChapterCountRepository(),
+    ) = RefreshReportedChapterCounts(
+        canonicalTitleRepository = FakeTitleRepository(),
+        registry = emptyRegistry(),
+        repository = repository,
+    )
+
+    private class FakeReportedChapterCountRepository(
+        initial: List<ReportedChapterCount> = emptyList(),
+    ) : ReportedChapterCountRepository {
+        private val values = initial.associateByTo(linkedMapOf()) { it.provider }
+
+        override suspend fun getByTitle(canonicalTitleId: String): List<ReportedChapterCount> =
+            values.values.filter { it.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun upsert(value: ReportedChapterCount) {
+            values[value.provider] = value
+        }
     }
 
     private fun emptyRegistry() = object : IntegrationRegistry {
@@ -340,18 +454,37 @@ class CanonicalTitleScreenModelTest {
         ) = Unit
     }
 
-    private class FakeEvidenceRepository : ChapterEvidenceRepository {
+    private class FakeEvidenceRepository(
+        initial: List<PersistedChapterEvidence> = emptyList(),
+    ) : ChapterEvidenceRepository {
+        private val records = initial.toMutableList()
+
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
-            emptyList()
+            records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+
         override suspend fun getByProducerExternalKey(
             producerKind: ProducerKind,
             producerId: String,
             externalChapterKey: String,
-        ): PersistedChapterEvidence? = null
+        ): PersistedChapterEvidence? = records.firstOrNull {
+            it.evidence.producerKind == producerKind &&
+                it.evidence.producerId == producerId &&
+                it.evidence.externalChapterKey == externalChapterKey
+        }
+
         override suspend fun upsert(
             evidence: ChapterEvidence,
             mappedCanonicalChapterId: String?,
-        ): PersistedChapterEvidence = PersistedChapterEvidence(evidence, mappedCanonicalChapterId)
+        ): PersistedChapterEvidence {
+            val persisted = PersistedChapterEvidence(evidence, mappedCanonicalChapterId)
+            val index = records.indexOfFirst { it.evidence.id == evidence.id }
+            if (index >= 0) {
+                records[index] = persisted
+            } else {
+                records += persisted
+            }
+            return persisted
+        }
     }
 
     private class FakeChapterRepository(

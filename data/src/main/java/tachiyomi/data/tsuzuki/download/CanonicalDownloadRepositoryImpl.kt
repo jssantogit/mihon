@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki.download
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -21,6 +22,12 @@ class CanonicalDownloadRepositoryImpl(
         return database.tsuzuki_canonical_downloadsQueries
             .getTsuzukiCanonicalDownload(canonicalChapterId, ::mapArtifact)
             .awaitAsOneOrNull()
+    }
+
+    override suspend fun getAll(): List<CanonicalDownloadArtifact> {
+        return database.tsuzuki_canonical_downloadsQueries
+            .getAllTsuzukiCanonicalDownloads(::mapArtifact)
+            .awaitAsList()
     }
 
     override suspend fun upsert(artifact: CanonicalDownloadArtifact) {

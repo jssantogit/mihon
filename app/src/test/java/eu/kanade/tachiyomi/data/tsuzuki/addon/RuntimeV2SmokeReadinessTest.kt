@@ -28,6 +28,7 @@ import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
@@ -47,7 +48,7 @@ import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
-// Guards the human smoke path from canonical catalog title through Add-on content.
+// Guards the end-to-end human smoke path from canonical catalog title through Add-on content.
 class RuntimeV2SmokeReadinessTest {
 
     @Test
@@ -85,6 +86,7 @@ class RuntimeV2SmokeReadinessTest {
             ),
             addonRegistry = addonRegistry,
             resolveContentBinding = bindingResolver,
+            contentOptionCache = ContentOptionCache(),
         )
 
         refresh.execute(TITLE_ID).isSuccess shouldBe true
@@ -100,6 +102,7 @@ class RuntimeV2SmokeReadinessTest {
             addonId = addonId,
             contentBindingRepository = bindings,
             canonicalChapterRepository = chapters,
+            parser = parser,
             fetchInventory = ::inventoryFor,
             materializeDelivery = { binding, snapshot ->
                 Result.success(

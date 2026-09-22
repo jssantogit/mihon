@@ -5,6 +5,7 @@ import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
 
 interface CanonicalDownloadRepository {
     suspend fun get(canonicalChapterId: String): CanonicalDownloadArtifact?
+    suspend fun getAll(): List<CanonicalDownloadArtifact> = emptyList()
     suspend fun upsert(artifact: CanonicalDownloadArtifact)
     suspend fun delete(canonicalChapterId: String)
     suspend fun deleteOriginMetadata(addonId: AddonId)

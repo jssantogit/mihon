@@ -1,10 +1,16 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -19,6 +25,7 @@ class MihonContentProvider internal constructor(
     override val addonId: AddonId,
     private val contentBindingRepository: ContentBindingRepository,
     private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val parser: ParseCanonicalChapterLabel,
     private val fetchInventory: suspend (ContentBinding) -> Result<SourceChapterInventory>,
     private val materializeDelivery: suspend (
         ContentBinding,
@@ -35,6 +42,10 @@ class MihonContentProvider internal constructor(
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
                 .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
             if (bindings.isEmpty()) return Result.success(emptyList())
+
+            val canonicalChapter = canonicalChapterRepository.getById(canonicalChapterId)
+                ?.takeIf { it.canonicalTitleId == canonicalTitleId }
+                ?: return Result.success(emptyList())
 
             val variantIdentities = canonicalChapterRepository
                 .getVariantsByCanonicalChapterId(canonicalChapterId)
@@ -55,12 +66,23 @@ class MihonContentProvider internal constructor(
             val sourceIdentities = (variantIdentities + evidenceIdentities).toSet()
             if (sourceIdentities.isEmpty()) return Result.success(emptyList())
 
+            val fetchGate = Semaphore(MAX_CONCURRENT_INVENTORY_FETCHES)
+            val inventoryResults = coroutineScope {
+                bindings.map { binding ->
+                    async {
+                        binding to fetchGate.withPermit {
+                            fetchInventory(binding)
+                        }
+                    }
+                }.awaitAll()
+            }
+
             val options = mutableListOf<ContentOption>()
             var firstFailure: Throwable? = null
             var successfulInventoryCount = 0
 
-            for (binding in bindings) {
-                val inventory = fetchInventory(binding).getOrElse { error ->
+            for ((binding, inventoryResult) in inventoryResults) {
+                val inventory = inventoryResult.getOrElse { error ->
                     if (error is CancellationException) throw error
                     firstFailure = firstFailure ?: error
                     continue
@@ -70,6 +92,17 @@ class MihonContentProvider internal constructor(
                 for (snapshot in inventory.chapters) {
                     val identity = sourceIdentity(snapshot) ?: continue
                     if (identity !in sourceIdentities) continue
+
+                    // Persisted provider mappings are not enough on their own:
+                    // a source can reuse/change an external key. Never offer a
+                    // release whose current parsed identity disagrees with the
+                    // requested canonical chapter.
+                    val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
+                    if (canonicalChapter.identity.isSpecific &&
+                        (!parsed.identity.isSpecific || parsed.identity != canonicalChapter.identity)
+                    ) {
+                        continue
+                    }
 
                     val delivery = materializeDelivery(binding, snapshot).getOrElse { error ->
                         if (error is CancellationException) throw error
@@ -127,5 +160,9 @@ class MihonContentProvider internal constructor(
     private fun contentKey(snapshot: SourceChapterSnapshot): String {
         val chapterKey = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
         return addonId.value + ":" + snapshot.sourceId + ":" + chapterKey
+    }
+
+    private companion object {
+        const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
     }
 }

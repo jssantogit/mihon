@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -30,6 +31,26 @@ class CanonicalTitleRepositoryImpl(
         return database.tsuzuki_titlesQueries
             .getTsuzukiTitleById(id, ::mapTitle)
             .subscribeToOneOrNull()
+    }
+
+    override suspend fun getExternalIdentities(canonicalTitleId: String): List<ExternalIdentity> {
+        return database.tsuzuki_external_identitiesQueries
+            .getTsuzukiExternalIdentitiesByTitle(canonicalTitleId) {
+                    titleId,
+                    provider,
+                    externalId,
+                    verified,
+                    createdAt,
+                ->
+                ExternalIdentity(
+                    canonicalTitleId = titleId,
+                    provider = provider,
+                    externalId = externalId,
+                    verified = verified,
+                    createdAt = createdAt,
+                )
+            }
+            .awaitAsList()
     }
 
     override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? {

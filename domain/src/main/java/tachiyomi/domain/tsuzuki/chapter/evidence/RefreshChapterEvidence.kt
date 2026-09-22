@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
@@ -14,6 +15,7 @@ class RefreshChapterEvidence private constructor(
     private val reconcileChapterEvidence: ReconcileChapterEvidence,
     private val addonRegistry: AddonRegistry?,
     private val resolveContentBinding: ResolveContentBinding?,
+    private val contentOptionCache: ContentOptionCache?,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
@@ -23,11 +25,13 @@ class RefreshChapterEvidence private constructor(
         reconcileChapterEvidence: ReconcileChapterEvidence,
         addonRegistry: AddonRegistry,
         resolveContentBinding: ResolveContentBinding,
+        contentOptionCache: ContentOptionCache,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
         addonRegistry = addonRegistry,
         resolveContentBinding = resolveContentBinding,
+        contentOptionCache = contentOptionCache,
         constructorMarker = Unit,
     )
 
@@ -39,6 +43,7 @@ class RefreshChapterEvidence private constructor(
         reconcileChapterEvidence = reconcileChapterEvidence,
         addonRegistry = null,
         resolveContentBinding = null,
+        contentOptionCache = null,
         constructorMarker = Unit,
     )
 
@@ -51,6 +56,9 @@ class RefreshChapterEvidence private constructor(
                 canonicalTitleId,
                 (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id),
             )
+            // Chapter mappings may have changed; never serve stale provider
+            // options that were resolved against a previous evidence graph.
+            contentOptionCache?.clear()
             Result.success(Unit)
         } catch (error: CancellationException) {
             throw error

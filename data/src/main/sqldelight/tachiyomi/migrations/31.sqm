@@ -1,0 +1,8 @@
+CREATE TABLE tsuzuki_reported_chapter_counts(
+    canonical_title_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    chapter_count INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, provider),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);

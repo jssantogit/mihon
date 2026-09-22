@@ -28,6 +28,7 @@ class MihonAddonProviderFactory(
         addonId = addonId,
         contentBindingRepository = contentBindingRepository,
         canonicalChapterRepository = canonicalChapterRepository,
+        parser = parser,
         fetchInventory = { binding -> chapterInventoryGateway.fetch(binding) },
         chapterEvidenceRepository = chapterEvidenceRepository,
         materializeDelivery = ::materializeDelivery,

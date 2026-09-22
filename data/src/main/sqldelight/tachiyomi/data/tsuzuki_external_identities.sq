@@ -46,3 +46,10 @@ rekeyTsuzukiExternalIdentities:
 UPDATE tsuzuki_external_identities
 SET canonical_title_id = :targetId
 WHERE canonical_title_id = :localId;
+
+
+getTsuzukiExternalIdentitiesByTitle:
+SELECT *
+FROM tsuzuki_external_identities
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY provider ASC, external_id ASC;

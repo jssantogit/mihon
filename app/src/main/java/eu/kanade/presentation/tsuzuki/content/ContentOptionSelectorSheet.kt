@@ -70,7 +70,7 @@ fun ContentOptionSelectorSheet(
                         ) { item ->
                             ContentOptionRow(
                                 item = item,
-                                preferred = state.preferredAddonId == item.option.addonId,
+                                preferred = state.preferredOptionKey == item.option.key,
                                 onClick = { onSelect(item) },
                             )
                         }
