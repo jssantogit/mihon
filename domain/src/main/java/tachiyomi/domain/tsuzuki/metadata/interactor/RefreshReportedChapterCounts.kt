@@ -36,7 +36,7 @@ class RefreshReportedChapterCounts(
                             ReportedChapterCount(
                                 canonicalTitleId = canonicalTitleId,
                                 provider = identity.provider,
-                                chapterCount = item.chapterCount,
+                                chapterCount = item.chapterCount?.takeIf { it > 0 },
                                 updatedAt = Clock.System.now().toEpochMilliseconds(),
                             ),
                         )
