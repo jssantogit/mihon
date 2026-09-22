@@ -16,6 +16,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -93,12 +94,18 @@ class TsuzukiSearchScreenModel(
 
     init {
         loadDiscover()
+        viewModelScope.launch {
+            registry.observeChanges().collectLatest {
+                loadDiscover()
+            }
+        }
     }
 
     fun search(query: String): Job {
         operation?.cancel()
         val normalized = query.trim()
         operation = viewModelScope.launch {
+            registry.awaitReady()
             if (normalized.isEmpty()) {
                 loadDiscoverNow()
                 return@launch
@@ -164,6 +171,7 @@ class TsuzukiSearchScreenModel(
     }
 
     private suspend fun loadDiscoverNow() {
+        registry.awaitReady()
         val recentSearches = searchPreferences.getRecentSearches()
         val providers = registry.discoveryProviders()
         if (providers.isEmpty()) {
