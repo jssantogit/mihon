@@ -177,6 +177,7 @@ class ParseCanonicalChapterLabelTest {
         compact.baseNumber shouldBe 46
         compact.part.shouldBeNull()
         compact.displayNumber shouldBe "46"
+        compact.confidence shouldBe 0.95
 
         genuineDecimal.baseNumber shouldBe 9
         genuineDecimal.part shouldBe 46
