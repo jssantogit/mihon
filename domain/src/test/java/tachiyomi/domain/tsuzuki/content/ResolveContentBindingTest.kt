@@ -163,25 +163,33 @@ class ResolveContentBindingTest {
     private class FakeContentBindingRepository(
         initial: ContentBinding?,
     ) : ContentBindingRepository {
-        private var value = initial
+        private val values = mutableListOf<ContentBinding>().apply {
+            initial?.let(::add)
+        }
 
         override suspend fun get(canonicalTitleId: String, addonId: AddonId): ContentBinding? {
-            return value?.takeIf { it.canonicalTitleId == canonicalTitleId && it.addonId == addonId }
+            return values.lastOrNull {
+                it.canonicalTitleId == canonicalTitleId && it.addonId == addonId
+            }
         }
 
         override suspend fun getByTitle(canonicalTitleId: String): List<ContentBinding> {
-            return listOfNotNull(value?.takeIf { it.canonicalTitleId == canonicalTitleId })
+            return values.filter { it.canonicalTitleId == canonicalTitleId }
         }
 
         override suspend fun upsert(binding: ContentBinding) {
-            value = binding
+            values.removeAll { it.id == binding.id }
+            values += binding
         }
 
         override suspend fun markUnavailable(bindingId: String, updatedAt: Long) {
-            value = value?.takeIf { it.id == bindingId }?.copy(
-                availability = ContentBindingAvailability.UNAVAILABLE,
-                updatedAt = updatedAt,
-            )
+            val index = values.indexOfFirst { it.id == bindingId }
+            if (index >= 0) {
+                values[index] = values[index].copy(
+                    availability = ContentBindingAvailability.UNAVAILABLE,
+                    updatedAt = updatedAt,
+                )
+            }
         }
     }
 
