@@ -12,6 +12,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
@@ -34,6 +35,7 @@ class MihonContentProviderTest {
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             canonicalChapterRepository = chapterRepository,
+            parser = ParseCanonicalChapterLabel(),
             fetchInventory = {
                 Result.success(
                     inventory(
@@ -99,6 +101,7 @@ class MihonContentProviderTest {
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(en, pt)),
             canonicalChapterRepository = chapterRepository,
+            parser = ParseCanonicalChapterLabel(),
             fetchInventory = { binding ->
                 val isEnglish = binding.id == "binding-en"
                 val sourceId = if (isEnglish) 7L else 8L
