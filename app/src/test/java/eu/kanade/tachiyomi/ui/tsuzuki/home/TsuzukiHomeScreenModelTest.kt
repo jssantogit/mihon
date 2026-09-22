@@ -20,11 +20,11 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
-import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityRepository
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
