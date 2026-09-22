@@ -32,6 +32,7 @@ import java.util.Date
 fun ContentOptionSelectorSheet(
     state: ContentSelectorScreenState,
     onSelect: (ContentOptionPresentation) -> Unit,
+    activeOptionKey: String? = null,
     onRetry: () -> Unit,
     onOpenAddonsSettings: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -71,6 +72,7 @@ fun ContentOptionSelectorSheet(
                             ContentOptionRow(
                                 item = item,
                                 preferred = state.preferredOptionKey == item.option.key,
+                                active = activeOptionKey == item.option.key,
                                 onClick = { onSelect(item) },
                             )
                         }
@@ -102,6 +104,7 @@ fun ContentOptionSelectorSheet(
 private fun ContentOptionRow(
     item: ContentOptionPresentation,
     preferred: Boolean,
+    active: Boolean,
     onClick: () -> Unit,
 ) {
     val supportingText = remember(item) {
@@ -125,8 +128,18 @@ private fun ContentOptionRow(
         supportingContent = supportingText.takeIf(String::isNotBlank)?.let { text ->
             { Text(text) }
         },
-        trailingContent = if (preferred) {
-            { Text(stringResource(MR.strings.tsuzuki_content_preferred_badge)) }
+        trailingContent = if (preferred || active) {
+            {
+                Column {
+                    if (active) Text("Reading now", style = MaterialTheme.typography.labelMedium)
+                    if (preferred) {
+                        Text(
+                            stringResource(MR.strings.tsuzuki_content_preferred_badge),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+            }
         } else {
             null
         },

@@ -642,6 +642,8 @@ class ReaderViewModel(
                 it.copy(
                     manga = nextManga,
                     source = nextSource,
+                    activeContentLabel = nextSource?.name ?: "Local",
+                    activeContentOptionKey = null,
                     viewerChapters = nextViewerChapters,
                     bookmarked = nextChapter.chapter.bookmark,
                     canonicalCanNavigatePrevious = previous != null,
@@ -717,11 +719,29 @@ class ReaderViewModel(
                             resetPage = hadActiveSession,
                         )
                         restartReadTimer()
+                        withUIContext {
+                            mutableState.update {
+                                it.copy(
+                                    activeContentLabel = listOfNotNull(
+                                        selection.addonDisplayName,
+                                        selection.option.language,
+                                        selection.option.scanlationGroup,
+                                    ).joinToString(" · "),
+                                    activeContentOptionKey = selection.option.key,
+                                )
+                            }
+                        }
                         eventChannel.trySend(Event.ContentSelectionReady(selection))
                         if (selection.offerSetAsPreferred) {
                             withUIContext {
                                 mutableState.update {
                                     it.copy(dialog = Dialog.SetPreferredAddon(selection))
+                                }
+                            }
+                        } else if (selection.offerSetLanguagePreferred) {
+                            withUIContext {
+                                mutableState.update {
+                                    it.copy(dialog = Dialog.SetPreferredLanguage(selection))
                                 }
                             }
                         }
@@ -749,6 +769,18 @@ class ReaderViewModel(
             } finally {
                 contentSelectionInProgress = false
             }
+        }
+    }
+
+    fun finishAddonPreferencePrompt(selection: SelectionResult) {
+        mutableState.update {
+            it.copy(
+                dialog = if (selection.offerSetLanguagePreferred) {
+                    Dialog.SetPreferredLanguage(selection)
+                } else {
+                    null
+                },
+            )
         }
     }
 
@@ -1579,6 +1611,8 @@ class ReaderViewModel(
     data class State(
         val manga: Manga? = null,
         val source: Source? = null,
+        val activeContentLabel: String? = null,
+        val activeContentOptionKey: String? = null,
         val initError: Throwable? = null,
         val viewerChapters: ViewerChapters? = null,
         val bookmarked: Boolean = false,
@@ -1615,6 +1649,9 @@ class ReaderViewModel(
         ) : Dialog
 
         data class SetPreferredAddon(
+            val selection: SelectionResult,
+        ) : Dialog
+        data class SetPreferredLanguage(
             val selection: SelectionResult,
         ) : Dialog
     }
