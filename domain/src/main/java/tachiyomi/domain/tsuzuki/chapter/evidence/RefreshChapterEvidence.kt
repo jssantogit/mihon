@@ -79,21 +79,21 @@ class RefreshChapterEvidence private constructor(
                     gate.withPermit {
                         try {
                             provider.evidenceFor(canonicalTitleId)
-                            .fold(
-                                onSuccess = { observations ->
-                                    observations.takeIf {
-                                        it.all { observation ->
-                                            observation.canonicalTitleId == canonicalTitleId
-                                        }
-                                    }.orEmpty()
-                                },
-                                onFailure = { error ->
-                                    if (error is CancellationException) throw error
-                                    emptyList()
-                                },
-                            )
-                    } catch (error: CancellationException) {
-                        throw error
+                                .fold(
+                                    onSuccess = { observations ->
+                                        observations.takeIf {
+                                            it.all { observation ->
+                                                observation.canonicalTitleId == canonicalTitleId
+                                            }
+                                        }.orEmpty()
+                                    },
+                                    onFailure = { error ->
+                                        if (error is CancellationException) throw error
+                                        emptyList()
+                                    },
+                                )
+                        } catch (error: CancellationException) {
+                            throw error
                         } catch (_: Throwable) {
                             emptyList()
                         }
@@ -118,30 +118,30 @@ class RefreshChapterEvidence private constructor(
                     async {
                         gate.withPermit {
                             try {
-                            val bindings = resolver
-                                .executeAll(canonicalTitleId, provider.addonId)
-                                .getOrElse { error ->
-                                    if (error is CancellationException) throw error
-                                    return@async emptyList()
-                                }
-                            if (bindings.isEmpty()) return@async emptyList()
-
-                            provider.probe(canonicalTitleId)
-                                .fold(
-                                    onSuccess = { observations ->
-                                        observations.takeIf {
-                                            it.all { observation ->
-                                                observation.canonicalTitleId == canonicalTitleId
-                                            }
-                                        }.orEmpty()
-                                    },
-                                    onFailure = { error ->
+                                val bindings = resolver
+                                    .executeAll(canonicalTitleId, provider.addonId)
+                                    .getOrElse { error ->
                                         if (error is CancellationException) throw error
-                                        emptyList()
-                                    },
-                                )
-                        } catch (error: CancellationException) {
-                            throw error
+                                        return@withPermit emptyList()
+                                    }
+                                if (bindings.isEmpty()) return@withPermit emptyList()
+
+                                provider.probe(canonicalTitleId)
+                                    .fold(
+                                        onSuccess = { observations ->
+                                            observations.takeIf {
+                                                it.all { observation ->
+                                                    observation.canonicalTitleId == canonicalTitleId
+                                                }
+                                            }.orEmpty()
+                                        },
+                                        onFailure = { error ->
+                                            if (error is CancellationException) throw error
+                                            emptyList()
+                                        },
+                                    )
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (_: Throwable) {
                                 emptyList()
                             }
