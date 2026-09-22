@@ -136,13 +136,14 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `incompatible high confidence reuse of one external key marks chapter conflicted`() = runTest {
+    fun `incompatible high confidence reuse of one external key conflicts old chapter and rehomes evidence`() = runTest {
         val fixture = fixture()
 
         fixture.reconciler.execute(
             "title",
             listOf(fixture.addonEvidence(rawLabel = "Chapter 12", externalKey = "same-key")),
         )
+        val chapter12 = fixture.chapterRepository.getByCanonicalTitleId("title").single()
 
         fixture.reconciler.execute(
             "title",
@@ -155,8 +156,15 @@ class ReconcileChapterEvidenceTest {
             ),
         )
 
-        val chapter = fixture.chapterRepository.getByCanonicalTitleId("title").single()
-        chapter.confirmation shouldBe CanonicalChapterConfirmation.CONFLICTED
+        fixture.chapterRepository.getById(chapter12.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.CONFLICTED
+        val chapter13 = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.baseNumber == 13 }
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "same-key",
+        )?.mappedCanonicalChapterId shouldBe chapter13.id
     }
 
     // Post-smoke P1 regression: a provider release must never cross canonical chapter identity.
