@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.firstDiscoveredChapterNumber
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 
 @Composable
@@ -175,13 +176,10 @@ private fun TitleHeader(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        val firstDiscovered = state.chapters
-            .mapNotNull { it.chapter.baseNumber }
-            .filter { it >= 0 }
-            .minOrNull()
+        val firstDiscovered = firstDiscoveredChapterNumber(state.chapters.map { it.chapter })
         if (firstDiscovered != null && firstDiscovered > 1) {
             Text(
-                text = "Available chapters currently start at $firstDiscovered. " +
+                text = "Discovered chapters currently start at $firstDiscovered. " +
                     "Earlier chapters have not been discovered from connected providers.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
