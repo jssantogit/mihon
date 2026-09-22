@@ -135,6 +135,7 @@ class CanonicalTitleMergeRepositoryImplTest {
         database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
             canonicalTitleId = "duplicate",
             preferredAddonId = "mangadex",
+            preferredLanguage = "pt-BR",
             updatedAt = 40L,
         )
         database.tsuzuki_content_bindingsQueries.upsertTsuzukiContentBinding(
@@ -208,8 +209,10 @@ class CanonicalTitleMergeRepositoryImplTest {
         readingRepository.getProgress("chapter-37")?.lastPageRead shouldBe 12L
         readingRepository.getHistory("chapter-37")?.totalReadDuration shouldBe 90L
         database.tsuzuki_content_preferencesQueries
-            .getTsuzukiContentPreference("winner") { _, preferredAddonId, _ -> preferredAddonId.orEmpty() }
-            .awaitAsOneOrNull() shouldBe "mangadex"
+            .getTsuzukiContentPreference("winner") { _, preferredAddonId, preferredLanguage, _ ->
+                preferredAddonId.orEmpty() to preferredLanguage
+            }
+            .awaitAsOneOrNull() shouldBe ("mangadex" to "pt-BR")
         database.tsuzuki_content_bindingsQueries
             .getTsuzukiContentBindingsByTitle("winner") { id, _, _, _, _, _, _, _, _, _ -> id }
             .awaitAsList() shouldContainExactly listOf("binding-1")
@@ -274,6 +277,37 @@ class CanonicalTitleMergeRepositoryImplTest {
 
         titleRepository.getById("winner")?.id shouldBe "winner"
         titleRepository.getById("duplicate")?.id shouldBe "duplicate"
+    }
+
+    @Test
+    fun `different preferred title languages abort without losing either title`() = runBlocking<Unit> {
+        seedTitle("winner", "Winner")
+        seedTitle("duplicate", "Duplicate")
+        database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
+            canonicalTitleId = "winner",
+            preferredAddonId = "mangadex",
+            preferredLanguage = "en",
+            updatedAt = 1L,
+        )
+        database.tsuzuki_content_preferencesQueries.upsertTsuzukiContentPreference(
+            canonicalTitleId = "duplicate",
+            preferredAddonId = "mangadex",
+            preferredLanguage = "pt-BR",
+            updatedAt = 2L,
+        )
+
+        shouldThrow<CanonicalTitleMergeConflict.PreferredLanguageConflict> {
+            repository.convergeTo("winner", "duplicate")
+        }
+
+        titleRepository.getById("winner")?.id shouldBe "winner"
+        titleRepository.getById("duplicate")?.id shouldBe "duplicate"
+        database.tsuzuki_content_preferencesQueries
+            .getTsuzukiContentPreference("winner") { _, _, preferredLanguage, _ -> preferredLanguage }
+            .awaitAsOneOrNull() shouldBe "en"
+        database.tsuzuki_content_preferencesQueries
+            .getTsuzukiContentPreference("duplicate") { _, _, preferredLanguage, _ -> preferredLanguage }
+            .awaitAsOneOrNull() shouldBe "pt-BR"
     }
 
     @Test
