@@ -2,6 +2,7 @@ package tachiyomi.domain.tsuzuki.chapter.evidence
 
 import dev.zacsweers.metro.Inject
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -14,9 +15,24 @@ class ReconcileChapterEvidence internal constructor(
     private val evidenceRepository: ChapterEvidenceRepository,
     private val idFactory: () -> String,
     private val clock: () -> Long,
+    private val mutationGate: ChapterMutationGate = ChapterMutationGate(),
 ) {
 
     @Inject
+    constructor(
+        parser: ParseCanonicalChapterLabel,
+        canonicalChapterRepository: CanonicalChapterRepository,
+        evidenceRepository: ChapterEvidenceRepository,
+        mutationGate: ChapterMutationGate,
+    ) : this(
+        parser = parser,
+        canonicalChapterRepository = canonicalChapterRepository,
+        evidenceRepository = evidenceRepository,
+        idFactory = { UUID.randomUUID().toString() },
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        mutationGate = mutationGate,
+    )
+
     constructor(
         parser: ParseCanonicalChapterLabel,
         canonicalChapterRepository: CanonicalChapterRepository,
@@ -38,7 +54,15 @@ class ReconcileChapterEvidence internal constructor(
             "All chapter evidence must belong to canonical title $canonicalTitleId"
         }
         if (evidence.isEmpty()) return
+        mutationGate.withLock {
+            reconcileUncontended(canonicalTitleId, evidence)
+        }
+    }
 
+    private suspend fun reconcileUncontended(
+        canonicalTitleId: String,
+        evidence: List<ChapterEvidence>,
+    ) {
         val chapters = canonicalChapterRepository
             .getByCanonicalTitleId(canonicalTitleId)
             .associateByTo(linkedMapOf(), CanonicalChapter::id)
@@ -143,6 +167,11 @@ class ReconcileChapterEvidence internal constructor(
             val reconciled = selected.copy(
                 volume = selected.volume ?: observation.volume,
                 title = selected.title ?: observation.title,
+                confidence = if (parsedIdentityIsReliable) {
+                    maxOf(selected.confidence, minOf(observation.confidence, parsed.confidence))
+                } else {
+                    selected.confidence
+                },
                 confirmation = resolveConfirmation(
                     current = selected.confirmation,
                     authority = observation.authority,
