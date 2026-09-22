@@ -21,7 +21,7 @@ Authoritative architecture: `docs/superpowers/specs/2026-09-20-tsuzuki-modular-r
 - Canonical title/chapter identities survive Add-on changes. Never merge by title alone.
 - Kitsu/MAL counts are metadata, not permission to synthesize chapters.
 - An Add-on can provide several internal Mihon Sources; per-title preferred content is Add-on scoped,
-  while language ranking is global.
+  while language preference is per CanonicalTitle. Global language ranking remains a fallback only.
 - Do not silently switch to another Add-on unless the global automatic fallback setting is on.
 - A failed source switch must preserve the working Reader session and canonical reading progress.
 - No APK until impacted tests, full final CI and explicit handoff.
@@ -43,9 +43,11 @@ Affected files: `ReaderViewModel.kt`, `ReaderActivity.kt`,
 - Test switching EN -> PT-BR -> EN while pages are loaded, request failure, empty page list,
   concurrent taps, source change while loading and exit/reentry. Preserve prior progress.
 - For a *different Add-on*, show a preference confirmation before changing the persisted title
-  preference. Changing internal languages of the same Add-on cannot change that Add-on-scoped
-  preference; offer a separate, explicitly global language-priority action if desired.
-  Do not silently persist the first choice without showing the relevant preference UX.
+  preference. When changing the language of the same Add-on, offer a separate per-title
+  preferred-language confirmation. Persist these independently. A per-title language preference
+  affects only that title; global language ranking remains the fallback for titles without one.
+  Do not silently persist an unconfirmed preference or mutate the current reading option if
+  preparation fails.
 - The screenshot's EN/PT-BR MangaFire entries are the same installed Add-on. Do not introduce a
   per-title Mihon-Source preference that conflicts with the approved runtime spec.
 
@@ -98,6 +100,16 @@ Observed code path: `RefreshChapterEvidence` resolves bindings, then probes all 
   distinct retry/error state. Respect explicit refresh as a forced revalidation.
 - Do not promote a stale cached option to executable content without validating live identity.
 - Recheck cold/warm load for Dandadan and Nanatsu, and verify latest navigation cancels stale work.
+
+## Approved product decision (2026-09-22)
+
+Preferred reading language is **per CanonicalTitle**, independently from the per-title
+preferred Add-on. The previous global-only language constraint in the architecture spec is
+superseded for this limited preference; existing global language settings remain the fallback
+for titles with no language preference. Preserve both fields when changing the other. Prefer
+an additive persistence change (with the next valid SQLDelight migration), adapt sync contracts
+where this preference is included, and add coverage for different preferred languages on
+separate titles, same-Add-on EN ↔ PT-BR switching, and no preference mutation on failed loads.
 
 ## CI and release protocol
 
