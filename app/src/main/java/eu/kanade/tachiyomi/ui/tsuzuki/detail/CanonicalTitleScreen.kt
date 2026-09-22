@@ -40,6 +40,16 @@ data class CanonicalTitleScreen(
             onRefresh = { screenModel.refresh() },
             onAddToLibrary = { screenModel.addToLibrary() },
             onRemoveFromLibrary = { screenModel.removeFromLibrary() },
+            onOpenAddonsSettings = {
+                context.startActivity(
+                    Intent(context, MainActivity::class.java)
+                        .setAction(Intent.ACTION_APPLICATION_PREFERENCES)
+                        .putExtra(
+                            SettingsScreen.EXTRA_DESTINATION,
+                            SettingsScreen.Destination.TsuzukiAddons.id,
+                        ),
+                )
+            },
             onDownloadChapter = { canonicalChapterId ->
                 screenModel.requestDownload(canonicalChapterId)
             },

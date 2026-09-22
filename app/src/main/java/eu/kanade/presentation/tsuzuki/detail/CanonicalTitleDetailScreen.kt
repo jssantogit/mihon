@@ -36,6 +36,7 @@ fun CanonicalTitleDetailScreen(
     onRemoveFromLibrary: () -> Unit,
     onOpenChapter: (String) -> Unit,
     onDownloadChapter: (String) -> Unit,
+    onOpenAddonsSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -123,6 +124,11 @@ fun CanonicalTitleDetailScreen(
                                 },
                                 modifier = Modifier.padding(16.dp),
                             )
+                            if (!state.isRefreshing) {
+                                TextButton(onClick = onOpenAddonsSettings) {
+                                    Text("Manage reading Add-ons")
+                                }
+                            }
                         }
                     } else {
                         items(
@@ -167,6 +173,18 @@ private fun TitleHeader(
                     "${providerLabel(count.provider)}: ${count.chapterCount} chapters"
                 },
                 style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        val firstDiscovered = state.chapters
+            .mapNotNull { it.chapter.baseNumber }
+            .filter { it >= 0 }
+            .minOrNull()
+        if (firstDiscovered != null && firstDiscovered > 1) {
+            Text(
+                text = "Available chapters currently start at $firstDiscovered. " +
+                    "Earlier chapters have not been discovered from connected providers.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (state.isRefreshing) {
