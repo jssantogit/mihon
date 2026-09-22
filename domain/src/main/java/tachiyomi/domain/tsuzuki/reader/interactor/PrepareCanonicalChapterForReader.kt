@@ -92,6 +92,7 @@ class PrepareCanonicalChapterForReader(
                     canonicalChapterId = canonicalChapterId,
                     target = target,
                     usedFallback = usedFallback,
+                    selectedOption = option,
                 )
             },
             onFailure = { error ->

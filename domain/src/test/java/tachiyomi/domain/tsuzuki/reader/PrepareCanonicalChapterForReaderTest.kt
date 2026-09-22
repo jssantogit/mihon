@@ -57,6 +57,7 @@ class PrepareCanonicalChapterForReaderTest {
         result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
         result.canonicalChapterId shouldBe "chapter-1"
         result.usedFallback shouldBe false
+        result.selectedOption shouldBe option
         result.target shouldBe PreparedChapterContent.MihonOperational(
             mangaId = 20L,
             chapterId = 30L,
@@ -90,6 +91,7 @@ class PrepareCanonicalChapterForReaderTest {
             uri = artifact.localUri,
             format = artifact.format,
         )
+        result.selectedOption shouldBe null
         fixture.preparer.calls shouldBe 0
     }
 
@@ -134,6 +136,7 @@ class PrepareCanonicalChapterForReaderTest {
         result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
         result.canonicalChapterId shouldBe "chapter-1"
         fixture.preparer.lastOption shouldBe selected
+        result.selectedOption shouldBe selected
         fixture.preparer.lastProgress?.canonicalChapterId shouldBe "chapter-1"
     }
 

@@ -96,6 +96,7 @@ import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
 import tachiyomi.domain.tsuzuki.chapter.interactor.RepairZeroPlaceholderChapterSemantics
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.interactor.GetAdjacentCanonicalChapter
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
@@ -383,6 +384,7 @@ class ReaderViewModel(
                                 canonicalChapterId = preparation.canonicalChapterId,
                                 target = preparation.target,
                                 resetPage = false,
+                                selectedOption = preparation.selectedOption,
                             )
                         }
                         is CanonicalReaderPreparation.SelectionRequired -> {
@@ -513,6 +515,7 @@ class ReaderViewModel(
         canonicalChapterId: String,
         target: PreparedChapterContent,
         resetPage: Boolean,
+        selectedOption: ContentOption? = null,
     ) {
         when (val plan = planCanonicalReaderTarget(canonicalChapterId, target)) {
             is CanonicalReaderTargetPlan.Mihon -> {
@@ -550,6 +553,7 @@ class ReaderViewModel(
                     nextInitialChapterId = plan.chapterId,
                     nextIncognitoMode = nextIncognitoMode,
                     resetPage = resetPage,
+                    selectedOption = selectedOption,
                 )
             }
 
@@ -595,6 +599,7 @@ class ReaderViewModel(
                     nextInitialChapterId = -1L,
                     nextIncognitoMode = nextIncognitoMode,
                     resetPage = resetPage,
+                    selectedOption = selectedOption,
                 )
             }
         }
@@ -610,6 +615,7 @@ class ReaderViewModel(
         nextInitialChapterId: Long,
         nextIncognitoMode: Boolean,
         resetPage: Boolean,
+        selectedOption: ContentOption?,
     ) {
         // These queries are deliberately outside the publication boundary. If
         // either fails, the previous viewer and canonical session remain intact.
@@ -642,8 +648,8 @@ class ReaderViewModel(
                 it.copy(
                     manga = nextManga,
                     source = nextSource,
-                    activeContentLabel = nextSource?.name ?: "Local",
-                    activeContentOptionKey = null,
+                    activeContentLabel = canonicalContentLabel(nextSource?.name, selectedOption),
+                    activeContentOptionKey = selectedOption?.key,
                     viewerChapters = nextViewerChapters,
                     bookmarked = nextChapter.chapter.bookmark,
                     canonicalCanNavigatePrevious = previous != null,
@@ -717,6 +723,7 @@ class ReaderViewModel(
                             canonicalChapterId = preparation.canonicalChapterId,
                             target = preparation.target,
                             resetPage = hadActiveSession,
+                            selectedOption = selection.option,
                         )
                         restartReadTimer()
                         withUIContext {
@@ -1207,6 +1214,7 @@ class ReaderViewModel(
                         canonicalChapterId = preparation.canonicalChapterId,
                         target = preparation.target,
                         resetPage = true,
+                        selectedOption = preparation.selectedOption,
                     )
                     restartReadTimer()
                 }

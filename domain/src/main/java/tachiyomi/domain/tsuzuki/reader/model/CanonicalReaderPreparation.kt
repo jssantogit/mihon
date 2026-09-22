@@ -9,6 +9,7 @@ sealed interface CanonicalReaderPreparation {
         val canonicalChapterId: String,
         val target: PreparedChapterContent,
         val usedFallback: Boolean,
+        val selectedOption: ContentOption? = null,
     ) : CanonicalReaderPreparation
 
     data class SelectionRequired(
