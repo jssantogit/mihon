@@ -137,6 +137,33 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `partial scan failure with no evidence remains retryable`() = runTest {
+        val en = binding("binding-en")
+        val pt = binding("binding-pt")
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(en, pt)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { item ->
+                if (item.id == en.id) error("English inventory unavailable")
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = item.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = emptyList(),
+                        mihonMangaId = 80L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            clock = { 1L },
+        )
+
+        provider.probe("title").exceptionOrNull()?.message shouldBe "English inventory unavailable"
+    }
+
+    @Test
     fun `background probe without persisted binding does not search or fetch broadly`() = runTest {
         var fetchCalls = 0
         val provider = MihonChapterProbeProvider(

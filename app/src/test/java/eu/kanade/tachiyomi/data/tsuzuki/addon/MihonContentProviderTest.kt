@@ -234,6 +234,66 @@ class MihonContentProviderTest {
     }
 
     @Test
+    fun `one crashing internal source does not hide matching chapters from another language`() = runTest {
+        val en = binding(id = "binding-en", sourceKey = "7:/dandadan")
+        val pt = binding(id = "binding-pt", sourceKey = "8:/dandadan")
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(en, pt)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(variants = emptyList()),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { item ->
+                if (item.id == en.id) error("English source offline")
+                Result.success(
+                    inventory(
+                        bindingId = item.id,
+                        sourceId = 8L,
+                        language = "pt-BR",
+                        snapshot = snapshot(8L, item.id, "/chapter-37", "pt-BR"),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(8L, 80L, 800L))
+            },
+        )
+
+        val result = provider.resolve("title", "canonical-chapter-37").getOrThrow()
+        result.single().language shouldBe "pt-BR"
+    }
+
+    @Test
+    fun `partial failed inventory without a matching alternative is retryable not missing`() = runTest {
+        val en = binding(id = "binding-en", sourceKey = "7:/dandadan")
+        val pt = binding(id = "binding-pt", sourceKey = "8:/dandadan")
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(en, pt)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(variants = emptyList()),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { item ->
+                if (item.id == en.id) error("English source offline")
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = item.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = emptyList(),
+                        mihonMangaId = 80L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(8L, 80L, 800L))
+            },
+        )
+
+        provider.resolve("title", "canonical-chapter-37")
+            .exceptionOrNull()?.message shouldBe "English source offline"
+    }
+
+    @Test
     fun `stale mapping never offers a release with a different current chapter identity`() = runTest {
         val binding = binding(id = "binding-en", sourceKey = "7:/aot")
         val chapterRepository = FakeCanonicalChapterRepository(

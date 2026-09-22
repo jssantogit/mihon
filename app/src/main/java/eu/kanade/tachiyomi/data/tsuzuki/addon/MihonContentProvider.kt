@@ -97,8 +97,6 @@ class MihonContentProvider internal constructor(
 
             val options = mutableListOf<ContentOption>()
             var firstFailure: Throwable? = null
-            var successfulInventoryCount = 0
-            var matchingReleaseCount = 0
 
             for ((binding, inventoryResult) in inventoryResults) {
                 val inventory = inventoryResult.getOrElse { error ->
@@ -106,7 +104,6 @@ class MihonContentProvider internal constructor(
                     firstFailure = firstFailure ?: error
                     continue
                 }
-                successfulInventoryCount++
 
                 if (inventory.canonicalTitleId != canonicalTitleId ||
                     inventory.sourceMappingId != binding.id
@@ -140,7 +137,6 @@ class MihonContentProvider internal constructor(
                         continue
                     }
 
-                    matchingReleaseCount++
                     val delivery = materializeDelivery(binding, snapshot).getOrElse { error ->
                         if (error is CancellationException) throw error
                         firstFailure = firstFailure ?: error
@@ -158,10 +154,7 @@ class MihonContentProvider internal constructor(
                 }
             }
 
-            if (options.isEmpty() &&
-                (successfulInventoryCount == 0 || matchingReleaseCount > 0) &&
-                firstFailure != null
-            ) {
+            if (options.isEmpty() && firstFailure != null) {
                 Result.failure(firstFailure)
             } else {
                 Result.success(options.distinctBy(ContentOption::key))

@@ -52,7 +52,6 @@ class MihonChapterProbeProvider internal constructor(
 
             val evidence = mutableListOf<ChapterEvidence>()
             var firstFailure: Throwable? = null
-            var successfulInventoryCount = 0
 
             for ((_, inventoryResult) in inventoryResults) {
                 val inventory = inventoryResult.getOrElse { error ->
@@ -60,7 +59,6 @@ class MihonChapterProbeProvider internal constructor(
                     firstFailure = firstFailure ?: error
                     continue
                 }
-                successfulInventoryCount++
                 val observedAt = clock()
 
                 for (snapshot in inventory.chapters) {
@@ -86,7 +84,7 @@ class MihonChapterProbeProvider internal constructor(
                 }
             }
 
-            if (evidence.isEmpty() && successfulInventoryCount == 0 && firstFailure != null) {
+            if (evidence.isEmpty() && firstFailure != null) {
                 Result.failure(firstFailure)
             } else {
                 Result.success(evidence.distinctBy(ChapterEvidence::id))
