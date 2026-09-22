@@ -47,6 +47,7 @@ import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
+// Guards the human smoke path from canonical catalog title through Add-on content.
 class RuntimeV2SmokeReadinessTest {
 
     @Test
