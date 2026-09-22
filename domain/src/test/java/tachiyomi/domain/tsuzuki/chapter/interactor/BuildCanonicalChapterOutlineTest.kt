@@ -64,6 +64,43 @@ class BuildCanonicalChapterOutlineTest {
     }
 
     @Test
+    fun `One Punch-Man keeps early count slots alongside observed chapter 138 and later chapters`() {
+        val actualChapters = listOf(chapter(138), chapter(139))
+        val outline = buildCanonicalChapterOutline(
+            "title",
+            actualChapters,
+            listOf(count("title", 138)),
+        )
+
+        outline.size shouldBe 139
+        outline.first().chapter.baseNumber shouldBe 1
+        outline[137].chapter.id shouldBe "chapter-138"
+        outline.last().chapter.id shouldBe "chapter-139"
+        outline.count(CanonicalChapterOutlineEntry::inferredFromReportedCount) shouldBe 137
+    }
+
+    @Test
+    fun `an already materialized numbered slot does not produce a duplicate count row`() {
+        val stored = CanonicalChapter(
+            id = inferredChapterId("title", 2),
+            canonicalTitleId = "title",
+            displayNumber = "2",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 2,
+            confidence = 0.0,
+        )
+        val outline = buildCanonicalChapterOutline(
+            "title",
+            listOf(stored),
+            listOf(count("title", 3)),
+        )
+
+        outline.map { it.chapter.baseNumber }.shouldContainExactly(1, 2, 3)
+        outline[1].chapter.id shouldBe stored.id
+        outline.all(CanonicalChapterOutlineEntry::inferredFromReportedCount) shouldBe true
+    }
+
+    @Test
     fun `different provider counts never duplicate numbered slots or use impossible counts`() {
         val outline = buildCanonicalChapterOutline(
             "title",
