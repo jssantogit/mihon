@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
@@ -64,14 +65,31 @@ class MihonContentProvider internal constructor(
                 }
                 .toList()
             val sourceIdentities = (variantIdentities + evidenceIdentities).toSet()
-            if (sourceIdentities.isEmpty()) return Result.success(emptyList())
+            // A newly linked alternative Add-on may not have a persisted chapter
+            // mapping yet. Its verified/high-confidence title binding is sufficient
+            // to try an exact, high-confidence chapter identity match on demand.
+            // Never infer a title binding from matching chapter numbers alone.
+            val allowIdentityFallback = canonicalChapter.identity.isSpecific &&
+                canonicalChapter.confirmation != CanonicalChapterConfirmation.CONFLICTED &&
+                canonicalChapter.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE
+            if (sourceIdentities.isEmpty() &&
+                (!allowIdentityFallback || bindings.none(::trustedBinding))
+            ) {
+                return Result.success(emptyList())
+            }
 
             val fetchGate = Semaphore(MAX_CONCURRENT_INVENTORY_FETCHES)
             val inventoryResults = coroutineScope {
                 bindings.map { binding ->
                     async {
                         binding to fetchGate.withPermit {
-                            fetchInventory(binding)
+                            try {
+                                fetchInventory(binding)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                Result.failure(error)
+                            }
                         }
                     }
                 }.awaitAll()
@@ -80,6 +98,7 @@ class MihonContentProvider internal constructor(
             val options = mutableListOf<ContentOption>()
             var firstFailure: Throwable? = null
             var successfulInventoryCount = 0
+            var matchingReleaseCount = 0
 
             for ((binding, inventoryResult) in inventoryResults) {
                 val inventory = inventoryResult.getOrElse { error ->
@@ -89,21 +108,39 @@ class MihonContentProvider internal constructor(
                 }
                 successfulInventoryCount++
 
+                if (inventory.canonicalTitleId != canonicalTitleId ||
+                    inventory.sourceMappingId != binding.id
+                ) {
+                    firstFailure = firstFailure ?: IllegalStateException("Inventory binding mismatch")
+                    continue
+                }
                 for (snapshot in inventory.chapters) {
+                    if (snapshot.sourceMappingId != binding.id ||
+                        snapshot.sourceId != inventory.sourceId
+                    ) {
+                        continue
+                    }
                     val identity = sourceIdentity(snapshot) ?: continue
-                    if (identity !in sourceIdentities) continue
 
-                    // Persisted provider mappings are not enough on their own:
-                    // a source can reuse/change an external key. Never offer a
-                    // release whose current parsed identity disagrees with the
-                    // requested canonical chapter.
+                    // Stable provider evidence is preferred. For a newly linked
+                    // alternative, permit only an exact, confident chapter identity
+                    // from a trusted binding. Never offer chapter 126 as chapter 4
+                    // even if an old provider URL was reused.
                     val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
+                    val mapped = identity in sourceIdentities
+                    val exactFallback = allowIdentityFallback &&
+                        trustedBinding(binding) &&
+                        parsed.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE &&
+                        parsed.identity.isSpecific &&
+                        parsed.identity == canonicalChapter.identity
+                    if (!mapped && !exactFallback) continue
                     if (canonicalChapter.identity.isSpecific &&
                         (!parsed.identity.isSpecific || parsed.identity != canonicalChapter.identity)
                     ) {
                         continue
                     }
 
+                    matchingReleaseCount++
                     val delivery = materializeDelivery(binding, snapshot).getOrElse { error ->
                         if (error is CancellationException) throw error
                         firstFailure = firstFailure ?: error
@@ -121,7 +158,10 @@ class MihonContentProvider internal constructor(
                 }
             }
 
-            if (options.isEmpty() && successfulInventoryCount == 0 && firstFailure != null) {
+            if (options.isEmpty() &&
+                (successfulInventoryCount == 0 || matchingReleaseCount > 0) &&
+                firstFailure != null
+            ) {
                 Result.failure(firstFailure)
             } else {
                 Result.success(options.distinctBy(ContentOption::key))
@@ -132,6 +172,9 @@ class MihonContentProvider internal constructor(
             Result.failure(error)
         }
     }
+
+    private fun trustedBinding(binding: ContentBinding): Boolean =
+        binding.verifiedByUser || binding.matchConfidence >= MIN_TRUSTED_BINDING_CONFIDENCE
 
     private fun sourceIdentity(variant: ChapterVariant): Pair<Long, String>? {
         val chapterKey = variant.sourceChapterId
@@ -164,5 +207,7 @@ class MihonContentProvider internal constructor(
 
     private companion object {
         const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
+        const val MIN_TRUSTED_BINDING_CONFIDENCE = 0.97
+        const val MIN_TRUSTED_CHAPTER_CONFIDENCE = 0.95
     }
 }

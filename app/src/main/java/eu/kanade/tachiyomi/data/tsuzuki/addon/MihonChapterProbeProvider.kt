@@ -38,7 +38,13 @@ class MihonChapterProbeProvider internal constructor(
                 bindings.map { binding ->
                     async {
                         binding to fetchGate.withPermit {
-                            fetchInventory(binding)
+                            try {
+                                fetchInventory(binding)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                Result.failure(error)
+                            }
                         }
                     }
                 }.awaitAll()

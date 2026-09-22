@@ -134,6 +134,106 @@ class MihonContentProviderTest {
     }
 
     @Test
+    fun `trusted alternative Add-on resolves a missing chapter without prior source mapping`() = runTest {
+        val alternative = binding("binding-other", "7:/dandadan").copy(
+            matchConfidence = 0.98,
+        )
+        val chapters = FakeCanonicalChapterRepository(variants = emptyList())
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(alternative)),
+            canonicalChapterRepository = chapters,
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(inventory(it.id, 7L, "en", snapshot(7L, it.id, "/chapter-37", "en")))
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 99L, 123L))
+            },
+        )
+
+        val choices = provider.resolve("title", "canonical-chapter-37").getOrThrow()
+
+        choices.single().delivery shouldBe ContentDelivery.Mihon(7L, 99L, 123L)
+        materializations shouldBe 1
+        chapters.writeCount shouldBe 0
+    }
+
+    @Test
+    fun `unmapped alternative never offers different chapter number`() = runTest {
+        val alternative = binding("binding-other", "7:/dandadan")
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(alternative)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(variants = emptyList()),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-126", "en").copy(
+                            rawName = "Chapter 126",
+                            rawNumberHint = 126.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 99L, 126L))
+            },
+        )
+
+        provider.resolve("title", "canonical-chapter-37").getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun `ambiguous title binding cannot use unmapped numeric fallback`() = runTest {
+        val ambiguous = binding("binding-ambiguous", "7:/dandadan").copy(matchConfidence = 0.80)
+        var fetches = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(ambiguous)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(variants = emptyList()),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                fetches++
+                Result.success(inventory(it.id, 7L, "en", snapshot(7L, it.id, "/chapter-37", "en")))
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(7L, 99L, 123L))
+            },
+        )
+
+        provider.resolve("title", "canonical-chapter-37").getOrThrow() shouldBe emptyList()
+        fetches shouldBe 0
+    }
+
+    @Test
+    fun `download materialization failure is not reported as missing chapter`() = runTest {
+        val alternative = binding("binding-other", "7:/dandadan")
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(alternative)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(variants = emptyList()),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(inventory(it.id, 7L, "en", snapshot(7L, it.id, "/chapter-37", "en")))
+            },
+            materializeDelivery = { _, _ -> Result.failure(IllegalStateException("storage unavailable")) },
+        )
+
+        provider.resolve("title", "canonical-chapter-37").exceptionOrNull()?.message shouldBe
+            "storage unavailable"
+    }
+
+    @Test
     fun `stale mapping never offers a release with a different current chapter identity`() = runTest {
         val binding = binding(id = "binding-en", sourceKey = "7:/aot")
         val chapterRepository = FakeCanonicalChapterRepository(

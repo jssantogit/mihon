@@ -102,6 +102,41 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `one crashing inventory does not discard evidence from other bound sources`() = runTest {
+        val bindings = listOf(binding("binding-en"), binding("binding-pt"))
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(bindings),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { item ->
+                if (item.id == "binding-en") error("Source unavailable")
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = item.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = listOf(
+                            SourceChapterSnapshot(
+                                sourceId = 8L,
+                                sourceMappingId = item.id,
+                                sourceChapterId = "/chapter-37",
+                                rawName = "Chapter 37",
+                                language = "pt-BR",
+                                rawNumberHint = 37.0,
+                            ),
+                        ),
+                        mihonMangaId = 99L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            clock = { 1L },
+        )
+
+        provider.probe("title").getOrThrow().single().externalChapterKey shouldBe "8:/chapter-37"
+    }
+
+    @Test
     fun `background probe without persisted binding does not search or fetch broadly`() = runTest {
         var fetchCalls = 0
         val provider = MihonChapterProbeProvider(
