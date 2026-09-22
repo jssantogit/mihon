@@ -159,6 +159,7 @@ class ReconcileChapterEvidenceTest {
         chapter.confirmation shouldBe CanonicalChapterConfirmation.CONFLICTED
     }
 
+    // Post-smoke P1 regression: a provider release must never cross canonical chapter identity.
     @Test
     fun `conflicting stable external key is detached from the old canonical chapter`() = runTest {
         val fixture = fixture()
