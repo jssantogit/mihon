@@ -22,3 +22,5 @@
 *.woff binary
 *.pyc binary
 *.swp binary
+
+/test-fixtures/extensions/*.apk binary
