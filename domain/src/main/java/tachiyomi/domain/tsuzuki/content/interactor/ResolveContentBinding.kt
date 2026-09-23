@@ -302,12 +302,22 @@ class ResolveContentBinding internal constructor(
                     elapsedMillis = started.elapsedNow().inWholeMilliseconds, reason = reason)
                 return collected.distinctBy { it.sourceId to it.sourceUrl } to error
             }
-            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_SEARCH,
-                if (matches.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
-                sourceId = sourceId, language = matches.firstOrNull()?.language,
-                attempt = attemptIndex + 1, elapsedMillis = started.elapsedNow().inWholeMilliseconds,
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.BINDING_SEARCH,
+                if (matches.isEmpty()) {
+                    ChapterInventoryDiagnosticOutcome.EMPTY
+                } else {
+                    ChapterInventoryDiagnosticOutcome.SUCCESS
+                },
+                sourceId = sourceId,
+                language = matches.firstOrNull()?.language,
+                attempt = attemptIndex + 1,
+                elapsedMillis = started.elapsedNow().inWholeMilliseconds,
                 received = matches.size,
-                reason = if (matches.isEmpty()) ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS else null)
+                reason = if (matches.isEmpty()) ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS else null,
+            )
             collected += matches
             val ranked = collected.distinctBy { it.sourceId to it.sourceUrl }
                 .sortedByDescending { scoreSourceTitleMatch(title, it.title) }

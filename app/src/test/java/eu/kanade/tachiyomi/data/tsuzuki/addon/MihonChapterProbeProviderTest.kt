@@ -109,7 +109,8 @@ class MihonChapterProbeProviderTest {
         )
 
         timeoutProvider.probe("title").isFailure shouldBe true
-        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+        diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+            .outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
 
         diagnostics.clear()
         diagnostics.start("title")
@@ -124,7 +125,8 @@ class MihonChapterProbeProviderTest {
         )
 
         networkProvider.probe("title").isFailure shouldBe true
-        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+            .outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
         diagnostics.report().contains("private network detail") shouldBe false
     }
 

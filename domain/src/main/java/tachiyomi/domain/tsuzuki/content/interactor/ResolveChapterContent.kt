@@ -246,9 +246,17 @@ class ResolveChapterContent(
             addonId = provider.addonId,
         )
         contentOptionCache.get(key)?.let { cached ->
-            recordSelector(canonicalTitleId, provider.addonId,
-                if (cached.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
-                cached.size, ChapterInventoryDiagnosticReason.CACHED_OPTIONS)
+            recordSelector(
+                canonicalTitleId,
+                provider.addonId,
+                if (cached.isEmpty()) {
+                    ChapterInventoryDiagnosticOutcome.EMPTY
+                } else {
+                    ChapterInventoryDiagnosticOutcome.SUCCESS
+                },
+                cached.size,
+                ChapterInventoryDiagnosticReason.CACHED_OPTIONS,
+            )
             return Result.success(cached)
         }
 
