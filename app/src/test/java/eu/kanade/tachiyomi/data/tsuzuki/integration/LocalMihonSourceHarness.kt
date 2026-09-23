@@ -49,10 +49,12 @@ internal class LocalMihonSourceHarness(
 
     val sourceManager = FixtureSourceManager(source)
 
+    val mangaRepository: MangaRepository = mockk(relaxed = true)
+
     val gateway = MihonReadingSourceGateway(
         sourceManager = sourceManager,
         sourcePreferences = SourcePreferences(InMemoryPreferenceStore()),
-        networkToLocalManga = NetworkToLocalManga(mockk<MangaRepository>(relaxed = true)),
+        networkToLocalManga = NetworkToLocalManga(mangaRepository),
     )
 
     fun enqueue(status: Int = 200, body: String = "") {
