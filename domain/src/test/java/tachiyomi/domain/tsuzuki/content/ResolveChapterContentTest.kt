@@ -16,6 +16,14 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
@@ -26,6 +34,39 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ResolveChapterContentTest {
+
+    @Test
+    fun `selector reports provider absence separately from an empty chapter result`() = runTest {
+        val diagnostic = RecordingDiagnostics()
+        diagnostic.start("title")
+        val installed = InstalledAddon(
+            id = AddonId("mangafire"), displayName = "MangaFire", enabled = true,
+            versionName = "1.0", mihonSourceIds = listOf(42L), hasSettings = false,
+        )
+        val repository = object : AddonRepository {
+            override fun observeInstalled(): Flow<List<InstalledAddon>> =
+                MutableStateFlow(listOf(installed))
+            override suspend fun snapshot(): List<InstalledAddon> = listOf(installed)
+            override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
+        }
+        val resolver = fixture(
+            preference = null, automaticFallback = false,
+            providers = listOf(provider("mangadex")),
+            addonRepository = repository, diagnostics = diagnostic,
+        )
+
+        resolver.lookupOptions("title", "chapter-37")
+        diagnostic.events.any {
+            it.addonId == "mangafire" &&
+                it.stage == ChapterInventoryDiagnosticStage.SELECTOR &&
+                it.reasons[ChapterInventoryDiagnosticReason.PROVIDER_NOT_REGISTERED] == 1
+        } shouldBe true
+        diagnostic.events.any {
+            it.addonId == "mangadex" &&
+                it.stage == ChapterInventoryDiagnosticStage.SELECTOR &&
+                it.outcome == ChapterInventoryDiagnosticOutcome.EMPTY
+        } shouldBe true
+    }
 
     @Test
     fun `first read requires selector even when one provider exists`() = runTest {
@@ -234,6 +275,8 @@ class ResolveChapterContentTest {
         automaticFallback: Boolean,
         providers: List<ContentProvider>,
         preferredLanguages: List<String> = emptyList(),
+        addonRepository: AddonRepository? = null,
+        diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     ): ResolveChapterContent {
         val preferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
         preferences.automaticFallback.set(automaticFallback)
@@ -245,6 +288,8 @@ class ResolveChapterContentTest {
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
             inFlightContentResolution = InFlightContentResolution(),
+            addonRepository = addonRepository,
+            diagnostics = diagnostics,
         )
     }
 
@@ -267,6 +312,17 @@ class ResolveChapterContentTest {
         releaseDate = null,
         delivery = ContentDelivery.LocalArchive("content://$addonId/$language"),
     )
+
+    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+        private var active = false
+        override fun start(canonicalTitleId: String): String { active = true; return "test" }
+        override fun stop() { active = false }
+        override fun clear() { active = false; events.clear() }
+        override fun isRecording(canonicalTitleId: String): Boolean = active && canonicalTitleId == "title"
+        override fun record(event: ChapterInventoryDiagnosticEvent) { if (active) events += event }
+        override fun report(): String = ""
+    }
 
     private class FakeAddonRegistry(
         private val providers: List<ContentProvider>,

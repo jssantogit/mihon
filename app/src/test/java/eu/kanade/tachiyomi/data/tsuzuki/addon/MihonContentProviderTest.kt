@@ -7,6 +7,11 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
@@ -26,6 +31,27 @@ import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 
 class MihonContentProviderTest {
+
+    @Test
+    fun `content provider explains when no binding exists instead of silently returning empty`() = runTest {
+        val diagnostic = RecordingDiagnostics()
+        diagnostic.start("title")
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangafire"),
+            contentBindingRepository = FakeContentBindingRepository(emptyList()),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(variants = emptyList()),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { error("Must not fetch without a binding") },
+            materializeDelivery = { _, _ -> error("Must not materialize without a binding") },
+            diagnostics = diagnostic,
+        )
+
+        provider.resolve("title", "canonical-chapter-37").getOrThrow() shouldBe emptyList()
+        val event = diagnostic.events.single()
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CONTENT_PROVIDER
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
+        event.reasons[ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE] shouldBe 1
+    }
 
     @Test
     fun `matching source release becomes content option for canonical chapter`() = runTest {
@@ -463,6 +489,17 @@ class MihonContentProviderTest {
         releaseDate = 37L,
         rawNumberHint = 37.0,
     )
+
+    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+        private var active = false
+        override fun start(canonicalTitleId: String): String { active = true; return "test" }
+        override fun stop() { active = false }
+        override fun clear() { active = false; events.clear() }
+        override fun isRecording(canonicalTitleId: String): Boolean = active && canonicalTitleId == "title"
+        override fun record(event: ChapterInventoryDiagnosticEvent) { if (active) events += event }
+        override fun report(): String = ""
+    }
 
     private class FakeContentBindingRepository(
         private val bindings: List<ContentBinding>,
