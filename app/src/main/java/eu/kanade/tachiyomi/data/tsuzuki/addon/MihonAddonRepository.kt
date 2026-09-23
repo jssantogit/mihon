@@ -80,7 +80,7 @@ class MihonAddonRepository internal constructor(
             displayName = name,
             enabled = sourceIds.isNotEmpty() && sourceIds.any { it.toString() !in disabled },
             versionName = versionName,
-            mihonSourceIds = sourceIds,
+            mihonSourceIds = sourceIds.filter { it.toString() !in disabled },
             hasSettings = sources.any { it is ConfigurableSource },
             hasUpdate = hasUpdate,
         )
