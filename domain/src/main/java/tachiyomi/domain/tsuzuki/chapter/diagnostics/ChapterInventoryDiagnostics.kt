@@ -5,6 +5,11 @@ import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 
 /** Processing boundary recorded by the temporary chapter-inventory diagnostic. */
 enum class ChapterInventoryDiagnosticStage {
+    ADDON_DISCOVERY,
+    BINDING_SEARCH,
+    BINDING_MATCH,
+    BINDING_MATERIALIZATION,
+    SELECTOR,
     INVENTORY,
     PROBE,
     RECONCILIATION,
@@ -16,6 +21,10 @@ enum class ChapterInventoryDiagnosticStage {
 enum class ChapterInventoryDiagnosticOutcome {
     SUCCESS,
     EMPTY,
+    DISABLED,
+    NO_MATCH,
+    AMBIGUOUS,
+    CAPTCHA_REQUIRED,
     NETWORK_ERROR,
     EXTENSION_ERROR,
     TIMEOUT,
@@ -37,6 +46,22 @@ enum class ChapterInventoryDiagnosticReason {
     INVENTORY_EMPTY,
     BINDING_UNAVAILABLE,
     BINDING_CONFIRMATION_REQUIRED,
+    ADDON_NOT_INSTALLED,
+    ALL_SOURCES_DISABLED,
+    REUSED_BINDING,
+    SOURCE_SEARCH_FAILED,
+    NO_SEARCH_RESULTS,
+    MATCH_BELOW_THRESHOLD,
+    AMBIGUOUS_CANDIDATES,
+    MATERIALIZATION_FAILED,
+    BINDING_PERSISTENCE_FAILED,
+    CAPTCHA_CHALLENGE,
+    NETWORK_FAILURE,
+    TIMEOUT_FAILURE,
+    EXTENSION_FAILURE,
+    PROVIDER_FAILED,
+    NO_CHAPTER_VARIANT,
+    CACHED_OPTIONS,
     CACHE_SNAPSHOT,
     REFRESHED_SNAPSHOT,
     PERSISTED_MAPPED,
@@ -57,6 +82,8 @@ data class ChapterInventoryDiagnosticEvent(
     val addonId: String? = null,
     val language: String? = null,
     val elapsedMillis: Long? = null,
+    /** One-based title spelling attempt; the raw query is never recorded. */
+    val attempt: Int? = null,
     val received: Int? = null,
     val accepted: Int? = null,
     val provisional: Int? = null,
@@ -103,6 +130,28 @@ fun ChapterInventoryDiagnostics.recordIfEnabled(
         if (isRecording(canonicalTitleId)) record(event)
     } catch (_: Exception) {
         // Diagnostic collection is best-effort and must never affect chapter processing.
+    }
+}
+
+/** Closed taxonomy: classify explicit CAPTCHA signals, never infer CAPTCHA from generic IO. */
+object ChapterInventoryDiagnosticFailures {
+    fun classify(error: Throwable): Pair<ChapterInventoryDiagnosticOutcome, ChapterInventoryDiagnosticReason> {
+        val causes = generateSequence(error) { it.cause }.take(5).toList()
+        return when {
+            causes.any {
+                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
+            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT to ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE
+            causes.any { cause ->
+                val detail = cause.message.orEmpty()
+                detail.contains("captcha_required", ignoreCase = true) ||
+                    detail.contains("shape-selecting captcha", ignoreCase = true)
+            } -> ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
+                ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
+            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
+                ChapterInventoryDiagnosticReason.NETWORK_FAILURE
+            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
+                ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
+        }
     }
 }
 
