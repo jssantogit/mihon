@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import eu.kanade.tachiyomi.data.tsuzuki.diagnosticHttpStatus
+import eu.kanade.tachiyomi.data.tsuzuki.toStructuredChapterInventoryFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
