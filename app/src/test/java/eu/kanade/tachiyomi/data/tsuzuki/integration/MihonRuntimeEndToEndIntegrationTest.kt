@@ -127,11 +127,12 @@ class MihonRuntimeEndToEndIntegrationTest {
         LocalMihonSourceHarness().use { harness ->
             harness.enqueue(body = "/manga/unrelated\tNaruto")
             harness.enqueue(body = "/manga/unrelated\tNaruto")
+            harness.enqueue(body = "/manga/unrelated\tNaruto")
             val journey = RuntimeJourney(harness, "canonical-opm-unsafe")
 
             journey.bindResult().isFailure shouldBe true
             journey.bindings.getByTitle(journey.canonicalTitleId) shouldBe emptyList()
-            harness.server.requestCount shouldBe 2
+            harness.server.requestCount shouldBe 3
         }
     }
 

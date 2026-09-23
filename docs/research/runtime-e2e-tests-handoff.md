@@ -75,10 +75,11 @@ The reusable local harness now includes tests for:
 The failing HTTP/parser diagnostic path exposed a classification gap at chapter inventory: bare
 HTTP exceptions and parser exceptions were recorded as generic extension failures despite having
 a numeric HTTP status or a recognized JSON/serialization parser type. The Mihon chapter-inventory
-adapter now wraps non-cancellation failures in the existing closed `ReadingSourceSearchFailure`
-category while retaining the original throwable as `cause`. The operation still fails; this does
-not synthesize an empty inventory, change fallback, or include exception text in diagnostic output.
-Timeout and cancellation propagation remain unchanged.
+diagnostic path now classifies these with the existing closed `ReadingSourceSearchFailure` type and
+retains the original throwable as `cause` for classification. The gateway still returns the
+original error to its caller; no result is converted to an empty inventory. This does not change
+fallback or include exception text in diagnostic output. Timeout and cancellation propagation
+remain unchanged.
 
 Existing adjacent coverage in `MihonReadingSourceHttpIntegrationTest` also exercises HTTP 200 empty,
 HTTP 403 without CAPTCHA misclassification, 429/503, malformed extension response, internal source

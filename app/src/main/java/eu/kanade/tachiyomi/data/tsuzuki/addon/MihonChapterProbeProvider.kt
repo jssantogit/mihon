@@ -185,7 +185,7 @@ class MihonChapterProbeProvider internal constructor(
             )
 
             if (evidence.isEmpty() && firstFailure != null) {
-                Result.failure(firstFailure.toStructuredChapterInventoryFailure())
+                Result.failure(firstFailure)
             } else {
                 Result.success(uniqueEvidence)
             }
