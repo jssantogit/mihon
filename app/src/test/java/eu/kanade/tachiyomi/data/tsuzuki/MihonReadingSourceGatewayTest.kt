@@ -28,6 +28,9 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchException
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchFailure
+import java.io.IOException
 
 class MihonReadingSourceGatewayTest {
 
@@ -112,7 +115,8 @@ class MihonReadingSourceGatewayTest {
         sourceManager.sourcesList += TestCatalogueSource(10L, "Test", "en")
         sourcePreferences.disabledSources.set(setOf("10"))
 
-        gateway.search(10L, "query").isFailure shouldBe true
+        val error = gateway.search(10L, "query").exceptionOrNull()
+        (error as ReadingSourceSearchException).kind shouldBe ReadingSourceSearchFailure.SOURCE_DISABLED
         mangaRepository.insertedCount shouldBe 0
     }
 
@@ -124,7 +128,9 @@ class MihonReadingSourceGatewayTest {
             "en",
             errorToThrow = RuntimeException("boom"),
         )
-        gateway.search(10L, "query").exceptionOrNull()?.message shouldBe "boom"
+        val error = gateway.search(10L, "query").exceptionOrNull() as ReadingSourceSearchException
+        error.kind shouldBe ReadingSourceSearchFailure.EXTENSION_ERROR
+        error.cause?.message shouldBe "boom"
 
         sourceManager.sourcesList.clear()
         sourceManager.sourcesList += TestCatalogueSource(
@@ -136,6 +142,23 @@ class MihonReadingSourceGatewayTest {
         shouldThrow<CancellationException> {
             gateway.search(11L, "query")
         }
+    }
+
+    @Test
+    fun `MangaFire captcha failure gets a safe actionable category`() = runTest {
+        sourceManager.sourcesList += TestCatalogueSource(
+            10L,
+            "MangaFire",
+            "en",
+            errorToThrow = IOException(
+                "Shape-selecting captcha detected with session-specific provider detail",
+            ),
+        )
+
+        val error = gateway.search(10L, "One Punch Man").exceptionOrNull() as ReadingSourceSearchException
+        error.kind shouldBe ReadingSourceSearchFailure.CHALLENGE_REQUIRED
+        error.message?.contains("session-specific") shouldBe false
+        mangaRepository.insertedCount shouldBe 0
     }
 
     @Test

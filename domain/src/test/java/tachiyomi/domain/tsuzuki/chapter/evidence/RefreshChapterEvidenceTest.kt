@@ -34,6 +34,8 @@ import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingMaterializationException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -42,6 +44,8 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchException
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchFailure
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -170,6 +174,75 @@ class RefreshChapterEvidenceTest {
         val event = diagnostics.events.single()
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
         event.reasons[ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED] shouldBe 1
+    }
+
+    @Test
+    fun `MangaFire search challenge and materialization error remain distinguishable`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+
+        diagnostics.start("canonical-title")
+        val challenge = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingSourceSearchException(
+                ReadingSourceSearchException(
+                    ReadingSourceSearchFailure.CHALLENGE_REQUIRED,
+                    IOException("private captcha response"),
+                ),
+                sourceId = 73L,
+            ),
+        )
+        challenge.execute("canonical-title").isSuccess shouldBe true
+        val searchEvent = diagnostics.events.single()
+        searchEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        searchEvent.sourceId shouldBe 73L
+        searchEvent.reasons[ChapterInventoryDiagnosticReason.CHALLENGE_REQUIRED] shouldBe 1
+        diagnostics.report().contains("private captcha response") shouldBe false
+
+        diagnostics.clear()
+        diagnostics.start("canonical-title")
+        val materialization = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingMaterializationException(
+                91L,
+                IllegalStateException("private database details"),
+            ),
+        )
+        materialization.execute("canonical-title").isSuccess shouldBe true
+        val materializeEvent = diagnostics.events.single()
+        materializeEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
+        materializeEvent.sourceId shouldBe 91L
+        materializeEvent.reasons[ChapterInventoryDiagnosticReason.BINDING_MATERIALIZATION_FAILED] shouldBe 1
+        diagnostics.report().contains("private database details") shouldBe false
+    }
+
+    @Test
+    fun `source search failures include phase and source id instead of generic binding unavailable`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+        diagnostics.start("canonical-title")
+        val refresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingSourceSearchException(
+                ReadingSourceSearchException(ReadingSourceSearchFailure.SOURCE_DISABLED),
+                sourceId = 42L,
+            ),
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        val event = diagnostics.events.single()
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
+        event.sourceId shouldBe 42L
+        event.reasons[ChapterInventoryDiagnosticReason.SOURCE_DISABLED] shouldBe 1
     }
 
     @Test

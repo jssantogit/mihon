@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingMaterializationException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
@@ -129,6 +130,23 @@ class ResolveContentBindingTest {
 
         (result.exceptionOrNull() is ContentBindingSourceSearchException) shouldBe true
         gateway.searchedQueries shouldBe listOf("One-Punch Man")
+    }
+
+    @Test
+    fun `materialization failure is explicitly distinguished from source search failure`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/manga/one-punch-man", "One-Punch Man")),
+            ),
+        )
+
+        val result = resolver(FakeContentBindingRepository(null), gateway, title = "One-Punch Man")
+            .executeAll("title", AddonId("mangadex"))
+        val error = result.exceptionOrNull()
+        (error is ContentBindingMaterializationException) shouldBe true
+        (error as ContentBindingMaterializationException).sourceId shouldBe 7L
+        gateway.searchCalls shouldBe 1
+        gateway.materializeCalls shouldBe 1
     }
 
     @Test

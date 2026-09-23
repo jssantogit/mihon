@@ -70,7 +70,7 @@ class MihonAddonRepositoryTest {
         disabled.value = setOf("10", "20", "30")
         val allDisabled = repository.snapshot().single()
         allDisabled.enabled shouldBe false
-        allDisabled.mihonSourceIds.shouldContainExactlyInAnyOrder()
+        allDisabled.mihonSourceIds shouldBe emptyList()
     }
 
     @Test
