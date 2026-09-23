@@ -10,6 +10,14 @@ import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
@@ -20,6 +28,7 @@ import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.util.UUID
 import kotlin.time.Clock
+import kotlin.time.TimeSource
 
 class ResolveContentBinding internal constructor(
     private val contentBindingRepository: ContentBindingRepository,
@@ -29,6 +38,7 @@ class ResolveContentBinding internal constructor(
     private val scoreSourceTitleMatch: ScoreSourceTitleMatch,
     private val idFactory: () -> String,
     private val clock: () -> Long,
+    private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) {
 
     @Inject
@@ -38,6 +48,7 @@ class ResolveContentBinding internal constructor(
         addonRepository: AddonRepository,
         readingSourceGateway: ReadingSourceGateway,
         scoreSourceTitleMatch: ScoreSourceTitleMatch,
+        diagnostics: ChapterInventoryDiagnostics,
     ) : this(
         contentBindingRepository = contentBindingRepository,
         canonicalTitleRepository = canonicalTitleRepository,
@@ -46,6 +57,7 @@ class ResolveContentBinding internal constructor(
         scoreSourceTitleMatch = scoreSourceTitleMatch,
         idFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
+        diagnostics = diagnostics,
     )
 
     suspend fun execute(
@@ -84,13 +96,16 @@ class ResolveContentBinding internal constructor(
         canonicalTitleId: String,
         addonId: AddonId,
     ): List<ContentBinding> {
-        val addon = requireExecutableAddon(addonId)
+        val addon = requireExecutableAddon(canonicalTitleId, addonId)
         val existingBindings = contentBindingRepository
             .getByTitle(canonicalTitleId)
             .filter { it.addonId == addonId }
         val availableBindings = existingBindings
             .filter { it.availability != ContentBindingAvailability.UNAVAILABLE }
         if (availableBindings.isNotEmpty()) {
+            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                ChapterInventoryDiagnosticOutcome.SUCCESS, accepted = availableBindings.size,
+                reason = ChapterInventoryDiagnosticReason.REUSED_BINDING)
             return availableBindings.sortedWith(
                 compareBy<ContentBinding>({ it.createdAt }, { it.id }),
             )
@@ -105,13 +120,13 @@ class ResolveContentBinding internal constructor(
         val confirmationCandidates = mutableListOf<ScoredSourceCandidate>()
         val searchGate = Semaphore(MAX_CONCURRENT_SOURCE_SEARCHES)
 
+        val sourceIds = addon.mihonSourceIds.distinct()
         val candidatesBySource = coroutineScope {
-            addon.mihonSourceIds
-                .distinct()
+            sourceIds
                 .mapIndexed { sourceRank, sourceId ->
                     async {
                         val (results, failure) = searchGate.withPermit {
-                            searchSourceTitle(sourceId, canonicalTitle.displayTitle)
+                            searchSourceTitle(canonicalTitleId, addonId, sourceId, canonicalTitle.displayTitle)
                         }
                         Triple(
                             sourceRank,
@@ -133,9 +148,16 @@ class ResolveContentBinding internal constructor(
         }
         var firstSearchFailure: Throwable? = null
 
-        for ((_, candidates, failure) in candidatesBySource) {
+        for ((rank, candidates, failure) in candidatesBySource) {
             if (firstSearchFailure == null) firstSearchFailure = failure
-            val best = candidates.firstOrNull() ?: continue
+            val sourceId = sourceIds[rank]
+            val best = candidates.firstOrNull()
+            if (best == null) {
+                if (failure == null) recordBinding(canonicalTitleId, addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH, ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                    sourceId = sourceId, reason = ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS)
+                continue
+            }
             val second = candidates.getOrNull(1)
             val highConfidence = best.confidence >= AUTO_MATCH_THRESHOLD
             val unambiguousWithinSource =
@@ -143,7 +165,23 @@ class ResolveContentBinding internal constructor(
 
             if (highConfidence && unambiguousWithinSource) {
                 selected += best
+                recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    ChapterInventoryDiagnosticOutcome.SUCCESS, sourceId = sourceId,
+                    language = best.candidate.language, received = candidates.size, accepted = 1)
             } else {
+                val reason = when {
+                    !unambiguousWithinSource -> ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
+                    best.confidence < CONFIRMATION_THRESHOLD -> ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
+                    else -> ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+                }
+                val outcome = when (reason) {
+                    ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES -> ChapterInventoryDiagnosticOutcome.AMBIGUOUS
+                    ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD -> ChapterInventoryDiagnosticOutcome.NO_MATCH
+                    else -> ChapterInventoryDiagnosticOutcome.PARTIAL
+                }
+                recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    outcome, sourceId = sourceId, language = best.candidate.language,
+                    received = candidates.size, reason = reason)
                 confirmationCandidates += candidates
                     .filter { it.confidence >= CONFIRMATION_THRESHOLD }
                     .take(MAX_CONFIRMATION_CANDIDATES)
@@ -168,15 +206,31 @@ class ResolveContentBinding internal constructor(
 
         val bindings = mutableListOf<ContentBinding>()
         for (scored in selected) {
-            val materialized = readingSourceGateway.materialize(scored.candidate).getOrThrow()
-            require(materialized.sourceId == scored.candidate.sourceId) {
-                "Materialized source does not match selected candidate"
-            }
-            require(materialized.sourceUrl == scored.candidate.sourceUrl) {
-                "Materialized URL does not match selected candidate"
-            }
-            require(materialized.runtimePayload.isNotEmpty()) {
-                "Materialized binding must include provider runtime payload"
+            val materialized = try {
+                val value = readingSourceGateway.materialize(scored.candidate).getOrThrow()
+                require(value.sourceId == scored.candidate.sourceId) {
+                    "Materialized source does not match selected candidate"
+                }
+                require(value.sourceUrl == scored.candidate.sourceUrl) {
+                    "Materialized URL does not match selected candidate"
+                }
+                require(value.runtimePayload.isNotEmpty()) {
+                    "Materialized binding must include provider runtime payload"
+                }
+                value
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(error)
+                recordBinding(canonicalTitleId, addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION, outcome,
+                    sourceId = scored.candidate.sourceId, language = scored.candidate.language,
+                    reason = if (outcome == ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR) {
+                        ChapterInventoryDiagnosticReason.MATERIALIZATION_FAILED
+                    } else {
+                        failureReason
+                    })
+                throw error
             }
 
             val now = clock()
@@ -196,7 +250,21 @@ class ResolveContentBinding internal constructor(
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
             )
-            contentBindingRepository.upsert(binding)
+            try {
+                contentBindingRepository.upsert(binding)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                recordBinding(canonicalTitleId, addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                    ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR,
+                    sourceId = scored.candidate.sourceId, language = scored.candidate.language,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_PERSISTENCE_FAILED)
+                throw error
+            }
+            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                ChapterInventoryDiagnosticOutcome.SUCCESS, sourceId = scored.candidate.sourceId,
+                language = scored.candidate.language, accepted = 1)
             bindings += binding
         }
 
@@ -211,11 +279,14 @@ class ResolveContentBinding internal constructor(
      * ambiguity gates; a punctuation change never establishes canonical identity.
      */
     private suspend fun searchSourceTitle(
+        canonicalTitleId: String,
+        addonId: AddonId,
         sourceId: Long,
         title: String,
     ): Pair<List<ReadingSourceCandidate>, Throwable?> {
         val collected = mutableListOf<ReadingSourceCandidate>()
-        for (query in titleSearchQueries(title)) {
+        for ((attemptIndex, query) in titleSearchQueries(title).withIndex()) {
+            val started = TimeSource.Monotonic.markNow()
             val response = try {
                 readingSourceGateway.search(sourceId, query)
             } catch (error: CancellationException) {
@@ -225,8 +296,18 @@ class ResolveContentBinding internal constructor(
             }
             val matches = response.getOrElse { error ->
                 if (error is CancellationException) throw error
+                val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
+                recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_SEARCH,
+                    outcome, sourceId = sourceId, attempt = attemptIndex + 1,
+                    elapsedMillis = started.elapsedNow().inWholeMilliseconds, reason = reason)
                 return collected.distinctBy { it.sourceId to it.sourceUrl } to error
             }
+            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_SEARCH,
+                if (matches.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
+                sourceId = sourceId, language = matches.firstOrNull()?.language,
+                attempt = attemptIndex + 1, elapsedMillis = started.elapsedNow().inWholeMilliseconds,
+                received = matches.size,
+                reason = if (matches.isEmpty()) ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS else null)
             collected += matches
             val ranked = collected.distinctBy { it.sourceId to it.sourceUrl }
                 .sortedByDescending { scoreSourceTitleMatch(title, it.title) }
@@ -265,12 +346,49 @@ class ResolveContentBinding internal constructor(
         }
     }.distinct().take(MAX_TITLE_SEARCH_QUERIES)
 
-    private suspend fun requireExecutableAddon(addonId: AddonId): InstalledAddon {
-        return addonRepository.snapshot()
-            .firstOrNull { it.id == addonId && it.enabled }
-            ?: throw ContentBindingNotFoundException(
-                "Add-on " + addonId.value + " is not installed and enabled",
-            )
+    private suspend fun requireExecutableAddon(canonicalTitleId: String, addonId: AddonId): InstalledAddon {
+        val addon = addonRepository.snapshot().firstOrNull { it.id == addonId }
+        if (addon == null) {
+            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+                ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                reason = ChapterInventoryDiagnosticReason.ADDON_NOT_INSTALLED)
+            throw ContentBindingNotFoundException("Add-on " + addonId.value + " is not installed")
+        }
+        if (!addon.enabled || addon.mihonSourceIds.isEmpty()) {
+            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+                ChapterInventoryDiagnosticOutcome.DISABLED,
+                reason = ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED)
+            throw ContentBindingNotFoundException("Add-on " + addonId.value + " has no enabled sources")
+        }
+        recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+            ChapterInventoryDiagnosticOutcome.SUCCESS, received = addon.mihonSourceIds.size,
+            accepted = addon.mihonSourceIds.size)
+        addon.mihonSourceIds.distinct().forEach { sourceId ->
+            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+                ChapterInventoryDiagnosticOutcome.SUCCESS, sourceId = sourceId, accepted = 1)
+        }
+        return addon
+    }
+
+    private fun recordBinding(
+        canonicalTitleId: String,
+        addonId: AddonId,
+        stage: ChapterInventoryDiagnosticStage,
+        outcome: ChapterInventoryDiagnosticOutcome,
+        sourceId: Long? = null,
+        language: String? = null,
+        received: Int? = null,
+        accepted: Int? = null,
+        attempt: Int? = null,
+        elapsedMillis: Long? = null,
+        reason: ChapterInventoryDiagnosticReason? = null,
+    ) {
+        diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
+            stage = stage, outcome = outcome, addonId = addonId.value, sourceId = sourceId,
+            language = language, received = received, accepted = accepted,
+            attempt = attempt, elapsedMillis = elapsedMillis,
+            reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+        ))
     }
 
     private companion object {
