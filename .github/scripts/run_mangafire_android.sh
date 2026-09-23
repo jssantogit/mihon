@@ -35,7 +35,15 @@ run_one() {
   if ! adb shell am instrument -w -r -e class "${test_class}#${method}" "$@" "$runner" > "$output" 2>&1; then
     echo "::error::AndroidJUnitRunner failed to start"; exit 1
   fi
-  python3 .github/scripts/verify_android_instrumentation.py "$output" "$method"
+  if ! python3 .github/scripts/verify_android_instrumentation.py "$output" "$method"; then
+    # This run failed before or during AndroidJUnitRunner. Emit closed, sanitized
+    # diagnostic categories without exception messages, request URLs, or headers.
+    crash="$(mktemp)"
+    adb logcat -d -b crash -v brief > "$crash" 2>/dev/null || true
+    python3 .github/scripts/summarize_android_instrumentation.py "$output" "$crash"
+    rm -f "$crash"
+    exit 1
+  fi
 }
 run_one loadsRealExtensionAndRegistersInternalSources
 if [[ "$live_probe" == "true" ]]; then

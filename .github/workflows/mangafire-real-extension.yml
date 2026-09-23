@@ -12,6 +12,8 @@ on:
       - '.github/scripts/run_mangafire_android.sh'
       - '.github/scripts/verify_android_instrumentation.py'
       - '.github/scripts/test_android_instrumentation.py'
+      - '.github/scripts/summarize_android_instrumentation.py'
+      - '.github/scripts/test_summarize_android_instrumentation.py'
       - '.github/scripts/test_extension_fixture.py'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
@@ -40,6 +42,7 @@ jobs:
         run: |
           python3 .github/scripts/test_extension_fixture.py
           python3 .github/scripts/test_android_instrumentation.py
+          python3 .github/scripts/test_summarize_android_instrumentation.py
           bash -n .github/scripts/run_mangafire_android.sh
           python3 .github/scripts/verify_extension_fixture.py
 
