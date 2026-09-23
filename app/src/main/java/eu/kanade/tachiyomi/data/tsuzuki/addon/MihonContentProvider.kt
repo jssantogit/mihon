@@ -65,8 +65,11 @@ class MihonContentProvider internal constructor(
             val canonicalChapter = canonicalChapterRepository.getById(canonicalChapterId)
                 ?.takeIf { it.canonicalTitleId == canonicalTitleId }
                 ?: return Result.success(emptyList<ContentOption>()).also {
-                    recordProvider(canonicalTitleId, ChapterInventoryDiagnosticOutcome.NO_MATCH,
-                        ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT)
+                    recordProvider(
+                        canonicalTitleId,
+                        ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                        ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT,
+                    )
                 }
 
             val variantIdentities = canonicalChapterRepository
@@ -95,12 +98,15 @@ class MihonContentProvider internal constructor(
                 (
                     canonicalChapter.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE ||
                         isInferredChapter(canonicalChapter)
-                    )
+                )
             if (sourceIdentities.isEmpty() &&
                 (!allowIdentityFallback || bindings.none(::trustedBinding))
             ) {
-                recordProvider(canonicalTitleId, ChapterInventoryDiagnosticOutcome.NO_MATCH,
-                    ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT)
+                recordProvider(
+                    canonicalTitleId,
+                    ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                    ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT,
+                )
                 return Result.success(emptyList())
             }
 
@@ -182,11 +188,17 @@ class MihonContentProvider internal constructor(
 
             if (options.isEmpty() && firstFailure != null) {
                 val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(firstFailure)
-                recordProvider(canonicalTitleId, outcome, reason, httpStatus = firstFailure.diagnosticHttpStatus())
+                recordProvider(
+                    canonicalTitleId,
+                    outcome,
+                    reason,
+                    httpStatus = firstFailure.diagnosticHttpStatus(),
+                )
                 Result.failure(firstFailure)
             } else {
                 val distinct = options.distinctBy(ContentOption::key)
-                recordProvider(canonicalTitleId,
+                recordProvider(
+                    canonicalTitleId,
                     when {
                         distinct.isNotEmpty() && firstFailure == null -> ChapterInventoryDiagnosticOutcome.SUCCESS
                         distinct.isNotEmpty() -> ChapterInventoryDiagnosticOutcome.PARTIAL
@@ -205,7 +217,12 @@ class MihonContentProvider internal constructor(
             throw error
         } catch (error: Throwable) {
             val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
-            recordProvider(canonicalTitleId, outcome, reason, httpStatus = error.diagnosticHttpStatus())
+            recordProvider(
+                canonicalTitleId,
+                outcome,
+                reason,
+                httpStatus = error.diagnosticHttpStatus(),
+            )
             Result.failure(error)
         }
     }
@@ -217,16 +234,19 @@ class MihonContentProvider internal constructor(
         accepted: Int = 0,
         httpStatus: Int? = null,
     ) {
-        diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
-            stage = ChapterInventoryDiagnosticStage.CONTENT_PROVIDER,
-            outcome = outcome,
-            addonId = addonId.value,
-            httpStatus = httpStatus,
-            accepted = accepted,
-            availabilityBlocked = accepted == 0,
-            affectedSourceCount = if (accepted == 0) 1 else 0,
-            reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
-        ))
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.CONTENT_PROVIDER,
+                outcome = outcome,
+                addonId = addonId.value,
+                httpStatus = httpStatus,
+                accepted = accepted,
+                availabilityBlocked = accepted == 0,
+                affectedSourceCount = if (accepted == 0) 1 else 0,
+                reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+            ),
+        )
     }
 
     private fun trustedBinding(binding: ContentBinding): Boolean =

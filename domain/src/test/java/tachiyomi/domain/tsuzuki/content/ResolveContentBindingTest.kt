@@ -204,12 +204,22 @@ class ResolveContentBindingTest {
 
     @Test
     fun `source lookup network failure is not mistaken for no matching title`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        diagnostics.start("title")
         val gateway = FakeReadingSourceGateway(searchFailure = IOException("temporary outage"))
-        val result = resolver(FakeContentBindingRepository(null), gateway, title = "One-Punch Man")
+        val result = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            title = "One-Punch Man",
+            diagnostics = diagnostics,
+        )
             .executeAll("title", AddonId("mangadex"))
 
         (result.exceptionOrNull() is ContentBindingSourceSearchException) shouldBe true
         gateway.searchedQueries shouldBe listOf("One-Punch Man")
+        val blocker = diagnostics.events.single { it.availabilityBlocked }
+        blocker.stage shouldBe ChapterInventoryDiagnosticStage.BINDING_SEARCH
+        blocker.affectedSourceCount shouldBe 1
     }
 
     @Test

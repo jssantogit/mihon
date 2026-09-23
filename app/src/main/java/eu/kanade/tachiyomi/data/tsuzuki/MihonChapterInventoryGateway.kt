@@ -351,5 +351,4 @@ class MihonChapterInventoryGateway(
     } catch (_: Exception) {
         false
     }
-
 }

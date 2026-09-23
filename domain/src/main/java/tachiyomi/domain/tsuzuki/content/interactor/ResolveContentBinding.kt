@@ -157,11 +157,15 @@ class ResolveContentBinding internal constructor(
                 .awaitAll()
         }
         var firstSearchFailure: Throwable? = null
+        var firstSearchFailureSourceId: Long? = null
         var hasLowConfidenceMatch = false
 
         for ((rank, candidates, failure) in candidatesBySource) {
-            if (firstSearchFailure == null) firstSearchFailure = failure
             val sourceId = sourceIds[rank]
+            if (firstSearchFailure == null && failure != null) {
+                firstSearchFailure = failure
+                firstSearchFailureSourceId = sourceId
+            }
             val best = candidates.firstOrNull()
             if (best == null) {
                 if (failure == null) {
@@ -245,13 +249,28 @@ class ResolveContentBinding internal constructor(
                     ChapterInventoryDiagnosticOutcome.NO_MATCH to
                         ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS
             }
+            val blockingStage = if (firstSearchFailure != null && candidates.isEmpty() &&
+                !hasLowConfidenceMatch
+            ) {
+                ChapterInventoryDiagnosticStage.BINDING_SEARCH
+            } else {
+                ChapterInventoryDiagnosticStage.BINDING_MATCH
+            }
+            val affectedSourceCount = if (blockingStage == ChapterInventoryDiagnosticStage.BINDING_SEARCH) {
+                candidatesBySource.count { it.third != null }
+            } else {
+                sourceIds.size
+            }
             recordBinding(
                 canonicalTitleId,
                 addonId,
-                ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                blockingStage,
                 blockOutcome,
                 received = sourceIds.size,
-                affectedSourceCount = sourceIds.size,
+                sourceId = firstSearchFailureSourceId.takeIf {
+                    blockingStage == ChapterInventoryDiagnosticStage.BINDING_SEARCH
+                },
+                affectedSourceCount = affectedSourceCount,
                 availabilityBlocked = true,
                 reason = blockReason,
             )
