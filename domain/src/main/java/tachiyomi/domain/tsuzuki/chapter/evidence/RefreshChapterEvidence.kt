@@ -17,9 +17,13 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnost
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingMaterializationException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchException
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchFailure
 
 class RefreshChapterEvidence private constructor(
     private val registry: IntegrationRegistry,
@@ -176,22 +180,51 @@ class RefreshChapterEvidence private constructor(
                                     .executeAll(canonicalTitleId, provider.addonId)
                                     .getOrElse { error ->
                                         if (error is CancellationException) throw error
-                                        val (outcome, reason) = when (error) {
+                                        val (outcome, reason, sourceId) = when (error) {
                                             is ContentBindingConfirmationRequiredException ->
-                                                ChapterInventoryDiagnosticOutcome.PARTIAL to
-                                                    ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+                                                Triple(
+                                                    ChapterInventoryDiagnosticOutcome.PARTIAL,
+                                                    ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED,
+                                                    null,
+                                                )
                                             is ContentBindingNotFoundException ->
-                                                ChapterInventoryDiagnosticOutcome.NO_BINDING to
-                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                                Triple(
+                                                    ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                                                    null,
+                                                )
+                                            is ContentBindingSourceSearchException -> {
+                                                val sourceError = error.cause as? ReadingSourceSearchException
+                                                val reason = when (sourceError?.kind) {
+                                                    ReadingSourceSearchFailure.SOURCE_DISABLED ->
+                                                        ChapterInventoryDiagnosticReason.SOURCE_DISABLED
+                                                    ReadingSourceSearchFailure.SOURCE_NOT_INSTALLED ->
+                                                        ChapterInventoryDiagnosticReason.SOURCE_NOT_INSTALLED
+                                                    ReadingSourceSearchFailure.CHALLENGE_REQUIRED ->
+                                                        ChapterInventoryDiagnosticReason.CHALLENGE_REQUIRED
+                                                    else -> ChapterInventoryDiagnosticReason.BINDING_SEARCH_FAILED
+                                                }
+                                                Triple(error.toDiagnosticOutcome(), reason, error.sourceId)
+                                            }
+                                            is ContentBindingMaterializationException ->
+                                                Triple(
+                                                    error.toDiagnosticOutcome(),
+                                                    ChapterInventoryDiagnosticReason.BINDING_MATERIALIZATION_FAILED,
+                                                    error.sourceId,
+                                                )
                                             else ->
-                                                error.toDiagnosticOutcome() to
-                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                                Triple(
+                                                    error.toDiagnosticOutcome(),
+                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                                                    null,
+                                                )
                                         }
                                         recordRefreshOutcome(
                                             canonicalTitleId = canonicalTitleId,
                                             addonId = provider.addonId.value,
                                             outcome = outcome,
                                             reason = reason,
+                                            sourceId = sourceId,
                                         )
                                         return@withPermit emptyList()
                                     }
@@ -285,6 +318,7 @@ class RefreshChapterEvidence private constructor(
         addonId: String? = null,
         outcome: ChapterInventoryDiagnosticOutcome,
         reason: ChapterInventoryDiagnosticReason? = null,
+        sourceId: Long? = null,
         received: Int = 0,
         accepted: Int = 0,
         discarded: Int = 0,
@@ -295,6 +329,7 @@ class RefreshChapterEvidence private constructor(
                 stage = ChapterInventoryDiagnosticStage.PROBE,
                 outcome = outcome,
                 addonId = addonId,
+                sourceId = sourceId,
                 received = received,
                 accepted = accepted,
                 provisional = 0,

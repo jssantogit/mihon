@@ -16,6 +16,9 @@ import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchException
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchFailure
+import java.io.IOException
 
 @Inject
 @SingleIn(AppScope::class)
@@ -44,12 +47,12 @@ class MihonReadingSourceGateway(
     override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
         val disabledSources = sourcePreferences.disabledSources.get()
         if (sourceId.toString() in disabledSources) {
-            return Result.failure(IllegalStateException("Source $sourceId is disabled"))
+            return Result.failure(ReadingSourceSearchException(ReadingSourceSearchFailure.SOURCE_DISABLED))
         }
 
         val source = sourceManager.get(sourceId)
         if (source !is CatalogueSource) {
-            return Result.failure(IllegalStateException("Source $sourceId is not an installed CatalogueSource"))
+            return Result.failure(ReadingSourceSearchException(ReadingSourceSearchFailure.SOURCE_NOT_INSTALLED))
         }
 
         return try {
@@ -80,7 +83,17 @@ class MihonReadingSourceGateway(
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            Result.failure(t)
+            val knownChallenge = generateSequence(t) { it.cause }.take(4)
+                .any { cause ->
+                    cause.message?.contains("captcha", ignoreCase = true) == true ||
+                        cause.message?.contains("shape-selecting", ignoreCase = true) == true
+                }
+            val kind = when {
+                knownChallenge -> ReadingSourceSearchFailure.CHALLENGE_REQUIRED
+                t is IOException -> ReadingSourceSearchFailure.NETWORK_ERROR
+                else -> ReadingSourceSearchFailure.EXTENSION_ERROR
+            }
+            Result.failure(ReadingSourceSearchException(kind, t))
         }
     }
 

@@ -75,12 +75,13 @@ class MihonAddonRepository internal constructor(
 
     private fun Extension.Installed.toInstalledAddon(disabled: Set<String>): InstalledAddon {
         val sourceIds = sources.map { it.id }
+        val enabledSourceIds = sourceIds.filter { it.toString() !in disabled }
         return InstalledAddon(
             id = AddonId(pkgName),
             displayName = name,
-            enabled = sourceIds.isNotEmpty() && sourceIds.any { it.toString() !in disabled },
+            enabled = enabledSourceIds.isNotEmpty(),
             versionName = versionName,
-            mihonSourceIds = sourceIds,
+            mihonSourceIds = enabledSourceIds,
             hasSettings = sources.any { it is ConfigurableSource },
             hasUpdate = hasUpdate,
         )

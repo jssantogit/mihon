@@ -114,7 +114,7 @@ class ResolveContentBinding internal constructor(
                             searchSourceTitle(sourceId, canonicalTitle.displayTitle)
                         }
                         Triple(
-                            sourceRank,
+                            sourceId,
                             results.map { candidate ->
                                 ScoredSourceCandidate(
                                     candidate = candidate,
@@ -131,10 +131,12 @@ class ResolveContentBinding internal constructor(
                 }
                 .awaitAll()
         }
-        var firstSearchFailure: Throwable? = null
+        var firstSearchFailure: Pair<Long, Throwable>? = null
 
-        for ((_, candidates, failure) in candidatesBySource) {
-            if (firstSearchFailure == null) firstSearchFailure = failure
+        for ((sourceId, candidates, failure) in candidatesBySource) {
+            if (firstSearchFailure == null && failure != null) {
+                firstSearchFailure = sourceId to failure
+            }
             val best = candidates.firstOrNull() ?: continue
             val second = candidates.getOrNull(1)
             val highConfidence = best.confidence >= AUTO_MATCH_THRESHOLD
@@ -160,7 +162,9 @@ class ResolveContentBinding internal constructor(
             if (candidates.isNotEmpty()) {
                 throw ContentBindingConfirmationRequiredException(candidates)
             }
-            firstSearchFailure?.let { throw ContentBindingSourceSearchException(it) }
+            firstSearchFailure?.let { (sourceId, failure) ->
+                throw ContentBindingSourceSearchException(failure, sourceId)
+            }
             throw ContentBindingNotFoundException(
                 "No sufficiently confident title candidate found for " + addonId.value,
             )
@@ -168,7 +172,13 @@ class ResolveContentBinding internal constructor(
 
         val bindings = mutableListOf<ContentBinding>()
         for (scored in selected) {
-            val materialized = readingSourceGateway.materialize(scored.candidate).getOrThrow()
+            val materialized = try {
+                readingSourceGateway.materialize(scored.candidate).getOrThrow()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                throw ContentBindingMaterializationException(scored.candidate.sourceId, error)
+            }
             require(materialized.sourceId == scored.candidate.sourceId) {
                 "Materialized source does not match selected candidate"
             }
@@ -292,5 +302,13 @@ class ContentBindingNotFoundException(
 ) : IllegalStateException(message)
 
 /** A source lookup failed rather than returning a genuine empty title search. */
-class ContentBindingSourceSearchException(cause: Throwable) :
-    IllegalStateException("Content binding source search is unavailable", cause)
+class ContentBindingSourceSearchException(
+    cause: Throwable,
+    val sourceId: Long? = null,
+) : IllegalStateException("Content binding source search is unavailable", cause)
+
+/** Distinguished from search errors without exposing provider content in reports. */
+class ContentBindingMaterializationException(
+    val sourceId: Long,
+    cause: Throwable,
+) : IllegalStateException("Content binding materialization failed", cause)
