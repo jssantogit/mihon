@@ -16,6 +16,8 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
@@ -174,11 +176,22 @@ class RefreshChapterEvidence private constructor(
                                     .executeAll(canonicalTitleId, provider.addonId)
                                     .getOrElse { error ->
                                         if (error is CancellationException) throw error
+                                        val (outcome, reason) = when (error) {
+                                            is ContentBindingConfirmationRequiredException ->
+                                                ChapterInventoryDiagnosticOutcome.PARTIAL to
+                                                    ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+                                            is ContentBindingNotFoundException ->
+                                                ChapterInventoryDiagnosticOutcome.NO_BINDING to
+                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                            else ->
+                                                error.toDiagnosticOutcome() to
+                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                        }
                                         recordRefreshOutcome(
                                             canonicalTitleId = canonicalTitleId,
                                             addonId = provider.addonId.value,
-                                            outcome = error.toDiagnosticOutcome(),
-                                            reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                                            outcome = outcome,
+                                            reason = reason,
                                         )
                                         return@withPermit emptyList()
                                     }

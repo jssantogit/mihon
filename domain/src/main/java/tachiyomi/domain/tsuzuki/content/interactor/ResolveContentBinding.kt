@@ -109,23 +109,12 @@ class ResolveContentBinding internal constructor(
                 .distinct()
                 .mapIndexed { sourceRank, sourceId ->
                     async {
-                        val results = searchGate.withPermit {
-                            try {
-                                readingSourceGateway.search(sourceId, canonicalTitle.displayTitle)
-                                    .getOrElse { failure ->
-                                        if (failure is CancellationException) throw failure
-                                        emptyList()
-                                    }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (_: Throwable) {
-                                emptyList()
-                            }
+                        val (results, failure) = searchGate.withPermit {
+                            searchSourceTitle(sourceId, canonicalTitle.displayTitle)
                         }
-
-                        sourceRank to results
-                            .distinctBy { it.sourceId to it.sourceUrl }
-                            .map { candidate ->
+                        Triple(
+                            sourceRank,
+                            results.map { candidate ->
                                 ScoredSourceCandidate(
                                     candidate = candidate,
                                     confidence = scoreSourceTitleMatch(
@@ -134,14 +123,17 @@ class ResolveContentBinding internal constructor(
                                     ),
                                     sourcePreferenceRank = sourceRank,
                                 )
-                            }
-                            .sortedByDescending { it.confidence }
+                            }.sortedByDescending { it.confidence },
+                            failure,
+                        )
                     }
                 }
                 .awaitAll()
         }
+        var firstSearchFailure: Throwable? = null
 
-        for ((_, candidates) in candidatesBySource) {
+        for ((_, candidates, failure) in candidatesBySource) {
+            if (firstSearchFailure == null) firstSearchFailure = failure
             val best = candidates.firstOrNull() ?: continue
             val second = candidates.getOrNull(1)
             val highConfidence = best.confidence >= AUTO_MATCH_THRESHOLD
@@ -167,6 +159,7 @@ class ResolveContentBinding internal constructor(
             if (candidates.isNotEmpty()) {
                 throw ContentBindingConfirmationRequiredException(candidates)
             }
+            firstSearchFailure?.let { throw ContentBindingSourceSearchException(it) }
             throw ContentBindingNotFoundException(
                 "No sufficiently confident title candidate found for " + addonId.value,
             )
@@ -211,6 +204,67 @@ class ResolveContentBinding internal constructor(
             .sortedWith(compareBy({ it.createdAt }, { it.id }))
     }
 
+    /**
+     * Retry spelling/punctuation variants only when the first lookup has no safe,
+     * unambiguous match. All candidates still pass the original confidence and
+     * ambiguity gates; a punctuation change never establishes canonical identity.
+     */
+    private suspend fun searchSourceTitle(
+        sourceId: Long,
+        title: String,
+    ): Pair<List<ReadingSourceCandidate>, Throwable?> {
+        val collected = mutableListOf<ReadingSourceCandidate>()
+        for (query in titleSearchQueries(title)) {
+            val response = try {
+                readingSourceGateway.search(sourceId, query)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Result.failure(error)
+            }
+            val matches = response.getOrElse { error ->
+                if (error is CancellationException) throw error
+                return collected.distinctBy { it.sourceId to it.sourceUrl } to error
+            }
+            collected += matches
+            val ranked = collected.distinctBy { it.sourceId to it.sourceUrl }
+                .sortedByDescending { scoreSourceTitleMatch(title, it.title) }
+            val best = ranked.firstOrNull()
+            val runnerUp = ranked.getOrNull(1)
+            if (
+                best != null &&
+                scoreSourceTitleMatch(title, best.title) >= AUTO_MATCH_THRESHOLD &&
+                (runnerUp == null ||
+                    scoreSourceTitleMatch(title, best.title) -
+                    scoreSourceTitleMatch(title, runnerUp.title) > AUTO_MATCH_MARGIN)
+            ) {
+                break
+            }
+        }
+        return collected.distinctBy { it.sourceId to it.sourceUrl } to null
+    }
+
+    private fun titleSearchQueries(title: String): List<String> = buildList {
+        add(title)
+        if ('-' in title) {
+            val spaced = title.replace(Regex("\\s*-\\s*"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            if (spaced.isNotBlank()) {
+                add(spaced)
+                val words = spaced.split(" ").filter(String::isNotBlank)
+                if (words.size in 2..5) {
+                    for (index in 1 until words.size) {
+                        add(
+                            words.take(index).joinToString(" ") + "-" +
+                                words.drop(index).joinToString(" "),
+                        )
+                    }
+                }
+            }
+        }
+    }.distinct().take(MAX_TITLE_SEARCH_QUERIES)
+
     private suspend fun requireExecutableAddon(addonId: AddonId): InstalledAddon {
         return addonRepository.snapshot()
             .firstOrNull { it.id == addonId && it.enabled }
@@ -224,6 +278,7 @@ class ResolveContentBinding internal constructor(
         const val AUTO_MATCH_MARGIN = 0.08
         const val CONFIRMATION_THRESHOLD = 0.70
         const val MAX_CONFIRMATION_CANDIDATES = 5
+        const val MAX_TITLE_SEARCH_QUERIES = 3
         const val MAX_CONCURRENT_SOURCE_SEARCHES = 4
     }
 }
@@ -235,3 +290,7 @@ class ContentBindingConfirmationRequiredException(
 class ContentBindingNotFoundException(
     message: String,
 ) : IllegalStateException(message)
+
+/** A source lookup failed rather than returning a genuine empty title search. */
+class ContentBindingSourceSearchException(cause: Throwable) :
+    IllegalStateException("Content binding source search is unavailable", cause)
