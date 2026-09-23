@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
@@ -67,6 +68,7 @@ class RuntimeV2SmokeReadinessTest {
             readingSourceGateway = sourceGateway,
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
             diagnostics = NoOpChapterInventoryDiagnostics,
+            addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
         )
         val parser = ParseCanonicalChapterLabel()
         val probe = MihonChapterProbeProvider(

@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
@@ -18,7 +19,6 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
-import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCacheKey
@@ -347,15 +347,23 @@ class ResolveChapterContent(
         val registered = providers.map { it.addonId }.toSet()
         installed.forEach { addon ->
             when {
-                !addon.enabled -> recordSelector(canonicalTitleId, addon.id,
-                    ChapterInventoryDiagnosticOutcome.DISABLED, 0,
+                !addon.enabled -> recordSelector(
+                    canonicalTitleId,
+                    addon.id,
+                    ChapterInventoryDiagnosticOutcome.DISABLED,
+                    0,
                     ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED,
-                    availabilityBlocked = true)
-                addon.id !in registered -> recordSelector(canonicalTitleId, addon.id,
-                    ChapterInventoryDiagnosticOutcome.NO_BINDING, 0,
+                    availabilityBlocked = true,
+                )
+                addon.id !in registered -> recordSelector(
+                    canonicalTitleId,
+                    addon.id,
+                    ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                    0,
                     ChapterInventoryDiagnosticReason.PROVIDER_NOT_REGISTERED,
                     availabilityBlocked = true,
-                    affectedSourceCount = addon.mihonSourceIds.size)
+                    affectedSourceCount = addon.mihonSourceIds.size,
+                )
                 else -> Unit
             }
         }
@@ -372,17 +380,20 @@ class ResolveChapterContent(
         availabilityBlocked: Boolean = false,
         affectedSourceCount: Int? = null,
     ) {
-        diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
-            stage = ChapterInventoryDiagnosticStage.CONTENT_SELECTOR,
-            outcome = outcome,
-            addonId = addonId.value,
-            received = received,
-            accepted = optionCount,
-            discarded = discarded,
-            availabilityBlocked = availabilityBlocked,
-            affectedSourceCount = affectedSourceCount,
-            reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
-        ))
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.CONTENT_SELECTOR,
+                outcome = outcome,
+                addonId = addonId.value,
+                received = received,
+                accepted = optionCount,
+                discarded = discarded,
+                availabilityBlocked = availabilityBlocked,
+                affectedSourceCount = affectedSourceCount,
+                reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+            ),
+        )
     }
 
     private companion object {
