@@ -34,6 +34,7 @@ class MihonAddonProviderFactory(
         fetchInventory = { binding -> chapterInventoryGateway.fetch(binding) },
         chapterEvidenceRepository = chapterEvidenceRepository,
         materializeDelivery = ::materializeDelivery,
+        diagnostics = chapterInventoryDiagnostics,
     )
 
     fun chapterProbeProvider(addonId: AddonId) = MihonChapterProbeProvider(

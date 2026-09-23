@@ -8,6 +8,14 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
@@ -34,6 +42,7 @@ class MihonContentProvider internal constructor(
         SourceChapterSnapshot,
     ) -> Result<ContentDelivery.Mihon>,
     private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
+    private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ContentProvider {
 
     override suspend fun resolve(
@@ -43,11 +52,18 @@ class MihonContentProvider internal constructor(
         return try {
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
                 .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
-            if (bindings.isEmpty()) return Result.success(emptyList())
+            if (bindings.isEmpty()) {
+                recordProvider(canonicalTitleId, ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE)
+                return Result.success(emptyList())
+            }
 
             val canonicalChapter = canonicalChapterRepository.getById(canonicalChapterId)
                 ?.takeIf { it.canonicalTitleId == canonicalTitleId }
-                ?: return Result.success(emptyList())
+                ?: return Result.success(emptyList<ContentOption>()).also {
+                    recordProvider(canonicalTitleId, ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                        ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT)
+                }
 
             val variantIdentities = canonicalChapterRepository
                 .getVariantsByCanonicalChapterId(canonicalChapterId)
@@ -79,6 +95,8 @@ class MihonContentProvider internal constructor(
             if (sourceIdentities.isEmpty() &&
                 (!allowIdentityFallback || bindings.none(::trustedBinding))
             ) {
+                recordProvider(canonicalTitleId, ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                    ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT)
                 return Result.success(emptyList())
             }
 
@@ -159,15 +177,48 @@ class MihonContentProvider internal constructor(
             }
 
             if (options.isEmpty() && firstFailure != null) {
+                val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(firstFailure)
+                recordProvider(canonicalTitleId, outcome, reason)
                 Result.failure(firstFailure)
             } else {
-                Result.success(options.distinctBy(ContentOption::key))
+                val distinct = options.distinctBy(ContentOption::key)
+                recordProvider(canonicalTitleId,
+                    when {
+                        distinct.isNotEmpty() && firstFailure == null -> ChapterInventoryDiagnosticOutcome.SUCCESS
+                        distinct.isNotEmpty() -> ChapterInventoryDiagnosticOutcome.PARTIAL
+                        else -> ChapterInventoryDiagnosticOutcome.NO_MATCH
+                    },
+                    when {
+                        firstFailure != null -> ChapterInventoryDiagnosticReason.PROVIDER_FAILED
+                        distinct.isEmpty() -> ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT
+                        else -> null
+                    },
+                    accepted = distinct.size,
+                )
+                Result.success(distinct)
             }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
+            recordProvider(canonicalTitleId, outcome, reason)
             Result.failure(error)
         }
+    }
+
+    private fun recordProvider(
+        canonicalTitleId: String,
+        outcome: ChapterInventoryDiagnosticOutcome,
+        reason: ChapterInventoryDiagnosticReason? = null,
+        accepted: Int = 0,
+    ) {
+        diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
+            stage = ChapterInventoryDiagnosticStage.CONTENT_PROVIDER,
+            outcome = outcome,
+            addonId = addonId.value,
+            accepted = accepted,
+            reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+        ))
     }
 
     private fun trustedBinding(binding: ContentBinding): Boolean =

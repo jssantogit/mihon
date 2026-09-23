@@ -43,6 +43,7 @@ class ResolveChapterContent internal constructor(
     private val inFlightContentResolution: InFlightContentResolution,
     private val addonRepository: AddonRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+    @Suppress("UNUSED_PARAMETER") constructorMarker: Unit = Unit,
 ) {
 
     @Inject
@@ -64,6 +65,7 @@ class ResolveChapterContent internal constructor(
         inFlightContentResolution = inFlightContentResolution,
         addonRepository = addonRepository,
         diagnostics = diagnostics,
+        constructorMarker = Unit,
     )
 
     suspend fun execute(
