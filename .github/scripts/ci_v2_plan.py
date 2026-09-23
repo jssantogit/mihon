@@ -98,6 +98,22 @@ APP_ONLY_MODULE_PREFIXES = (
     "baseline-profile/",
 )
 
+RUNTIME_INTEGRATION_PATH_PREFIXES = (
+    "app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/",
+    "app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/content/",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/source/SourceResolver",
+    "app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/source/SourceResolver",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/detail/CanonicalTitleScreenModel",
+    "app/src/test/java/eu/kanade/tachiyomi/ui/tsuzuki/detail/CanonicalTitleScreenModel",
+)
+
+DOMAIN_RUNTIME_INTEGRATION_MARKERS = (
+    "/tachiyomi/domain/tsuzuki/addon/",
+    "/tachiyomi/domain/tsuzuki/chapter/",
+    "/tachiyomi/domain/tsuzuki/content/",
+    "/tachiyomi/domain/tsuzuki/source/",
+)
+
 
 def is_test_path(path: str, module: str) -> bool:
     return path.startswith(f"{module}/src/test/")
@@ -112,6 +128,33 @@ def is_tsuzuki_path(path: str) -> bool:
 def is_native_path(path: str) -> bool:
     lower = path.lower()
     return "/torrent/" in f"/{lower}" or "torrent" in Path(lower).name
+
+
+def is_runtime_integration_path(path: str) -> bool:
+    normalized = path.lower()
+    if normalized.startswith(RUNTIME_INTEGRATION_PATH_PREFIXES):
+        return True
+    app_runtime_path = (
+        normalized.startswith("app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/")
+        or normalized.startswith("app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/")
+    )
+    if app_runtime_path:
+        filename = Path(normalized).name
+        return any(
+            marker in filename
+            for marker in (
+                "mihonaddon",
+                "mihonreading",
+                "mihonchapterinventory",
+                "mihonchapterprobe",
+                "mihoncontentprovider",
+                "chaptercontentpreparer",
+                "diagnostic",
+            )
+        )
+    return normalized.startswith("domain/src/") and any(
+        marker in f"/{normalized}" for marker in DOMAIN_RUNTIME_INTEGRATION_MARKERS
+    )
 
 
 def add_test(selected: set[str], module: str, *, tsuzuki: bool = False) -> None:
@@ -162,6 +205,15 @@ def plan(paths: list[str], mode: str) -> dict[str, object]:
             if path.startswith(".github/"):
                 # The planner tests execute in the plan job itself; CI config edits should not
                 # burn a full Android build just because the workflow changed.
+                continue
+
+            if is_runtime_integration_path(path):
+                add_test(state["tests"], "domain", tsuzuki=True)
+                add_test(state["tests"], "app", tsuzuki=True)
+                if path.startswith("domain/src/main/"):
+                    state["compiles"].add("app")
+                if is_native_path(path):
+                    state["run_native_package"] = True
                 continue
 
             if path.startswith("supabase/"):

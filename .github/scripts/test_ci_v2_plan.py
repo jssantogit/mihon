@@ -34,8 +34,8 @@ class PlannerTest(unittest.TestCase):
 
     def test_tsuzuki_domain_production_change_runs_filtered_tests_and_app_compile(self):
         result = plan(["domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/Foo.kt"], "affected")
-        self.assertEqual(result["selected_tests"], ["Domain — Tsuzuki"])
-        self.assertEqual(result["selected_compiles"], ["App Compile"])
+        self.assertEqual(set(result["selected_tests"]), {"Domain — Tsuzuki", "App — Tsuzuki"})
+        self.assertEqual(result["selected_compiles"], [])
         self.assertFalse(result["run_database"])
         self.assertFalse(result["run_supabase"])
         self.assertFalse(result["run_release"])
@@ -59,6 +59,36 @@ class PlannerTest(unittest.TestCase):
         result = plan(["app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/Foo.kt"], "affected")
         self.assertEqual(result["selected_tests"], ["App — Tsuzuki"])
         self.assertEqual(result["selected_compiles"], [])
+
+    def test_runtime_binding_gateway_change_runs_domain_and_app_tsuzuki_tests(self):
+        result = plan(
+            ["app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonReadingSourceGateway.kt"],
+            "affected",
+        )
+        self.assertEqual(set(result["selected_tests"]), {"Domain — Tsuzuki", "App — Tsuzuki"})
+        self.assertEqual(result["selected_compiles"], [])
+
+    def test_runtime_domain_binding_change_runs_domain_and_app_tests_and_compile(self):
+        result = plan(
+            ["domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveContentBinding.kt"],
+            "affected",
+        )
+        self.assertEqual(set(result["selected_tests"]), {"Domain — Tsuzuki", "App — Tsuzuki"})
+        self.assertEqual(result["selected_compiles"], [])
+
+    def test_runtime_selector_change_runs_both_tsuzuki_test_shards(self):
+        result = plan(
+            ["app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentSelectorScreenModel.kt"],
+            "affected",
+        )
+        self.assertEqual(set(result["selected_tests"]), {"Domain — Tsuzuki", "App — Tsuzuki"})
+
+    def test_unrelated_ui_only_change_does_not_run_domain_runtime_tests(self):
+        result = plan(
+            ["app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/library/CanonicalLibraryScreenModel.kt"],
+            "affected",
+        )
+        self.assertEqual(result["selected_tests"], ["App — Tsuzuki"])
 
     def test_tsuzuki_named_settings_screen_uses_filtered_app_shard(self):
         result = plan(["app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiIntegrationsScreen.kt"], "affected")
@@ -115,10 +145,10 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(result["selected_tests"], ["App — Tsuzuki"])
         self.assertTrue(result["run_native_package"])
 
-    def test_torrent_domain_contract_change_runs_domain_tests_compile_and_native_gate(self):
+    def test_torrent_domain_content_change_runs_domain_and_app_tests_and_native_gate(self):
         result = plan(["domain/src/main/java/tachiyomi/domain/tsuzuki/content/TorrentArtifactEngine.kt"], "affected")
-        self.assertEqual(result["selected_tests"], ["Domain — Tsuzuki"])
-        self.assertEqual(result["selected_compiles"], ["App Compile"])
+        self.assertEqual(set(result["selected_tests"]), {"Domain — Tsuzuki", "App — Tsuzuki"})
+        self.assertEqual(result["selected_compiles"], [])
         self.assertTrue(result["run_native_package"])
 
     def test_ci_configuration_change_uses_planner_self_test_only(self):
