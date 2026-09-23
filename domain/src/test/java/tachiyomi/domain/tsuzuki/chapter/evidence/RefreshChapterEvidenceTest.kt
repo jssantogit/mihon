@@ -34,6 +34,7 @@ import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -170,6 +171,24 @@ class RefreshChapterEvidenceTest {
         val event = diagnostics.events.single()
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
         event.reasons[ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED] shouldBe 1
+    }
+
+    @Test
+    fun `source search errors no longer masquerade as unknown binding errors`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+        diagnostics.start("canonical-title")
+        refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingSourceSearchException(IllegalStateException("sensitive provider response")),
+        ).execute("canonical-title").isSuccess shouldBe true
+
+        val event = diagnostics.events.single()
+        event.reasons[ChapterInventoryDiagnosticReason.SOURCE_SEARCH_FAILED] shouldBe 1
+        diagnostics.report().contains("sensitive provider response") shouldBe false
     }
 
     @Test

@@ -12,6 +12,14 @@ import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationReq
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchException
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchPhase
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -132,6 +140,72 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `binding diagnosis distinguishes source lookup failure from empty search`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val gateway = FakeReadingSourceGateway(
+            searchFailure = ReadingSourceSearchException(
+                ReadingSourceSearchPhase.SEARCH,
+                IOException("private extension network detail"),
+            ),
+        )
+        val result = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            title = "One-Punch Man",
+            diagnostics = diagnostics,
+        ).executeAll("title", AddonId("mangadex"))
+
+        (result.exceptionOrNull() is ContentBindingSourceSearchException) shouldBe true
+        val diagnostic = diagnostics.events.single()
+        diagnostic.stage shouldBe ChapterInventoryDiagnosticStage.BINDING
+        diagnostic.sourceId shouldBe 7L
+        diagnostic.outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        diagnostic.reasons[ChapterInventoryDiagnosticReason.SOURCE_SEARCH_FAILED] shouldBe 1
+        diagnostics.report().contains("private extension network detail") shouldBe false
+    }
+
+    @Test
+    fun `binding diagnosis distinguishes invalid extension response`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val gateway = FakeReadingSourceGateway(
+            searchFailure = ReadingSourceSearchException(
+                ReadingSourceSearchPhase.SEARCH,
+                kotlinx.serialization.SerializationException("raw provider content"),
+            ),
+        )
+        resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            diagnostics = diagnostics,
+        ).executeAll("title", AddonId("mangadex"))
+
+        val event = diagnostics.events.single()
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
+        event.reasons[ChapterInventoryDiagnosticReason.SOURCE_RESPONSE_DECODING_FAILED] shouldBe 1
+    }
+
+    @Test
+    fun `binding diagnosis separates materialization failure from successful search`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/one-punch-man", "One-Punch Man")),
+            ),
+        )
+        resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            title = "One-Punch Man",
+            diagnostics = diagnostics,
+        ).executeAll("title", AddonId("mangadex"))
+
+        diagnostics.events.any {
+            it.stage == ChapterInventoryDiagnosticStage.BINDING &&
+                it.reasons[ChapterInventoryDiagnosticReason.SOURCE_MATERIALIZATION_FAILED] == 1
+        } shouldBe true
+    }
+
+    @Test
     fun `stale binding is repaired inside same canonical title`() = runTest {
         val repository = FakeContentBindingRepository(
             binding(
@@ -169,6 +243,7 @@ class ResolveContentBindingTest {
         gateway: FakeReadingSourceGateway,
         addonSourceIds: List<Long> = listOf(7L),
         title: String = "Dandadan",
+        diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     ): ResolveContentBinding {
         var nextId = 0
         return ResolveContentBinding(
@@ -179,6 +254,7 @@ class ResolveContentBindingTest {
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
             idFactory = { "new-binding-${nextId++}" },
             clock = { 200L },
+            diagnostics = diagnostics,
         )
     }
 
@@ -287,6 +363,22 @@ class ResolveContentBindingTest {
         override fun observeInstalled() = flowOf(listOf(addon))
         override suspend fun snapshot() = listOf(addon)
         override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
+    }
+
+    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+
+        override fun start(canonicalTitleId: String) = "test-session"
+        override fun stop() = Unit
+        override fun clear() = events.clear()
+        override fun isRecording(canonicalTitleId: String) = canonicalTitleId == "title"
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            events += event
+        }
+        override fun report() = events.joinToString("\n") { event ->
+            event.stage.name + "|" + event.outcome.name + "|" +
+                event.reasons.keys.joinToString(",") { it.name }
+        }
     }
 
     private class FakeReadingSourceGateway(

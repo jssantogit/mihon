@@ -28,6 +28,8 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchException
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceSearchPhase
 
 class MihonReadingSourceGatewayTest {
 
@@ -124,7 +126,10 @@ class MihonReadingSourceGatewayTest {
             "en",
             errorToThrow = RuntimeException("boom"),
         )
-        gateway.search(10L, "query").exceptionOrNull()?.message shouldBe "boom"
+        val searchError = gateway.search(10L, "query").exceptionOrNull()
+        (searchError is ReadingSourceSearchException) shouldBe true
+        (searchError as ReadingSourceSearchException).phase shouldBe ReadingSourceSearchPhase.SEARCH
+        searchError.cause?.message shouldBe "boom"
 
         sourceManager.sourcesList.clear()
         sourceManager.sourcesList += TestCatalogueSource(
@@ -136,6 +141,28 @@ class MihonReadingSourceGatewayTest {
         shouldThrow<CancellationException> {
             gateway.search(11L, "query")
         }
+    }
+
+    @Test
+    fun `search distinguishes disabled source and filter initialization errors`() = runTest {
+        sourceManager.sourcesList += TestCatalogueSource(10L, "Disabled", "en")
+        sourcePreferences.disabledSources.set(setOf("10"))
+        val disabled = gateway.search(10L, "query").exceptionOrNull()
+        (disabled is ReadingSourceSearchException) shouldBe true
+        (disabled as ReadingSourceSearchException).phase shouldBe ReadingSourceSearchPhase.DISABLED
+
+        sourcePreferences.disabledSources.set(emptySet())
+        sourceManager.sourcesList.clear()
+        sourceManager.sourcesList += TestCatalogueSource(
+            11L,
+            "Filters broken",
+            "en",
+            filterErrorToThrow = IllegalStateException("private filter details"),
+        )
+        val filters = gateway.search(11L, "query").exceptionOrNull()
+        (filters is ReadingSourceSearchException) shouldBe true
+        (filters as ReadingSourceSearchException).phase shouldBe ReadingSourceSearchPhase.FILTERS
+        filters.cause?.message shouldBe "private filter details"
     }
 
     @Test
@@ -193,6 +220,7 @@ class MihonReadingSourceGatewayTest {
         override val lang: String,
         private val searchResults: List<SManga> = emptyList(),
         private val errorToThrow: Throwable? = null,
+        private val filterErrorToThrow: Throwable? = null,
     ) : CatalogueSource {
         var lastPageSearched: Int? = null
         var lastQuerySearched: String? = null
@@ -201,7 +229,10 @@ class MihonReadingSourceGatewayTest {
 
         override val supportsLatest: Boolean = false
 
-        override fun getFilterList(): FilterList = filters
+        override fun getFilterList(): FilterList {
+            filterErrorToThrow?.let { throw it }
+            return filters
+        }
 
         override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
             errorToThrow?.let { throw it }
