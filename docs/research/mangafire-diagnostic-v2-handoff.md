@@ -85,3 +85,42 @@ de inventário, opções filtradas no seletor, ausência de binding e add-on sem
 para atribuir a falha original do MangaFire a uma causa específica e para provar a leitura.
 O diagnóstico não modifica mapeamento canônico, progresso/histórico, preferência de fonte,
 mecanismos de CAPTCHA ou comportamento de seleção.
+
+## Execução e validação desta entrega
+
+- Branch: `tsuzuki/fix-mangafire-binding` (sem merge para `bootstrap` ou `main`).
+- `BASE_SHA` solicitado: `beac90a9c83cdd613899e49288026327cb3361ed`.
+- A branch remota já estava adiante desse SHA no início da sessão (`861d30f02b7580121fe1a41fdad1abe01dca18c2`); esse trabalho foi preservado. `HEAD_SHA` da implementação executada e validada: `7539d3acbccacc7463cbcb22c789ccef6268a257`. O commit posterior deste handoff contém apenas documentação; seu SHA está no `HEAD` final informado na entrega.
+- Arquivos alterados desde o `BASE_SHA`:
+  - `.github/ci-full-request.txt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/DiagnosticHttpStatus.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterInventoryGateway.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonProviderFactory.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonSourceEligibilityRepository.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProvider.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonContentProvider.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/diagnostics/InMemoryChapterInventoryDiagnostics.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterInventoryGatewayTest.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProviderTest.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonContentProviderTest.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/RuntimeV2SmokeReadinessTest.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/diagnostics/InMemoryChapterInventoryDiagnosticsTest.kt`
+  - `docs/research/mangafire-diagnostic-v2-handoff.md`
+  - `domain/src/main/java/tachiyomi/domain/tsuzuki/addon/repository/AddonSourceEligibilityRepository.kt`
+  - `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/diagnostics/ChapterInventoryDiagnostics.kt`
+  - `domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/evidence/RefreshChapterEvidence.kt`
+  - `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveChapterContent.kt`
+  - `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveContentBinding.kt`
+  - `domain/src/test/java/tachiyomi/domain/tsuzuki/chapter/diagnostics/ChapterInventoryDiagnosticFailuresTest.kt`
+  - `domain/src/test/java/tachiyomi/domain/tsuzuki/chapter/evidence/RefreshChapterEvidenceTest.kt`
+  - `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveChapterContentTest.kt`
+  - `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveContentBindingTest.kt`
+- CI `35892368083` em `6035ad883`: Domain e App passaram; Format falhou. A falha foi exclusivamente formatação, corrigida em commits posteriores.
+- CI `35893749546` em `7539d3ac`: `Format`, `Tests — App — Tsuzuki` e `CI Gate` passaram. O planner não selecionou testes Domain nessa execução; o último resultado verde de Domain foi o CI anterior acima, sem mudanças subsequentes no código Domain.
+- `Release Compile`, `Compile`, APK e demais gates não selecionados pelo planner; nenhum APK foi gerado. Nenhum Gradle foi executado localmente, conforme política CI-first.
+- Commits corretivos desta continuação: `5ca68e8b`, `dbecb63c`, `2328aab0`, `284bb2bc`, `bc9f8d91`, `4e1cbfb1`, `d783ec9b`, `f6a6d530`, `6035ad88`, `e5daed5b` e `7539d3ac`; enviados para `origin/tsuzuki/fix-mangafire-binding`.
+
+O relatório do aparelho continua sendo a evidência necessária para decidir entre fonte interna
+desativada, ausência/ambiguidade de correspondência, falha de busca ou materialização, inventário
+vazio e exclusão no seletor. Até esse smoke test, a causa física do incidente permanece
+**não confirmada** e não se afirma que MangaFire esteja corrigido.
