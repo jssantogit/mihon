@@ -45,6 +45,30 @@ class MihonAddonRepositoryTest {
     }
 
     @Test
+    fun `partially disabled multi source addon exposes only enabled sources`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.partial",
+            name = "Example",
+            sources = listOf(
+                FakeSource(id = 10L, lang = "en"),
+                FakeSource(id = 20L, lang = "pt-BR"),
+            ),
+        )
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { setOf("10") },
+            disabledSourceIdsFlow = flowOf(setOf("10")),
+            setDisabledSourceIds = {},
+        )
+
+        val addon = repository.snapshot().single()
+
+        addon.enabled shouldBe true
+        addon.mihonSourceIds.shouldContainExactlyInAnyOrder(20L)
+    }
+
+    @Test
     fun `update state is exposed at addon level`() = runTest {
         val extension = installedExtension(
             pkgName = "pkg.update",
