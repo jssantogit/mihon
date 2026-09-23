@@ -45,6 +45,35 @@ class MihonAddonRepositoryTest {
     }
 
     @Test
+    fun `disabled language sources are excluded from executable addon search`() = runTest {
+        val extension = installedExtension(
+            pkgName = "eu.kanade.tachiyomi.extension.all.mangafire",
+            name = "MangaFire",
+            sources = listOf(
+                FakeSource(id = 10L, lang = "en"),
+                FakeSource(id = 20L, lang = "pt-BR"),
+                FakeSource(id = 30L, lang = "es"),
+            ),
+        )
+        val disabled = MutableStateFlow(setOf("10", "30"))
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { disabled.value },
+            disabledSourceIdsFlow = disabled,
+            setDisabledSourceIds = { disabled.value = it },
+        )
+
+        val enabled = repository.snapshot().single()
+        enabled.enabled shouldBe true
+        enabled.mihonSourceIds.shouldContainExactlyInAnyOrder(20L)
+        disabled.value = setOf("10", "20", "30")
+        val allDisabled = repository.snapshot().single()
+        allDisabled.enabled shouldBe false
+        allDisabled.mihonSourceIds.shouldContainExactlyInAnyOrder()
+    }
+
+    @Test
     fun `update state is exposed at addon level`() = runTest {
         val extension = installedExtension(
             pkgName = "pkg.update",
