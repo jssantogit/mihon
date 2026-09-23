@@ -20,7 +20,11 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
-import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
@@ -61,80 +65,239 @@ class MihonRuntimeEndToEndIntegrationTest {
     @Test
     fun `local HTTP journey discovers source binds canonical title reconciles inventory and offers content`() =
         runTest {
-        LocalMihonSourceHarness().use { harness ->
-            val addonId = AddonId("fixture-addon")
-            val canonicalTitleId = "canonical-opm"
-            val sourceUrl = "/manga/one-punch-man"
-            val chapterUrl = "/chapter/1"
-            harness.enqueue(body = "$sourceUrl\tOne-Punch Man")
-            harness.enqueue(body = "$chapterUrl\tChapter 1\t1\tFixture Group")
+            LocalMihonSourceHarness().use { harness ->
+                val canonicalTitleId = "canonical-opm"
+                enqueueJourney(harness)
+                val journey = RuntimeJourney(harness, canonicalTitleId)
 
-            val localMangaId = 9001L
-            val persistedManga = mutableMapOf<Long, Manga>()
-            coEvery { harness.mangaRepository.insertNetworkManga(any()) } coAnswers {
-                firstArg<List<Manga>>().map { manga ->
-                    manga.copy(id = localMangaId).also { persistedManga[localMangaId] = it }
-                }
-            }
-            coEvery { harness.mangaRepository.getMangaById(localMangaId) } coAnswers {
-                persistedManga.getValue(localMangaId)
-            }
+                journey.installedSources().map { it.sourceId } shouldBe listOf(harness.source.id)
+                val binding = journey.bind().single()
+                binding.canonicalTitleId shouldBe canonicalTitleId
+                binding.availability shouldBe ContentBindingAvailability.AVAILABLE
+                journey.bindings.getByTitle(canonicalTitleId).single() shouldBe binding
+                MihonContentBindingPayloadCodec.decode(binding.runtimePayload).mihonMangaId shouldBe 9001L
 
-            val chapterRows = InMemoryMihonChapters()
-            val bindings = InMemoryContentBindings()
-            val canonicalChapters = InMemoryCanonicalChapters()
-            val evidence = InMemoryChapterEvidence()
-            val addon = InstalledAddon(
-                id = addonId,
-                displayName = "Fixture Add-on",
-                enabled = true,
-                versionName = "test",
-                mihonSourceIds = listOf(harness.source.id),
-                hasSettings = false,
-            )
-            val addons = SingleAddonRepository(addon)
-            val titleRepository = mockk<CanonicalTitleRepository> {
-                coEvery { getById(canonicalTitleId) } returns CanonicalTitle(
-                    id = canonicalTitleId,
-                    displayTitle = "One-Punch Man",
-                    identityState = CanonicalIdentityState.RESOLVED,
-                    createdAt = 1L,
-                    updatedAt = 1L,
+                journey.refresh()
+
+                val reconciled = journey.canonicalChapters.getByCanonicalTitleId(canonicalTitleId).single()
+                reconciled.displayNumber shouldBe "1"
+                reconciled.confirmation shouldBe CanonicalChapterConfirmation.PROVISIONAL
+                journey.evidence.getByCanonicalTitleId(canonicalTitleId).single()
+                    .mappedCanonicalChapterId shouldBe reconciled.id
+
+                val option = journey.options(reconciled.id).single()
+                option.canonicalChapterId shouldBe reconciled.id
+                option.addonId shouldBe journey.addonId
+                option.language shouldBe "en"
+                option.delivery shouldBe ContentDelivery.Mihon(
+                    sourceId = harness.source.id,
+                    mangaId = 9001L,
+                    chapterId = journey.chapterRows.onlyRow().id,
                 )
+                harness.server.requestCount shouldBe 2
             }
-            val installedSources = harness.gateway.listInstalled("en")
-            installedSources.map { it.sourceId } shouldBe listOf(harness.source.id)
+        }
 
-            val bindingResolver = ResolveContentBinding(
-                contentBindingRepository = bindings,
-                canonicalTitleRepository = titleRepository,
-                addonRepository = addons,
-                readingSourceGateway = harness.gateway,
-                scoreSourceTitleMatch = ScoreSourceTitleMatch(),
-                addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
-                diagnostics = NoOpChapterInventoryDiagnostics,
+    @Test
+    fun `same chapter from two languages keeps both verified source options`() = runTest {
+        LocalMihonSourceHarness(languages = listOf("en", "pt-BR")).use { harness ->
+            harness.sources.forEach { source ->
+                enqueueJourney(harness, source.lang)
+            }
+            val journey = RuntimeJourney(harness, "canonical-opm-multilingual")
+            journey.bind().size shouldBe 2
+            journey.refresh()
+
+            val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            val options = journey.options(chapter.id)
+
+            options.size shouldBe 2
+            options.map { it.canonicalChapterId }.toSet() shouldBe setOf(chapter.id)
+            options.map { it.language }.toSet() shouldBe setOf("en", "pt-BR")
+            journey.bindings.getByTitle(journey.canonicalTitleId).map { it.canonicalTitleId }.toSet() shouldBe
+                setOf(journey.canonicalTitleId)
+        }
+    }
+
+    @Test
+    fun `unsafe title match does not create a binding`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            harness.enqueue(body = "/manga/unrelated\tOne Punch Manga")
+            val journey = RuntimeJourney(harness, "canonical-opm-unsafe")
+
+            journey.bindResult().isFailure shouldBe true
+            journey.bindings.getByTitle(journey.canonicalTitleId) shouldBe emptyList()
+            harness.server.requestCount shouldBe 1
+        }
+    }
+
+    @Test
+    fun `binding is reused on refresh without repeating title search`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            enqueueJourney(harness)
+            harness.enqueue(body = "")
+            val journey = RuntimeJourney(harness, "canonical-opm-reuse")
+            val first = journey.bind().single()
+            val requestsAfterFirstBinding = harness.server.requestCount
+
+            journey.bind().single() shouldBe first
+            journey.refresh()
+            harness.server.requestCount shouldBe requestsAfterFirstBinding + 1
+        }
+    }
+
+    @Test
+    fun `empty HTTP inventory is distinguished from transport failure and offers no option`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man")
+            harness.enqueue(body = "")
+            val journey = RuntimeJourney(harness, "canonical-opm-empty")
+            journey.bind()
+            journey.refresh()
+
+            journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId) shouldBe emptyList()
+            journey.options("chapter-not-present") shouldBe emptyList()
+            journey.diagnostics.events.single {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
+            }.let { event ->
+                event.outcome shouldBe ChapterInventoryDiagnosticOutcome.EMPTY
+                event.reasons shouldBe mapOf(ChapterInventoryDiagnosticReason.INVENTORY_EMPTY to 1)
+            }
+        }
+    }
+
+    @Test
+    fun `malformed inventory remains a parsing error rather than empty`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man")
+            harness.enqueue(body = "malformed")
+            val journey = RuntimeJourney(harness, "canonical-opm-malformed")
+            journey.bind()
+            journey.refresh()
+
+            journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId) shouldBe emptyList()
+            journey.diagnostics.events.single {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
+            }.outcome shouldBe ChapterInventoryDiagnosticOutcome.MALFORMED_RESPONSE
+        }
+    }
+
+    @Test
+    fun `one source failure does not hide chapter option from another language source`() = runTest {
+        LocalMihonSourceHarness(languages = listOf("en", "pt-BR")).use { harness ->
+            harness.sources.forEach { source ->
+                harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man", language = source.lang)
+            }
+            harness.enqueue(status = 503, body = "server_error", language = "en")
+            harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group", language = "pt-BR")
+            val journey = RuntimeJourney(harness, "canonical-opm-partial-source")
+            journey.bind()
+            journey.refresh()
+
+            val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            val options = journey.options(chapter.id)
+            options.map { it.language } shouldBe listOf("pt-BR")
+            journey.diagnostics.events.any {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY &&
+                    it.outcome == ChapterInventoryDiagnosticOutcome.HTTP_ERROR && it.language == "en"
+            } shouldBe true
+        }
+    }
+
+    @Test
+    fun `repeat inventory refresh preserves canonical chapter identity and binding`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            enqueueJourney(harness)
+            harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group")
+            val journey = RuntimeJourney(harness, "canonical-opm-repeat")
+            val originalBinding = journey.bind().single()
+            journey.refresh()
+            val firstChapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
+
+            journey.refresh()
+            val secondChapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
+
+            secondChapter.id shouldBe firstChapter.id
+            journey.bindings.getByTitle(journey.canonicalTitleId).single() shouldBe originalBinding
+            harness.server.requestCount shouldBe 3
+        }
+    }
+
+    private fun enqueueJourney(harness: LocalMihonSourceHarness, language: String = harness.source.lang) {
+        harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man", language = language)
+        harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group", language = language)
+    }
+
+    private class RuntimeJourney(
+        private val harness: LocalMihonSourceHarness,
+        val canonicalTitleId: String,
+    ) {
+        val addonId = AddonId("fixture-addon")
+        val chapterRows = InMemoryMihonChapters()
+        val bindings = InMemoryContentBindings()
+        val canonicalChapters = InMemoryCanonicalChapters()
+        val evidence = InMemoryChapterEvidence()
+        val diagnostics = RecordingDiagnostics(canonicalTitleId)
+        val addon = InstalledAddon(
+            id = addonId,
+            displayName = "Fixture Add-on",
+            enabled = true,
+            versionName = "test",
+            mihonSourceIds = harness.sources.map { it.id },
+            hasSettings = false,
+        )
+        private val addons = SingleAddonRepository(addon)
+        private val persistedManga = mutableMapOf<Long, Manga>()
+        private val nextMangaId = AtomicLong(9001L)
+        private val titleRepository = mockk<CanonicalTitleRepository> {
+            coEvery { getById(canonicalTitleId) } returns CanonicalTitle(
+                id = canonicalTitleId,
+                displayTitle = "One-Punch Man",
+                identityState = CanonicalIdentityState.RESOLVED,
+                createdAt = 1L,
+                updatedAt = 1L,
             )
+        }
+
+        private val parser = ParseCanonicalChapterLabel()
+        private val registry: DefaultAddonRegistry
+        private val bindingResolver: ResolveContentBinding
+        private val refresh: RefreshChapterEvidence
+        private val selector: ResolveChapterContent
+
+        init {
+            diagnostics.start(canonicalTitleId)
+            everyInsertAndReadManga()
             val chapterGateway = MihonChapterInventoryGateway(
                 mangaRepository = harness.mangaRepository,
                 chapterRepository = chapterRows.repository,
                 sourceManager = harness.sourceManager,
+                diagnostics = diagnostics,
             )
-            val parser = ParseCanonicalChapterLabel()
             val providerFactory = MihonAddonProviderFactory(
                 contentBindingRepository = bindings,
                 canonicalChapterRepository = canonicalChapters,
                 chapterEvidenceRepository = evidence,
                 parser = parser,
                 chapterInventoryGateway = chapterGateway,
-                chapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+                chapterInventoryDiagnostics = diagnostics,
             )
             val provider = providerFactory.contentProvider(addonId)
-            val registry = DefaultAddonRegistry(
+            registry = DefaultAddonRegistry(
                 installedAddons = { listOf(addon) },
                 contentProviderCandidates = listOf(provider),
                 chapterProbeProviderCandidates = listOf(providerFactory.chapterProbeProvider(addonId)),
             )
-            val refresh = RefreshChapterEvidence(
+            bindingResolver = ResolveContentBinding(
+                contentBindingRepository = bindings,
+                canonicalTitleRepository = titleRepository,
+                addonRepository = addons,
+                readingSourceGateway = harness.gateway,
+                scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+                addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
+                diagnostics = diagnostics,
+            )
+            refresh = RefreshChapterEvidence(
                 registry = EmptyIntegrationRegistry,
                 reconcileChapterEvidence = ReconcileChapterEvidence(
                     parser = parser,
@@ -144,47 +307,66 @@ class MihonRuntimeEndToEndIntegrationTest {
                 addonRegistry = registry,
                 resolveContentBinding = bindingResolver,
                 contentOptionCache = ContentOptionCache(),
-                diagnostics = NoOpChapterInventoryDiagnostics,
+                diagnostics = diagnostics,
             )
-
-            val binding = bindingResolver.executeAll(canonicalTitleId, addonId).getOrThrow().single()
-            binding.canonicalTitleId shouldBe canonicalTitleId
-            binding.availability shouldBe ContentBindingAvailability.AVAILABLE
-            bindings.getByTitle(canonicalTitleId).single() shouldBe binding
-            MihonContentBindingPayloadCodec.decode(binding.runtimePayload).mihonMangaId shouldBe localMangaId
-
-            refresh.execute(canonicalTitleId).getOrThrow()
-
-            val reconciled = canonicalChapters.getByCanonicalTitleId(canonicalTitleId).single()
-            reconciled.displayNumber shouldBe "1"
-            reconciled.confirmation shouldBe CanonicalChapterConfirmation.PROVISIONAL
-            evidence.getByCanonicalTitleId(canonicalTitleId).single().mappedCanonicalChapterId shouldBe reconciled.id
-
-            val selector = ResolveChapterContent(
+            selector = ResolveChapterContent(
                 addonRegistry = registry,
                 contentPreferenceRepository = NoContentPreferences,
                 readerPreferences = tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences(
                     InMemoryPreferenceStore(),
                 ),
-                rankContentOptions =
-                    RankContentOptions(),
+                rankContentOptions = RankContentOptions(),
                 contentOptionCache = ContentOptionCache(),
                 inFlightContentResolution = InFlightContentResolution(),
                 addonRepository = addons,
+                diagnostics = diagnostics,
             )
-            val selectedChapterOptions = selector.lookupOptions(canonicalTitleId, reconciled.id).options
-
-            selectedChapterOptions.size shouldBe 1
-            selectedChapterOptions.single().canonicalChapterId shouldBe reconciled.id
-            selectedChapterOptions.single().addonId shouldBe addonId
-            selectedChapterOptions.single().language shouldBe "en"
-            selectedChapterOptions.single().delivery shouldBe ContentDelivery.Mihon(
-                sourceId = harness.source.id,
-                mangaId = localMangaId,
-                chapterId = chapterRows.onlyRow().id,
-            )
-            harness.server.requestCount shouldBe 2
         }
+
+        private fun everyInsertAndReadManga() {
+            coEvery { harness.mangaRepository.insertNetworkManga(any()) } coAnswers {
+                firstArg<List<Manga>>().map { manga ->
+                    val id = nextMangaId.getAndIncrement()
+                    manga.copy(id = id).also { persistedManga[id] = it }
+                }
+            }
+            coEvery { harness.mangaRepository.getMangaById(any()) } coAnswers {
+                persistedManga.getValue(firstArg<Long>())
+            }
+        }
+
+        suspend fun bind() = bindingResolver.executeAll(canonicalTitleId, addonId).getOrThrow()
+        suspend fun bindResult() = bindingResolver.executeAll(canonicalTitleId, addonId)
+        suspend fun refresh() = refresh.execute(canonicalTitleId).getOrThrow()
+        suspend fun installedSources() = harness.gateway.listInstalled("en")
+        suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
+    }
+
+    private class RecordingDiagnostics(private val titleId: String) : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+        private var recording = false
+
+        override fun start(canonicalTitleId: String): String {
+            recording = canonicalTitleId == titleId
+            return "test-session"
+        }
+
+        override fun stop() {
+            recording = false
+        }
+
+        override fun clear() {
+            events.clear()
+            recording = false
+        }
+
+        override fun isRecording(canonicalTitleId: String): Boolean = recording && canonicalTitleId == titleId
+
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            events += event
+        }
+
+        override fun report(): String = ""
     }
 
     private class SingleAddonRepository(private val addon: InstalledAddon) : AddonRepository {

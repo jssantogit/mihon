@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import io.mockk.mockk
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONException
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
@@ -33,25 +35,25 @@ import java.io.IOException
 /** Local-only Mihon HttpSource + gateway fixture for deterministic runtime integration tests. */
 internal class LocalMihonSourceHarness(
     clientFailure: IOException? = null,
+    languages: List<String> = listOf("en"),
 ) : Closeable {
-    val server = MockWebServer()
-
-    init {
-        server.start()
-    }
-
-    val source = FixtureHttpSource(
-        baseUrl = server.url("/").toString().trimEnd('/'),
-        client = OkHttpClient.Builder()
-            .apply {
-                clientFailure?.let { failure ->
-                    addInterceptor { throw failure }
+    private val serversByLanguage = languages.distinct().associateWith { MockWebServer().apply { start() } }
+    val server: MockWebServer = serversByLanguage.values.first()
+    val sources = serversByLanguage.map { (language, sourceServer) ->
+        FixtureHttpSource(
+            baseUrl = sourceServer.url("/").toString().trimEnd('/'),
+            client = OkHttpClient.Builder()
+                .apply {
+                    clientFailure?.let { failure ->
+                        addInterceptor { throw failure }
+                    }
                 }
-            }
-            .build(),
-    )
-
-    val sourceManager = FixtureSourceManager(source)
+                .build(),
+            language = language,
+        )
+    }
+    val source: FixtureHttpSource = sources.first()
+    val sourceManager = FixtureSourceManager(sources)
 
     val mangaRepository: MangaRepository = mockk(relaxed = true)
 
@@ -61,8 +63,8 @@ internal class LocalMihonSourceHarness(
         networkToLocalManga = NetworkToLocalManga(mangaRepository),
     )
 
-    fun enqueue(status: Int = 200, body: String = "") {
-        server.enqueue(
+    fun enqueue(status: Int = 200, body: String = "", language: String = source.lang) {
+        requireNotNull(serversByLanguage[language]) { "No fixture server for language $language" }.enqueue(
             MockResponse.Builder()
                 .code(status)
                 .body(body)
@@ -71,16 +73,16 @@ internal class LocalMihonSourceHarness(
     }
 
     override fun close() {
-        server.close()
+        serversByLanguage.values.forEach(MockWebServer::close)
     }
 }
 
 internal class FixtureHttpSource(
     override val baseUrl: String,
     override val client: OkHttpClient,
+    override val lang: String = "en",
 ) : HttpSource() {
     override val name: String = "Runtime Integration Fixture"
-    override val lang: String = "en"
     override val supportsLatest: Boolean = false
     override fun getFilterList(): FilterList = FilterList()
 
@@ -108,21 +110,44 @@ internal class FixtureHttpSource(
             .toList()
         return MangasPage(mangas, hasNextPage = false)
     }
+
+    @Deprecated("fixture")
+    override fun chapterListRequest(manga: SManga): Request = GET("$baseUrl${manga.url}")
+
+    @Deprecated("fixture")
+    override fun chapterListParse(response: Response): List<SChapter> {
+        val body = response.body.string()
+        if (body == "malformed") throw JSONException("fixture response was malformed")
+        if (body == "extension_error") throw IllegalStateException("private extension failure")
+        if (body == "cancel_inventory") throw CancellationException("fixture cancellation")
+        return body.lineSequence()
+            .filter(String::isNotBlank)
+            .map { line ->
+                val (url, name, number, scanlator) = line.split('\t', limit = 4)
+                SChapter.create().apply {
+                    this.url = url
+                    this.name = name
+                    chapter_number = number.toFloat()
+                    this.scanlator = scanlator
+                }
+            }
+            .toList()
+    }
 }
 
 internal class FixtureSourceManager(
-    private val source: CatalogueSource,
+    private val sourceList: List<CatalogueSource>,
 ) : SourceManager {
     override val sources: Flow<List<Source>> = emptyFlow()
 
-    override suspend fun get(sourceKey: Long): Source? = source.takeIf { it.id == sourceKey }
+    override suspend fun get(sourceKey: Long): Source? = sourceList.firstOrNull { it.id == sourceKey }
 
     override suspend fun getOrStub(sourceKey: Long): Source =
         get(sourceKey) ?: StubSource(sourceKey, "", "")
 
-    override suspend fun getAll(): List<Source> = listOf(source)
+    override suspend fun getAll(): List<Source> = sourceList
 
-    override suspend fun getOnlineSources() = listOf(source as HttpSource)
+    override suspend fun getOnlineSources() = sourceList.map { it as HttpSource }
 
     override suspend fun getStubSources(): List<StubSource> = emptyList()
 }
