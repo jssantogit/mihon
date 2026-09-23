@@ -1,3 +1,0 @@
-Full CI for Tsuzuki OPM inventory/parser and content-binding remediation.
-Code parent: 9414d333380e3cde5c393da21562eed1184a0464
-Temporary gate file; remove after successful full CI, before merge or APK.
