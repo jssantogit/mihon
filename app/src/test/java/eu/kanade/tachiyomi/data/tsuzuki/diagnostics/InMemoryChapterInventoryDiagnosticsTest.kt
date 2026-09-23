@@ -5,11 +5,11 @@ import eu.kanade.tachiyomi.network.HttpException
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.junit.jupiter.api.Test
-import kotlin.concurrent.thread
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import kotlin.concurrent.thread
 
 class InMemoryChapterInventoryDiagnosticsTest {
 
@@ -132,8 +132,10 @@ class InMemoryChapterInventoryDiagnosticsTest {
 
         val report = diagnostics.report()
         report.contains("diagnostic v2") shouldBe true
-        report.contains("SUMMARY|addonId=mangafire|stage=BINDING_SEARCH|outcome=NETWORK_ERROR" +
-            "|reason=NETWORK_FAILURE|count=1") shouldBe true
+        report.contains(
+            "SUMMARY|addonId=mangafire|stage=BINDING_SEARCH|outcome=NETWORK_ERROR" +
+                "|reason=NETWORK_FAILURE|count=1",
+        ) shouldBe true
         report.contains("attempt=2") shouldBe false
         report.contains("private-title") shouldBe false
     }
