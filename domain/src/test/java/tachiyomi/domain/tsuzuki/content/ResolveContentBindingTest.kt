@@ -353,7 +353,7 @@ class ResolveContentBindingTest {
     }
 
     @Test
-    fun `explicit MangaBall candidate selection links one ambiguous edition without changing canonical identity`() = runTest {
+    fun `manual MangaBall candidate selection preserves canonical identity`() = runTest {
         val repo = FakeContentBindingRepository(null)
         val gateway = FakeReadingSourceGateway(
             searchResults = mapOf(

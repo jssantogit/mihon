@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,7 +92,7 @@ fun ContentBindingLinkSheet(
                                     MangaCover.Book(
                                         data = candidate.thumbnailUrl,
                                         contentDescription = candidate.title,
-                                        modifier = Modifier.padding(end = 4.dp),
+                                        modifier = Modifier.width(56.dp).padding(end = 4.dp),
                                     )
                                 },
                                 headlineContent = { Text(candidate.title) },
