@@ -44,7 +44,7 @@ class ChapterInventoryDiagnosticFailuresTest {
         ) shouldBe (
             ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
                 ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
-        )
+            )
     }
 
     @Test

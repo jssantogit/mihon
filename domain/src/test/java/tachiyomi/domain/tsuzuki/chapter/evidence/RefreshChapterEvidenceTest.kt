@@ -173,7 +173,7 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
-    fun `diagnostic classifies wrapped timeout and IO causes without changing refresh result`() = runTest {
+    fun `diagnostic classifies wrapped timeout and unknown IO without changing refresh result`() = runTest {
         val diagnostics = RecordingDiagnostics()
         val addonId = AddonId("mangafire")
 
@@ -194,17 +194,17 @@ class RefreshChapterEvidenceTest {
 
         diagnostics.clear()
         diagnostics.start("canonical-title")
-        val networkRefresh = refreshWithProbe(
+        val unknownIoRefresh = refreshWithProbe(
             diagnostics = diagnostics,
             addonId = addonId,
             bindingAvailable = true,
             result = Result.failure(IllegalStateException("wrapper", IOException("private network detail"))),
         )
-        networkRefresh.execute("canonical-title").isSuccess shouldBe true
-        val networkEvent = diagnostics.events.single {
+        unknownIoRefresh.execute("canonical-title").isSuccess shouldBe true
+        val ioEvent = diagnostics.events.single {
             it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE
         }
-        networkEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        ioEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.INDETERMINATE
         diagnostics.report().contains("private network detail") shouldBe false
     }
 

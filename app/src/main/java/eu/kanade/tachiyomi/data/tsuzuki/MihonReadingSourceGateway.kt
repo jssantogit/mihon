@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
-import com.google.gson.JsonParseException
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -122,7 +121,7 @@ class MihonReadingSourceGateway(
             causes.any { it is SocketTimeoutException } -> ReadingSourceFailureKind.TIMEOUT
             httpStatus != null -> ReadingSourceFailureKind.HTTP_RESPONSE
             causes.any {
-                it is JSONException || it is JsonParseException || it is SerializationException
+                it is JSONException || it is SerializationException
             } -> ReadingSourceFailureKind.MALFORMED_RESPONSE
             causes.any {
                 it is UnknownHostException || it is ConnectException || it is SocketException
