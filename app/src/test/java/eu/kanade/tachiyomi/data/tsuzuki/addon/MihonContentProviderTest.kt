@@ -493,11 +493,23 @@ class MihonContentProviderTest {
     private class RecordingDiagnostics : ChapterInventoryDiagnostics {
         val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
         private var active = false
-        override fun start(canonicalTitleId: String): String { active = true; return "test" }
-        override fun stop() { active = false }
-        override fun clear() { active = false; events.clear() }
+        override fun start(canonicalTitleId: String): String {
+            active = true
+            return "test"
+        }
+
+        override fun stop() {
+            active = false
+        }
+
+        override fun clear() {
+            active = false
+            events.clear()
+        }
         override fun isRecording(canonicalTitleId: String): Boolean = active && canonicalTitleId == "title"
-        override fun record(event: ChapterInventoryDiagnosticEvent) { if (active) events += event }
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            if (active) events += event
+        }
         override fun report(): String = ""
     }
 

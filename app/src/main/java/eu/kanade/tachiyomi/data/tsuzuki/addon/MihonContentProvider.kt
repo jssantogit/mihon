@@ -98,7 +98,7 @@ class MihonContentProvider internal constructor(
                 (
                     canonicalChapter.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE ||
                         isInferredChapter(canonicalChapter)
-                )
+                    )
             if (sourceIdentities.isEmpty() &&
                 (!allowIdentityFallback || bindings.none(::trustedBinding))
             ) {
