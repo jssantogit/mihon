@@ -90,7 +90,9 @@ class MihonChapterProbeProvider internal constructor(
                 val inventory = inventoryResult.getOrElse { error ->
                     if (error is CancellationException) throw error
                     firstFailure = firstFailure ?: error
-                    val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
+                    val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(
+                        error.toStructuredChapterInventoryFailure(),
+                    )
                     reasons.increment(reason)
                     if (isDiagnosticsRecording(canonicalTitleId)) {
                         val payload = runCatching { MihonContentBindingPayloadCodec.decode(binding.runtimePayload) }
@@ -182,7 +184,7 @@ class MihonChapterProbeProvider internal constructor(
             )
 
             if (evidence.isEmpty() && firstFailure != null) {
-                Result.failure(firstFailure)
+                Result.failure(firstFailure.toStructuredChapterInventoryFailure())
             } else {
                 Result.success(uniqueEvidence)
             }
@@ -263,7 +265,7 @@ class MihonChapterProbeProvider internal constructor(
     }
 
     private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome =
-        ChapterInventoryDiagnosticFailures.classify(this).first
+        ChapterInventoryDiagnosticFailures.classify(toStructuredChapterInventoryFailure()).first
 
     private fun isDiagnosticsRecording(canonicalTitleId: String): Boolean = try {
         diagnostics.isRecording(canonicalTitleId)

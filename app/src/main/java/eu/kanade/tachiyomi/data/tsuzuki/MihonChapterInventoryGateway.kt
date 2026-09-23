@@ -33,10 +33,10 @@ import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import java.math.BigDecimal
 import kotlin.time.TimeSource
 
@@ -170,7 +170,7 @@ class MihonChapterInventoryGateway(
                 "TsuzukiPerf inventory source=${mapping.sourceId} failed=${error.javaClass.simpleName} " +
                     "total=${totalStart.elapsedNow()}"
             }
-            Result.failure(structuredError)
+            Result.failure(error)
         }
     }
 
@@ -317,7 +317,9 @@ class MihonChapterInventoryGateway(
         elapsedMillis: Long,
         reason: ChapterInventoryDiagnosticReason? = null,
     ) {
-        val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(error)
+        val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(
+            error.toStructuredChapterInventoryFailure(),
+        )
         val reasons = mapOf((reason ?: failureReason) to 1)
         diagnostics.recordIfEnabled(
             canonicalTitleId,

@@ -109,9 +109,9 @@ class MihonRuntimeEndToEndIntegrationTest {
             journey.refresh()
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
-            journey.canonicalChapters.getVariantsByCanonicalChapterId(chapter.id).size shouldBe 2
-            journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
-                .map { it.mappedCanonicalChapterId }.filterNotNull().size shouldBe 2
+            val persistedEvidence = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
+            persistedEvidence.size shouldBe 2
+            persistedEvidence.map { it.mappedCanonicalChapterId }.toSet() shouldBe setOf(chapter.id)
             val options = journey.options(chapter.id)
 
             options.size shouldBe 2
@@ -126,11 +126,12 @@ class MihonRuntimeEndToEndIntegrationTest {
     fun `unsafe title match does not create a binding`() = runTest {
         LocalMihonSourceHarness().use { harness ->
             harness.enqueue(body = "/manga/unrelated\tNaruto")
+            harness.enqueue(body = "/manga/unrelated\tNaruto")
             val journey = RuntimeJourney(harness, "canonical-opm-unsafe")
 
             journey.bindResult().isFailure shouldBe true
             journey.bindings.getByTitle(journey.canonicalTitleId) shouldBe emptyList()
-            harness.server.requestCount shouldBe 1
+            harness.server.requestCount shouldBe 2
         }
     }
 

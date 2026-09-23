@@ -9,8 +9,9 @@ Runtime V2 path without asserting anything about MangaFire's live service.
 The principal scenario uses a loopback `MockWebServer` and production Mihon/Tsuzuki adapters to
 connect source discovery, HTTP title search, safe title binding, source manga materialization,
 chapter inventory, evidence reconciliation, canonical chapter variants, and reader content options.
-All state is shared within a test scenario. No production code, preference, progress, or canonical
-identity behavior is changed.
+All state is shared within a test scenario. No reader fallback, preference, progress, or canonical
+identity behavior is changed. One runtime adapter change structures chapter-inventory failures for
+diagnostics while retaining the original throwable as its cause.
 
 ## Baseline gap and RED proof
 
@@ -47,7 +48,15 @@ The principal journey verifies that the discovered internal source ID is the ID 
 materialized; the stored binding retains the same canonical title and Mihon manga ID; an HTTP
 chapter becomes canonical evidence/variant state; and the selector returns a Mihon delivery for
 that exact source/manga/chapter. A two-language scenario verifies two source options for one
-canonical chapter without collapsing language provenance.
+canonical chapter without collapsing language provenance. It also validates that the in-memory
+repository fixture stores multiple internal-source bindings for one add-on without overwriting
+them; production persistence remains keyed by binding/source representation.
+
+The current evidence-refresh path persists per-source `ChapterEvidence` mappings to a shared
+canonical chapter and resolves delivery options from those exact mappings. It does not persist
+`ChapterVariant` rows in `ReconcileChapterEvidence`; the separate inventory reconciliation
+interactor has its own unit coverage. This E2E test does not invent variant rows or silently change
+the production refresh contract.
 
 ## Regression scenarios added
 
@@ -63,6 +72,14 @@ The reusable local harness now includes tests for:
 - malformed inventory remaining a parser error, not being misreported as empty;
 - a failed English-source inventory not suppressing the valid Portuguese alternative.
 
+The failing HTTP/parser diagnostic path exposed a classification gap at chapter inventory: bare
+HTTP exceptions and parser exceptions were recorded as generic extension failures despite having
+a numeric HTTP status or a recognized JSON/serialization parser type. The Mihon chapter-inventory
+adapter now wraps non-cancellation failures in the existing closed `ReadingSourceSearchFailure`
+category while retaining the original throwable as `cause`. The operation still fails; this does
+not synthesize an empty inventory, change fallback, or include exception text in diagnostic output.
+Timeout and cancellation propagation remain unchanged.
+
 Existing adjacent coverage in `MihonReadingSourceHttpIntegrationTest` also exercises HTTP 200 empty,
 HTTP 403 without CAPTCHA misclassification, 429/503, malformed extension response, internal source
 error, network/timeout, and cancellation at the Mihon search boundary. Gateway tests cover inventory
@@ -72,10 +89,11 @@ journey.
 
 ## CI evidence
 
-This is test-only app coverage; CI Change Planner routes it to the App Tsuzuki test shard and
-Format. Domain and release compilation are not selected because production/domain files are
-unchanged. The Change Planner job and routing tests must pass; skipped jobs are not represented as
-passing tests. No local Gradle command was run under the project's CI-first policy.
+The integration suite is app coverage; CI Change Planner routes it to the App Tsuzuki shard. The
+diagnostic adapter change is also routed to both Domain and App Tsuzuki shards. Release compilation
+is not selected because no release boundary changed. The Change Planner and routing tests must pass;
+skipped jobs are not represented as passing tests. No local Gradle command was run under the
+project's CI-first policy.
 
 <!-- Update this section with final GitHub run links and statuses before handoff. -->
 
