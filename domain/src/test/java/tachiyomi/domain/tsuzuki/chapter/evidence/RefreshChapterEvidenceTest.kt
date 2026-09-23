@@ -32,6 +32,7 @@ import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
@@ -150,6 +151,25 @@ class RefreshChapterEvidenceTest {
         val event = diagnostics.events.single()
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
         event.reasons[ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE] shouldBe 1
+    }
+
+    @Test
+    fun `ambiguous source binding remains an explicit confirmation requirement`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+        diagnostics.start("canonical-title")
+        val refresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingConfirmationRequiredException(emptyList()),
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        val event = diagnostics.events.single()
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
+        event.reasons[ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED] shouldBe 1
     }
 
     @Test

@@ -9,6 +9,7 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
@@ -19,6 +20,7 @@ import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
+import java.io.IOException
 
 class ResolveContentBindingTest {
 
@@ -117,6 +119,16 @@ class ResolveContentBindingTest {
 
         (result.exceptionOrNull() is ContentBindingConfirmationRequiredException) shouldBe true
         gateway.materializeCalls shouldBe 0
+    }
+
+    @Test
+    fun `source lookup network failure is not mistaken for no matching title`() = runTest {
+        val gateway = FakeReadingSourceGateway(searchFailure = IOException("temporary outage"))
+        val result = resolver(FakeContentBindingRepository(null), gateway, title = "One-Punch Man")
+            .executeAll("title", AddonId("mangadex"))
+
+        (result.exceptionOrNull() is ContentBindingSourceSearchException) shouldBe true
+        gateway.searchedQueries shouldBe listOf("One-Punch Man")
     }
 
     @Test
@@ -282,6 +294,7 @@ class ResolveContentBindingTest {
         private val materialized: MaterializedReadingSource? = null,
         private val materializedBySource: Map<Long, MaterializedReadingSource> = emptyMap(),
         private val searchResultsByQuery: Map<Pair<Long, String>, List<ReadingSourceCandidate>> = emptyMap(),
+        private val searchFailure: Throwable? = null,
     ) : ReadingSourceGateway {
         var searchCalls = 0
         val searchedQueries = mutableListOf<String>()
@@ -292,6 +305,7 @@ class ResolveContentBindingTest {
         override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
             searchCalls += 1
             searchedQueries += query
+            searchFailure?.let { return Result.failure(it) }
             return Result.success(searchResultsByQuery[sourceId to query] ?: searchResults[sourceId].orEmpty())
         }
 
