@@ -4,10 +4,8 @@ import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import eu.kanade.tachiyomi.data.tsuzuki.addon.DefaultAddonRegistry
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
-import io.mockk.answers
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
-import io.mockk.firstArg
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,12 +71,12 @@ class MihonRuntimeEndToEndIntegrationTest {
 
             val localMangaId = 9001L
             val persistedManga = mutableMapOf<Long, Manga>()
-            coEvery { harness.mangaRepository.insertNetworkManga(any()) } answers {
+            coEvery { harness.mangaRepository.insertNetworkManga(any()) } coAnswers {
                 firstArg<List<Manga>>().map { manga ->
                     manga.copy(id = localMangaId).also { persistedManga[localMangaId] = it }
                 }
             }
-            coEvery { harness.mangaRepository.getMangaById(localMangaId) } answers {
+            coEvery { harness.mangaRepository.getMangaById(localMangaId) } coAnswers {
                 persistedManga.getValue(localMangaId)
             }
 
@@ -168,7 +166,8 @@ class MihonRuntimeEndToEndIntegrationTest {
                 readerPreferences = tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences(
                     InMemoryPreferenceStore(),
                 ),
-                rankContentOptions = RankContentOptions(),
+                rankContentOptions =
+                    RankContentOptions(),
                 contentOptionCache = ContentOptionCache(),
                 inFlightContentResolution = InFlightContentResolution(),
                 addonRepository = addons,
@@ -205,7 +204,11 @@ class MihonRuntimeEndToEndIntegrationTest {
         }
         override suspend fun markUnavailable(bindingId: String, updatedAt: Long) {
             values.replaceAll { _, binding ->
-                if (binding.id == bindingId) binding.copy(availability = ContentBindingAvailability.UNAVAILABLE) else binding
+                if (binding.id == bindingId) {
+                    binding.copy(availability = ContentBindingAvailability.UNAVAILABLE)
+                } else {
+                    binding
+                }
             }
         }
     }
@@ -260,18 +263,18 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val values = mutableListOf<Chapter>()
         private val nextId = AtomicLong(100L)
         val repository: ChapterRepository = mockk(relaxed = true) {
-            coEvery { getChapterByMangaId(any()) } answers {
+            coEvery { getChapterByMangaId(any()) } coAnswers {
                 values.filter { it.mangaId == firstArg<Long>() }
             }
-            coEvery { getChapterById(any()) } answers {
+            coEvery { getChapterById(any()) } coAnswers {
                 values.firstOrNull { it.id == firstArg<Long>() }
             }
-            coEvery { getChapterByUrlAndMangaId(any(), any()) } answers {
+            coEvery { getChapterByUrlAndMangaId(any(), any()) } coAnswers {
                 val url = firstArg<String>()
                 val mangaId = secondArg<Long>()
                 values.firstOrNull { it.url == url && it.mangaId == mangaId }
             }
-            coEvery { addAll(any()) } answers {
+            coEvery { addAll(any()) } coAnswers {
                 firstArg<List<Chapter>>().map { chapter ->
                     chapter.copy(id = nextId.getAndIncrement()).also(values::add)
                 }
