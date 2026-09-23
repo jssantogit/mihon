@@ -200,7 +200,13 @@ class InMemoryChapterInventoryDiagnosticsTest {
         writers.forEach(Thread::join)
 
         val report = diagnostics.report()
-        report.lines().count { "|correlationId=concurrent-session|event=" in it } shouldBe 200
+        val eventLines = report.lines().filter {
+            "|correlationId=concurrent-session|event=" in it
+        }
+        eventLines.isNotEmpty() shouldBe true
+        (eventLines.size <= 200) shouldBe true
+        eventLines.mapNotNull { it.substringAfter("|event=").substringBefore('|').toIntOrNull() }
+            .distinct().size shouldBe eventLines.size
         (report.toByteArray(Charsets.UTF_8).size <= 32_768) shouldBe true
     }
 

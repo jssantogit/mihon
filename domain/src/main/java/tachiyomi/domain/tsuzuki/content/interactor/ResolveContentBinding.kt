@@ -237,11 +237,13 @@ class ResolveContentBinding internal constructor(
                 candidates.isNotEmpty() ->
                     ChapterInventoryDiagnosticOutcome.AMBIGUOUS to
                         ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
-                hasLowConfidenceMatch -> ChapterInventoryDiagnosticOutcome.NO_MATCH to
-                    ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
+                hasLowConfidenceMatch ->
+                    ChapterInventoryDiagnosticOutcome.NO_MATCH to
+                        ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
                 firstSearchFailure != null -> ChapterInventoryDiagnosticFailures.classify(firstSearchFailure)
-                else -> ChapterInventoryDiagnosticOutcome.NO_MATCH to
-                    ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS
+                else ->
+                    ChapterInventoryDiagnosticOutcome.NO_MATCH to
+                        ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS
             }
             recordBinding(
                 canonicalTitleId,
