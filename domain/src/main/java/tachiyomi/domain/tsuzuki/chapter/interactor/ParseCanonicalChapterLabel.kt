@@ -337,8 +337,10 @@ class ParseCanonicalChapterLabel {
 
     private companion object {
         // Accent-free forms are used because input is normalized before matching.
+        // MangaDex builds chapter names like "Vol.1 Ch.1", while other sources
+        // may insert spaces or use a nonnumeric volume marker.
         val LEADING_VOLUME_PREFIX = Regex(
-            "^vol(?:ume)?\\.?\\s+\\d+(?:\\s*[-:|/]\\s*|\\s+)" +
+            "^vol(?:ume)?\\.?\\s*(?:\\d+|none)(?:\\s*[-:|/]\\s*|\\s+)" +
                 "(?=(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*\\d)",
         )
         val CHAPTER_PREFIX = Regex("^(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*")
