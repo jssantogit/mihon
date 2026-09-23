@@ -98,7 +98,19 @@ is not selected because no release boundary changed. The Change Planner and rout
 skipped jobs are not represented as passing tests. No local Gradle command was run under the
 project's CI-first policy.
 
-<!-- Update this section with final GitHub run links and statuses before handoff. -->
+Validation for the committed runtime changes:
+
+- [CI v2.1 run 35916979644](https://github.com/jssantogit/mihon/actions/runs/35916979644): Change
+  Planner, Format, App Tsuzuki tests, Domain Tsuzuki tests, and CI Gate all succeeded. Release
+  compile, package, migrations, and backend jobs were skipped by the test-focused plan.
+- [CI v2.1 run 35917486124](https://github.com/jssantogit/mihon/actions/runs/35917486124): Change
+  Planner, Format, App Tsuzuki tests, and CI Gate all succeeded for the final E2E test addition.
+  Domain tests were not selected because this commit changed only app tests/docs. Release/package
+  jobs were skipped by the planner.
+- [APK workflow 35917486096](https://github.com/jssantogit/mihon/actions/runs/35917486096) was
+  skipped; no APK was built.
+- No local Gradle tasks were run. The project verification policy is `CI_FIRST` with zero heavy
+  local attempts.
 
 ## MangaFire 1.6.34 artifact investigation
 
@@ -147,7 +159,15 @@ fallback/preferences to force a green test.
 ## Final revision/checks
 
 - `BASE_SHA`: `485cce6f4a26fa8f358b97c88cdd27ffce38c858`
-- `HEAD_SHA`: pending final push
-- Files: pending final status check
-- Fast CI: pending final result
-- No PR, merge, bootstrap change, or APK generation.
+- `TESTED_CODE_SHA`: `5ea8bf253dbba915fe0f06e37d507b5e996d1940`
+- Branch: `tsuzuki/runtime-e2e-tests`, pushed to `origin`; final document-only commit follows the
+  tested code SHA.
+- Files changed from the base:
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/MihonChapterInventoryGateway.kt`
+  - `app/src/main/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonChapterProbeProvider.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/integration/LocalMihonSourceHarness.kt`
+  - `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/integration/MihonRuntimeEndToEndIntegrationTest.kt`
+  - `docs/research/runtime-e2e-tests-handoff.md`
+- Fast CI results: `35916979644` and `35917486124`, both successful as detailed above.
+- No PR, merge, bootstrap change, or APK generation. The current branch HEAD is reported in the
+  final session handoff because this file's last edit is committed after `TESTED_CODE_SHA`.
