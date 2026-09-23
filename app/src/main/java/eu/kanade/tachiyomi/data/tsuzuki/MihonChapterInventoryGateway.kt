@@ -64,7 +64,7 @@ class MihonChapterInventoryGateway(
         refresh: Boolean,
     ): Result<SourceChapterInventory> {
         val mihonMangaId = mapping.mihonMangaId
-            ?: return Result.failure(
+            ?: return Result.failure<SourceChapterInventory>(
                 IllegalArgumentException("Source mapping " + mapping.id + " is not materialized"),
             ).also {
                 recordInventoryFailure(

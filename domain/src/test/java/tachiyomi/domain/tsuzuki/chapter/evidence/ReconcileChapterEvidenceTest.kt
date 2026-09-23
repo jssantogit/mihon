@@ -11,6 +11,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOu
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -164,7 +165,6 @@ class ReconcileChapterEvidenceTest {
             }
             persistenceEvents.last().accepted shouldBe 234
         }
-    }
 
     @Test
     fun `decimal and extra evidence remain distinct logical chapters`() = runTest {
@@ -351,7 +351,7 @@ class ReconcileChapterEvidenceTest {
             evidenceRepository = evidenceRepository,
             idFactory = { "chapter-${++nextId}" },
             clock = { 100L },
-            diagnostics = diagnostics,
+            diagnostics = diagnostics ?: NoOpChapterInventoryDiagnostics,
         )
         return Fixture(reconciler, chapterRepository, evidenceRepository)
     }
