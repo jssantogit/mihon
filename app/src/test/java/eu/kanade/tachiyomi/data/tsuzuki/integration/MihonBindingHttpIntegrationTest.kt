@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import io.kotest.matchers.shouldBe
-import io.mockk.coAnswers
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -10,6 +9,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
@@ -29,9 +29,8 @@ class MihonBindingHttpIntegrationTest {
             val titleId = "canonical-opm"
             val sourceUrl = "/manga/one-punch-man"
             harness.enqueue(body = "$sourceUrl\tOne-Punch Man")
-            coEvery { harness.mangaRepository.insertNetworkManga(any()) } coAnswers {
-                firstArg<List<Manga>>().map { it.copy(id = 9001L) }
-            }
+            coEvery { harness.mangaRepository.insertNetworkManga(any()) } returns
+                listOf(Manga.create().copy(id = 9001L))
 
             val bindings = InMemoryBindings()
             val canonicalTitles = mockk<CanonicalTitleRepository> {
@@ -61,8 +60,7 @@ class MihonBindingHttpIntegrationTest {
                 addonRepository = addonRepository,
                 readingSourceGateway = harness.gateway,
                 scoreSourceTitleMatch = ScoreSourceTitleMatch(),
-                idFactory = { "binding-1" },
-                clock = { 42L },
+                addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
                 diagnostics = NoOpChapterInventoryDiagnostics,
             )
 
