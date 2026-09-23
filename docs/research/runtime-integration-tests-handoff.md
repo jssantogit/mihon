@@ -5,7 +5,7 @@
 Branch: `tsuzuki/runtime-integration-tests`  
 Base solicitada: `tsuzuki/fix-mangafire-binding` @ `2e76abcfa9dd155178cec06783abc043120141ea`  
 Base SHA (`BASE_SHA`): `2e76abcfa9dd155178cec06783abc043120141ea`  
-HEAD SHA (`HEAD_SHA`): atualizado no commit de documentação desta entrega.
+HEAD de código validado (`CODE_HEAD_SHA`): `34d11b2d9268e7588776b06c956c0d4ce2d05772`. O SHA do commit documental será informado no resumo final.
 
 Esta rodada acrescenta testes determinísticos locais no limite real de `HttpSource` do Mihon,
 um cenário que leva a resposta HTTP da extensão fictícia até a resolução e persistência de um
@@ -62,7 +62,7 @@ exportando apenas categoria fechada e, quando conhecido, status HTTP inteiro val
 | `SOURCE_UNAVAILABLE` | ID não resolve para `CatalogueSource` instalado | Não prova falha do site |
 | `HTTP_RESPONSE` | Exceção HTTP Mihon com status 100–599 | Status observado; corpo e headers não são exportados |
 | `CAPTCHA_REQUIRED` | Marcador explícito reconhecido na cadeia de causa | Não há bypass; requer ação humana/ambiente adequado |
-| `TIMEOUT` | `SocketTimeoutException` observada | Categoria comprovada; o teste usa exceção sintética e não valida timing de socket real |
+| `TIMEOUT` | `SocketTimeoutException` observada | Categoria comprovada; o teste injeta exceção sintética e não valida timing de socket real |
 | `NETWORK_FAILURE` | Exceções de socket/conexão/DNS específicas | Falha de transporte observada |
 | `MALFORMED_RESPONSE` | Parser estrutural conhecido (JSON/Kotlin serialization) | Resposta não foi interpretável pelo parser |
 | `EXTENSION_FAILURE` | Erro não classificado da extensão/parser | Falha interna observada, causa ainda indeterminada |
@@ -113,22 +113,24 @@ Validações executadas:
 
 - `python3 .github/scripts/test_ci_v2_plan.py` — **33/33 passaram** nesta sessão.
 - `git diff --check` — passou antes dos commits.
-- Fast CI v2.1: run definitivo do código `35907114764` (`a20991a2e`); estado dos shards App, Domain e Format a registrar após a conclusão.
+- Fast CI v2.1: run [`35907643108`](https://github.com/jssantogit/mihon/actions/runs/35907643108), SHA `34d11b2d`; Change Planner, App Tsuzuki, Domain Tsuzuki, Format e CI Gate passaram.
 - Não executado localmente: Gradle/format/build, conforme policy `CI_FIRST` (`localHeavyAttempts=0`).
 - Nenhum APK foi gerado; o workflow APK apareceu como skipped, fora do objetivo desta tarefa.
+- Compile/Release Compile, Native Package Gate, SQLDelight e Supabase Backend foram skipped pelo planner; isso não é alegado como validação desses alvos.
 
 Houve ciclos iniciais de CI vermelho enquanto a implementação era test-first. A execução
 `35906511585` no commit `3c7a7e707` passou Change Planner e Domain, mas falhou no teste que
 tentava obter uma porta local fechada; a fixture ainda tinha uma disputa de bind e não comprovava
-uma falha de rede determinística. O cenário foi substituído por uma `ConnectException` sintética
-injetada no cliente HTTP para eliminar a corrida. O run final acima valida essa alteração.
+uma falha de rede determinística. Em `35907114764`, o JUnit identificou que o cenário vermelho
+era o timeout com resposta atrasada. A fixture não exercitou esse timeout como esperado. O teste
+foi simplificado para injetar `ConnectException` e `SocketTimeoutException` no interceptor local,
+verificando classificação do gateway sem alegar simulação de timeout de socket real.
 
-A primeira execução
-da regressão falhou na compilação porque o novo tipo ainda não existia; a rodada seguinte revelou
+A primeira execução da regressão falhou na compilação porque o novo tipo ainda não existia; a rodada seguinte revelou
 um import de JSON indisponível no app, uma expectativa antiga que tratava `IOException` genérica
 como rede e um fechamento de parênteses do formatter. Essas causas foram corrigidas em commits
-subsequentes. O resultado do CI final precisa ser consultado na URL do run e atualizado aqui antes
-de aceitar a branch.
+subsequentes. O run `35907643108` passou nos shards planejados, incluindo os testes de regressão
+de classificação e os testes de integração HTTP local.
 
 ## Android e MangaFire real
 
@@ -164,11 +166,12 @@ Não foi criada credencial, crawler ou bypass nesta tarefa.
    persistência instalada real. Repositórios de domínio e seletor têm suas próprias regressões.
 4. A suíte final de CI precisa estar verde para declarar validação completa; etapas puladas não são
    evidência de aprovação.
-5. Próxima investigação eficiente: executar o diagnóstico v2 no aparelho com apenas uma fonte
-   MangaFire habilitada; capturar a fase de erro tipada com causa sanitizada no próprio limite da
-   extensão, comparar com o mesmo `HttpSource` sintético e verificar materialização/seletor por
-   eventos. Se a causa ficar apenas `EXTENSION_FAILURE`, coletar stack classification segura
-   (classe/categoria fechada, sem mensagem) ou reproduzir com APK autorizado em harness Android.
+5. Próxima investigação sem novo APK: usar o aparelho do usuário que já tem MangaFire 1.6.34 e
+   exportar somente o relatório v2 sanitizado. Interpretar `stage/outcome/reason`, duração e fonte
+   interna para localizar busca, materialização ou seletor; não exportar conteúdo nem segredos.
+   Acrescentar ao harness local um fixture para a categoria observada. Se o resultado continuar
+   `EXTENSION_FAILURE`, o limite público ainda não expõe a causa interna; só então considerar
+   reprodução com APK autorizado e hash verificado em harness Android.
 
 ## Commits desta branch
 
@@ -178,6 +181,10 @@ Não foi criada credencial, crawler ou bypass nesta tarefa.
 - `3932fbeec` — classificação estruturada e regressões (CI revelou correções necessárias).
 - `892870ba0` — não inferir rede a partir de I/O genérico.
 - `1bdb68717` — integrar busca HTTP local com resolução/persistência de binding.
+- `c59cfdf29` — corrigir a asserção nullable apontada pela CI.
+- `45b4cc6a2` — usar construtor público do resolver e ajustar regressões.
+- `47488672b` — ajustes de teste/format; CI expôs a disputa de porta.
 - `3c7a7e707` — tentativa de fixture com porta recusada reservada; substituída por fixture sintética.
 - `a20991a2e` — tornar a classificação de falha de conexão determinística via interceptor.
-- HEAD final: preencher após commitar este handoff.
+- `34d11b2d9` — tornar também a classificação de timeout sintética e explicitar limites.
+- Handoff SHA: consta no commit posterior a `CODE_HEAD_SHA`; esse commit contém apenas esta documentação.
