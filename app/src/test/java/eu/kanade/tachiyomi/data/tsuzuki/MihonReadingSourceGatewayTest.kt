@@ -135,7 +135,9 @@ class MihonReadingSourceGatewayTest {
             "en",
             errorToThrow = RuntimeException("boom"),
         )
-        gateway.search(10L, "query").exceptionOrNull()?.message shouldBe "boom"
+        val failure = gateway.search(10L, "query").exceptionOrNull() as ReadingSourceSearchFailure
+        failure.kind shouldBe ReadingSourceFailureKind.EXTENSION_FAILURE
+        failure.cause?.message shouldBe "boom"
 
         sourceManager.sourcesList.clear()
         sourceManager.sourcesList += TestCatalogueSource(

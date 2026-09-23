@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit
 /** Local-only Mihon HttpSource + gateway fixture for deterministic runtime integration tests. */
 internal class LocalMihonSourceHarness(
     readTimeoutMillis: Long = 2_000,
+    sourceBaseUrl: String? = null,
 ) : Closeable {
     val server = MockWebServer()
 
@@ -41,7 +42,7 @@ internal class LocalMihonSourceHarness(
     }
 
     val source = FixtureHttpSource(
-        baseUrl = server.url("/").toString().trimEnd('/'),
+        baseUrl = sourceBaseUrl ?: server.url("/").toString().trimEnd('/'),
         client = OkHttpClient.Builder()
             .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
             .build(),

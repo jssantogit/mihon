@@ -93,7 +93,7 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
-    fun `diagnostic classifies wrapped timeouts and IO failures from their causes`() = runTest {
+    fun `diagnostic classifies wrapped timeouts and unknown IO from their causes`() = runTest {
         val binding = binding()
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title")
@@ -114,19 +114,19 @@ class MihonChapterProbeProviderTest {
 
         diagnostics.clear()
         diagnostics.start("title")
-        val network = IllegalStateException("wrapper", IOException("private network detail"))
-        val networkProvider = MihonChapterProbeProvider(
+        val unknownIo = IllegalStateException("wrapper", IOException("private network detail"))
+        val unknownIoProvider = MihonChapterProbeProvider(
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
-            fetchInventory = { Result.failure(network) },
+            fetchInventory = { Result.failure(unknownIo) },
             clock = { 1L },
             diagnostics = diagnostics,
         )
 
-        networkProvider.probe("title").isFailure shouldBe true
-        diagnostics.events.first { it.outcome == ChapterInventoryDiagnosticOutcome.NETWORK_ERROR }
-            .outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        unknownIoProvider.probe("title").isFailure shouldBe true
+        diagnostics.events.first { it.outcome == ChapterInventoryDiagnosticOutcome.INDETERMINATE }
+            .outcome shouldBe ChapterInventoryDiagnosticOutcome.INDETERMINATE
         diagnostics.report().contains("private network detail") shouldBe false
     }
 
