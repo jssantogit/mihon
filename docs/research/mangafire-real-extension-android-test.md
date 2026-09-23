@@ -51,3 +51,22 @@ failed after 19,897 ms with \`EXTENSION_FAILURE\`. Compare a separately
 authorized live probe against that observation; if Android behaves differently,
 investigate environment and network differences rather than manufacturing a
 fallback or an automatic canonical merge.
+
+## First instrumented Android proof (2026-09-23)
+
+Run [35930666356](https://github.com/jssantogit/mihon/actions/runs/35930666356)
+for commit `5fa1442835a0f4dc15b2d0e34e7f6f28cf883e54` is green. The
+AndroidJUnitRunner explicitly reported successful execution of
+`loadsRealExtensionAndRegistersInternalSources` (one actual JUnit method),
+after the exact user-supplied APK was SHA-256 verified, APK v2 signature
+verified, and installed on the API 35 emulator. The test asserts the
+extension's seven internal source languages and English source ID, plus
+registration with the real Android source manager. This is evidence for
+actual local loader and registration, not live MangaFire site access.
+
+A single, opt-in live provider probe may run via a manual `workflow_dispatch`
+with `live_probe=true`, or an explicit `[android-live]` commit message on
+this isolated branch. Ordinary pushes do not contact the provider. Live
+failure messages are summarized through a closed allowlist of failure kinds,
+HTTP status, and elapsed milliseconds; they must never dump URL, cookie,
+body, token or raw exception text.

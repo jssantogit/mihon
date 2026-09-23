@@ -10,6 +10,10 @@ KEYS = ("class", "test", "numtests")
 SAFE_JAVA_TYPE = re.compile(r"\b(?:[A-Za-z_][\w$]*\.)+(?:[A-Za-z_][\w$]*)(?:Exception|Error)\b")
 SAFE_RUNNER_CLASS = re.compile(r"^INSTRUMENTATION_STATUS: (class|test|numtests)=(.*)$")
 SAFE_CODE = re.compile(r"^INSTRUMENTATION_(?:STATUS_)?CODE: -?\d+\s*$")
+LIVE_RESULT = re.compile(
+    r"MANGAFIRE_LIVE\|outcome=(CAPTCHA_REQUIRED|HTTP_RESPONSE|NETWORK_FAILURE|TIMEOUT|INDETERMINATE|EMPTY)"
+    r"(?:\|httpStatus=(\d{3}|unknown))?\|elapsedMs=(\d{1,7})"
+)
 MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
 MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')
 PUBLIC_CLASS_PREFIXES = ("androidx.test.", "eu.kanade.tachiyomi.", "mihon.", "org.junit.", "kotlin.")
@@ -42,6 +46,14 @@ def summarize(runner: str, crash: str) -> list[str]:
     if 'FATAL EXCEPTION' in crash:
         lines.append("DIAGNOSTIC|androidRuntimeCrash=true")
     classes.update(SAFE_JAVA_TYPE.findall(crash))
+    # The test itself emits this strictly allowlisted diagnostic on a failed live query.
+    # Do not print raw exceptions, URLs, cookies, HTTP bodies, or full runner output.
+    for kind, status, elapsed in sorted(set(LIVE_RESULT.findall(runner))):
+        lines.append(
+            "DIAGNOSTIC|liveOutcome=" + kind +
+            "|httpStatus=" + (status or "unknown") +
+            "|elapsedMs=" + elapsed
+        )
     missing_source = runner + "\n" + crash
     missing = set(MISSING_QUOTED_CLASS.findall(missing_source))
     missing.update(MISSING_DIRECT_CLASS.findall(missing_source))

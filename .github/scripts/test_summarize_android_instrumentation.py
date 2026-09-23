@@ -42,6 +42,16 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("missingRuntimeClass=OTHER", result)
         self.assertNotIn("com.example.secret", result)
 
+    def test_live_probe_reports_only_allowlisted_failure(self):
+        output = (
+            "MANGAFIRE_LIVE|outcome=HTTP_RESPONSE|httpStatus=403|elapsedMs=19897 "
+            "https://example.test/secret cookie=HIDDEN\n"
+        )
+        result = "\n".join(diagnostic.summarize(output, ""))
+        self.assertIn("liveOutcome=HTTP_RESPONSE|httpStatus=403|elapsedMs=19897", result)
+        self.assertNotIn("HIDDEN", result)
+        self.assertNotIn("https://", result)
+
     def test_absent_class_and_zero_test_are_observable(self):
         result = "\n".join(diagnostic.summarize("INSTRUMENTATION_STATUS: numtests=0\n", ""))
         self.assertIn("numtests=0", result)
