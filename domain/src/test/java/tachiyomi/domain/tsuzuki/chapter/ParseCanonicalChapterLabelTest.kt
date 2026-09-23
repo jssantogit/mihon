@@ -155,6 +155,24 @@ class ParseCanonicalChapterLabelTest {
     }
 
     @Test
+    fun `volume prefixed chapter labels retain explicit chapter identity`() {
+        val first = parse.execute("Vol. 1 Ch. 1", numericHint = 1.0)
+        val transition = parse.execute("Volume 12 - Chapter 137", numericHint = 137.0)
+        val fractional = parse.execute("Vol. 12 Ch. 137.5", numericHint = 137.5)
+
+        first.type shouldBe CanonicalChapterType.REGULAR
+        first.baseNumber shouldBe 1
+        first.confidence shouldBe 1.0
+        transition.baseNumber shouldBe 137
+        transition.part.shouldBeNull()
+        transition.confidence shouldBe 1.0
+        fractional.baseNumber shouldBe 137
+        fractional.part shouldBe 5
+        parse.execute("Vol. 12 Ch. 137 138", numericHint = 137.0)
+            .type shouldBe CanonicalChapterType.UNKNOWN
+    }
+
+    @Test
     fun `unknown labels do not fabricate structure from numeric hints`() {
         val unknown = parse.execute("Bonus chapter", numericHint = 12.0)
         val blankWithHint = parse.execute("", numericHint = 12.0)

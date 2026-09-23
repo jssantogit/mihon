@@ -133,6 +133,26 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `binding lookup failure is not misreported as extension inventory failure`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+        diagnostics.start("canonical-title")
+        val refresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = tachiyomi.domain.tsuzuki.content.interactor
+                .ContentBindingNotFoundException("No safe title match"),
+        )
+        refresh.execute("canonical-title").isSuccess shouldBe true
+
+        val event = diagnostics.events.single()
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
+        event.reasons[ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE] shouldBe 1
+    }
+
+    @Test
     fun `diagnostic classifies wrapped timeout and IO causes without changing refresh result`() = runTest {
         val diagnostics = RecordingDiagnostics()
         val addonId = AddonId("mangafire")
@@ -353,6 +373,7 @@ class RefreshChapterEvidenceTest {
         addonId: AddonId,
         bindingAvailable: Boolean,
         result: Result<List<ChapterEvidence>>,
+        bindingError: Throwable? = null,
     ): RefreshChapterEvidence {
         val probe = object : ChapterProbeProvider {
             override val addonId: AddonId = addonId
@@ -365,7 +386,8 @@ class RefreshChapterEvidenceTest {
         }
         val resolver = mockk<ResolveContentBinding>()
         coEvery { resolver.executeAll("canonical-title", addonId) } returns
-            Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
+            (bindingError?.let { Result.failure(it) }
+                ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList()))
 
         return RefreshChapterEvidence(
             registry = registry(emptyList()),
