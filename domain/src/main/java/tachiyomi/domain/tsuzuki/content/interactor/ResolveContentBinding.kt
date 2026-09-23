@@ -170,8 +170,8 @@ class ResolveContentBinding internal constructor(
                     language = best.candidate.language, received = candidates.size, accepted = 1)
             } else {
                 val reason = when {
-                    !unambiguousWithinSource -> ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
                     best.confidence < CONFIRMATION_THRESHOLD -> ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
+                    !unambiguousWithinSource -> ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
                     else -> ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
                 }
                 val outcome = when (reason) {
