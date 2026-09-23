@@ -262,9 +262,17 @@ class ResolveChapterContent(
 
         return inFlightContentResolution.execute(key) resolution@{
             contentOptionCache.get(key)?.let { cached ->
-                recordSelector(canonicalTitleId, provider.addonId,
-                    if (cached.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
-                    cached.size, ChapterInventoryDiagnosticReason.CACHED_OPTIONS)
+                recordSelector(
+                    canonicalTitleId,
+                    provider.addonId,
+                    if (cached.isEmpty()) {
+                        ChapterInventoryDiagnosticOutcome.EMPTY
+                    } else {
+                        ChapterInventoryDiagnosticOutcome.SUCCESS
+                    },
+                    cached.size,
+                    ChapterInventoryDiagnosticReason.CACHED_OPTIONS,
+                )
                 return@resolution Result.success(cached)
             }
             val result = try {
