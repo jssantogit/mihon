@@ -117,10 +117,13 @@ class MihonReadingSourceHttpIntegrationTest {
 
     @Test
     fun `network failure and response timeout have distinct structured categories`() = runTest {
-        val closedPortBaseUrl = ServerSocket(0).use { "http://127.0.0.1:${it.localPort}" }
-        LocalMihonSourceHarness(sourceBaseUrl = closedPortBaseUrl).use { harness ->
-            val network = harness.gateway.search(harness.source.id, "query").searchFailure()
-            network.kind shouldBe ReadingSourceFailureKind.NETWORK_FAILURE
+        ServerSocket(0).use { reservedPort ->
+            val closedPortBaseUrl = "http://127.0.0.1:${reservedPort.localPort}"
+            LocalMihonSourceHarness(sourceBaseUrl = closedPortBaseUrl).use { harness ->
+                reservedPort.close()
+                val network = harness.gateway.search(harness.source.id, "query").searchFailure()
+                network.kind shouldBe ReadingSourceFailureKind.NETWORK_FAILURE
+            }
         }
 
         LocalMihonSourceHarness(readTimeoutMillis = 25).use { harness ->
