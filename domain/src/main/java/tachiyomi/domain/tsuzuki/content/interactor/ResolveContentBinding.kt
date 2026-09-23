@@ -103,9 +103,14 @@ class ResolveContentBinding internal constructor(
         val availableBindings = existingBindings
             .filter { it.availability != ContentBindingAvailability.UNAVAILABLE }
         if (availableBindings.isNotEmpty()) {
-            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATCH,
-                ChapterInventoryDiagnosticOutcome.SUCCESS, accepted = availableBindings.size,
-                reason = ChapterInventoryDiagnosticReason.REUSED_BINDING)
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                ChapterInventoryDiagnosticOutcome.SUCCESS,
+                accepted = availableBindings.size,
+                reason = ChapterInventoryDiagnosticReason.REUSED_BINDING,
+            )
             return availableBindings.sortedWith(
                 compareBy<ContentBinding>({ it.createdAt }, { it.id }),
             )
@@ -153,9 +158,16 @@ class ResolveContentBinding internal constructor(
             val sourceId = sourceIds[rank]
             val best = candidates.firstOrNull()
             if (best == null) {
-                if (failure == null) recordBinding(canonicalTitleId, addonId,
-                    ChapterInventoryDiagnosticStage.BINDING_MATCH, ChapterInventoryDiagnosticOutcome.NO_MATCH,
-                    sourceId = sourceId, reason = ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS)
+                if (failure == null) {
+                    recordBinding(
+                        canonicalTitleId,
+                        addonId,
+                        ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                        ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                        sourceId = sourceId,
+                        reason = ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS,
+                    )
+                }
                 continue
             }
             val second = candidates.getOrNull(1)
@@ -165,23 +177,41 @@ class ResolveContentBinding internal constructor(
 
             if (highConfidence && unambiguousWithinSource) {
                 selected += best
-                recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATCH,
-                    ChapterInventoryDiagnosticOutcome.SUCCESS, sourceId = sourceId,
-                    language = best.candidate.language, received = candidates.size, accepted = 1)
+                recordBinding(
+                    canonicalTitleId,
+                    addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    ChapterInventoryDiagnosticOutcome.SUCCESS,
+                    sourceId = sourceId,
+                    language = best.candidate.language,
+                    received = candidates.size,
+                    accepted = 1,
+                )
             } else {
                 val reason = when {
-                    best.confidence < CONFIRMATION_THRESHOLD -> ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
-                    !unambiguousWithinSource -> ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
+                    best.confidence < CONFIRMATION_THRESHOLD ->
+                        ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
+                    !unambiguousWithinSource ->
+                        ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
                     else -> ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
                 }
                 val outcome = when (reason) {
-                    ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES -> ChapterInventoryDiagnosticOutcome.AMBIGUOUS
-                    ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD -> ChapterInventoryDiagnosticOutcome.NO_MATCH
+                    ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES ->
+                        ChapterInventoryDiagnosticOutcome.AMBIGUOUS
+                    ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD ->
+                        ChapterInventoryDiagnosticOutcome.NO_MATCH
                     else -> ChapterInventoryDiagnosticOutcome.PARTIAL
                 }
-                recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATCH,
-                    outcome, sourceId = sourceId, language = best.candidate.language,
-                    received = candidates.size, reason = reason)
+                recordBinding(
+                    canonicalTitleId,
+                    addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    outcome,
+                    sourceId = sourceId,
+                    language = best.candidate.language,
+                    received = candidates.size,
+                    reason = reason,
+                )
                 confirmationCandidates += candidates
                     .filter { it.confidence >= CONFIRMATION_THRESHOLD }
                     .take(MAX_CONFIRMATION_CANDIDATES)
@@ -222,14 +252,19 @@ class ResolveContentBinding internal constructor(
                 throw error
             } catch (error: Throwable) {
                 val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(error)
-                recordBinding(canonicalTitleId, addonId,
-                    ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION, outcome,
-                    sourceId = scored.candidate.sourceId, language = scored.candidate.language,
+                recordBinding(
+                    canonicalTitleId,
+                    addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                    outcome,
+                    sourceId = scored.candidate.sourceId,
+                    language = scored.candidate.language,
                     reason = if (outcome == ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR) {
                         ChapterInventoryDiagnosticReason.MATERIALIZATION_FAILED
                     } else {
                         failureReason
-                    })
+                    },
+                )
                 throw error
             }
 
@@ -255,16 +290,26 @@ class ResolveContentBinding internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                recordBinding(canonicalTitleId, addonId,
+                recordBinding(
+                    canonicalTitleId,
+                    addonId,
                     ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
                     ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR,
-                    sourceId = scored.candidate.sourceId, language = scored.candidate.language,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_PERSISTENCE_FAILED)
+                    sourceId = scored.candidate.sourceId,
+                    language = scored.candidate.language,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_PERSISTENCE_FAILED,
+                )
                 throw error
             }
-            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
-                ChapterInventoryDiagnosticOutcome.SUCCESS, sourceId = scored.candidate.sourceId,
-                language = scored.candidate.language, accepted = 1)
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                ChapterInventoryDiagnosticOutcome.SUCCESS,
+                sourceId = scored.candidate.sourceId,
+                language = scored.candidate.language,
+                accepted = 1,
+            )
             bindings += binding
         }
 
@@ -297,9 +342,16 @@ class ResolveContentBinding internal constructor(
             val matches = response.getOrElse { error ->
                 if (error is CancellationException) throw error
                 val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
-                recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.BINDING_SEARCH,
-                    outcome, sourceId = sourceId, attempt = attemptIndex + 1,
-                    elapsedMillis = started.elapsedNow().inWholeMilliseconds, reason = reason)
+                recordBinding(
+                    canonicalTitleId,
+                    addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_SEARCH,
+                    outcome,
+                    sourceId = sourceId,
+                    attempt = attemptIndex + 1,
+                    elapsedMillis = started.elapsedNow().inWholeMilliseconds,
+                    reason = reason,
+                )
                 return collected.distinctBy { it.sourceId to it.sourceUrl } to error
             }
             recordBinding(
@@ -359,23 +411,42 @@ class ResolveContentBinding internal constructor(
     private suspend fun requireExecutableAddon(canonicalTitleId: String, addonId: AddonId): InstalledAddon {
         val addon = addonRepository.snapshot().firstOrNull { it.id == addonId }
         if (addon == null) {
-            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
                 ChapterInventoryDiagnosticOutcome.NO_BINDING,
-                reason = ChapterInventoryDiagnosticReason.ADDON_NOT_INSTALLED)
+                reason = ChapterInventoryDiagnosticReason.ADDON_NOT_INSTALLED,
+            )
             throw ContentBindingNotFoundException("Add-on " + addonId.value + " is not installed")
         }
         if (!addon.enabled || addon.mihonSourceIds.isEmpty()) {
-            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
                 ChapterInventoryDiagnosticOutcome.DISABLED,
-                reason = ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED)
+                reason = ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED,
+            )
             throw ContentBindingNotFoundException("Add-on " + addonId.value + " has no enabled sources")
         }
-        recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
-            ChapterInventoryDiagnosticOutcome.SUCCESS, received = addon.mihonSourceIds.size,
-            accepted = addon.mihonSourceIds.size)
+        recordBinding(
+            canonicalTitleId,
+            addonId,
+            ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+            ChapterInventoryDiagnosticOutcome.SUCCESS,
+            received = addon.mihonSourceIds.size,
+            accepted = addon.mihonSourceIds.size,
+        )
         addon.mihonSourceIds.distinct().forEach { sourceId ->
-            recordBinding(canonicalTitleId, addonId, ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
-                ChapterInventoryDiagnosticOutcome.SUCCESS, sourceId = sourceId, accepted = 1)
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
+                ChapterInventoryDiagnosticOutcome.SUCCESS,
+                sourceId = sourceId,
+                accepted = 1,
+            )
         }
         return addon
     }
