@@ -132,22 +132,28 @@ class ReconcileChapterEvidenceTest {
             }
 
             observed.reconciler.execute("title", partial)
-            control.reconciler.execute("title", (138..234).map { number ->
-                control.addonEvidence(
-                    id = "observation-$number",
-                    rawLabel = "Chapter $number",
-                    externalKey = "chapter-$number",
-                )
-            })
+            control.reconciler.execute(
+                "title",
+                (138..234).map { number ->
+                    control.addonEvidence(
+                        id = "observation-$number",
+                        rawLabel = "Chapter $number",
+                        externalKey = "chapter-$number",
+                    )
+                },
+            )
             observed.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 97
             observed.reconciler.execute("title", complete)
-            control.reconciler.execute("title", (1..234).map { number ->
-                control.addonEvidence(
-                    id = "observation-$number",
-                    rawLabel = "Chapter $number",
-                    externalKey = "chapter-$number",
-                )
-            })
+            control.reconciler.execute(
+                "title",
+                (1..234).map { number ->
+                    control.addonEvidence(
+                        id = "observation-$number",
+                        rawLabel = "Chapter $number",
+                        externalKey = "chapter-$number",
+                    )
+                },
+            )
 
             val actual = observed.chapterRepository.getByCanonicalTitleId("title")
             val expected = control.chapterRepository.getByCanonicalTitleId("title")
