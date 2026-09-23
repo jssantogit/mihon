@@ -1,0 +1,3 @@
+Tsuzuki chapter inventory diagnostics: full CI verification request.
+Code baseline: 8ff1df6ea64e77dded3d73e254a56e6c77a9c317
+This text file exists solely to trigger CI v2.1's path-filtered push workflow; remove it before integration.
