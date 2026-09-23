@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AdaptiveSheet
+import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkState
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
@@ -86,6 +87,13 @@ fun ContentBindingLinkSheet(
                         ) { item ->
                             val candidate = item.candidate
                             ListItem(
+                                leadingContent = {
+                                    MangaCover.Book(
+                                        data = candidate.thumbnailUrl,
+                                        contentDescription = candidate.title,
+                                        modifier = Modifier.padding(end = 4.dp),
+                                    )
+                                },
                                 headlineContent = { Text(candidate.title) },
                                 supportingContent = {
                                     Column {

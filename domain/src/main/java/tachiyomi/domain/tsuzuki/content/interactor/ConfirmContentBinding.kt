@@ -57,7 +57,7 @@ class ConfirmContentBinding(
             require(
                 materialized.sourceId == candidate.sourceId &&
                     materialized.sourceUrl == candidate.sourceUrl &&
-                    materialized.runtimePayload.isNotEmpty()
+                    materialized.runtimePayload.isNotEmpty(),
             ) { "Materialized source does not match the explicitly selected candidate" }
 
             val existing = contentBindingRepository.getByTitle(canonicalTitleId)
