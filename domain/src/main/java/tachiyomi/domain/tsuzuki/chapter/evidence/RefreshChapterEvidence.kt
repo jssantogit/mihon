@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
@@ -183,9 +184,7 @@ class RefreshChapterEvidence private constructor(
                                             is ContentBindingNotFoundException ->
                                                 ChapterInventoryDiagnosticOutcome.NO_BINDING to
                                                     ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
-                                            else ->
-                                                error.toDiagnosticOutcome() to
-                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                            else -> ChapterInventoryDiagnosticFailures.classify(error)
                                         }
                                         recordRefreshOutcome(
                                             canonicalTitleId = canonicalTitleId,
@@ -304,19 +303,10 @@ class RefreshChapterEvidence private constructor(
         )
     }
 
-    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome {
-        val causes = generateSequence(this) { it.cause }.take(MAX_CAUSES).toList()
-        return when {
-            causes.any {
-                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
-            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT
-            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
-            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
-        }
-    }
+    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome =
+        ChapterInventoryDiagnosticFailures.classify(this).first
 
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
-        const val MAX_CAUSES = 5
     }
 }

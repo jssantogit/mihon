@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
@@ -84,10 +85,28 @@ class MihonChapterProbeProvider internal constructor(
             var successfulInventoryCount = 0
             var firstFailure: Throwable? = null
 
-            for ((_, inventoryResult) in inventoryResults) {
+            for ((binding, inventoryResult) in inventoryResults) {
                 val inventory = inventoryResult.getOrElse { error ->
                     if (error is CancellationException) throw error
                     firstFailure = firstFailure ?: error
+                    val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
+                    reasons.increment(reason)
+                    if (isDiagnosticsRecording(canonicalTitleId)) {
+                        val payload = runCatching { MihonContentBindingPayloadCodec.decode(binding.runtimePayload) }
+                            .getOrNull()
+                        diagnostics.recordIfEnabled(
+                            canonicalTitleId,
+                            ChapterInventoryDiagnosticEvent(
+                                stage = ChapterInventoryDiagnosticStage.PROBE,
+                                outcome = outcome,
+                                addonId = addonId.value,
+                                sourceId = payload?.sourceId,
+                                language = payload?.language,
+                                received = 0,
+                                reasons = mapOf(reason to 1),
+                            ),
+                        )
+                    }
                     continue
                 }
                 successfulInventoryCount++
@@ -240,16 +259,8 @@ class MihonChapterProbeProvider internal constructor(
         )
     }
 
-    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome {
-        val causes = generateSequence(this) { it.cause }.take(MAX_CAUSES).toList()
-        return when {
-            causes.any {
-                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
-            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT
-            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
-            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
-        }
-    }
+    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome =
+        ChapterInventoryDiagnosticFailures.classify(this).first
 
     private fun isDiagnosticsRecording(canonicalTitleId: String): Boolean = try {
         diagnostics.isRecording(canonicalTitleId)
@@ -274,7 +285,6 @@ class MihonChapterProbeProvider internal constructor(
 
     private companion object {
         const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
-        const val MAX_CAUSES = 5
         const val RELIABLE_CONFIDENCE = 0.95
     }
 }

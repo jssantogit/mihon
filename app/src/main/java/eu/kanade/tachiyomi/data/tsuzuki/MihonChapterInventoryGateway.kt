@@ -18,6 +18,7 @@ import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
@@ -32,10 +33,7 @@ import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
-import java.io.IOException
 import java.math.BigDecimal
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
 import kotlin.time.TimeSource
 
 /**
@@ -314,12 +312,13 @@ class MihonChapterInventoryGateway(
         elapsedMillis: Long,
         reason: ChapterInventoryDiagnosticReason? = null,
     ) {
-        val reasons = reason?.let { mapOf(it to 1) }.orEmpty()
+        val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(error)
+        val reasons = mapOf((reason ?: failureReason) to 1)
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
                 stage = ChapterInventoryDiagnosticStage.INVENTORY,
-                outcome = error.toDiagnosticOutcome(),
+                outcome = outcome,
                 sourceId = sourceId,
                 addonId = addonId,
                 language = language,
@@ -352,19 +351,4 @@ class MihonChapterInventoryGateway(
         false
     }
 
-    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome = when {
-        this is TimeoutCancellationException || this is SocketTimeoutException ||
-            causeChain().any { it is TimeoutCancellationException || it is SocketTimeoutException } ->
-            ChapterInventoryDiagnosticOutcome.TIMEOUT
-        this is IOException || causeChain().any { it is IOException || it is UnknownHostException } ->
-            ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
-        else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
-    }
-
-    private fun Throwable.causeChain(): Sequence<Throwable> =
-        generateSequence(cause) { it.cause }.take(MAX_CAUSES)
-
-    private companion object {
-        const val MAX_CAUSES = 5
-    }
 }
