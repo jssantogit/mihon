@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
@@ -114,8 +115,7 @@ class ResolveContentBindingTest {
         val result = resolver(FakeContentBindingRepository(null), gateway, title = "One-Punch Man")
             .executeAll("title", AddonId("mangadex"))
 
-        result.exceptionOrNull() is tachiyomi.domain.tsuzuki.content.interactor
-            .ContentBindingConfirmationRequiredException shouldBe true
+        (result.exceptionOrNull() is ContentBindingConfirmationRequiredException) shouldBe true
         gateway.materializeCalls shouldBe 0
     }
 

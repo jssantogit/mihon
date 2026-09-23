@@ -32,6 +32,7 @@ import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -142,8 +143,7 @@ class RefreshChapterEvidenceTest {
             addonId = addonId,
             bindingAvailable = false,
             result = Result.success(emptyList()),
-            bindingError = tachiyomi.domain.tsuzuki.content.interactor
-                .ContentBindingNotFoundException("No safe title match"),
+            bindingError = ContentBindingNotFoundException("No safe title match"),
         )
         refresh.execute("canonical-title").isSuccess shouldBe true
 
@@ -385,9 +385,9 @@ class RefreshChapterEvidenceTest {
             override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
         }
         val resolver = mockk<ResolveContentBinding>()
-        coEvery { resolver.executeAll("canonical-title", addonId) } returns
-            (bindingError?.let { Result.failure(it) }
-                ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList()))
+        val bindingResult: Result<List<ContentBinding>> = bindingError?.let { Result.failure(it) }
+            ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
+        coEvery { resolver.executeAll("canonical-title", addonId) } returns bindingResult
 
         return RefreshChapterEvidence(
             registry = registry(emptyList()),
