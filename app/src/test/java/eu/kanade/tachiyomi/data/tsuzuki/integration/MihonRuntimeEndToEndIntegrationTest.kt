@@ -109,6 +109,9 @@ class MihonRuntimeEndToEndIntegrationTest {
             journey.refresh()
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            journey.canonicalChapters.getVariantsByCanonicalChapterId(chapter.id).size shouldBe 2
+            journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
+                .map { it.mappedCanonicalChapterId }.filterNotNull().size shouldBe 2
             val options = journey.options(chapter.id)
 
             options.size shouldBe 2
@@ -122,7 +125,7 @@ class MihonRuntimeEndToEndIntegrationTest {
     @Test
     fun `unsafe title match does not create a binding`() = runTest {
         LocalMihonSourceHarness().use { harness ->
-            harness.enqueue(body = "/manga/unrelated\tOne Punch Manga")
+            harness.enqueue(body = "/manga/unrelated\tNaruto")
             val journey = RuntimeJourney(harness, "canonical-opm-unsafe")
 
             journey.bindResult().isFailure shouldBe true
@@ -376,13 +379,13 @@ class MihonRuntimeEndToEndIntegrationTest {
     }
 
     private class InMemoryContentBindings : ContentBindingRepository {
-        private val values = linkedMapOf<Pair<String, AddonId>, ContentBinding>()
+        private val values = linkedMapOf<String, ContentBinding>()
         override suspend fun get(canonicalTitleId: String, addonId: AddonId): ContentBinding? =
-            values[canonicalTitleId to addonId]
+            values.values.firstOrNull { it.canonicalTitleId == canonicalTitleId && it.addonId == addonId }
         override suspend fun getByTitle(canonicalTitleId: String): List<ContentBinding> =
             values.values.filter { it.canonicalTitleId == canonicalTitleId }
         override suspend fun upsert(binding: ContentBinding) {
-            values[binding.canonicalTitleId to binding.addonId] = binding
+            values[binding.id] = binding
         }
         override suspend fun markUnavailable(bindingId: String, updatedAt: Long) {
             values.replaceAll { _, binding ->

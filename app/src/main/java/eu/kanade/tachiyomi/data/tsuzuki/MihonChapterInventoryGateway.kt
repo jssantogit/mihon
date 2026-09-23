@@ -10,6 +10,8 @@ import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.model.SChapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.serialization.SerializationException
+import org.json.JSONException
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -31,6 +33,8 @@ import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import java.math.BigDecimal
@@ -153,19 +157,20 @@ class MihonChapterInventoryGateway(
             }
             throw error
         } catch (error: Throwable) {
+            val structuredError = error.toStructuredChapterInventoryFailure()
             recordInventoryFailure(
                 canonicalTitleId = mapping.canonicalTitleId,
                 sourceId = mapping.sourceId,
                 language = mapping.language,
                 addonId = null,
-                error = error,
+                error = structuredError,
                 elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
             )
             logcat {
                 "TsuzukiPerf inventory source=${mapping.sourceId} failed=${error.javaClass.simpleName} " +
                     "total=${totalStart.elapsedNow()}"
             }
-            Result.failure(error)
+            Result.failure(structuredError)
         }
     }
 
@@ -351,4 +356,29 @@ class MihonChapterInventoryGateway(
     } catch (_: Exception) {
         false
     }
+}
+
+/** Structures a chapter-list failure at the Mihon boundary while retaining its original cause. */
+internal fun Throwable.toStructuredChapterInventoryFailure(): ReadingSourceSearchFailure {
+    if (this is ReadingSourceSearchFailure) return this
+    val causes = generateSequence(this) { it.cause }.take(5).toList()
+    val httpStatus = diagnosticHttpStatus()
+    val kind = when {
+        httpStatus != null -> ReadingSourceFailureKind.HTTP_RESPONSE
+        causes.any { it is java.net.SocketTimeoutException || it is TimeoutCancellationException } ->
+            ReadingSourceFailureKind.TIMEOUT
+        causes.any { it is JSONException || it is SerializationException } ->
+            ReadingSourceFailureKind.MALFORMED_RESPONSE
+        causes.any { cause ->
+            val detail = cause.message.orEmpty()
+            detail.contains("captcha_required", ignoreCase = true) ||
+                detail.contains("shape-selecting captcha", ignoreCase = true)
+        } -> ReadingSourceFailureKind.CAPTCHA_REQUIRED
+        causes.any {
+            it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketException
+        } -> ReadingSourceFailureKind.NETWORK_FAILURE
+        causes.any { it is java.io.IOException } -> ReadingSourceFailureKind.INDETERMINATE
+        else -> ReadingSourceFailureKind.EXTENSION_FAILURE
+    }
+    return ReadingSourceSearchFailure(kind = kind, httpStatus = httpStatus, cause = this)
 }
