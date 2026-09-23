@@ -34,7 +34,17 @@ DEV_C = {
 }
 
 RULES = (
-    (("main", "tsuzuki/bootstrap", "tsuzuki/diagnostic-chapter-inventory", "tsuzuki/runtime-v2-integration*", "tsuzuki/runtime-v2-torrent*"), RELEASE),
+    (
+        (
+            "main",
+            "tsuzuki/bootstrap",
+            "tsuzuki/diagnostic-chapter-inventory",
+            "tsuzuki/fix-mangafire-binding",
+            "tsuzuki/runtime-v2-integration*",
+            "tsuzuki/runtime-v2-torrent*",
+        ),
+        RELEASE,
+    ),
     (("tsuzuki/mvp-v1-*", "tsuzuki/unified-library-dev-a*", "tsuzuki/runtime-v2-dev-a*"), DEV_A),
     (("tsuzuki/mvp-v2-*", "tsuzuki/unified-library-dev-b*", "tsuzuki/runtime-v2-dev-b*"), DEV_B),
     (("tsuzuki/mvp-v3-*", "tsuzuki/unified-library-dev-c*", "tsuzuki/runtime-v2-dev-c*"), DEV_C),

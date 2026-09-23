@@ -35,6 +35,12 @@ class ApkLaneTest(unittest.TestCase):
         self.assertEqual(diagnostic["task"], "assembleRelease")
         self.assertEqual(diagnostic["apk"], "app/build/outputs/apk/release/app-arm64-v8a-release.apk")
 
+    def test_mangafire_diagnostic_v2_uses_signed_release_lane(self):
+        diagnostic = resolve_lane("tsuzuki/fix-mangafire-binding")
+        self.assertEqual(diagnostic["lane"], "release")
+        self.assertEqual(diagnostic["task"], "assembleRelease")
+        self.assertEqual(diagnostic["apk"], "app/build/outputs/apk/release/app-arm64-v8a-release.apk")
+
     def test_unsupported_branch_is_rejected(self):
         with self.assertRaises(ValueError):
             resolve_lane("tsuzuki/random-experiment")
