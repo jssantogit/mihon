@@ -378,6 +378,8 @@ dependencies {
 
     // Separate, opt-in real-extension Android test lane.
     androidTestImplementation(libs.androidx.test.junit)
+    // The runner is the instrumentation entry point; ext:junit alone does not guarantee its DEX is packaged.
+    androidTestImplementation(libs.androidx.test.runner)
 
     // For detecting memory leaks; see https://square.github.io/leakcanary/
     // debugImplementation(libs.leakCanary.android)

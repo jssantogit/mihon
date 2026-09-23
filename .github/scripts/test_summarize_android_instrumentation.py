@@ -24,6 +24,19 @@ class SummaryTest(unittest.TestCase):
         self.assertNotIn("https://", result)
         self.assertNotIn("password", result)
 
+    def test_missing_instrumentation_runner_reports_only_safe_class(self):
+        crash = ('FATAL EXCEPTION: main\n'
+                 'java.lang.ClassNotFoundException: Didn\'t find class "androidx.test.runner.AndroidJUnitRunner"\n')
+        result = "\n".join(diagnostic.summarize("INSTRUMENTATION_CODE: 0\n", crash))
+        self.assertIn("missingRuntimeClass=androidx.test.runner.AndroidJUnitRunner", result)
+        self.assertNotIn("Didn\'t find class", result)
+
+    def test_missing_private_name_is_redacted(self):
+        crash = 'java.lang.ClassNotFoundException: Didn\'t find class "com.example.secret.Private"\n'
+        result = "\n".join(diagnostic.summarize("", crash))
+        self.assertIn("missingRuntimeClass=OTHER", result)
+        self.assertNotIn("com.example.secret", result)
+
     def test_absent_class_and_zero_test_are_observable(self):
         result = "\n".join(diagnostic.summarize("INSTRUMENTATION_STATUS: numtests=0\n", ""))
         self.assertIn("numtests=0", result)
