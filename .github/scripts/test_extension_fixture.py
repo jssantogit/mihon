@@ -41,6 +41,15 @@ class MangaFireFixtureTest(unittest.TestCase):
         result = subprocess.run(["bash", "-n", str(script)], check=False, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_android_junit_tests_return_void_on_jvm(self):
+        # A Kotlin expression-bodied @Test ending in Log.i() returns Int and JUnit4
+        # rejects it as InvalidTestClassError. A block body returns JVM void.
+        src = verifier.ROOT / "app/src/androidTest/java/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/MangaFireFixtureInstrumentedTest.kt"
+        content = src.read_text(encoding='utf-8')
+        for method in ("loadsRealExtensionAndRegistersInternalSources", "optionalLiveEnglishSearch"):
+            self.assertIn("    @Test\n    fun " + method + "() {\n        runBlocking {", content)
+            self.assertNotIn("fun " + method + "() = runBlocking", content)
+
     def test_apk_is_explicitly_binary_in_git(self):
         attributes = (verifier.ROOT / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("/test-fixtures/extensions/*.apk binary", attributes)

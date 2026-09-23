@@ -34,76 +34,80 @@ import java.net.UnknownHostException
 class MangaFireFixtureInstrumentedTest {
 
     @Test
-    fun loadsRealExtensionAndRegistersInternalSources() = runBlocking {
-        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as App
-        val extension = loadTrustedFixture(app)
-        assertEquals("1.6.34", extension.versionName)
-        assertEquals(
-            setOf("en", "es", "es-419", "fr", "ja", "pt", "pt-BR"),
-            extension.sources.map { it.lang }.toSet(),
-        )
+    fun loadsRealExtensionAndRegistersInternalSources() {
+        runBlocking {
+            val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as App
+            val extension = loadTrustedFixture(app)
+            assertEquals("1.6.34", extension.versionName)
+            assertEquals(
+                setOf("en", "es", "es-419", "fr", "ja", "pt", "pt-BR"),
+                extension.sources.map { it.lang }.toSet(),
+            )
 
-        val englishSource = extension.sources.single { it.lang == "en" }
-        assertEquals(6084907896154116083L, englishSource.id)
-        val registered = withTimeout(30_000L) {
-            app.graph.sourceManager.sources.first { sources ->
-                extension.sources.all { installed ->
-                    sources.any { it.id == installed.id }
+            val englishSource = extension.sources.single { it.lang == "en" }
+            assertEquals(6084907896154116083L, englishSource.id)
+            val registered = withTimeout(30_000L) {
+                app.graph.sourceManager.sources.first { sources ->
+                    extension.sources.all { installed ->
+                        sources.any { it.id == installed.id }
+                    }
                 }
             }
+            assertTrue(registered.any { it.id == englishSource.id })
+            Log.i(LOG_TAG, "MANGAFIRE_FIXTURE|load=SUCCESS|registered=" + extension.sources.size)
         }
-        assertTrue(registered.any { it.id == englishSource.id })
-        Log.i(LOG_TAG, "MANGAFIRE_FIXTURE|load=SUCCESS|registered=" + extension.sources.size)
     }
 
     @Test
-    fun optionalLiveEnglishSearch() = runBlocking {
-        assumeTrue(
-            "Live provider probe must be explicitly enabled in a manually dispatched workflow",
-            InstrumentationRegistry.getArguments().getString("allowLiveProvider") == "true",
-        )
-        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as App
-        val extension = loadTrustedFixture(app)
-        val source = extension.sources.single { it.lang == "en" } as CatalogueSource
-        val startedAt = SystemClock.elapsedRealtime()
-
-        val result = try {
-            withTimeout(40_000L) {
-                withContext(Dispatchers.IO) {
-                    source.getSearchManga(1, "One Punch Man", source.getFilterList())
-                }
-            }
-        } catch (cancel: CancellationException) {
-            if (cancel !is TimeoutCancellationException) throw cancel
-            val elapsed = SystemClock.elapsedRealtime() - startedAt
-            fail("MANGAFIRE_LIVE|outcome=TIMEOUT|elapsedMs=" + elapsed)
-            return@runBlocking
-        } catch (error: Throwable) {
-            val causes = generateSequence(error) { it.cause }.take(5).toList()
-            val status = causes.filterIsInstance<HttpException>()
-                .map(HttpException::code).firstOrNull { it in 100..599 }
-            val explicitCaptcha = causes.any {
-                it.message.orEmpty().contains("captcha_required", ignoreCase = true) ||
-                    it.message.orEmpty().contains("shape-selecting captcha", ignoreCase = true)
-            }
-            val kind = when {
-                explicitCaptcha -> "CAPTCHA_REQUIRED"
-                causes.any { it is SocketTimeoutException } -> "TIMEOUT"
-                status != null -> "HTTP_RESPONSE"
-                causes.any { it is ConnectException || it is UnknownHostException } -> "NETWORK_FAILURE"
-                else -> "INDETERMINATE"
-            }
-            val elapsed = SystemClock.elapsedRealtime() - startedAt
-            // Never attach the throwable or print response bodies, raw URLs, headers, or cookies.
-            fail(
-                "MANGAFIRE_LIVE|outcome=" + kind + "|httpStatus=" + (status ?: "unknown") +
-                    "|elapsedMs=" + elapsed,
+    fun optionalLiveEnglishSearch() {
+        runBlocking {
+            assumeTrue(
+                "Live provider probe must be explicitly enabled in a manually dispatched workflow",
+                InstrumentationRegistry.getArguments().getString("allowLiveProvider") == "true",
             )
-            return@runBlocking
+            val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as App
+            val extension = loadTrustedFixture(app)
+            val source = extension.sources.single { it.lang == "en" } as CatalogueSource
+            val startedAt = SystemClock.elapsedRealtime()
+
+            val result = try {
+                withTimeout(40_000L) {
+                    withContext(Dispatchers.IO) {
+                        source.getSearchManga(1, "One Punch Man", source.getFilterList())
+                    }
+                }
+            } catch (cancel: CancellationException) {
+                if (cancel !is TimeoutCancellationException) throw cancel
+                val elapsed = SystemClock.elapsedRealtime() - startedAt
+                fail("MANGAFIRE_LIVE|outcome=TIMEOUT|elapsedMs=" + elapsed)
+                return@runBlocking
+            } catch (error: Throwable) {
+                val causes = generateSequence(error) { it.cause }.take(5).toList()
+                val status = causes.filterIsInstance<HttpException>()
+                    .map(HttpException::code).firstOrNull { it in 100..599 }
+                val explicitCaptcha = causes.any {
+                    it.message.orEmpty().contains("captcha_required", ignoreCase = true) ||
+                        it.message.orEmpty().contains("shape-selecting captcha", ignoreCase = true)
+                }
+                val kind = when {
+                    explicitCaptcha -> "CAPTCHA_REQUIRED"
+                    causes.any { it is SocketTimeoutException } -> "TIMEOUT"
+                    status != null -> "HTTP_RESPONSE"
+                    causes.any { it is ConnectException || it is UnknownHostException } -> "NETWORK_FAILURE"
+                    else -> "INDETERMINATE"
+                }
+                val elapsed = SystemClock.elapsedRealtime() - startedAt
+                // Never attach the throwable or print response bodies, raw URLs, headers, or cookies.
+                fail(
+                    "MANGAFIRE_LIVE|outcome=" + kind + "|httpStatus=" + (status ?: "unknown") +
+                        "|elapsedMs=" + elapsed,
+                )
+                return@runBlocking
+            }
+            val elapsed = SystemClock.elapsedRealtime() - startedAt
+            Log.i(LOG_TAG, "MANGAFIRE_LIVE|outcome=SUCCESS|received=" + result.mangas.size + "|elapsedMs=" + elapsed)
+            assertTrue("MANGAFIRE_LIVE|outcome=EMPTY|elapsedMs=" + elapsed, result.mangas.isNotEmpty())
         }
-        val elapsed = SystemClock.elapsedRealtime() - startedAt
-        Log.i(LOG_TAG, "MANGAFIRE_LIVE|outcome=SUCCESS|received=" + result.mangas.size + "|elapsedMs=" + elapsed)
-        assertTrue("MANGAFIRE_LIVE|outcome=EMPTY|elapsedMs=" + elapsed, result.mangas.isNotEmpty())
     }
 
     private suspend fun loadTrustedFixture(app: App): Extension.Installed {

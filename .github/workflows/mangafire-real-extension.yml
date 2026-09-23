@@ -60,6 +60,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
       - name: Compile instrumentation sources (no emulator or live requests)
         run: ./gradlew :app:compileDebugAndroidTestKotlin
+      - name: Verify JUnit methods have JVM void signatures
+        run: |
+          set -euo pipefail
+          class_file="$(find app/build -type f -name 'MangaFireFixtureInstrumentedTest.class' -print -quit)"
+          test -n "$class_file"
+          suffix='/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/MangaFireFixtureInstrumentedTest.class'
+          class_dir="${class_file%$suffix}"
+          class="eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest"
+          javap -classpath "$class_dir" "$class" > junit-signatures.txt
+          grep -F 'public final void loadsRealExtensionAndRegistersInternalSources();' junit-signatures.txt
+          grep -F 'public final void optionalLiveEnglishSearch();' junit-signatures.txt
 
   emulator:
     name: Load real APK in isolated emulator
