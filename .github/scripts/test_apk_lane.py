@@ -29,6 +29,12 @@ class ApkLaneTest(unittest.TestCase):
         self.assertEqual(resolve_lane("tsuzuki/mvp-v2-canonical")["lane"], "dev-b")
         self.assertEqual(resolve_lane("tsuzuki/mvp-v3-sync")["lane"], "dev-c")
 
+    def test_diagnostic_chapter_inventory_uses_release(self):
+        diagnostic = resolve_lane("tsuzuki/diagnostic-chapter-inventory")
+        self.assertEqual(diagnostic["lane"], "release")
+        self.assertEqual(diagnostic["task"], "assembleRelease")
+        self.assertEqual(diagnostic["apk"], "app/build/outputs/apk/release/app-arm64-v8a-release.apk")
+
     def test_unsupported_branch_is_rejected(self):
         with self.assertRaises(ValueError):
             resolve_lane("tsuzuki/random-experiment")

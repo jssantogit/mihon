@@ -35,8 +35,12 @@ class ParseCanonicalChapterLabel {
             return semantic.toParsed(original, hint)
         }
 
-        val hasExplicitChapterPrefix = CHAPTER_PREFIX.find(normalized) != null
-        val chapterText = removeChapterPrefix(normalized)
+        // Mihon Add-ons commonly prefix the chapter with a volume. Strip only a
+        // well-formed volume prefix followed by an explicit chapter marker:
+        // "Vol. 3 Ch. 137" is safe, while "Vol. 3 Extra" stays ambiguous.
+        val chapterSourceText = LEADING_VOLUME_PREFIX.replaceFirst(normalized, "")
+        val hasExplicitChapterPrefix = CHAPTER_PREFIX.find(chapterSourceText) != null
+        val chapterText = removeChapterPrefix(chapterSourceText)
         parsePlaceholderSemantic(chapterText)?.let { semantic ->
             return semantic.toParsed(original, hint)
         }
@@ -333,6 +337,12 @@ class ParseCanonicalChapterLabel {
 
     private companion object {
         // Accent-free forms are used because input is normalized before matching.
+        // MangaDex builds chapter names like "Vol.1 Ch.1", while other sources
+        // may insert spaces or use a nonnumeric volume marker.
+        val LEADING_VOLUME_PREFIX = Regex(
+            "^vol(?:ume)?\\.?\\s*(?:\\d+|none)(?:\\s*[-:|/]\\s*|\\s+)" +
+                "(?=(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*\\d)",
+        )
         val CHAPTER_PREFIX = Regex("^(?:ch(?:apter)?|capitulo)\\s*\\.?\\s*")
         val ZERO_PLACEHOLDER_SEMANTIC = Regex("^0(?:[.]0+)?\\s*[-:]\\s*(.+)$")
         val SPECIAL_PREFIX =

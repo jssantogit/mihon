@@ -20,12 +20,20 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -34,6 +42,8 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import java.io.IOException
+import java.net.SocketTimeoutException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RefreshChapterEvidenceTest {
@@ -81,6 +91,117 @@ class RefreshChapterEvidenceTest {
 
         chapters.getByCanonicalTitleId("canonical-title")
             .map { it.displayNumber } shouldContainExactly listOf("3")
+    }
+
+    @Test
+    fun `diagnostic distinguishes timeout empty inventory and absent binding`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+
+        diagnostics.start("canonical-title")
+        val timeoutRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = true,
+            result = Result.failure(SocketTimeoutException("sensitive network detail")),
+        )
+        timeoutRefresh.execute("canonical-title").isSuccess shouldBe true
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+
+        diagnostics.clear()
+        diagnostics.start("canonical-title")
+        val emptyRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = true,
+            result = Result.success(emptyList()),
+        )
+        emptyRefresh.execute("canonical-title").isSuccess shouldBe true
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.EMPTY
+
+        diagnostics.clear()
+        diagnostics.start("canonical-title")
+        val noBindingRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+        )
+        noBindingRefresh.execute("canonical-title").isSuccess shouldBe true
+        val noBindingEvent = diagnostics.events.single()
+        noBindingEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
+        noBindingEvent.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
+        diagnostics.report().contains("sensitive network detail") shouldBe false
+    }
+
+    @Test
+    fun `binding lookup failure is not misreported as extension inventory failure`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+        diagnostics.start("canonical-title")
+        val refresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingNotFoundException("No safe title match"),
+        )
+        refresh.execute("canonical-title").isSuccess shouldBe true
+
+        val event = diagnostics.events.single()
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
+        event.reasons[ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE] shouldBe 1
+    }
+
+    @Test
+    fun `ambiguous source binding remains an explicit confirmation requirement`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+        diagnostics.start("canonical-title")
+        val refresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            bindingError = ContentBindingConfirmationRequiredException(emptyList()),
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        val event = diagnostics.events.single()
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
+        event.reasons[ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED] shouldBe 1
+    }
+
+    @Test
+    fun `diagnostic classifies wrapped timeout and IO causes without changing refresh result`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+
+        diagnostics.start("canonical-title")
+        val timeoutRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = true,
+            result = Result.failure(
+                IllegalStateException("wrapper", SocketTimeoutException("private timeout")),
+            ),
+        )
+        timeoutRefresh.execute("canonical-title").isSuccess shouldBe true
+        val timeoutEvent = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+        timeoutEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+
+        diagnostics.clear()
+        diagnostics.start("canonical-title")
+        val networkRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = true,
+            result = Result.failure(IllegalStateException("wrapper", IOException("private network detail"))),
+        )
+        networkRefresh.execute("canonical-title").isSuccess shouldBe true
+        val networkEvent = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+        networkEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        diagnostics.report().contains("private network detail") shouldBe false
     }
 
     @Test
@@ -219,6 +340,7 @@ class RefreshChapterEvidenceTest {
             addonRegistry = addons,
             resolveContentBinding = resolver,
             contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
         )
 
         val pending = async { refresh.execute("canonical-title") }
@@ -266,6 +388,41 @@ class RefreshChapterEvidenceTest {
         )
     }
 
+    private fun refreshWithProbe(
+        diagnostics: RecordingDiagnostics,
+        addonId: AddonId,
+        bindingAvailable: Boolean,
+        result: Result<List<ChapterEvidence>>,
+        bindingError: Throwable? = null,
+    ): RefreshChapterEvidence {
+        val probe = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> = result
+        }
+        val addonRegistry = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        val bindingResult: Result<List<ContentBinding>> = bindingError?.let { Result.failure(it) }
+            ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
+        coEvery { resolver.executeAll("canonical-title", addonId) } returns bindingResult
+
+        return RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = FakeCanonicalChapterRepository(),
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addonRegistry,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = diagnostics,
+        )
+    }
+
     private fun provider(
         id: String,
         result: Result<List<ChapterEvidence>>,
@@ -304,6 +461,33 @@ class RefreshChapterEvidenceTest {
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = providers
         override fun ratingsProviders(): List<RatingsProvider> = emptyList()
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
+    }
+
+    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+        private var recordingTitle: String? = null
+
+        override fun start(canonicalTitleId: String): String {
+            recordingTitle = canonicalTitleId
+            return "test-session"
+        }
+
+        override fun stop() {
+            recordingTitle = null
+        }
+
+        override fun clear() {
+            events.clear()
+            recordingTitle = null
+        }
+
+        override fun isRecording(canonicalTitleId: String): Boolean = recordingTitle == canonicalTitleId
+
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            if (recordingTitle != null) events += event
+        }
+
+        override fun report(): String = events.joinToString("\n")
     }
 
     private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {

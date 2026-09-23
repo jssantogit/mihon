@@ -12,6 +12,7 @@ import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
@@ -87,6 +88,7 @@ class RuntimeV2SmokeReadinessTest {
             addonRegistry = addonRegistry,
             resolveContentBinding = bindingResolver,
             contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
         )
 
         refresh.execute(TITLE_ID).isSuccess shouldBe true

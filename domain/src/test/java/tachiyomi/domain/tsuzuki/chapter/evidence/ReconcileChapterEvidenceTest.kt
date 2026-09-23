@@ -6,6 +6,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -77,6 +83,94 @@ class ReconcileChapterEvidenceTest {
             externalChapterKey = "suspicious-9-46",
         )?.mappedCanonicalChapterId shouldBe null
     }
+
+    @Test
+    fun `diagnostic records low confidence evidence as provisional without changing reconciliation`() = runTest {
+        val diagnostics = RecordingDiagnostics().apply { start("title") }
+        val fixture = fixture(diagnostics)
+        val observation = fixture.addonEvidence(
+            rawLabel = "Chapter 9.46",
+            externalKey = "suspicious-9-46",
+        )
+
+        fixture.reconciler.execute("title", listOf(observation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 0
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "suspicious-9-46",
+        )?.mappedCanonicalChapterId shouldBe null
+        val event = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.RECONCILIATION }
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.LOW_CONFIDENCE
+        event.received shouldBe 1
+        event.accepted shouldBe 0
+        event.provisional shouldBe 1
+        event.discarded shouldBe 0
+        event.reasons[ChapterInventoryDiagnosticReason.LOW_CONFIDENCE] shouldBe 1
+    }
+
+    @Test
+    fun `partial persisted sequence followed by complete inventory reports first boundary and preserves final graph`() =
+        runTest {
+            val diagnostics = RecordingDiagnostics().apply { start("title") }
+            val observed = fixture(diagnostics)
+            val control = fixture()
+            val partial = (138..234).map { number ->
+                observed.addonEvidence(
+                    id = "observation-$number",
+                    rawLabel = "Chapter $number",
+                    externalKey = "chapter-$number",
+                )
+            }
+            val complete = (1..234).map { number ->
+                observed.addonEvidence(
+                    id = "observation-$number",
+                    rawLabel = "Chapter $number",
+                    externalKey = "chapter-$number",
+                )
+            }
+
+            observed.reconciler.execute("title", partial)
+            control.reconciler.execute(
+                "title",
+                (138..234).map { number ->
+                    control.addonEvidence(
+                        id = "observation-$number",
+                        rawLabel = "Chapter $number",
+                        externalKey = "chapter-$number",
+                    )
+                },
+            )
+            observed.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 97
+            observed.reconciler.execute("title", complete)
+            control.reconciler.execute(
+                "title",
+                (1..234).map { number ->
+                    control.addonEvidence(
+                        id = "observation-$number",
+                        rawLabel = "Chapter $number",
+                        externalKey = "chapter-$number",
+                    )
+                },
+            )
+
+            val actual = observed.chapterRepository.getByCanonicalTitleId("title")
+            val expected = control.chapterRepository.getByCanonicalTitleId("title")
+            actual shouldHaveSize 234
+            actual.map { it.identity to it.displayNumber }.toSet() shouldBe
+                expected.map { it.identity to it.displayNumber }.toSet()
+            val reconciliationEvents = diagnostics.events.filter {
+                it.stage == ChapterInventoryDiagnosticStage.RECONCILIATION
+            }
+            reconciliationEvents.map { it.received } shouldBe listOf(97, 234)
+            reconciliationEvents.first().labels.first() shouldBe "138"
+            reconciliationEvents.last().labels.first() shouldBe "1"
+            val persistenceEvents = diagnostics.events.filter {
+                it.stage == ChapterInventoryDiagnosticStage.PERSISTENCE
+            }
+            persistenceEvents.last().accepted shouldBe 234
+        }
 
     @Test
     fun `decimal and extra evidence remain distinct logical chapters`() = runTest {
@@ -253,7 +347,7 @@ class ReconcileChapterEvidenceTest {
         remaining.confirmation shouldBe CanonicalChapterConfirmation.CONFIRMED
     }
 
-    private fun fixture(): Fixture {
+    private fun fixture(diagnostics: ChapterInventoryDiagnostics? = null): Fixture {
         val chapterRepository = FakeCanonicalChapterRepository()
         val evidenceRepository = FakeChapterEvidenceRepository()
         var nextId = 0
@@ -263,6 +357,7 @@ class ReconcileChapterEvidenceTest {
             evidenceRepository = evidenceRepository,
             idFactory = { "chapter-${++nextId}" },
             clock = { 100L },
+            diagnostics = diagnostics ?: NoOpChapterInventoryDiagnostics,
         )
         return Fixture(reconciler, chapterRepository, evidenceRepository)
     }
@@ -309,6 +404,33 @@ class ReconcileChapterEvidenceTest {
             confidence = 1.0,
             authority = ChapterEvidenceAuthority.EDITORIAL,
         )
+    }
+
+    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+        private var recordingTitle: String? = null
+
+        override fun start(canonicalTitleId: String): String {
+            recordingTitle = canonicalTitleId
+            return "test-session"
+        }
+
+        override fun stop() {
+            recordingTitle = null
+        }
+
+        override fun clear() {
+            events.clear()
+            recordingTitle = null
+        }
+
+        override fun isRecording(canonicalTitleId: String): Boolean = recordingTitle == canonicalTitleId
+
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            if (recordingTitle != null) events += event
+        }
+
+        override fun report(): String = events.joinToString("\n")
     }
 
     private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {

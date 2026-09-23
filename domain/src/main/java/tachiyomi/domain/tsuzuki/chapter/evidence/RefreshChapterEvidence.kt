@@ -8,7 +8,16 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
@@ -18,6 +27,7 @@ class RefreshChapterEvidence private constructor(
     private val addonRegistry: AddonRegistry?,
     private val resolveContentBinding: ResolveContentBinding?,
     private val contentOptionCache: ContentOptionCache?,
+    private val diagnostics: ChapterInventoryDiagnostics,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
@@ -28,12 +38,14 @@ class RefreshChapterEvidence private constructor(
         addonRegistry: AddonRegistry,
         resolveContentBinding: ResolveContentBinding,
         contentOptionCache: ContentOptionCache,
+        diagnostics: ChapterInventoryDiagnostics,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
         addonRegistry = addonRegistry,
         resolveContentBinding = resolveContentBinding,
         contentOptionCache = contentOptionCache,
+        diagnostics = diagnostics,
         constructorMarker = Unit,
     )
 
@@ -46,6 +58,7 @@ class RefreshChapterEvidence private constructor(
         addonRegistry = null,
         resolveContentBinding = null,
         contentOptionCache = null,
+        diagnostics = NoOpChapterInventoryDiagnostics,
         constructorMarker = Unit,
     )
 
@@ -65,8 +78,20 @@ class RefreshChapterEvidence private constructor(
             contentOptionCache?.invalidateTitle(canonicalTitleId)
             Result.success(Unit)
         } catch (error: CancellationException) {
+            if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                recordRefreshOutcome(
+                    canonicalTitleId = canonicalTitleId,
+                    outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                )
+            }
             throw error
         } catch (error: Throwable) {
+            recordRefreshOutcome(
+                canonicalTitleId = canonicalTitleId,
+                outcome = error.toDiagnosticOutcome(),
+                reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+            )
             Result.failure(error)
         }
     }
@@ -91,12 +116,21 @@ class RefreshChapterEvidence private constructor(
                                     },
                                     onFailure = { error ->
                                         if (error is CancellationException) throw error
+                                        recordRefreshOutcome(
+                                            canonicalTitleId = canonicalTitleId,
+                                            outcome = error.toDiagnosticOutcome(),
+                                            received = 0,
+                                        )
                                         emptyList()
                                     },
                                 )
                         } catch (error: CancellationException) {
                             throw error
-                        } catch (_: Throwable) {
+                        } catch (error: Throwable) {
+                            recordRefreshOutcome(
+                                canonicalTitleId = canonicalTitleId,
+                                outcome = error.toDiagnosticOutcome(),
+                            )
                             emptyList()
                         }
                     }
@@ -111,7 +145,25 @@ class RefreshChapterEvidence private constructor(
     ): List<ChapterEvidence> {
         val addonRegistry = addonRegistry ?: return emptyList()
         val resolver = resolveContentBinding ?: return emptyList()
-        addonRegistry.awaitReady()
+        try {
+            addonRegistry.awaitReady()
+        } catch (error: CancellationException) {
+            if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                recordRefreshOutcome(
+                    canonicalTitleId = canonicalTitleId,
+                    outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                )
+            }
+            throw error
+        } catch (error: Throwable) {
+            recordRefreshOutcome(
+                canonicalTitleId = canonicalTitleId,
+                outcome = error.toDiagnosticOutcome(),
+                reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+            )
+            throw error
+        }
 
         return coroutineScope {
             val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
@@ -124,27 +176,82 @@ class RefreshChapterEvidence private constructor(
                                     .executeAll(canonicalTitleId, provider.addonId)
                                     .getOrElse { error ->
                                         if (error is CancellationException) throw error
+                                        val (outcome, reason) = when (error) {
+                                            is ContentBindingConfirmationRequiredException ->
+                                                ChapterInventoryDiagnosticOutcome.PARTIAL to
+                                                    ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+                                            is ContentBindingNotFoundException ->
+                                                ChapterInventoryDiagnosticOutcome.NO_BINDING to
+                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                            else ->
+                                                error.toDiagnosticOutcome() to
+                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                        }
+                                        recordRefreshOutcome(
+                                            canonicalTitleId = canonicalTitleId,
+                                            addonId = provider.addonId.value,
+                                            outcome = outcome,
+                                            reason = reason,
+                                        )
                                         return@withPermit emptyList()
                                     }
-                                if (bindings.isEmpty()) return@withPermit emptyList()
+                                if (bindings.isEmpty()) {
+                                    recordRefreshOutcome(
+                                        canonicalTitleId = canonicalTitleId,
+                                        addonId = provider.addonId.value,
+                                        outcome = ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                                        reason = ChapterInventoryDiagnosticReason.NO_BINDING,
+                                    )
+                                    return@withPermit emptyList()
+                                }
 
                                 provider.probe(canonicalTitleId)
                                     .fold(
                                         onSuccess = { observations ->
-                                            observations.takeIf {
+                                            val accepted = observations.takeIf {
                                                 it.all { observation ->
                                                     observation.canonicalTitleId == canonicalTitleId
                                                 }
                                             }.orEmpty()
+                                            recordRefreshOutcome(
+                                                canonicalTitleId = canonicalTitleId,
+                                                addonId = provider.addonId.value,
+                                                outcome = if (accepted.isEmpty()) {
+                                                    ChapterInventoryDiagnosticOutcome.EMPTY
+                                                } else {
+                                                    ChapterInventoryDiagnosticOutcome.SUCCESS
+                                                },
+                                                received = observations.size,
+                                                accepted = accepted.size,
+                                                discarded = observations.size - accepted.size,
+                                            )
+                                            accepted
                                         },
                                         onFailure = { error ->
                                             if (error is CancellationException) throw error
+                                            recordRefreshOutcome(
+                                                canonicalTitleId = canonicalTitleId,
+                                                addonId = provider.addonId.value,
+                                                outcome = error.toDiagnosticOutcome(),
+                                            )
                                             emptyList()
                                         },
                                     )
                             } catch (error: CancellationException) {
+                                if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                                    recordRefreshOutcome(
+                                        canonicalTitleId = canonicalTitleId,
+                                        addonId = provider.addonId.value,
+                                        outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
+                                    )
+                                }
                                 throw error
-                            } catch (_: Throwable) {
+                            } catch (error: Throwable) {
+                                recordRefreshOutcome(
+                                    canonicalTitleId = canonicalTitleId,
+                                    addonId = provider.addonId.value,
+                                    outcome = error.toDiagnosticOutcome(),
+                                )
                                 emptyList()
                             }
                         }
@@ -173,7 +280,43 @@ class RefreshChapterEvidence private constructor(
         }
     }
 
+    private fun recordRefreshOutcome(
+        canonicalTitleId: String,
+        addonId: String? = null,
+        outcome: ChapterInventoryDiagnosticOutcome,
+        reason: ChapterInventoryDiagnosticReason? = null,
+        received: Int = 0,
+        accepted: Int = 0,
+        discarded: Int = 0,
+    ) {
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.PROBE,
+                outcome = outcome,
+                addonId = addonId,
+                received = received,
+                accepted = accepted,
+                provisional = 0,
+                discarded = discarded,
+                reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+            ),
+        )
+    }
+
+    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome {
+        val causes = generateSequence(this) { it.cause }.take(MAX_CAUSES).toList()
+        return when {
+            causes.any {
+                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
+            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT
+            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
+        }
+    }
+
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
+        const val MAX_CAUSES = 5
     }
 }

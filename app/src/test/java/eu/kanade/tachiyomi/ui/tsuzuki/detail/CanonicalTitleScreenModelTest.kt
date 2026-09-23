@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.detail
 
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.RecordingChapterInventoryDiagnostics
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
@@ -173,6 +175,7 @@ class CanonicalTitleScreenModelTest {
                 evidenceRepository = evidenceRepository,
             ),
         )
+        val diagnostics = RecordingChapterInventoryDiagnostics().apply { start("title") }
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -192,6 +195,7 @@ class CanonicalTitleScreenModelTest {
             addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
+            diagnostics = diagnostics,
         )
 
         model.start("title")
@@ -202,6 +206,12 @@ class CanonicalTitleScreenModelTest {
         state.chapters.single().chapter.id shouldBe "chapter-37"
         state.addonCoverage.single().displayName shouldBe "MangaFire"
         state.addonCoverage.single().firstKnownNumber shouldBe 37
+        val uiEvents = diagnostics.events.filter { it.stage == ChapterInventoryDiagnosticStage.UI }
+        uiEvents.first().received shouldBe 1
+        val uiEvent = uiEvents.last()
+        uiEvent.accepted shouldBe 1
+        uiEvent.provisional shouldBe 1
+        uiEvent.inferred shouldBe 0
     }
 
     @Test
@@ -483,6 +493,7 @@ class CanonicalTitleScreenModelTest {
             )
             val downloads = mockk<CanonicalDownloadRepository>()
             coEvery { downloads.getAll() } returns emptyList()
+            val diagnostics = RecordingChapterInventoryDiagnostics().apply { start("title") }
             val materializer = MaterializeInferredChapter(chapters, ChapterMutationGate())
             val model = CanonicalTitleScreenModel(
                 canonicalTitleRepository = FakeTitleRepository(),
@@ -510,6 +521,7 @@ class CanonicalTitleScreenModelTest {
                         evidenceRepository = FakeEvidenceRepository(),
                     ),
                 ),
+                diagnostics = diagnostics,
             )
             model.start("title")
             advanceUntilIdle()
@@ -520,6 +532,12 @@ class CanonicalTitleScreenModelTest {
             current.chapters.last().chapter.displayNumber shouldBe "108"
             current.chapters.all(CanonicalChapterDetailItem::inferredFromCount) shouldBe true
             chapters.getByCanonicalTitleId("title") shouldBe emptyList()
+            val uiEvents = diagnostics.events.filter { it.stage == ChapterInventoryDiagnosticStage.UI }
+            uiEvents.first().received shouldBe 0
+            val uiEvent = uiEvents.last()
+            uiEvent.accepted shouldBe 0
+            uiEvent.inferred shouldBe 108
+            uiEvent.discarded shouldBe 0
 
             val opened = mutableListOf<String>()
             model.openChapter(inferredChapterId("title", 37), opened::add)

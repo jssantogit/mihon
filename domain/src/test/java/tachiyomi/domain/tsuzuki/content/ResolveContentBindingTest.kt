@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
@@ -18,6 +20,7 @@ import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
+import java.io.IOException
 
 class ResolveContentBindingTest {
 
@@ -77,6 +80,58 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `source search retries punctuation variants without unverified title binding`() = runTest {
+        val repository = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway(
+            searchResultsByQuery = mapOf(
+                (7L to "One Punch Man") to listOf(
+                    candidate(sourceId = 7L, sourceUrl = "/one-punch-man", title = "One Punch-Man"),
+                ),
+            ),
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 42L,
+                sourceId = 7L,
+                sourceUrl = "/one-punch-man",
+                language = "en",
+                runtimePayload = byteArrayOf(1),
+            ),
+        )
+        val resolver = resolver(repository, gateway, title = "One-Punch Man")
+
+        val bindings = resolver.executeAll("title", AddonId("mangadex")).getOrThrow()
+
+        bindings.single().providerTitleKey shouldBe "7:/one-punch-man"
+        gateway.searchedQueries shouldBe listOf("One-Punch Man", "One Punch Man")
+    }
+
+    @Test
+    fun `alternative title query still requires confirmation when multiple candidates tie`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchResultsByQuery = mapOf(
+                (7L to "One Punch Man") to listOf(
+                    candidate(7L, "/edition-a", "One Punch-Man"),
+                    candidate(7L, "/edition-b", "One-Punch Man"),
+                ),
+            ),
+        )
+        val result = resolver(FakeContentBindingRepository(null), gateway, title = "One-Punch Man")
+            .executeAll("title", AddonId("mangadex"))
+
+        (result.exceptionOrNull() is ContentBindingConfirmationRequiredException) shouldBe true
+        gateway.materializeCalls shouldBe 0
+    }
+
+    @Test
+    fun `source lookup network failure is not mistaken for no matching title`() = runTest {
+        val gateway = FakeReadingSourceGateway(searchFailure = IOException("temporary outage"))
+        val result = resolver(FakeContentBindingRepository(null), gateway, title = "One-Punch Man")
+            .executeAll("title", AddonId("mangadex"))
+
+        (result.exceptionOrNull() is ContentBindingSourceSearchException) shouldBe true
+        gateway.searchedQueries shouldBe listOf("One-Punch Man")
+    }
+
+    @Test
     fun `stale binding is repaired inside same canonical title`() = runTest {
         val repository = FakeContentBindingRepository(
             binding(
@@ -113,11 +168,12 @@ class ResolveContentBindingTest {
         repository: FakeContentBindingRepository,
         gateway: FakeReadingSourceGateway,
         addonSourceIds: List<Long> = listOf(7L),
+        title: String = "Dandadan",
     ): ResolveContentBinding {
         var nextId = 0
         return ResolveContentBinding(
             contentBindingRepository = repository,
-            canonicalTitleRepository = FakeCanonicalTitleRepository(),
+            canonicalTitleRepository = FakeCanonicalTitleRepository(title),
             addonRepository = FakeAddonRepository(addonSourceIds),
             readingSourceGateway = gateway,
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
@@ -193,10 +249,10 @@ class ResolveContentBindingTest {
         }
     }
 
-    private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
+    private class FakeCanonicalTitleRepository(displayTitle: String) : CanonicalTitleRepository {
         private val title = CanonicalTitle(
             id = "title",
-            displayTitle = "Dandadan",
+            displayTitle = displayTitle,
             identityState = CanonicalIdentityState.SOURCE_ONLY,
             createdAt = 1L,
             updatedAt = 1L,
@@ -237,15 +293,20 @@ class ResolveContentBindingTest {
         private val searchResults: Map<Long, List<ReadingSourceCandidate>> = emptyMap(),
         private val materialized: MaterializedReadingSource? = null,
         private val materializedBySource: Map<Long, MaterializedReadingSource> = emptyMap(),
+        private val searchResultsByQuery: Map<Pair<Long, String>, List<ReadingSourceCandidate>> = emptyMap(),
+        private val searchFailure: Throwable? = null,
     ) : ReadingSourceGateway {
         var searchCalls = 0
+        val searchedQueries = mutableListOf<String>()
         var materializeCalls = 0
 
         override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> = emptyList()
 
         override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
             searchCalls += 1
-            return Result.success(searchResults[sourceId].orEmpty())
+            searchedQueries += query
+            searchFailure?.let { return Result.failure(it) }
+            return Result.success(searchResultsByQuery[sourceId to query] ?: searchResults[sourceId].orEmpty())
         }
 
         override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
