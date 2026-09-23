@@ -8,6 +8,12 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -164,11 +170,65 @@ class ResolveContentBindingTest {
         gateway.materializeCalls shouldBe 1
     }
 
+    @Test
+    fun `binding diagnostic distinguishes spelling attempts and safe match`() = runTest {
+        val diagnostic = RecordingDiagnostics()
+        diagnostic.start("title")
+        val gateway = FakeReadingSourceGateway(
+            searchResultsByQuery = mapOf(
+                (7L to "One Punch Man") to listOf(
+                    candidate(7L, "/one-punch", "One Punch-Man"),
+                ),
+            ),
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 4L, sourceId = 7L, sourceUrl = "/one-punch",
+                language = "en", runtimePayload = byteArrayOf(1),
+            ),
+        )
+        resolver(FakeContentBindingRepository(null), gateway,
+            title = "One-Punch Man", diagnostics = diagnostic)
+            .executeAll("title", AddonId("mangadex")).getOrThrow()
+
+        diagnostic.events.filter { it.stage == ChapterInventoryDiagnosticStage.BINDING_SEARCH }
+            .map { it.attempt to it.outcome } shouldBe listOf(
+            1 to ChapterInventoryDiagnosticOutcome.EMPTY,
+            2 to ChapterInventoryDiagnosticOutcome.SUCCESS,
+        )
+        diagnostic.events.any {
+            it.stage == ChapterInventoryDiagnosticStage.BINDING_MATCH &&
+                it.outcome == ChapterInventoryDiagnosticOutcome.SUCCESS
+        } shouldBe true
+        diagnostic.events.any {
+            it.stage == ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION &&
+                it.outcome == ChapterInventoryDiagnosticOutcome.SUCCESS
+        } shouldBe true
+    }
+
+    @Test
+    fun `explicit captcha during materialization is not conflated with network IO`() = runTest {
+        val diagnostic = RecordingDiagnostics()
+        diagnostic.start("title")
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(7L to listOf(candidate(7L, "/one-punch", "One-Punch Man"))),
+            materializeFailure = IOException("Shape-selecting captcha detected"),
+        )
+        val result = resolver(FakeContentBindingRepository(null), gateway,
+            title = "One-Punch Man", diagnostics = diagnostic).executeAll("title", AddonId("mangadex"))
+
+        result.isFailure shouldBe true
+        val event = diagnostic.events.single {
+            it.stage == ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION
+        }
+        event.outcome shouldBe ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED
+        event.reasons[ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE] shouldBe 1
+    }
+
     private fun resolver(
         repository: FakeContentBindingRepository,
         gateway: FakeReadingSourceGateway,
         addonSourceIds: List<Long> = listOf(7L),
         title: String = "Dandadan",
+        diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     ): ResolveContentBinding {
         var nextId = 0
         return ResolveContentBinding(
@@ -179,6 +239,7 @@ class ResolveContentBindingTest {
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
             idFactory = { "new-binding-${nextId++}" },
             clock = { 200L },
+            diagnostics = diagnostics,
         )
     }
 
@@ -289,12 +350,28 @@ class ResolveContentBindingTest {
         override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
     }
 
+    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
+        val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
+        private var active = false
+        override fun start(canonicalTitleId: String): String {
+            events.clear()
+            active = true
+            return "test"
+        }
+        override fun stop() { active = false }
+        override fun clear() { events.clear(); active = false }
+        override fun isRecording(canonicalTitleId: String): Boolean = active && canonicalTitleId == "title"
+        override fun record(event: ChapterInventoryDiagnosticEvent) { if (active) events += event }
+        override fun report(): String = ""
+    }
+
     private class FakeReadingSourceGateway(
         private val searchResults: Map<Long, List<ReadingSourceCandidate>> = emptyMap(),
         private val materialized: MaterializedReadingSource? = null,
         private val materializedBySource: Map<Long, MaterializedReadingSource> = emptyMap(),
         private val searchResultsByQuery: Map<Pair<Long, String>, List<ReadingSourceCandidate>> = emptyMap(),
         private val searchFailure: Throwable? = null,
+        private val materializeFailure: Throwable? = null,
     ) : ReadingSourceGateway {
         var searchCalls = 0
         val searchedQueries = mutableListOf<String>()
@@ -311,6 +388,7 @@ class ResolveContentBindingTest {
 
         override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
             materializeCalls += 1
+            materializeFailure?.let { return Result.failure(it) }
             return (materializedBySource[candidate.sourceId] ?: materialized)
                 ?.let(Result.Companion::success)
                 ?: Result.failure(IllegalStateException("No materialized source configured"))

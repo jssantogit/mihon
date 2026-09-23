@@ -97,6 +97,34 @@ class InMemoryChapterInventoryDiagnosticsTest {
     }
 
     @Test
+    fun `per addon failure summary survives detailed ring eviction`() {
+        val diagnostics = InMemoryChapterInventoryDiagnostics(
+            maxEvents = 2,
+            maxReportBytes = 2_048,
+            sessionIdFactory = { "summary-session" },
+        )
+        diagnostics.start("private-title")
+        diagnostics.record(
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.BINDING_SEARCH,
+                outcome = ChapterInventoryDiagnosticOutcome.NETWORK_ERROR,
+                addonId = "mangafire",
+                sourceId = 12L,
+                attempt = 2,
+                reasons = mapOf(ChapterInventoryDiagnosticReason.NETWORK_FAILURE to 1),
+            ),
+        )
+        repeat(10) { diagnostics.record(event(label = (100 + it).toString())) }
+
+        val report = diagnostics.report()
+        report.contains("diagnostic v2") shouldBe true
+        report.contains("SUMMARY|addonId=mangafire|stage=BINDING_SEARCH|outcome=NETWORK_ERROR" +
+            "|reason=NETWORK_FAILURE|count=1") shouldBe true
+        report.contains("attempt=2") shouldBe false
+        report.contains("private-title") shouldBe false
+    }
+
+    @Test
     fun `clear erases the report and disables the active recording`() {
         val diagnostics = InMemoryChapterInventoryDiagnostics(
             sessionIdFactory = { "test-session" },
