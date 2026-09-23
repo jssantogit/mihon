@@ -10,7 +10,8 @@ KEYS = ("class", "test", "numtests")
 SAFE_JAVA_TYPE = re.compile(r"\b(?:[A-Za-z_][\w$]*\.)+(?:[A-Za-z_][\w$]*)(?:Exception|Error)\b")
 SAFE_RUNNER_CLASS = re.compile(r"^INSTRUMENTATION_STATUS: (class|test|numtests)=(.*)$")
 SAFE_CODE = re.compile(r"^INSTRUMENTATION_(?:STATUS_)?CODE: -?\d+\s*$")
-MISSING_CLASS = re.compile(r'(?:Didn\'t find class|ClassNotFoundException:)\s*"?([A-Za-z_$][A-Za-z0-9_.$]+)"?')
+MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
+MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')
 PUBLIC_CLASS_PREFIXES = ("androidx.test.", "eu.kanade.tachiyomi.", "mihon.", "org.junit.", "kotlin.")
 
 def summarize(runner: str, crash: str) -> list[str]:
@@ -41,7 +42,9 @@ def summarize(runner: str, crash: str) -> list[str]:
     if 'FATAL EXCEPTION' in crash:
         lines.append("DIAGNOSTIC|androidRuntimeCrash=true")
     classes.update(SAFE_JAVA_TYPE.findall(crash))
-    missing = set(MISSING_CLASS.findall(runner + "\n" + crash))
+    missing_source = runner + "\n" + crash
+    missing = set(MISSING_QUOTED_CLASS.findall(missing_source))
+    missing.update(MISSING_DIRECT_CLASS.findall(missing_source))
     for cls in sorted(missing):
         # Only package-qualified test/runtime classes. No exception messages or values.
         if cls.startswith(PUBLIC_CLASS_PREFIXES):

@@ -31,6 +31,11 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("missingRuntimeClass=androidx.test.runner.AndroidJUnitRunner", result)
         self.assertNotIn("Didn\'t find class", result)
 
+    def test_direct_class_not_found_is_observable(self):
+        crash = "java.lang.ClassNotFoundException: androidx.test.runner.AndroidJUnitRunner\n"
+        result = "\n".join(diagnostic.summarize("", crash))
+        self.assertIn("missingRuntimeClass=androidx.test.runner.AndroidJUnitRunner", result)
+
     def test_missing_private_name_is_redacted(self):
         crash = 'java.lang.ClassNotFoundException: Didn\'t find class "com.example.secret.Private"\n'
         result = "\n".join(diagnostic.summarize("", crash))
