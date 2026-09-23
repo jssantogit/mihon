@@ -34,6 +34,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
@@ -208,6 +209,43 @@ class MihonRuntimeEndToEndIntegrationTest {
             } shouldBe true
         }
     }
+
+    @Test
+    fun `missing source chapter uses an alternative and confirmed chapter without a source stays unavailable`() =
+        runTest {
+            LocalMihonSourceHarness(languages = listOf("en", "pt-BR")).use { harness ->
+                harness.sources.forEach { source ->
+                    harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man", language = source.lang)
+                }
+                harness.enqueue(body = "/chapter/2\tChapter 2\t2\tEnglish Group", language = "en")
+                harness.enqueue(body = "/chapter/1\tChapter 1\t1\tPortuguese Group", language = "pt-BR")
+                val journey = RuntimeJourney(harness, "canonical-opm-missing-source-chapter")
+                journey.bind()
+                journey.refresh()
+
+                val chapters = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
+                val chapterOne = chapters.single { it.displayNumber == "1" }
+                val chapterTwo = chapters.single { it.displayNumber == "2" }
+                journey.options(chapterOne.id).map { it.language } shouldBe listOf("pt-BR")
+                journey.options(chapterTwo.id).map { it.language } shouldBe listOf("en")
+
+                val metadataOnlyChapter = CanonicalChapter(
+                    id = "editorial-chapter-3",
+                    canonicalTitleId = journey.canonicalTitleId,
+                    displayNumber = "3",
+                    type = CanonicalChapterType.REGULAR,
+                    baseNumber = 3,
+                    confidence = 1.0,
+                    confirmation = CanonicalChapterConfirmation.CONFIRMED,
+                )
+                journey.canonicalChapters.upsert(metadataOnlyChapter)
+                journey.options(metadataOnlyChapter.id) shouldBe emptyList()
+                journey.diagnostics.events.any {
+                    it.stage == ChapterInventoryDiagnosticStage.CONTENT_PROVIDER &&
+                        it.reasons[ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT] == 1
+                } shouldBe true
+            }
+        }
 
     @Test
     fun `repeat inventory refresh preserves canonical chapter identity and binding`() = runTest {

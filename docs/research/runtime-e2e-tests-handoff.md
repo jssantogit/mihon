@@ -70,7 +70,9 @@ The reusable local harness now includes tests for:
 - a successful, empty HTTP inventory producing an explicit `CHAPTER_INVENTORY / EMPTY` event and
   no reader option;
 - malformed inventory remaining a parser error, not being misreported as empty;
-- a failed English-source inventory not suppressing the valid Portuguese alternative.
+- a failed English-source inventory not suppressing the valid Portuguese alternative;
+- a source missing one requested chapter falling back to the matching language alternative, while
+  a separately confirmed metadata-only chapter remains unavailable when no source lists it.
 
 The failing HTTP/parser diagnostic path exposed a classification gap at chapter inventory: bare
 HTTP exceptions and parser exceptions were recorded as generic extension failures despite having
