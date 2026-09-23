@@ -181,12 +181,19 @@ class ResolveContentBindingTest {
                 ),
             ),
             materialized = MaterializedReadingSource(
-                mihonMangaId = 4L, sourceId = 7L, sourceUrl = "/one-punch",
-                language = "en", runtimePayload = byteArrayOf(1),
+                mihonMangaId = 4L,
+                sourceId = 7L,
+                sourceUrl = "/one-punch",
+                language = "en",
+                runtimePayload = byteArrayOf(1),
             ),
         )
-        resolver(FakeContentBindingRepository(null), gateway,
-            title = "One-Punch Man", diagnostics = diagnostic)
+        resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            title = "One-Punch Man",
+            diagnostics = diagnostic,
+        )
             .executeAll("title", AddonId("mangadex")).getOrThrow()
 
         diagnostic.events.filter { it.stage == ChapterInventoryDiagnosticStage.BINDING_SEARCH }
@@ -212,8 +219,12 @@ class ResolveContentBindingTest {
             searchResults = mapOf(7L to listOf(candidate(7L, "/one-punch", "One-Punch Man"))),
             materializeFailure = IOException("Shape-selecting captcha detected"),
         )
-        val result = resolver(FakeContentBindingRepository(null), gateway,
-            title = "One-Punch Man", diagnostics = diagnostic).executeAll("title", AddonId("mangadex"))
+        val result = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            title = "One-Punch Man",
+            diagnostics = diagnostic,
+        ).executeAll("title", AddonId("mangadex"))
 
         result.isFailure shouldBe true
         val event = diagnostic.events.single {
@@ -358,10 +369,22 @@ class ResolveContentBindingTest {
             active = true
             return "test"
         }
-        override fun stop() { active = false }
-        override fun clear() { events.clear(); active = false }
+
+        override fun stop() {
+            active = false
+        }
+
+        override fun clear() {
+            events.clear()
+            active = false
+        }
+
         override fun isRecording(canonicalTitleId: String): Boolean = active && canonicalTitleId == "title"
-        override fun record(event: ChapterInventoryDiagnosticEvent) { if (active) events += event }
+
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            if (active) events += event
+        }
+
         override fun report(): String = ""
     }
 

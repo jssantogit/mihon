@@ -147,12 +147,15 @@ object ChapterInventoryDiagnosticFailures {
                 val detail = cause.message.orEmpty()
                 detail.contains("captcha_required", ignoreCase = true) ||
                     detail.contains("shape-selecting captcha", ignoreCase = true)
-            } -> ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
-                ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
-            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
-                ChapterInventoryDiagnosticReason.NETWORK_FAILURE
-            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
-                ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
+            } ->
+                ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
+                    ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
+            causes.any { it is java.io.IOException } ->
+                ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
+                    ChapterInventoryDiagnosticReason.NETWORK_FAILURE
+            else ->
+                ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
+                    ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
         }
     }
 }

@@ -40,8 +40,12 @@ class ResolveChapterContentTest {
         val diagnostic = RecordingDiagnostics()
         diagnostic.start("title")
         val installed = InstalledAddon(
-            id = AddonId("mangafire"), displayName = "MangaFire", enabled = true,
-            versionName = "1.0", mihonSourceIds = listOf(42L), hasSettings = false,
+            id = AddonId("mangafire"),
+            displayName = "MangaFire",
+            enabled = true,
+            versionName = "1.0",
+            mihonSourceIds = listOf(42L),
+            hasSettings = false,
         )
         val repository = object : AddonRepository {
             override fun observeInstalled(): Flow<List<InstalledAddon>> =
@@ -50,9 +54,11 @@ class ResolveChapterContentTest {
             override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
         }
         val resolver = fixture(
-            preference = null, automaticFallback = false,
+            preference = null,
+            automaticFallback = false,
             providers = listOf(provider("mangadex")),
-            addonRepository = repository, diagnostics = diagnostic,
+            addonRepository = repository,
+            diagnostics = diagnostic,
         )
 
         resolver.lookupOptions("title", "chapter-37")
@@ -316,11 +322,26 @@ class ResolveChapterContentTest {
     private class RecordingDiagnostics : ChapterInventoryDiagnostics {
         val events = mutableListOf<ChapterInventoryDiagnosticEvent>()
         private var active = false
-        override fun start(canonicalTitleId: String): String { active = true; return "test" }
-        override fun stop() { active = false }
-        override fun clear() { active = false; events.clear() }
+        override fun start(canonicalTitleId: String): String {
+            active = true
+            return "test"
+        }
+
+        override fun stop() {
+            active = false
+        }
+
+        override fun clear() {
+            active = false
+            events.clear()
+        }
+
         override fun isRecording(canonicalTitleId: String): Boolean = active && canonicalTitleId == "title"
-        override fun record(event: ChapterInventoryDiagnosticEvent) { if (active) events += event }
+
+        override fun record(event: ChapterInventoryDiagnosticEvent) {
+            if (active) events += event
+        }
+
         override fun report(): String = ""
     }
 

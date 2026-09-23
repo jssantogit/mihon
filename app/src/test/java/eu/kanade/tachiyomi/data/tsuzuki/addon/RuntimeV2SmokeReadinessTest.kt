@@ -66,6 +66,7 @@ class RuntimeV2SmokeReadinessTest {
             addonRepository = addonRepository,
             readingSourceGateway = sourceGateway,
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
         )
         val parser = ParseCanonicalChapterLabel()
         val probe = MihonChapterProbeProvider(

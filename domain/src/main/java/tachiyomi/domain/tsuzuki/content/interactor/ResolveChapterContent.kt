@@ -34,7 +34,7 @@ data class ContentOptionLookup(
     val queriedProviderCount: Int,
 )
 
-class ResolveChapterContent internal constructor(
+class ResolveChapterContent(
     private val addonRegistry: AddonRegistry,
     private val contentPreferenceRepository: ContentPreferenceRepository,
     private val readerPreferences: CanonicalReaderPreferences,
