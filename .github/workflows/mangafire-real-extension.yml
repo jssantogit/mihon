@@ -9,6 +9,7 @@ on:
       - 'app/src/androidTest/**'
       - 'app/build.gradle.kts'
       - '.github/scripts/verify_extension_fixture.py'
+      - '.github/scripts/run_mangafire_android.sh'
       - '.github/scripts/test_extension_fixture.py'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
@@ -36,6 +37,7 @@ jobs:
       - name: Verify fixture and regression tests
         run: |
           python3 .github/scripts/test_extension_fixture.py
+          bash -n .github/scripts/run_mangafire_android.sh
           python3 .github/scripts/verify_extension_fixture.py
 
   compile-android-test:
@@ -82,17 +84,9 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: |
-            python3 .github/scripts/verify_extension_fixture.py
-            apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-            test -n "$apksigner"
-            "$apksigner" verify --verbose test-fixtures/extensions/mangafire-v1.6.34.apk
-            adb install -r test-fixtures/extensions/mangafire-v1.6.34.apk
-            if [ "${{ inputs.live_probe }}" = "true" ]; then
-              ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest -Pandroid.testInstrumentationRunnerArguments.allowLiveProvider=true
-            else
-              ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest
-            fi
+          # The emulator action runs individual YAML script lines in separate shells.
+          # Keep setup and conditional logic within ONE invoked Bash script.
+          script: bash .github/scripts/run_mangafire_android.sh "${{ inputs.live_probe }}"
       - name: Upload sanitized instrumentation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

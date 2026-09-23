@@ -32,6 +32,15 @@ class MangaFireFixtureTest(unittest.TestCase):
             with self.assertRaises(verifier.FixtureVerificationError):
                 verifier.verify_fixture(mutated)
 
+    def test_emulator_runner_keeps_shell_state_in_one_script(self):
+        import subprocess
+
+        script = verifier.ROOT / ".github/scripts/run_mangafire_android.sh"
+        workflow = (verifier.ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
+        self.assertIn("script: bash .github/scripts/run_mangafire_android.sh", workflow)
+        result = subprocess.run(["bash", "-n", str(script)], check=False, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_apk_is_explicitly_binary_in_git(self):
         attributes = (verifier.ROOT / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("/test-fixtures/extensions/*.apk binary", attributes)
