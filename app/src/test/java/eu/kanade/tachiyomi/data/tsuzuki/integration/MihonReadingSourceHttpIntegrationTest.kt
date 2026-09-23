@@ -43,7 +43,7 @@ class MihonReadingSourceHttpIntegrationTest {
 
             failure.kind shouldBe ReadingSourceFailureKind.HTTP_RESPONSE
             failure.httpStatus shouldBe 403
-            failure.message.contains("private response body") shouldBe false
+            failure.message.orEmpty().contains("private response body") shouldBe false
         }
     }
 
@@ -57,7 +57,7 @@ class MihonReadingSourceHttpIntegrationTest {
 
                 failure.kind shouldBe ReadingSourceFailureKind.HTTP_RESPONSE
                 failure.httpStatus shouldBe status
-                failure.message.contains("private response body") shouldBe false
+                failure.message.orEmpty().contains("private response body") shouldBe false
             }
         }
     }
