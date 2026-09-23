@@ -59,6 +59,20 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
+    fun `mangadex volume prefix and plain chapter share one identity without losing variants`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val reconciler = reconciler(repository)
+
+        reconciler.execute(inventory("mapping-1", 1L, "Vol.1 Ch.1 - Um Soco", "/md/1"))
+        reconciler.execute(inventory("mapping-2", 2L, "Chapter 1", "/mf/1"))
+
+        val chapters = repository.getByCanonicalTitleId("title-1")
+        chapters.size shouldBe 1
+        chapters.single().baseNumber shouldBe 1
+        repository.getVariantsByCanonicalChapterId(chapters.single().id).size shouldBe 2
+    }
+
+    @Test
     fun `incompatible type part suffix and numbered semantic labels stay separate`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val reconciler = reconciler(repository)

@@ -173,6 +173,21 @@ class ParseCanonicalChapterLabelTest {
     }
 
     @Test
+    fun `mangadex volume labels without spaces preserve chapter identity`() {
+        val first = parse.execute("Vol.1 Ch.1 - Um Soco", numericHint = -1.0)
+        val transition = parse.execute("Vol.12 Ch.137 - The Hero", numericHint = -1.0)
+        val fractional = parse.execute("Vol.none Ch.137.5 - Side Story", numericHint = -1.0)
+
+        first.type shouldBe CanonicalChapterType.REGULAR
+        first.baseNumber shouldBe 1
+        first.confidence shouldBe 1.0
+        transition.baseNumber shouldBe 137
+        transition.confidence shouldBe 1.0
+        fractional.baseNumber shouldBe 137
+        fractional.part shouldBe 5
+    }
+
+    @Test
     fun `unknown labels do not fabricate structure from numeric hints`() {
         val unknown = parse.execute("Bonus chapter", numericHint = 12.0)
         val blankWithHint = parse.execute("", numericHint = 12.0)
