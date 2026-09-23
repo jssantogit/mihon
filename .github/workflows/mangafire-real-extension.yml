@@ -10,6 +10,8 @@ on:
       - 'app/build.gradle.kts'
       - '.github/scripts/verify_extension_fixture.py'
       - '.github/scripts/run_mangafire_android.sh'
+      - '.github/scripts/verify_android_instrumentation.py'
+      - '.github/scripts/test_android_instrumentation.py'
       - '.github/scripts/test_extension_fixture.py'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
@@ -37,6 +39,7 @@ jobs:
       - name: Verify fixture and regression tests
         run: |
           python3 .github/scripts/test_extension_fixture.py
+          python3 .github/scripts/test_android_instrumentation.py
           bash -n .github/scripts/run_mangafire_android.sh
           python3 .github/scripts/verify_extension_fixture.py
 
@@ -92,6 +95,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mangafire-instrumentation-${{ github.sha }}
-          path: app/build/outputs/androidTest-results/connected/**
+          path: .github/results/mangafire/**
           if-no-files-found: ignore
           retention-days: 3
