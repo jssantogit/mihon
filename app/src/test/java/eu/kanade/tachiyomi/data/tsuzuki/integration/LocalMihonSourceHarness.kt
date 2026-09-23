@@ -29,12 +29,9 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import java.io.Closeable
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /** Local-only Mihon HttpSource + gateway fixture for deterministic runtime integration tests. */
 internal class LocalMihonSourceHarness(
-    readTimeoutMillis: Long = 2_000,
-    sourceBaseUrl: String? = null,
     clientFailure: IOException? = null,
 ) : Closeable {
     val server = MockWebServer()
@@ -44,9 +41,8 @@ internal class LocalMihonSourceHarness(
     }
 
     val source = FixtureHttpSource(
-        baseUrl = sourceBaseUrl ?: server.url("/").toString().trimEnd('/'),
+        baseUrl = server.url("/").toString().trimEnd('/'),
         client = OkHttpClient.Builder()
-            .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
             .apply {
                 clientFailure?.let { failure ->
                     addInterceptor { throw failure }
@@ -70,16 +66,6 @@ internal class LocalMihonSourceHarness(
             MockResponse.Builder()
                 .code(status)
                 .body(body)
-                .build(),
-        )
-    }
-
-    fun enqueueDelayed(body: String, delayMillis: Long) {
-        server.enqueue(
-            MockResponse.Builder()
-                .code(200)
-                .body(body)
-                .bodyDelay(delayMillis, TimeUnit.MILLISECONDS)
                 .build(),
         )
     }

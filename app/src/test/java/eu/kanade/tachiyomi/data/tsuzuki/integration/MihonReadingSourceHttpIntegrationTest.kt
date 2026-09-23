@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import java.net.ConnectException
+import java.net.SocketTimeoutException
 
 class MihonReadingSourceHttpIntegrationTest {
 
@@ -122,9 +123,7 @@ class MihonReadingSourceHttpIntegrationTest {
             network.kind shouldBe ReadingSourceFailureKind.NETWORK_FAILURE
         }
 
-        LocalMihonSourceHarness(readTimeoutMillis = 25).use { harness ->
-            harness.enqueueDelayed(body = "", delayMillis = 250)
-
+        LocalMihonSourceHarness(clientFailure = SocketTimeoutException("synthetic response timeout")).use { harness ->
             val timeout = harness.gateway.search(harness.source.id, "query").searchFailure()
             timeout.kind shouldBe ReadingSourceFailureKind.TIMEOUT
         }
