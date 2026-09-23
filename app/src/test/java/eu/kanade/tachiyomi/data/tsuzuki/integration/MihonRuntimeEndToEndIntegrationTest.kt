@@ -4,9 +4,10 @@ import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import eu.kanade.tachiyomi.data.tsuzuki.addon.DefaultAddonRegistry
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
+import io.mockk.answers
 import io.kotest.matchers.shouldBe
-import io.mockk.coAnswers
 import io.mockk.coEvery
+import io.mockk.firstArg
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,7 +61,8 @@ import java.util.concurrent.atomic.AtomicLong
 class MihonRuntimeEndToEndIntegrationTest {
 
     @Test
-    fun `local HTTP journey discovers source binds canonical title reconciles inventory and offers content`() = runTest {
+    fun `local HTTP journey discovers source binds canonical title reconciles inventory and offers content`() =
+        runTest {
         LocalMihonSourceHarness().use { harness ->
             val addonId = AddonId("fixture-addon")
             val canonicalTitleId = "canonical-opm"
@@ -71,12 +73,12 @@ class MihonRuntimeEndToEndIntegrationTest {
 
             val localMangaId = 9001L
             val persistedManga = mutableMapOf<Long, Manga>()
-            coEvery { harness.mangaRepository.insertNetworkManga(any()) } coAnswers {
+            coEvery { harness.mangaRepository.insertNetworkManga(any()) } answers {
                 firstArg<List<Manga>>().map { manga ->
                     manga.copy(id = localMangaId).also { persistedManga[localMangaId] = it }
                 }
             }
-            coEvery { harness.mangaRepository.getMangaById(localMangaId) } coAnswers {
+            coEvery { harness.mangaRepository.getMangaById(localMangaId) } answers {
                 persistedManga.getValue(localMangaId)
             }
 
@@ -258,18 +260,18 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val values = mutableListOf<Chapter>()
         private val nextId = AtomicLong(100L)
         val repository: ChapterRepository = mockk(relaxed = true) {
-            coEvery { getChapterByMangaId(any()) } coAnswers {
+            coEvery { getChapterByMangaId(any()) } answers {
                 values.filter { it.mangaId == firstArg<Long>() }
             }
-            coEvery { getChapterById(any()) } coAnswers {
+            coEvery { getChapterById(any()) } answers {
                 values.firstOrNull { it.id == firstArg<Long>() }
             }
-            coEvery { getChapterByUrlAndMangaId(any(), any()) } coAnswers {
+            coEvery { getChapterByUrlAndMangaId(any(), any()) } answers {
                 val url = firstArg<String>()
                 val mangaId = secondArg<Long>()
                 values.firstOrNull { it.url == url && it.mangaId == mangaId }
             }
-            coEvery { addAll(any()) } coAnswers {
+            coEvery { addAll(any()) } answers {
                 firstArg<List<Chapter>>().map { chapter ->
                     chapter.copy(id = nextId.getAndIncrement()).also(values::add)
                 }
