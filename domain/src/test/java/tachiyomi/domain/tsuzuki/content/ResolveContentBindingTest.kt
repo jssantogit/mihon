@@ -16,6 +16,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticRe
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.content.interactor.ConfirmContentBinding
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -349,6 +350,99 @@ class ResolveContentBindingTest {
         }
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED
         event.reasons[ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE] shouldBe 1
+    }
+
+    @Test
+    fun `explicit MangaBall candidate selection links one ambiguous edition without changing canonical identity`() = runTest {
+        val repo = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(
+                    candidate(7L, "/one-punch-main", "One-Punch Man"),
+                    candidate(7L, "/one-punch-alternative", "One-Punch Man"),
+                ),
+            ),
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 45L,
+                sourceId = 7L,
+                sourceUrl = "/one-punch-alternative",
+                language = "pt-BR",
+                runtimePayload = byteArrayOf(1, 2, 3),
+            ),
+        )
+        val titleRepo = FakeCanonicalTitleRepository("One-Punch Man")
+        val addons = FakeAddonRepository()
+        val result = resolver(repo, gateway, title = "One-Punch Man")
+            .executeAll("title", AddonId("mangadex"))
+        val choices = (result.exceptionOrNull() as ContentBindingConfirmationRequiredException).candidates
+        choices.size shouldBe 2
+        gateway.materializeCalls shouldBe 0
+
+        val selected = choices.single { it.candidate.sourceUrl == "/one-punch-alternative" }
+        val binding = ConfirmContentBinding(
+            contentBindingRepository = repo,
+            canonicalTitleRepository = titleRepo,
+            addonRepository = addons,
+            readingSourceGateway = gateway,
+            scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+        ).execute("title", AddonId("mangadex"), selected).getOrThrow()
+
+        binding.canonicalTitleId shouldBe "title"
+        binding.providerTitleKey shouldBe "7:/one-punch-alternative"
+        binding.verifiedByUser shouldBe true
+        repo.getByTitle("title").single().id shouldBe binding.id
+        titleRepo.getById("title")?.displayTitle shouldBe "One-Punch Man"
+    }
+
+    @Test
+    fun `manual binding rejects source disabled for the installed Add-on before materialization`() = runTest {
+        val repo = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway()
+        val selected = tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate(
+            candidate(8L, "/foreign", "Dandadan"),
+            confidence = 1.0,
+            sourcePreferenceRank = 0,
+        )
+        val result = ConfirmContentBinding(
+            repo,
+            FakeCanonicalTitleRepository("Dandadan"),
+            FakeAddonRepository(sourceIds = listOf(7L)),
+            gateway,
+            ScoreSourceTitleMatch(),
+        ).execute("title", AddonId("mangadex"), selected)
+
+        result.isFailure shouldBe true
+        gateway.materializeCalls shouldBe 0
+        repo.getByTitle("title").isEmpty() shouldBe true
+    }
+
+    @Test
+    fun `manual binding cannot persist mismatched materialized edition`() = runTest {
+        val repo = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway(
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 44L,
+                sourceId = 7L,
+                sourceUrl = "/another-edition",
+                language = "en",
+                runtimePayload = byteArrayOf(7),
+            ),
+        )
+        val selected = tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate(
+            candidate(7L, "/requested", "Dandadan"),
+            confidence = 1.0,
+            sourcePreferenceRank = 0,
+        )
+        val result = ConfirmContentBinding(
+            repo,
+            FakeCanonicalTitleRepository("Dandadan"),
+            FakeAddonRepository(),
+            gateway,
+            ScoreSourceTitleMatch(),
+        ).execute("title", AddonId("mangadex"), selected)
+
+        result.isFailure shouldBe true
+        repo.getByTitle("title").isEmpty() shouldBe true
     }
 
     private fun resolver(

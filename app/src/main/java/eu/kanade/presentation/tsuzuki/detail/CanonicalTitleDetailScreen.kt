@@ -32,6 +32,7 @@ fun CanonicalTitleDetailScreen(
     state: CanonicalTitleScreenState,
     navigateUp: () -> Unit,
     onRefresh: () -> Unit,
+    onLinkReadingAddon: () -> Unit,
     onStartChapterDiagnostics: () -> Unit,
     onStopChapterDiagnostics: () -> Unit,
     onCopyChapterDiagnostics: () -> Unit,
@@ -107,6 +108,7 @@ fun CanonicalTitleDetailScreen(
                             onCopyChapterDiagnostics = onCopyChapterDiagnostics,
                             onClearChapterDiagnostics = onClearChapterDiagnostics,
                             onAddToLibrary = onAddToLibrary,
+                            onLinkReadingAddon = onLinkReadingAddon,
                             onRemoveFromLibrary = onRemoveFromLibrary,
                         )
                     }
@@ -151,6 +153,7 @@ private fun TitleHeader(
     onClearChapterDiagnostics: () -> Unit,
     onAddToLibrary: () -> Unit,
     onRemoveFromLibrary: () -> Unit,
+    onLinkReadingAddon: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -233,6 +236,9 @@ private fun TitleHeader(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+        TextButton(onClick = onLinkReadingAddon) {
+            Text("Link alternative reading Add-on")
         }
         state.refreshError?.let {
             Text(
