@@ -72,7 +72,7 @@ class MihonChapterInventoryGateway(
                     addonId = null,
                     error = it.exceptionOrNull()!!,
                     elapsedMillis = 0L,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_NOT_MATERIALIZED,
                 )
             }
         val key = MihonInventoryKey(
@@ -279,7 +279,7 @@ class MihonChapterInventoryGateway(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.INVENTORY,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY,
                 outcome = if (chapters.isEmpty()) {
                     ChapterInventoryDiagnosticOutcome.EMPTY
                 } else {
@@ -317,11 +317,12 @@ class MihonChapterInventoryGateway(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.INVENTORY,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY,
                 outcome = outcome,
                 sourceId = sourceId,
                 addonId = addonId,
                 language = language,
+                httpStatus = error.diagnosticHttpStatus(),
                 elapsedMillis = elapsedMillis.coerceAtLeast(0L),
                 received = 0,
                 accepted = 0,

@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
+import eu.kanade.tachiyomi.data.tsuzuki.diagnosticHttpStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -53,8 +54,11 @@ class MihonContentProvider internal constructor(
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
                 .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
             if (bindings.isEmpty()) {
-                recordProvider(canonicalTitleId, ChapterInventoryDiagnosticOutcome.NO_BINDING,
-                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE)
+                recordProvider(
+                    canonicalTitleId,
+                    ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                    ChapterInventoryDiagnosticReason.NO_BINDING,
+                )
                 return Result.success(emptyList())
             }
 
@@ -178,7 +182,7 @@ class MihonContentProvider internal constructor(
 
             if (options.isEmpty() && firstFailure != null) {
                 val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(firstFailure)
-                recordProvider(canonicalTitleId, outcome, reason)
+                recordProvider(canonicalTitleId, outcome, reason, httpStatus = firstFailure.diagnosticHttpStatus())
                 Result.failure(firstFailure)
             } else {
                 val distinct = options.distinctBy(ContentOption::key)
@@ -201,7 +205,7 @@ class MihonContentProvider internal constructor(
             throw error
         } catch (error: Throwable) {
             val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(error)
-            recordProvider(canonicalTitleId, outcome, reason)
+            recordProvider(canonicalTitleId, outcome, reason, httpStatus = error.diagnosticHttpStatus())
             Result.failure(error)
         }
     }
@@ -211,12 +215,16 @@ class MihonContentProvider internal constructor(
         outcome: ChapterInventoryDiagnosticOutcome,
         reason: ChapterInventoryDiagnosticReason? = null,
         accepted: Int = 0,
+        httpStatus: Int? = null,
     ) {
         diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
             stage = ChapterInventoryDiagnosticStage.CONTENT_PROVIDER,
             outcome = outcome,
             addonId = addonId.value,
+            httpStatus = httpStatus,
             accepted = accepted,
+            availabilityBlocked = accepted == 0,
+            affectedSourceCount = if (accepted == 0) 1 else 0,
             reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
         ))
     }

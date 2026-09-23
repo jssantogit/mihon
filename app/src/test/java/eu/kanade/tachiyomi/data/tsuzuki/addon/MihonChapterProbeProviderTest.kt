@@ -59,7 +59,7 @@ class MihonChapterProbeProviderTest {
         evidence.size shouldBe 2
         evidence.map { it.rawNumber }.toSet() shouldBe setOf(1.0, 1.5)
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.PROBE
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_PROBE
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
         event.received shouldBe 4
         event.accepted shouldBe 2
@@ -87,7 +87,7 @@ class MihonChapterProbeProviderTest {
         provider.probe("title").getOrThrow() shouldBe emptyList()
 
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.PROBE
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_PROBE
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
         event.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
     }

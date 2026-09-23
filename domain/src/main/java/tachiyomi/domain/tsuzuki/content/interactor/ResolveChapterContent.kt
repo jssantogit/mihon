@@ -275,6 +275,7 @@ class ResolveChapterContent(
                 )
                 return@resolution Result.success(cached)
             }
+            var receivedOptions = 0
             val result = try {
                 provider.resolve(canonicalTitleId, canonicalChapterId)
             } catch (error: CancellationException) {
@@ -282,6 +283,7 @@ class ResolveChapterContent(
             } catch (error: Throwable) {
                 Result.failure(error)
             }.map { options ->
+                receivedOptions = options.size
                 options.filter { option ->
                     option.canonicalChapterId == canonicalChapterId &&
                         option.addonId == provider.addonId
@@ -292,12 +294,39 @@ class ResolveChapterContent(
             }
             val options = result.getOrNull()
             if (options != null) {
-                recordSelector(canonicalTitleId, provider.addonId,
-                    if (options.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
-                    options.size, if (options.isEmpty()) ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT else null)
+                val filtered = receivedOptions - options.size
+                val reason = when {
+                    filtered > 0 -> ChapterInventoryDiagnosticReason.FILTERED_FROM_UI
+                    options.isEmpty() -> ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT
+                    else -> null
+                }
+                recordSelector(
+                    canonicalTitleId,
+                    provider.addonId,
+                    when {
+                        filtered > 0 -> ChapterInventoryDiagnosticOutcome.PARTIAL
+                        options.isEmpty() -> ChapterInventoryDiagnosticOutcome.EMPTY
+                        else -> ChapterInventoryDiagnosticOutcome.SUCCESS
+                    },
+                    options.size,
+                    reason,
+                    received = receivedOptions,
+                    discarded = filtered,
+                    availabilityBlocked = options.isEmpty(),
+                    affectedSourceCount = if (options.isEmpty()) 1 else 0,
+                )
             } else {
                 val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(result.exceptionOrNull()!!)
-                recordSelector(canonicalTitleId, provider.addonId, outcome, 0, reason)
+                recordSelector(
+                    canonicalTitleId,
+                    provider.addonId,
+                    outcome,
+                    0,
+                    reason,
+                    received = receivedOptions,
+                    availabilityBlocked = true,
+                    affectedSourceCount = 1,
+                )
             }
             result
         }
@@ -320,10 +349,13 @@ class ResolveChapterContent(
             when {
                 !addon.enabled -> recordSelector(canonicalTitleId, addon.id,
                     ChapterInventoryDiagnosticOutcome.DISABLED, 0,
-                    ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED)
+                    ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED,
+                    availabilityBlocked = true)
                 addon.id !in registered -> recordSelector(canonicalTitleId, addon.id,
                     ChapterInventoryDiagnosticOutcome.NO_BINDING, 0,
-                    ChapterInventoryDiagnosticReason.PROVIDER_NOT_REGISTERED)
+                    ChapterInventoryDiagnosticReason.PROVIDER_NOT_REGISTERED,
+                    availabilityBlocked = true,
+                    affectedSourceCount = addon.mihonSourceIds.size)
                 else -> Unit
             }
         }
@@ -335,12 +367,20 @@ class ResolveChapterContent(
         outcome: ChapterInventoryDiagnosticOutcome,
         optionCount: Int,
         reason: ChapterInventoryDiagnosticReason? = null,
+        received: Int? = null,
+        discarded: Int? = null,
+        availabilityBlocked: Boolean = false,
+        affectedSourceCount: Int? = null,
     ) {
         diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
-            stage = ChapterInventoryDiagnosticStage.SELECTOR,
+            stage = ChapterInventoryDiagnosticStage.CONTENT_SELECTOR,
             outcome = outcome,
             addonId = addonId.value,
+            received = received,
             accepted = optionCount,
+            discarded = discarded,
+            availabilityBlocked = availabilityBlocked,
+            affectedSourceCount = affectedSourceCount,
             reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
         ))
     }

@@ -50,7 +50,7 @@ class MihonContentProviderTest {
         val event = diagnostic.events.single()
         event.stage shouldBe ChapterInventoryDiagnosticStage.CONTENT_PROVIDER
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
-        event.reasons[ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE] shouldBe 1
+        event.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
     }
 
     @Test

@@ -6,11 +6,15 @@ import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 /** Processing boundary recorded by the temporary chapter-inventory diagnostic. */
 enum class ChapterInventoryDiagnosticStage {
     ADDON_DISCOVERY,
+    SOURCE_ELIGIBILITY,
     BINDING_SEARCH,
     BINDING_MATCH,
     BINDING_MATERIALIZATION,
+    CONTENT_SELECTOR,
     CONTENT_PROVIDER,
     SELECTOR,
+    CHAPTER_INVENTORY,
+    CHAPTER_PROBE,
     INVENTORY,
     PROBE,
     RECONCILIATION,
@@ -45,10 +49,11 @@ enum class ChapterInventoryDiagnosticReason {
     IDENTITY_MISMATCH,
     NO_BINDING,
     INVENTORY_EMPTY,
-    BINDING_UNAVAILABLE,
+    BINDING_NOT_MATERIALIZED,
     BINDING_CONFIRMATION_REQUIRED,
     ADDON_NOT_INSTALLED,
     ALL_SOURCES_DISABLED,
+    SOURCE_DISABLED,
     REUSED_BINDING,
     SOURCE_SEARCH_FAILED,
     NO_SEARCH_RESULTS,
@@ -80,9 +85,13 @@ enum class ChapterInventoryDiagnosticReason {
 data class ChapterInventoryDiagnosticEvent(
     val stage: ChapterInventoryDiagnosticStage,
     val outcome: ChapterInventoryDiagnosticOutcome,
+    /** Opaque correlation token; the in-memory reporter falls back to its session id. */
+    val correlationId: String? = null,
     val sourceId: Long? = null,
     val addonId: String? = null,
     val language: String? = null,
+    /** Sanitized HTTP status only; never include headers, URL, or response content. */
+    val httpStatus: Int? = null,
     val elapsedMillis: Long? = null,
     /** One-based title spelling attempt; the raw query is never recorded. */
     val attempt: Int? = null,
@@ -92,6 +101,9 @@ data class ChapterInventoryDiagnosticEvent(
     val discarded: Int? = null,
     val inferred: Int? = null,
     val unavailable: Int? = null,
+    /** Set only when this boundary is known to prevent content from being offered. */
+    val availabilityBlocked: Boolean = false,
+    val affectedSourceCount: Int? = null,
     val labels: List<String> = emptyList(),
     val gaps: List<Int> = emptyList(),
     val reasons: Map<ChapterInventoryDiagnosticReason, Int> = emptyMap(),

@@ -56,7 +56,7 @@ class MihonChapterInventoryGatewayTest {
         inventory.chapters.first().rawNumberHint shouldBe 1.0
         inventory.chapters.last().rawNumberHint shouldBe 234.0
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.INVENTORY
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.SUCCESS
         event.sourceId shouldBe 7L
         event.language shouldBe "en"
@@ -118,7 +118,7 @@ class MihonChapterInventoryGatewayTest {
         emptyGateway.fetch(mapping(), refresh = true).getOrThrow().chapters shouldBe emptyList()
 
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.INVENTORY
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.EMPTY
         event.received shouldBe 0
         diagnostics.report().contains("private timeout") shouldBe false

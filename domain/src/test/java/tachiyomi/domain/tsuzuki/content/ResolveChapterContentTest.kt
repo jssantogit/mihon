@@ -64,14 +64,38 @@ class ResolveChapterContentTest {
         resolver.lookupOptions("title", "chapter-37")
         diagnostic.events.any {
             it.addonId == "mangafire" &&
-                it.stage == ChapterInventoryDiagnosticStage.SELECTOR &&
+                it.stage == ChapterInventoryDiagnosticStage.CONTENT_SELECTOR &&
                 it.reasons[ChapterInventoryDiagnosticReason.PROVIDER_NOT_REGISTERED] == 1
         } shouldBe true
         diagnostic.events.any {
             it.addonId == "mangadex" &&
-                it.stage == ChapterInventoryDiagnosticStage.SELECTOR &&
+                it.stage == ChapterInventoryDiagnosticStage.CONTENT_SELECTOR &&
                 it.outcome == ChapterInventoryDiagnosticOutcome.EMPTY
         } shouldBe true
+    }
+
+    @Test
+    fun `selector diagnostics expose provider options filtered for a different chapter`() = runTest {
+        val diagnostic = RecordingDiagnostics()
+        diagnostic.start("title")
+        val mismatched = option("mangafire", "en").copy(canonicalChapterId = "another-chapter")
+        val resolver = fixture(
+            preference = null,
+            automaticFallback = false,
+            providers = listOf(provider("mangafire", mismatched)),
+            diagnostics = diagnostic,
+        )
+
+        resolver.lookupOptions("title", "chapter-37").options shouldBe emptyList()
+
+        val event = diagnostic.events.single {
+            it.stage == ChapterInventoryDiagnosticStage.CONTENT_SELECTOR && it.addonId == "mangafire"
+        }
+        event.received shouldBe 1
+        event.accepted shouldBe 0
+        event.discarded shouldBe 1
+        event.reasons[ChapterInventoryDiagnosticReason.FILTERED_FROM_UI] shouldBe 1
+        event.availabilityBlocked shouldBe true
     }
 
     @Test

@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
@@ -39,6 +41,7 @@ class ResolveContentBinding internal constructor(
     private val idFactory: () -> String,
     private val clock: () -> Long,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+    private val addonSourceEligibilityRepository: AddonSourceEligibilityRepository? = null,
 ) {
 
     @Inject
@@ -48,6 +51,7 @@ class ResolveContentBinding internal constructor(
         addonRepository: AddonRepository,
         readingSourceGateway: ReadingSourceGateway,
         scoreSourceTitleMatch: ScoreSourceTitleMatch,
+        addonSourceEligibilityRepository: AddonSourceEligibilityRepository,
         diagnostics: ChapterInventoryDiagnostics,
     ) : this(
         contentBindingRepository = contentBindingRepository,
@@ -58,6 +62,7 @@ class ResolveContentBinding internal constructor(
         idFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
         diagnostics = diagnostics,
+        addonSourceEligibilityRepository = addonSourceEligibilityRepository,
     )
 
     suspend fun execute(
@@ -152,6 +157,7 @@ class ResolveContentBinding internal constructor(
                 .awaitAll()
         }
         var firstSearchFailure: Throwable? = null
+        var hasLowConfidenceMatch = false
 
         for ((rank, candidates, failure) in candidatesBySource) {
             if (firstSearchFailure == null) firstSearchFailure = failure
@@ -188,6 +194,8 @@ class ResolveContentBinding internal constructor(
                     accepted = 1,
                 )
             } else {
+                hasLowConfidenceMatch = hasLowConfidenceMatch ||
+                    best.confidence < CONFIRMATION_THRESHOLD
                 val reason = when {
                     best.confidence < CONFIRMATION_THRESHOLD ->
                         ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
@@ -225,6 +233,26 @@ class ResolveContentBinding internal constructor(
                         .thenByDescending { it.confidence },
                 )
                 .take(MAX_CONFIRMATION_CANDIDATES)
+            val (blockOutcome, blockReason) = when {
+                candidates.isNotEmpty() ->
+                    ChapterInventoryDiagnosticOutcome.AMBIGUOUS to
+                        ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+                hasLowConfidenceMatch -> ChapterInventoryDiagnosticOutcome.NO_MATCH to
+                    ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
+                firstSearchFailure != null -> ChapterInventoryDiagnosticFailures.classify(firstSearchFailure)
+                else -> ChapterInventoryDiagnosticOutcome.NO_MATCH to
+                    ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS
+            }
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                blockOutcome,
+                received = sourceIds.size,
+                affectedSourceCount = sourceIds.size,
+                availabilityBlocked = true,
+                reason = blockReason,
+            )
             if (candidates.isNotEmpty()) {
                 throw ContentBindingConfirmationRequiredException(candidates)
             }
@@ -264,6 +292,8 @@ class ResolveContentBinding internal constructor(
                     } else {
                         failureReason
                     },
+                    availabilityBlocked = true,
+                    affectedSourceCount = 1,
                 )
                 throw error
             }
@@ -416,9 +446,45 @@ class ResolveContentBinding internal constructor(
                 addonId,
                 ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
                 ChapterInventoryDiagnosticOutcome.NO_BINDING,
+                availabilityBlocked = true,
                 reason = ChapterInventoryDiagnosticReason.ADDON_NOT_INSTALLED,
             )
             throw ContentBindingNotFoundException("Add-on " + addonId.value + " is not installed")
+        }
+        val sourceEligibility = diagnosticSourceEligibility(canonicalTitleId, addonId)
+        if (sourceEligibility.isNotEmpty()) {
+            val enabledSources = sourceEligibility.count { it.enabled }
+            val disabledSources = sourceEligibility.size - enabledSources
+            recordBinding(
+                canonicalTitleId,
+                addonId,
+                ChapterInventoryDiagnosticStage.SOURCE_ELIGIBILITY,
+                if (disabledSources == 0) {
+                    ChapterInventoryDiagnosticOutcome.SUCCESS
+                } else {
+                    ChapterInventoryDiagnosticOutcome.PARTIAL
+                },
+                received = sourceEligibility.size,
+                accepted = enabledSources,
+                discarded = disabledSources,
+            )
+            sourceEligibility.forEach { source ->
+                recordBinding(
+                    canonicalTitleId,
+                    addonId,
+                    ChapterInventoryDiagnosticStage.SOURCE_ELIGIBILITY,
+                    if (source.enabled) {
+                        ChapterInventoryDiagnosticOutcome.SUCCESS
+                    } else {
+                        ChapterInventoryDiagnosticOutcome.DISABLED
+                    },
+                    sourceId = source.sourceId,
+                    language = source.language,
+                    accepted = if (source.enabled) 1 else 0,
+                    discarded = if (source.enabled) 0 else 1,
+                    reason = if (source.enabled) null else ChapterInventoryDiagnosticReason.SOURCE_DISABLED,
+                )
+            }
         }
         if (!addon.enabled || addon.mihonSourceIds.isEmpty()) {
             recordBinding(
@@ -426,6 +492,8 @@ class ResolveContentBinding internal constructor(
                 addonId,
                 ChapterInventoryDiagnosticStage.ADDON_DISCOVERY,
                 ChapterInventoryDiagnosticOutcome.DISABLED,
+                availabilityBlocked = true,
+                affectedSourceCount = sourceEligibility.size,
                 reason = ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED,
             )
             throw ContentBindingNotFoundException("Add-on " + addonId.value + " has no enabled sources")
@@ -460,19 +528,41 @@ class ResolveContentBinding internal constructor(
         language: String? = null,
         received: Int? = null,
         accepted: Int? = null,
+        discarded: Int? = null,
         attempt: Int? = null,
         elapsedMillis: Long? = null,
         reason: ChapterInventoryDiagnosticReason? = null,
+        availabilityBlocked: Boolean = false,
+        affectedSourceCount: Int? = null,
     ) {
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
                 stage = stage, outcome = outcome, addonId = addonId.value, sourceId = sourceId,
                 language = language, received = received, accepted = accepted,
+                discarded = discarded,
+                availabilityBlocked = availabilityBlocked,
+                affectedSourceCount = affectedSourceCount,
                 attempt = attempt, elapsedMillis = elapsedMillis,
                 reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
             ),
         )
+    }
+
+    private suspend fun diagnosticSourceEligibility(
+        canonicalTitleId: String,
+        addonId: AddonId,
+    ): List<AddonSourceEligibility> {
+        if (!runCatching { diagnostics.isRecording(canonicalTitleId) }.getOrDefault(false)) {
+            return emptyList()
+        }
+        return try {
+            addonSourceEligibilityRepository?.getByAddonId(addonId).orEmpty()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private companion object {

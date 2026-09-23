@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
+import eu.kanade.tachiyomi.data.tsuzuki.diagnosticHttpStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -97,11 +98,12 @@ class MihonChapterProbeProvider internal constructor(
                         diagnostics.recordIfEnabled(
                             canonicalTitleId,
                             ChapterInventoryDiagnosticEvent(
-                                stage = ChapterInventoryDiagnosticStage.PROBE,
+                                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                                 outcome = outcome,
                                 addonId = addonId.value,
                                 sourceId = payload?.sourceId,
                                 language = payload?.language,
+                                httpStatus = error.diagnosticHttpStatus(),
                                 received = 0,
                                 reasons = mapOf(reason to 1),
                             ),
@@ -221,7 +223,7 @@ class MihonChapterProbeProvider internal constructor(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.PROBE,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                 outcome = outcome,
                 sourceId = sourceId,
                 addonId = addonId.value,
@@ -247,9 +249,10 @@ class MihonChapterProbeProvider internal constructor(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.PROBE,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                 outcome = error.toDiagnosticOutcome(),
                 addonId = addonId.value,
+                httpStatus = error.diagnosticHttpStatus(),
                 elapsedMillis = elapsedMillis.coerceAtLeast(0L),
                 received = 0,
                 accepted = 0,

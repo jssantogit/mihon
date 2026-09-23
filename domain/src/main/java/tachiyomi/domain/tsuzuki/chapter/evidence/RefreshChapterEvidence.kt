@@ -83,7 +83,7 @@ class RefreshChapterEvidence private constructor(
                 recordRefreshOutcome(
                     canonicalTitleId = canonicalTitleId,
                     outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                    reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
                 )
             }
             throw error
@@ -91,7 +91,7 @@ class RefreshChapterEvidence private constructor(
             recordRefreshOutcome(
                 canonicalTitleId = canonicalTitleId,
                 outcome = error.toDiagnosticOutcome(),
-                reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                reason = ChapterInventoryDiagnosticFailures.classify(error).second,
             )
             Result.failure(error)
         }
@@ -153,7 +153,7 @@ class RefreshChapterEvidence private constructor(
                 recordRefreshOutcome(
                     canonicalTitleId = canonicalTitleId,
                     outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                    reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
                 )
             }
             throw error
@@ -161,7 +161,7 @@ class RefreshChapterEvidence private constructor(
             recordRefreshOutcome(
                 canonicalTitleId = canonicalTitleId,
                 outcome = error.toDiagnosticOutcome(),
-                reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                reason = ChapterInventoryDiagnosticFailures.classify(error).second,
             )
             throw error
         }
@@ -183,7 +183,7 @@ class RefreshChapterEvidence private constructor(
                                                     ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
                                             is ContentBindingNotFoundException ->
                                                 ChapterInventoryDiagnosticOutcome.NO_BINDING to
-                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                                    ChapterInventoryDiagnosticReason.NO_BINDING
                                             else -> ChapterInventoryDiagnosticFailures.classify(error)
                                         }
                                         recordRefreshOutcome(
@@ -291,7 +291,7 @@ class RefreshChapterEvidence private constructor(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.PROBE,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                 outcome = outcome,
                 addonId = addonId,
                 received = received,

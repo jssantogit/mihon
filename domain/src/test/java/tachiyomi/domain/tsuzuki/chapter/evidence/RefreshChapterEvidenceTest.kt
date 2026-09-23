@@ -150,7 +150,7 @@ class RefreshChapterEvidenceTest {
 
         val event = diagnostics.events.single()
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
-        event.reasons[ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE] shouldBe 1
+        event.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
     }
 
     @Test
@@ -187,7 +187,9 @@ class RefreshChapterEvidenceTest {
             ),
         )
         timeoutRefresh.execute("canonical-title").isSuccess shouldBe true
-        val timeoutEvent = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+        val timeoutEvent = diagnostics.events.single {
+            it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE
+        }
         timeoutEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
 
         diagnostics.clear()
@@ -199,7 +201,9 @@ class RefreshChapterEvidenceTest {
             result = Result.failure(IllegalStateException("wrapper", IOException("private network detail"))),
         )
         networkRefresh.execute("canonical-title").isSuccess shouldBe true
-        val networkEvent = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+        val networkEvent = diagnostics.events.single {
+            it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE
+        }
         networkEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
         diagnostics.report().contains("private network detail") shouldBe false
     }

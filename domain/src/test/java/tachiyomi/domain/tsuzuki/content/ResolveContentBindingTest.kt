@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
@@ -29,6 +31,79 @@ import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.io.IOException
 
 class ResolveContentBindingTest {
+
+    @Test
+    fun `diagnostic reports enabled and disabled internal sources without searching disabled ones`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        diagnostics.start("title")
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/one-punch-man", "One-Punch Man")),
+            ),
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 42L,
+                sourceId = 7L,
+                sourceUrl = "/one-punch-man",
+                language = "en",
+                runtimePayload = byteArrayOf(1),
+            ),
+        )
+        val resolver = resolver(
+            repository = FakeContentBindingRepository(null),
+            gateway = gateway,
+            addonSourceIds = listOf(7L),
+            diagnostics = diagnostics,
+            addonSources = listOf(
+                AddonSourceEligibility(7L, "en", enabled = true),
+                AddonSourceEligibility(8L, "pt-BR", enabled = false),
+            ),
+            title = "One-Punch Man",
+        )
+
+        resolver.executeAll("title", AddonId("mangadex")).isSuccess shouldBe true
+
+        gateway.searchedSourceIds shouldBe listOf(7L)
+        diagnostics.events.any {
+            it.stage == ChapterInventoryDiagnosticStage.SOURCE_ELIGIBILITY &&
+                it.sourceId == 8L &&
+                it.language == "pt-BR" &&
+                it.outcome == ChapterInventoryDiagnosticOutcome.DISABLED &&
+                ChapterInventoryDiagnosticReason.SOURCE_DISABLED in it.reasons
+        } shouldBe true
+        diagnostics.events.any {
+            it.stage == ChapterInventoryDiagnosticStage.SOURCE_ELIGIBILITY &&
+                it.received == 2 && it.accepted == 1 && it.discarded == 1
+        } shouldBe true
+    }
+
+    @Test
+    fun `inactive diagnostics do not query the diagnostic-only source inventory`() = runTest {
+        var eligibilityQueries = 0
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/dandadan", "Dandadan")),
+            ),
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 42L,
+                sourceId = 7L,
+                sourceUrl = "/dandadan",
+                language = "en",
+                runtimePayload = byteArrayOf(1),
+            ),
+        )
+        val resolver = resolver(
+            repository = FakeContentBindingRepository(null),
+            gateway = gateway,
+            addonSourceEligibilityRepository = AddonSourceEligibilityRepository {
+                eligibilityQueries++
+                listOf(AddonSourceEligibility(7L, "en", enabled = true))
+            },
+        )
+
+        resolver.executeAll("title", AddonId("mangadex")).isSuccess shouldBe true
+
+        eligibilityQueries shouldBe 0
+    }
 
     @Test
     fun `existing addon binding is reused without title search`() = runTest {
@@ -240,6 +315,8 @@ class ResolveContentBindingTest {
         addonSourceIds: List<Long> = listOf(7L),
         title: String = "Dandadan",
         diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+        addonSources: List<AddonSourceEligibility> = emptyList(),
+        addonSourceEligibilityRepository: AddonSourceEligibilityRepository? = null,
     ): ResolveContentBinding {
         var nextId = 0
         return ResolveContentBinding(
@@ -251,6 +328,8 @@ class ResolveContentBindingTest {
             idFactory = { "new-binding-${nextId++}" },
             clock = { 200L },
             diagnostics = diagnostics,
+            addonSourceEligibilityRepository = addonSourceEligibilityRepository
+                ?: AddonSourceEligibilityRepository { addonSources },
         )
     }
 
@@ -397,6 +476,7 @@ class ResolveContentBindingTest {
         private val materializeFailure: Throwable? = null,
     ) : ReadingSourceGateway {
         var searchCalls = 0
+        val searchedSourceIds = mutableListOf<Long>()
         val searchedQueries = mutableListOf<String>()
         var materializeCalls = 0
 
@@ -404,6 +484,7 @@ class ResolveContentBindingTest {
 
         override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
             searchCalls += 1
+            searchedSourceIds += sourceId
             searchedQueries += query
             searchFailure?.let { return Result.failure(it) }
             return Result.success(searchResultsByQuery[sourceId to query] ?: searchResults[sourceId].orEmpty())
