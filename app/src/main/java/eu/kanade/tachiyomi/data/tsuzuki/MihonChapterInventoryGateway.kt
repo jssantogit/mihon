@@ -9,6 +9,7 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.model.SChapter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -16,12 +17,25 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import java.io.IOException
+import java.math.BigDecimal
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlin.time.TimeSource
 
 /**
@@ -38,6 +52,8 @@ class MihonChapterInventoryGateway(
     private val chapterRepository: ChapterRepository,
     private val sourceManager: SourceManager,
     private val inventoryCache: MihonInventorySnapshotCache = MihonInventorySnapshotCache(),
+    private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+    private val chapterLabelParser: ParseCanonicalChapterLabel = ParseCanonicalChapterLabel(),
 ) : ChapterInventoryGateway {
 
     override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> =
@@ -50,7 +66,17 @@ class MihonChapterInventoryGateway(
         val mihonMangaId = mapping.mihonMangaId
             ?: return Result.failure(
                 IllegalArgumentException("Source mapping " + mapping.id + " is not materialized"),
-            )
+            ).also {
+                recordInventoryFailure(
+                    canonicalTitleId = mapping.canonicalTitleId,
+                    sourceId = mapping.sourceId,
+                    language = mapping.language,
+                    addonId = null,
+                    error = it.exceptionOrNull()!!,
+                    elapsedMillis = 0L,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                )
+            }
         val key = MihonInventoryKey(
             canonicalTitleId = mapping.canonicalTitleId,
             mappingId = mapping.id,
@@ -86,6 +112,13 @@ class MihonChapterInventoryGateway(
             )
 
             val networkTime = networkStart.elapsedNow()
+            recordInventorySuccess(
+                canonicalTitleId = mapping.canonicalTitleId,
+                sourceId = mapping.sourceId,
+                language = mapping.language,
+                chapters = update.chapters,
+                elapsedMillis = networkTime.inWholeMilliseconds,
+            )
             val snapshots = update.chapters.mapIndexed { index, chapter ->
                 val legacy = legacyByUrl[chapter.url]
                 chapter.toSnapshot(
@@ -110,8 +143,26 @@ class MihonChapterInventoryGateway(
                 ),
             )
         } catch (error: CancellationException) {
+            if (error is TimeoutCancellationException) {
+                recordInventoryFailure(
+                    canonicalTitleId = mapping.canonicalTitleId,
+                    sourceId = mapping.sourceId,
+                    language = mapping.language,
+                    addonId = null,
+                    error = error,
+                    elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
+                )
+            }
             throw error
         } catch (error: Throwable) {
+            recordInventoryFailure(
+                canonicalTitleId = mapping.canonicalTitleId,
+                sourceId = mapping.sourceId,
+                language = mapping.language,
+                addonId = null,
+                error = error,
+                elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
+            )
             logcat {
                 "TsuzukiPerf inventory source=${mapping.sourceId} failed=${error.javaClass.simpleName} " +
                     "total=${totalStart.elapsedNow()}"
@@ -146,6 +197,14 @@ class MihonChapterInventoryGateway(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            recordInventoryFailure(
+                canonicalTitleId = binding.canonicalTitleId,
+                sourceId = null,
+                language = null,
+                addonId = binding.addonId.value,
+                error = error,
+                elapsedMillis = 0L,
+            )
             Result.failure(error)
         }
     }
@@ -208,4 +267,104 @@ class MihonChapterInventoryGateway(
         mihonChapterId = mihonChapterId,
         rawSourceMetadata = memo,
     )
+
+    private fun recordInventorySuccess(
+        canonicalTitleId: String,
+        sourceId: Long,
+        language: String,
+        chapters: List<SChapter>,
+        elapsedMillis: Long,
+    ) {
+        if (!isDiagnosticsRecording(canonicalTitleId)) return
+        val normalizedLabels = chapters.mapNotNull(::diagnosticLabel)
+        val (labels, gaps) = ChapterInventoryDiagnosticLabels.boundariesAndGaps(normalizedLabels)
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.INVENTORY,
+                outcome = if (chapters.isEmpty()) {
+                    ChapterInventoryDiagnosticOutcome.EMPTY
+                } else {
+                    ChapterInventoryDiagnosticOutcome.SUCCESS
+                },
+                sourceId = sourceId,
+                language = language,
+                elapsedMillis = elapsedMillis.coerceAtLeast(0L),
+                received = chapters.size,
+                accepted = chapters.size,
+                provisional = 0,
+                discarded = 0,
+                labels = labels,
+                gaps = gaps,
+                reasons = if (chapters.isEmpty()) {
+                    mapOf(ChapterInventoryDiagnosticReason.INVENTORY_EMPTY to 1)
+                } else {
+                    emptyMap()
+                },
+            ),
+        )
+    }
+
+    private fun recordInventoryFailure(
+        canonicalTitleId: String,
+        sourceId: Long?,
+        language: String?,
+        addonId: String?,
+        error: Throwable,
+        elapsedMillis: Long,
+        reason: ChapterInventoryDiagnosticReason? = null,
+    ) {
+        val reasons = reason?.let { mapOf(it to 1) }.orEmpty()
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.INVENTORY,
+                outcome = error.toDiagnosticOutcome(),
+                sourceId = sourceId,
+                addonId = addonId,
+                language = language,
+                elapsedMillis = elapsedMillis.coerceAtLeast(0L),
+                received = 0,
+                accepted = 0,
+                provisional = 0,
+                discarded = 0,
+                reasons = reasons,
+            ),
+        )
+    }
+
+    private fun diagnosticLabel(chapter: SChapter): String? {
+        val parsed = runCatching { chapterLabelParser.execute(chapter.name, chapter.chapter_number) }
+            .getOrNull()
+        ChapterInventoryDiagnosticLabels.fromIdentity(parsed?.identity ?: return numericLabel(chapter.chapter_number))
+            ?.let { return it }
+        return numericLabel(chapter.chapter_number)
+    }
+
+    private fun numericLabel(value: Float): String? {
+        if (!value.isFinite() || value < 0f || value > 999_999_999f) return null
+        return runCatching { BigDecimal(value.toString()).stripTrailingZeros().toPlainString() }.getOrNull()
+    }
+
+    private fun isDiagnosticsRecording(canonicalTitleId: String): Boolean = try {
+        diagnostics.isRecording(canonicalTitleId)
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome = when {
+        this is TimeoutCancellationException || this is SocketTimeoutException ||
+            causeChain().any { it is TimeoutCancellationException || it is SocketTimeoutException } ->
+            ChapterInventoryDiagnosticOutcome.TIMEOUT
+        this is IOException || causeChain().any { it is IOException || it is UnknownHostException } ->
+            ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
+    }
+
+    private fun Throwable.causeChain(): Sequence<Throwable> =
+        generateSequence(cause) { it.cause }.take(MAX_CAUSES)
+
+    private companion object {
+        const val MAX_CAUSES = 5
+    }
 }

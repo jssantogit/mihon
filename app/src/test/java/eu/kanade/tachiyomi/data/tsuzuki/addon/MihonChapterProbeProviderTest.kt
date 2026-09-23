@@ -8,17 +8,19 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
-import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
-import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
+import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
+import java.io.IOException
+import java.net.SocketTimeoutException
 
 class MihonChapterProbeProviderTest {
 
@@ -88,6 +90,42 @@ class MihonChapterProbeProviderTest {
         event.stage shouldBe ChapterInventoryDiagnosticStage.PROBE
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
         event.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
+    }
+
+    @Test
+    fun `diagnostic classifies wrapped timeouts and IO failures from their causes`() = runTest {
+        val binding = binding()
+        val diagnostics = RecordingChapterInventoryDiagnostics()
+        diagnostics.start("title")
+
+        val timeout = IllegalStateException("wrapper", SocketTimeoutException("private timeout"))
+        val timeoutProvider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { Result.failure(timeout) },
+            clock = { 1L },
+            diagnostics = diagnostics,
+        )
+
+        timeoutProvider.probe("title").isFailure shouldBe true
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+
+        diagnostics.clear()
+        diagnostics.start("title")
+        val network = IllegalStateException("wrapper", IOException("private network detail"))
+        val networkProvider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { Result.failure(network) },
+            clock = { 1L },
+            diagnostics = diagnostics,
+        )
+
+        networkProvider.probe("title").isFailure shouldBe true
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        diagnostics.report().contains("private network detail") shouldBe false
     }
 
     @Test

@@ -21,6 +21,14 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
@@ -64,6 +72,8 @@ sealed interface CanonicalTitleScreenState {
         val downloadSelectionChapterId: String? = null,
         val downloadError: Throwable? = null,
         val chapterActionError: Throwable? = null,
+        val chapterDiagnosticsRecording: Boolean = false,
+        val chapterDiagnosticReportAvailable: Boolean = false,
     ) : CanonicalTitleScreenState
 
     data class Error(
@@ -99,16 +109,22 @@ class CanonicalTitleScreenModel(
     private val addonRepository: AddonRepository,
     private val refreshReportedChapterCounts: RefreshReportedChapterCounts,
     private val refreshChapterEvidence: RefreshChapterEvidence,
+    private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<CanonicalTitleScreenState>(CanonicalTitleScreenState.Loading)
     val state: StateFlow<CanonicalTitleScreenState> = _state.asStateFlow()
 
     private var canonicalTitleId: String? = null
+    private var diagnosticTitleId: String? = null
     private var operation: Job? = null
     private var downloadOperation: Job? = null
 
     fun start(canonicalTitleId: String): Job {
+        val previousTitleId = this.canonicalTitleId
+        if (previousTitleId != null && previousTitleId != canonicalTitleId && diagnosticsRecording(previousTitleId)) {
+            runCatching { diagnostics.stop() }
+        }
         this.canonicalTitleId = canonicalTitleId
         operation?.cancel()
         operation = viewModelScope.launch {
@@ -130,6 +146,50 @@ class CanonicalTitleScreenModel(
             refreshInBackground(id)
         }
         return operation
+    }
+
+    fun startChapterDiagnostics() {
+        val id = canonicalTitleId ?: return
+        try {
+            diagnostics.start(id)
+        } catch (_: Exception) {
+            return
+        }
+        diagnosticTitleId = id
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded
+        if (loaded?.title?.id == id) {
+            recordUiDiagnosticSnapshot(
+                state = loaded,
+                reason = ChapterInventoryDiagnosticReason.CACHE_SNAPSHOT,
+                received = loaded.chapters.count { !it.inferredFromCount },
+            )
+            updateDiagnosticUiState(id)
+        }
+    }
+
+    fun stopChapterDiagnostics() {
+        try {
+            diagnostics.stop()
+        } catch (_: Exception) {
+            return
+        }
+        canonicalTitleId?.let(::updateDiagnosticUiState)
+    }
+
+    fun clearChapterDiagnostics() {
+        try {
+            diagnostics.clear()
+        } catch (_: Exception) {
+            return
+        }
+        diagnosticTitleId = null
+        canonicalTitleId?.let(::updateDiagnosticUiState)
+    }
+
+    fun chapterDiagnosticReport(): String = try {
+        diagnostics.report()
+    } catch (_: Exception) {
+        ""
     }
 
     fun addToLibrary(): Job? {
@@ -465,7 +525,7 @@ class CanonicalTitleScreenModel(
             }
         }
 
-        return CanonicalTitleScreenState.Loaded(
+        val loaded = CanonicalTitleScreenState.Loaded(
             title = title,
             libraryEntry = libraryEntry,
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
@@ -474,7 +534,86 @@ class CanonicalTitleScreenModel(
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )
+        val cacheReason = if (isRefreshing) {
+            ChapterInventoryDiagnosticReason.CACHE_SNAPSHOT
+        } else {
+            ChapterInventoryDiagnosticReason.REFRESHED_SNAPSHOT
+        }
+        recordUiDiagnosticSnapshot(
+            state = loaded,
+            reason = cacheReason,
+            received = chapters.size,
+        )
+        return loaded.copy(
+            chapterDiagnosticsRecording = diagnosticsRecording(canonicalTitleId),
+            chapterDiagnosticReportAvailable = diagnosticReportAvailable(canonicalTitleId),
+        )
     }
+
+    private fun recordUiDiagnosticSnapshot(
+        state: CanonicalTitleScreenState.Loaded,
+        reason: ChapterInventoryDiagnosticReason,
+        received: Int,
+    ) {
+        val realRows = state.chapters.filterNot(CanonicalChapterDetailItem::inferredFromCount)
+        val provisional = realRows.count {
+            it.confirmation == CanonicalChapterConfirmation.PROVISIONAL
+        }
+        val conflicted = realRows.count {
+            it.confirmation == CanonicalChapterConfirmation.CONFLICTED
+        }
+        val inferred = state.chapters.count(CanonicalChapterDetailItem::inferredFromCount)
+        val discarded = (received - realRows.size).coerceAtLeast(0)
+        val labels = state.chapters.mapNotNull { item ->
+            ChapterInventoryDiagnosticLabels.fromIdentity(item.chapter.identity)
+        }
+        val (boundaryLabels, gaps) = ChapterInventoryDiagnosticLabels.boundariesAndGaps(labels)
+        val outcome = when {
+            received == 0 && state.chapters.isEmpty() -> ChapterInventoryDiagnosticOutcome.EMPTY
+            provisional > 0 || conflicted > 0 || inferred > 0 || discarded > 0 ->
+                ChapterInventoryDiagnosticOutcome.PARTIAL
+            else -> ChapterInventoryDiagnosticOutcome.SUCCESS
+        }
+        val reasons = buildMap {
+            put(reason, 1)
+            if (provisional > 0) put(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE, provisional)
+            if (conflicted > 0) put(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH, conflicted)
+            if (discarded > 0) put(ChapterInventoryDiagnosticReason.FILTERED_FROM_UI, discarded)
+        }
+        diagnostics.recordIfEnabled(
+            state.title.id,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.UI,
+                outcome = outcome,
+                received = received.coerceAtLeast(0),
+                accepted = realRows.size,
+                provisional = provisional,
+                discarded = discarded,
+                inferred = inferred,
+                labels = boundaryLabels,
+                gaps = gaps,
+                reasons = reasons,
+            ),
+        )
+    }
+
+    private fun diagnosticsRecording(canonicalTitleId: String): Boolean = try {
+        diagnostics.isRecording(canonicalTitleId)
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun updateDiagnosticUiState(canonicalTitleId: String) {
+        val loaded = _state.value as? CanonicalTitleScreenState.Loaded ?: return
+        if (loaded.title.id != canonicalTitleId) return
+        _state.value = loaded.copy(
+            chapterDiagnosticsRecording = diagnosticsRecording(canonicalTitleId),
+            chapterDiagnosticReportAvailable = diagnosticReportAvailable(canonicalTitleId),
+        )
+    }
+
+    private fun diagnosticReportAvailable(canonicalTitleId: String): Boolean =
+        diagnosticTitleId == canonicalTitleId && chapterDiagnosticReport().isNotBlank()
 
     private fun withMetadataSlots(
         titleId: String,

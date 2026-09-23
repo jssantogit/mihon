@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
+import eu.kanade.tachiyomi.util.system.copyToClipboard
 
 data class CanonicalTitleScreen(
     val canonicalTitleId: String,
@@ -38,6 +39,14 @@ data class CanonicalTitleScreen(
             state = state,
             navigateUp = navigator::pop,
             onRefresh = { screenModel.refresh() },
+            onStartChapterDiagnostics = screenModel::startChapterDiagnostics,
+            onStopChapterDiagnostics = screenModel::stopChapterDiagnostics,
+            onCopyChapterDiagnostics = {
+                screenModel.chapterDiagnosticReport()
+                    .takeIf(String::isNotBlank)
+                    ?.let { context.copyToClipboard("Tsuzuki chapter inventory diagnostic", it) }
+            },
+            onClearChapterDiagnostics = screenModel::clearChapterDiagnostics,
             onAddToLibrary = { screenModel.addToLibrary() },
             onRemoveFromLibrary = { screenModel.removeFromLibrary() },
             onOpenAddonsSettings = {

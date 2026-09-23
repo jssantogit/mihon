@@ -20,12 +20,12 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
-import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -39,6 +39,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import java.io.IOException
 import java.net.SocketTimeoutException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -128,6 +129,38 @@ class RefreshChapterEvidenceTest {
         noBindingEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
         noBindingEvent.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
         diagnostics.report().contains("sensitive network detail") shouldBe false
+    }
+
+    @Test
+    fun `diagnostic classifies wrapped timeout and IO causes without changing refresh result`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        val addonId = AddonId("mangafire")
+
+        diagnostics.start("canonical-title")
+        val timeoutRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = true,
+            result = Result.failure(
+                IllegalStateException("wrapper", SocketTimeoutException("private timeout")),
+            ),
+        )
+        timeoutRefresh.execute("canonical-title").isSuccess shouldBe true
+        val timeoutEvent = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+        timeoutEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+
+        diagnostics.clear()
+        diagnostics.start("canonical-title")
+        val networkRefresh = refreshWithProbe(
+            diagnostics = diagnostics,
+            addonId = addonId,
+            bindingAvailable = true,
+            result = Result.failure(IllegalStateException("wrapper", IOException("private network detail"))),
+        )
+        networkRefresh.execute("canonical-title").isSuccess shouldBe true
+        val networkEvent = diagnostics.events.single { it.stage == ChapterInventoryDiagnosticStage.PROBE }
+        networkEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        diagnostics.report().contains("private network detail") shouldBe false
     }
 
     @Test

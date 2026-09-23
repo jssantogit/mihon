@@ -6,6 +6,7 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -22,6 +23,7 @@ class MihonAddonProviderFactory(
     private val chapterEvidenceRepository: ChapterEvidenceRepository,
     private val parser: ParseCanonicalChapterLabel,
     private val chapterInventoryGateway: MihonChapterInventoryGateway,
+    private val chapterInventoryDiagnostics: ChapterInventoryDiagnostics,
 ) {
 
     fun contentProvider(addonId: AddonId) = MihonContentProvider(
@@ -39,6 +41,7 @@ class MihonAddonProviderFactory(
         contentBindingRepository = contentBindingRepository,
         parser = parser,
         fetchInventory = { binding -> chapterInventoryGateway.fetch(binding, refresh = true) },
+        diagnostics = chapterInventoryDiagnostics,
     )
 
     private suspend fun materializeDelivery(

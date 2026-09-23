@@ -1,6 +1,14 @@
 package tachiyomi.domain.tsuzuki.chapter.evidence
 
 import dev.zacsweers.metro.Inject
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
@@ -16,6 +24,7 @@ class ReconcileChapterEvidence internal constructor(
     private val idFactory: () -> String,
     private val clock: () -> Long,
     private val mutationGate: ChapterMutationGate = ChapterMutationGate(),
+    private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) {
 
     @Inject
@@ -24,6 +33,7 @@ class ReconcileChapterEvidence internal constructor(
         canonicalChapterRepository: CanonicalChapterRepository,
         evidenceRepository: ChapterEvidenceRepository,
         mutationGate: ChapterMutationGate,
+        diagnostics: ChapterInventoryDiagnostics,
     ) : this(
         parser = parser,
         canonicalChapterRepository = canonicalChapterRepository,
@@ -31,6 +41,7 @@ class ReconcileChapterEvidence internal constructor(
         idFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
         mutationGate = mutationGate,
+        diagnostics = diagnostics,
     )
 
     constructor(
@@ -43,6 +54,7 @@ class ReconcileChapterEvidence internal constructor(
         evidenceRepository = evidenceRepository,
         idFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
+        diagnostics = NoOpChapterInventoryDiagnostics,
     )
 
     suspend fun execute(
@@ -53,10 +65,21 @@ class ReconcileChapterEvidence internal constructor(
         require(evidence.all { it.canonicalTitleId == canonicalTitleId }) {
             "All chapter evidence must belong to canonical title $canonicalTitleId"
         }
-        if (evidence.isEmpty()) return
-        mutationGate.withLock {
-            reconcileUncontended(canonicalTitleId, evidence)
+        if (evidence.isEmpty()) {
+            diagnostics.recordIfEnabled(
+                canonicalTitleId,
+                ChapterInventoryDiagnosticEvent(
+                    stage = ChapterInventoryDiagnosticStage.RECONCILIATION,
+                    outcome = ChapterInventoryDiagnosticOutcome.EMPTY,
+                    received = 0,
+                    accepted = 0,
+                    provisional = 0,
+                    discarded = 0,
+                ),
+            )
+            return
         }
+        mutationGate.withLock { reconcileUncontended(canonicalTitleId, evidence) }
     }
 
     private suspend fun reconcileUncontended(
@@ -70,9 +93,32 @@ class ReconcileChapterEvidence internal constructor(
             .getByCanonicalTitleId(canonicalTitleId)
             .associateBy { it.evidence.id }
             .toMutableMap()
+        val initialChapterCount = chapters.size
+        val reasonCounts = mutableMapOf<ChapterInventoryDiagnosticReason, Int>()
+        val diagnosticLabels = mutableListOf<String>()
+        var acceptedCount = 0
+        var provisionalCount = 0
+        var discardedCount = 0
 
         for (observation in evidence) {
-            val parsed = parser.execute(observation.rawLabel, observation.rawNumber)
+            val parsed = try {
+                parser.execute(observation.rawLabel, observation.rawNumber)
+            } catch (error: Throwable) {
+                diagnostics.recordIfEnabled(
+                    canonicalTitleId,
+                    ChapterInventoryDiagnosticEvent(
+                        stage = ChapterInventoryDiagnosticStage.RECONCILIATION,
+                        outcome = ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR,
+                        received = evidence.size,
+                        accepted = acceptedCount,
+                        provisional = provisionalCount,
+                        discarded = discardedCount,
+                        reasons = mapOf(ChapterInventoryDiagnosticReason.PARSER_ERROR to 1),
+                    ),
+                )
+                throw error
+            }
+            ChapterInventoryDiagnosticLabels.fromIdentity(parsed.identity)?.let(diagnosticLabels::add)
             val parsedIdentityIsReliable = observation.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.identity.isSpecific
@@ -81,6 +127,8 @@ class ReconcileChapterEvidence internal constructor(
                 observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
                 !parsedIdentityIsReliable
             ) {
+                provisionalCount++
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
                 val persisted = evidenceRepository.upsert(
                     evidence = observation,
                     mappedCanonicalChapterId = null,
@@ -112,6 +160,9 @@ class ReconcileChapterEvidence internal constructor(
                 parsedIdentityIsReliable &&
                 mappedChapter.identity.isSpecific &&
                 mappedChapter.identity != parsed.identity
+            if (mappedIdentityConflicts) {
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+            }
 
             val reusableByIdentity = if (
                 parsedIdentityIsReliable &&
@@ -187,7 +238,62 @@ class ReconcileChapterEvidence internal constructor(
                 mappedCanonicalChapterId = reconciled.id,
             )
             persistedEvidence[persisted.evidence.id] = persisted
+            acceptedCount++
+            reasonCounts.increment(ChapterInventoryDiagnosticReason.PERSISTED_MAPPED)
         }
+
+        val normalizedLabels = ChapterInventoryDiagnosticLabels.boundariesAndGaps(diagnosticLabels)
+        val reconciliationOutcome = when {
+            provisionalCount > 0 && acceptedCount == 0 -> ChapterInventoryDiagnosticOutcome.LOW_CONFIDENCE
+            provisionalCount > 0 || discardedCount > 0 -> ChapterInventoryDiagnosticOutcome.PARTIAL
+            else -> ChapterInventoryDiagnosticOutcome.SUCCESS
+        }
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.RECONCILIATION,
+                outcome = reconciliationOutcome,
+                received = evidence.size,
+                accepted = acceptedCount,
+                provisional = provisionalCount,
+                discarded = discardedCount,
+                labels = normalizedLabels.first,
+                gaps = normalizedLabels.second,
+                reasons = reasonCounts.toMap(),
+            ),
+        )
+
+        val persistedMapped = persistedEvidence.values.count { it.mappedCanonicalChapterId != null }
+        val persistedUnmapped = persistedEvidence.size - persistedMapped
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = ChapterInventoryDiagnosticStage.PERSISTENCE,
+                outcome = if (persistedUnmapped > 0) {
+                    ChapterInventoryDiagnosticOutcome.PARTIAL
+                } else {
+                    ChapterInventoryDiagnosticOutcome.SUCCESS
+                },
+                received = initialChapterCount,
+                accepted = chapters.size,
+                provisional = chapters.values.count {
+                    it.confirmation == CanonicalChapterConfirmation.PROVISIONAL
+                },
+                discarded = 0,
+                reasons = buildMap {
+                    put(ChapterInventoryDiagnosticReason.PERSISTED_MAPPED, persistedMapped)
+                    put(ChapterInventoryDiagnosticReason.PERSISTED_UNMAPPED, persistedUnmapped)
+                    put(ChapterInventoryDiagnosticReason.CACHE_SNAPSHOT, initialChapterCount)
+                    put(ChapterInventoryDiagnosticReason.REFRESHED_SNAPSHOT, chapters.size)
+                },
+            ),
+        )
+    }
+
+    private fun MutableMap<ChapterInventoryDiagnosticReason, Int>.increment(
+        reason: ChapterInventoryDiagnosticReason,
+    ) {
+        this[reason] = (this[reason] ?: 0) + 1
     }
 
     private fun isReliableSupportFor(
