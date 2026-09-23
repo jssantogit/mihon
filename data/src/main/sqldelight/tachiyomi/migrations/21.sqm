@@ -1,0 +1,69 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_collections(
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+
+CREATE INDEX tsuzuki_collection_order_index
+ON tsuzuki_collections(sort_order);
+
+CREATE TABLE tsuzuki_folders(
+    id TEXT NOT NULL PRIMARY KEY,
+    collection_id TEXT NOT NULL,
+    parent_folder_id TEXT,
+    title TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    FOREIGN KEY(collection_id) REFERENCES tsuzuki_collections(id) ON DELETE CASCADE,
+    FOREIGN KEY(parent_folder_id) REFERENCES tsuzuki_folders(id) ON DELETE CASCADE,
+    CHECK(parent_folder_id IS NULL OR parent_folder_id != id)
+);
+
+CREATE INDEX tsuzuki_folder_collection_index
+ON tsuzuki_folders(collection_id);
+
+CREATE INDEX tsuzuki_folder_parent_index
+ON tsuzuki_folders(parent_folder_id);
+
+CREATE TABLE tsuzuki_lists(
+    id TEXT NOT NULL PRIMARY KEY,
+    collection_id TEXT NOT NULL,
+    folder_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    query_json TEXT,
+    sort TEXT NOT NULL,
+    layout_type TEXT,
+    sort_order INTEGER NOT NULL,
+    enabled INTEGER AS Boolean NOT NULL,
+    origin TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    FOREIGN KEY(collection_id) REFERENCES tsuzuki_collections(id) ON DELETE CASCADE,
+    FOREIGN KEY(folder_id) REFERENCES tsuzuki_folders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_list_collection_index
+ON tsuzuki_lists(collection_id);
+
+CREATE INDEX tsuzuki_list_folder_index
+ON tsuzuki_lists(folder_id);
+
+CREATE INDEX tsuzuki_list_provider_index
+ON tsuzuki_lists(provider_id);

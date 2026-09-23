@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,6 +56,7 @@ import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
+import eu.kanade.presentation.tsuzuki.content.ContentOptionSelectorSheet
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.notification.Notifications
@@ -75,6 +77,8 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
+import eu.kanade.tachiyomi.ui.setting.SettingsScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.readerBackgroundColor
@@ -114,6 +118,18 @@ class ReaderActivity : BaseActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
         }
+
+        fun newCanonicalIntent(
+            context: Context,
+            canonicalChapterId: String,
+            preferredLanguage: String? = null,
+        ): Intent {
+            return Intent(context, ReaderActivity::class.java).apply {
+                putExtra("canonical_chapter", canonicalChapterId)
+                preferredLanguage?.let { putExtra("canonical_language", it) }
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        }
     }
 
     @Inject private lateinit var readerPreferences: ReaderPreferences
@@ -123,6 +139,7 @@ class ReaderActivity : BaseActivity() {
     lateinit var binding: ReaderActivityBinding
 
     val viewModel by viewModels<ReaderViewModel> { graph.viewModelFactory }
+    private val contentSelectorViewModel by viewModels<ContentSelectorScreenModel> { graph.viewModelFactory }
     private var assistUrl: String? = null
 
     /**
@@ -175,11 +192,13 @@ class ReaderActivity : BaseActivity() {
             return
         }
 
-        NotificationReceiver.dismissNotification(
-            this,
-            viewModel.mangaId.hashCode(),
-            Notifications.ID_NEW_CHAPTERS,
-        )
+        if (viewModel.mangaId != -1L) {
+            NotificationReceiver.dismissNotification(
+                this,
+                viewModel.mangaId.hashCode(),
+                Notifications.ID_NEW_CHAPTERS,
+            )
+        }
 
         config = ReaderConfig()
         setMenuVisibility(viewModel.state.value.menuVisible)
@@ -204,10 +223,11 @@ class ReaderActivity : BaseActivity() {
             .launchIn(lifecycleScope)
 
         viewModel.state
-            .map { it.manga }
+            .map(ReaderViewModel.State::needsViewerInitialization)
             .distinctUntilChanged()
-            .filterNotNull()
-            .onEach { updateViewer() }
+            .onEach { needsInitialization ->
+                if (needsInitialization) updateViewer()
+            }
             .launchIn(lifecycleScope)
 
         viewModel.state
@@ -225,6 +245,17 @@ class ReaderActivity : BaseActivity() {
                     }
                     ReaderViewModel.Event.PageChanged -> {
                         displayRefreshHost.flash()
+                    }
+                    ReaderViewModel.Event.CloseReader -> {
+                        finish()
+                    }
+                    is ReaderViewModel.Event.ContentSelectionReady -> {
+                        if (event.selection.rememberFirstPreference) {
+                            contentSelectorViewModel.confirmInitialPreferred(event.selection)
+                        }
+                    }
+                    is ReaderViewModel.Event.ContentSwitchFailed -> {
+                        toast(event.message)
                     }
                     is ReaderViewModel.Event.SetOrientation -> {
                         setOrientation(event.orientation)
@@ -248,6 +279,7 @@ class ReaderActivity : BaseActivity() {
 
     private fun ReaderActivityBinding.setComposeOverlay(): Unit = composeOverlay.setComposeContent {
         val state by viewModel.state.collectAsState()
+        val selectorState by contentSelectorViewModel.state.collectAsState()
         val showPageNumber by readerPreferences.showPageNumber.collectAsState()
         val settingsviewModel = remember {
             ReaderSettingsViewModel(
@@ -327,6 +359,95 @@ class ReaderActivity : BaseActivity() {
                     onSetAsCover = viewModel::setAsCover,
                     onShare = viewModel::shareImage,
                     onSave = viewModel::saveImage,
+                )
+            }
+            is ReaderViewModel.Dialog.ContentSelector -> {
+                val selector = state.dialog as ReaderViewModel.Dialog.ContentSelector
+                androidx.compose.runtime.LaunchedEffect(
+                    selector.canonicalTitleId,
+                    selector.canonicalChapterId,
+                ) {
+                    contentSelectorViewModel.start(
+                        canonicalTitleId = selector.canonicalTitleId,
+                        canonicalChapterId = selector.canonicalChapterId,
+                    )
+                }
+                ContentOptionSelectorSheet(
+                    state = selectorState,
+                    activeOptionKey = state.activeContentOptionKey,
+                    activeContentLabel = state.activeContentLabel,
+                    onSelect = { item ->
+                        viewModel.selectCanonicalContent(contentSelectorViewModel.select(item))
+                    },
+                    onRetry = { contentSelectorViewModel.retry() },
+                    onOpenAddonsSettings = {
+                        startActivity(
+                            Intent(this@ReaderActivity, MainActivity::class.java)
+                                .setAction(Intent.ACTION_APPLICATION_PREFERENCES)
+                                .putExtra(
+                                    SettingsScreen.EXTRA_DESTINATION,
+                                    SettingsScreen.Destination.TsuzukiAddons.id,
+                                ),
+                        )
+                    },
+                    onDismissRequest = viewModel::dismissContentSelector,
+                )
+            }
+            is ReaderViewModel.Dialog.SetPreferredAddon -> {
+                val preference = state.dialog as ReaderViewModel.Dialog.SetPreferredAddon
+                AlertDialog(
+                    onDismissRequest = { viewModel.finishAddonPreferencePrompt(preference.selection) },
+                    title = {
+                        Text(stringResource(MR.strings.tsuzuki_content_set_preferred_title))
+                    },
+                    text = {
+                        Text(stringResource(MR.strings.tsuzuki_content_set_preferred_message))
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                contentSelectorViewModel.confirmPreferred(preference.selection)
+                                viewModel.finishAddonPreferencePrompt(preference.selection)
+                            },
+                        ) {
+                            Text(stringResource(MR.strings.action_ok))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { viewModel.finishAddonPreferencePrompt(preference.selection) },
+                        ) {
+                            Text(stringResource(MR.strings.action_cancel))
+                        }
+                    },
+                )
+            }
+            is ReaderViewModel.Dialog.SetPreferredLanguage -> {
+                val preference = state.dialog as ReaderViewModel.Dialog.SetPreferredLanguage
+                AlertDialog(
+                    onDismissRequest = viewModel::closeDialog,
+                    title = { Text("Preferred language") },
+                    text = {
+                        Text(
+                            "Use ${preference.selection.option.language} as the preferred " +
+                                "language for this manga?",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                contentSelectorViewModel.confirmPreferredLanguage(preference.selection)
+                                viewModel.closeDialog()
+                            },
+                        ) {
+                            Text(stringResource(MR.strings.action_ok))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = viewModel::closeDialog) {
+                            Text(stringResource(MR.strings.action_cancel))
+                        }
+                    },
                 )
             }
             null -> {}
@@ -466,11 +587,15 @@ class ReaderActivity : BaseActivity() {
             visible = state.menuVisible,
 
             mangaTitle = state.manga?.title,
-            chapterTitle = state.currentChapter?.chapter?.name,
+            chapterTitle = listOfNotNull(
+                state.currentChapter?.chapter?.name,
+                state.activeContentLabel,
+            ).joinToString(" · "),
             navigateUp = onBackPressedDispatcher::onBackPressed,
             onClickTopAppBar = ::openMangaScreen,
             bookmarked = state.bookmarked,
             onToggleBookmarked = viewModel::toggleChapterBookmark,
+            onChangeSource = viewModel::openContentSelector.takeIf { viewModel.canChangeCanonicalSource() },
             onOpenInWebView = ::openChapterInWebView.takeIf { isHttpSource },
             onOpenInBrowser = ::openChapterInBrowser.takeIf { isHttpSource },
             onShare = ::shareChapter.takeIf { isHttpSource },
@@ -490,9 +615,9 @@ class ReaderActivity : BaseActivity() {
             },
             verticalNavigatorHeight = verticalNavigatorHeight / 100f,
             onNextChapter = ::loadNextChapter,
-            enabledNext = state.viewerChapters?.nextChapter != null,
+            enabledNext = state.canonicalCanNavigateNext || state.viewerChapters?.nextChapter != null,
             onPreviousChapter = ::loadPreviousChapter,
-            enabledPrevious = state.viewerChapters?.prevChapter != null,
+            enabledPrevious = state.canonicalCanNavigatePrevious || state.viewerChapters?.prevChapter != null,
             currentPage = state.currentPage,
             totalPages = state.totalPages,
             onPageIndexChange = {

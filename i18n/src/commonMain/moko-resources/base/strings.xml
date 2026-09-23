@@ -875,6 +875,38 @@
     <string name="transition_pages_error">Failed to load pages: %1$s</string>
     <string name="page_list_empty_error">No pages found</string>
     <string name="loader_not_implemented_error">Source not found</string>
+    <string name="tsuzuki_reader_fallback_title">Alternative source available</string>
+    <string name="tsuzuki_reader_fallback_message">The preferred source does not have this chapter. Another source can be used for this chapter without changing the title's preferred source.</string>
+    <string name="tsuzuki_reader_fallback_read_once">Read once</string>
+    <string name="tsuzuki_reader_fallback_always">Always use fallback</string>
+    <string name="tsuzuki_content_selector_title">Choose reading source</string>
+    <string name="tsuzuki_content_no_options">No reading options found</string>
+    <string name="tsuzuki_content_selector_error">Unable to load reading options</string>
+    <string name="tsuzuki_content_preferred_badge">Preferred</string>
+    <string name="tsuzuki_content_change_source">Change source</string>
+    <string name="tsuzuki_content_open_addons">Add-ons settings</string>
+    <string name="tsuzuki_content_set_preferred_title">Set preferred Add-on?</string>
+    <string name="tsuzuki_content_set_preferred_message">Use this Add-on as the preferred reading source for this title?</string>
+    <string name="tsuzuki_content_settings_title">Tsuzuki content</string>
+    <string name="tsuzuki_content_preferred_languages">Preferred languages</string>
+    <string name="tsuzuki_content_languages_ranking_only">Order affects ranking only; alternative languages remain available.</string>
+    <string name="tsuzuki_content_languages_hint">Comma-separated language codes</string>
+    <string name="tsuzuki_content_automatic_fallback">Automatic fallback</string>
+    <string name="tsuzuki_content_automatic_fallback_summary">Automatically use another Add-on when the preferred one cannot provide a chapter.</string>
+    <string name="tsuzuki_account_title">Account</string>
+    <string name="tsuzuki_integrations_title">Integrations</string>
+    <string name="tsuzuki_home_collections_title">Home &amp; Collections</string>
+    <string name="tsuzuki_sync_title">Sync</string>
+    <string name="tsuzuki_addons_title">Add-ons</string>
+    <string name="tsuzuki_addons_repositories">Repositories</string>
+    <string name="tsuzuki_addons_installed">Installed Add-ons</string>
+    <string name="tsuzuki_addons_none_installed">No Add-ons installed</string>
+    <string name="tsuzuki_addon_needs_installation">Needs installation · Install manually from Extension Stores</string>
+    <string name="tsuzuki_addon_update_available">Update available</string>
+    <string name="tsuzuki_addon_enabled">Enabled</string>
+    <string name="tsuzuki_addon_disabled">Disabled</string>
+    <string name="tsuzuki_addon_uninstall_title">Uninstall Add-on?</string>
+    <string name="tsuzuki_addon_uninstall_message">Uninstall %1$s? Canonical titles, chapters, reading progress, history, and completed canonical downloads are kept.</string>
 
     <!-- Updates -->
     <string name="updating_library">Updating library</string>
@@ -1085,4 +1117,32 @@
     <string name="donationCampaign.paragraph3">Regardless, Mihon will continue to be maintained by me and the volunteers, and it will stay open source.</string>
     <string name="donationCampaign.contactPlatform">Discord</string>
     <string name="donationCampaign.dismiss">Dismiss</string>
+    <!-- Tsuzuki Google account -->
+    <string name="pref_category_google_account">Google account</string>
+    <string name="pref_google_account_summary">Authorization for Tsuzuki cloud data</string>
+    <string name="google_auth_status">Google authorization</string>
+    <string name="google_auth_restoring">Checking authorization…</string>
+    <string name="google_auth_signed_out">Not connected</string>
+    <string name="google_auth_connecting">Waiting for Google…</string>
+    <string name="google_auth_connected">Connected</string>
+    <string name="google_auth_authorization_required">Authorization required</string>
+    <string name="google_auth_temporarily_unavailable">Temporarily unavailable</string>
+    <string name="google_auth_error">Google authorization error</string>
+    <string name="google_auth_wait">Please wait…</string>
+    <string name="google_auth_connect">Connect Google account</string>
+    <string name="google_auth_reconnect">Reconnect Google account</string>
+    <string name="google_auth_disconnect">Disconnect Google account</string>
+    <string name="google_auth_scope_info">Tsuzuki requests access only to its private app-data area in Google Drive. Regular Drive files are not exposed to Tsuzuki, and access tokens are kept only in memory.</string>
+    <string name="google_auth_launch_failed">Could not open Google authorization.</string>
+    <string name="google_auth_remote_disconnect_failed">Signed out locally, but Google access could not be revoked right now.</string>
+    <string name="drive_sync_status">Private Drive sync</string>
+    <string name="drive_sync_ready">Ready</string>
+    <string name="drive_sync_running">Syncing…</string>
+    <string name="drive_sync_complete">Sync complete</string>
+    <string name="drive_sync_complete_with_issues">Sync completed with issues</string>
+    <string name="drive_sync_failed">Sync failed</string>
+    <string name="drive_sync_now">Sync now</string>
+    <string name="drive_sync_info">Private sync currently includes Library, Collections, and logical source mappings/preferences. Downloads, page caches, and tracker credentials are never synchronized.</string>
+    <string name="drive_sync_failed_to_start">Could not run Drive sync.</string>
+
 </resources>

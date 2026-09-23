@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": "5678",
+      "type": "manga",
+      "attributes": {
+        "slug": "chainsaw-man",
+        "synopsis": "Denji was a small-time devil hunter...",
+        "titles": {
+          "en": "Chainsaw Man",
+          "ja_jp": "チェンソーマン"
+        },
+        "canonicalTitle": "Chainsaw Man",
+        "averageRating": "83.12",
+        "userCount": 35000,
+        "status": "current",
+        "subtype": "manga",
+        "posterImage": {
+          "medium": "https://media.kitsu.io/manga/poster_images/5678/medium.jpg"
+        }
+      }
+    }
+  ]
+}

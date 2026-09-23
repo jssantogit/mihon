@@ -26,6 +26,8 @@ import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncJob
+import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncRuntime
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.util.ExtensionInstallActivity
@@ -51,6 +53,10 @@ import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.domain.track.interactor.InsertTrack
+import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSyncIntentRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 
 @DependencyGraph(
     scope = AppScope::class,
@@ -63,6 +69,7 @@ interface AppGraph : ViewModelGraph {
     fun inject(webViewActivity: WebViewActivity)
     fun inject(baseOAuthLoginActivity: BaseOAuthLoginActivity)
     fun inject(libraryUpdateJob: LibraryUpdateJob)
+    fun inject(supabaseSyncJob: SupabaseSyncJob)
     fun inject(metadataUpdateJob: MetadataUpdateJob)
     fun inject(backupRestoreJob: BackupRestoreJob)
     fun inject(backupCreateJob: BackupCreateJob)
@@ -88,6 +95,7 @@ interface AppGraph : ViewModelGraph {
     val privacyPreferences: PrivacyPreferences
     val securityPreferences: SecurityPreferences
     val downloadPreferences: DownloadPreferences
+    val canonicalReaderPreferences: CanonicalReaderPreferences
 
     val crashLogUtil: CrashLogUtil
 
@@ -98,7 +106,11 @@ interface AppGraph : ViewModelGraph {
     val trustExtension: TrustExtension
 
     val sourceManager: SourceManager
+    val addonRepository: AddonRepository
+    val addonSyncIntentRepository: AddonSyncIntentRepository
     val trackerManager: TrackerManager
+    val accountRepository: AccountRepository
+    val supabaseSyncRuntime: SupabaseSyncRuntime
     val extensionManager: ExtensionManager
     val chapterCache: ChapterCache
     val downloadCache: DownloadCache

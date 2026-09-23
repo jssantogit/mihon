@@ -1,0 +1,260 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_collections(
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+
+CREATE INDEX tsuzuki_collection_order_index
+ON tsuzuki_collections(sort_order);
+
+CREATE TABLE tsuzuki_folders(
+    id TEXT NOT NULL PRIMARY KEY,
+    collection_id TEXT NOT NULL,
+    parent_folder_id TEXT,
+    title TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    FOREIGN KEY(collection_id) REFERENCES tsuzuki_collections(id) ON DELETE CASCADE,
+    FOREIGN KEY(parent_folder_id) REFERENCES tsuzuki_folders(id) ON DELETE CASCADE,
+    CHECK(parent_folder_id IS NULL OR parent_folder_id != id)
+);
+
+CREATE INDEX tsuzuki_folder_collection_index
+ON tsuzuki_folders(collection_id);
+
+CREATE INDEX tsuzuki_folder_parent_index
+ON tsuzuki_folders(parent_folder_id);
+
+CREATE TABLE tsuzuki_lists(
+    id TEXT NOT NULL PRIMARY KEY,
+    collection_id TEXT NOT NULL,
+    folder_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    query_json TEXT,
+    sort TEXT NOT NULL,
+    layout_type TEXT,
+    sort_order INTEGER NOT NULL,
+    enabled INTEGER AS Boolean NOT NULL,
+    origin TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    FOREIGN KEY(collection_id) REFERENCES tsuzuki_collections(id) ON DELETE CASCADE,
+    FOREIGN KEY(folder_id) REFERENCES tsuzuki_folders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_list_collection_index
+ON tsuzuki_lists(collection_id);
+
+CREATE INDEX tsuzuki_list_folder_index
+ON tsuzuki_lists(folder_id);
+
+CREATE INDEX tsuzuki_list_provider_index
+ON tsuzuki_lists(provider_id);
+
+getTsuzukiCollectionById:
+SELECT *
+FROM tsuzuki_collections
+WHERE id = :id
+LIMIT 1;
+
+getActiveTsuzukiCollections:
+SELECT *
+FROM tsuzuki_collections
+WHERE deleted_at IS NULL
+ORDER BY sort_order ASC, id ASC;
+
+getAllTsuzukiCollections:
+SELECT *
+FROM tsuzuki_collections
+ORDER BY sort_order ASC, id ASC;
+
+upsertTsuzukiCollection:
+INSERT INTO tsuzuki_collections(
+    id,
+    title,
+    origin,
+    sort_order,
+    schema_version,
+    revision,
+    created_at,
+    updated_at,
+    deleted_at
+)
+VALUES (
+    :id,
+    :title,
+    :origin,
+    :sortOrder,
+    :schemaVersion,
+    :revision,
+    :createdAt,
+    :updatedAt,
+    :deletedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    origin = excluded.origin,
+    sort_order = excluded.sort_order,
+    schema_version = excluded.schema_version,
+    revision = excluded.revision,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at;
+
+getTsuzukiFolderById:
+SELECT *
+FROM tsuzuki_folders
+WHERE id = :id
+LIMIT 1;
+
+getActiveTsuzukiFoldersByCollection:
+SELECT *
+FROM tsuzuki_folders
+WHERE collection_id = :collectionId
+AND deleted_at IS NULL
+ORDER BY sort_order ASC, id ASC;
+
+getAllTsuzukiFoldersByCollection:
+SELECT *
+FROM tsuzuki_folders
+WHERE collection_id = :collectionId
+ORDER BY sort_order ASC, id ASC;
+
+upsertTsuzukiFolder:
+INSERT INTO tsuzuki_folders(
+    id,
+    collection_id,
+    parent_folder_id,
+    title,
+    origin,
+    sort_order,
+    schema_version,
+    revision,
+    created_at,
+    updated_at,
+    deleted_at
+)
+VALUES (
+    :id,
+    :collectionId,
+    :parentFolderId,
+    :title,
+    :origin,
+    :sortOrder,
+    :schemaVersion,
+    :revision,
+    :createdAt,
+    :updatedAt,
+    :deletedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    collection_id = excluded.collection_id,
+    parent_folder_id = excluded.parent_folder_id,
+    title = excluded.title,
+    origin = excluded.origin,
+    sort_order = excluded.sort_order,
+    schema_version = excluded.schema_version,
+    revision = excluded.revision,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at;
+
+getTsuzukiListById:
+SELECT *
+FROM tsuzuki_lists
+WHERE id = :id
+LIMIT 1;
+
+getActiveTsuzukiListsByFolder:
+SELECT *
+FROM tsuzuki_lists
+WHERE folder_id = :folderId
+AND deleted_at IS NULL
+ORDER BY sort_order ASC, id ASC;
+
+getAllTsuzukiListsByFolder:
+SELECT *
+FROM tsuzuki_lists
+WHERE folder_id = :folderId
+ORDER BY sort_order ASC, id ASC;
+
+getActiveTsuzukiListsByCollection:
+SELECT *
+FROM tsuzuki_lists
+WHERE collection_id = :collectionId
+AND deleted_at IS NULL
+ORDER BY sort_order ASC, id ASC;
+
+getAllTsuzukiListsByCollection:
+SELECT *
+FROM tsuzuki_lists
+WHERE collection_id = :collectionId
+ORDER BY sort_order ASC, id ASC;
+
+upsertTsuzukiList:
+INSERT INTO tsuzuki_lists(
+    id,
+    collection_id,
+    folder_id,
+    title,
+    provider_id,
+    query_json,
+    sort,
+    layout_type,
+    sort_order,
+    enabled,
+    origin,
+    schema_version,
+    revision,
+    created_at,
+    updated_at,
+    deleted_at
+)
+VALUES (
+    :id,
+    :collectionId,
+    :folderId,
+    :title,
+    :providerId,
+    :queryJson,
+    :sort,
+    :layoutType,
+    :sortOrder,
+    :enabled,
+    :origin,
+    :schemaVersion,
+    :revision,
+    :createdAt,
+    :updatedAt,
+    :deletedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    collection_id = excluded.collection_id,
+    folder_id = excluded.folder_id,
+    title = excluded.title,
+    provider_id = excluded.provider_id,
+    query_json = excluded.query_json,
+    sort = excluded.sort,
+    layout_type = excluded.layout_type,
+    sort_order = excluded.sort_order,
+    enabled = excluded.enabled,
+    origin = excluded.origin,
+    schema_version = excluded.schema_version,
+    revision = excluded.revision,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at;

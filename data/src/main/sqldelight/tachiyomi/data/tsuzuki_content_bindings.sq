@@ -1,0 +1,87 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_content_bindings(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    addon_id TEXT NOT NULL,
+    provider_title_key TEXT NOT NULL,
+    match_confidence REAL NOT NULL,
+    verified_by_user INTEGER AS Boolean NOT NULL,
+    availability TEXT NOT NULL,
+    runtime_payload BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(addon_id, provider_title_key),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_content_binding_title_index
+ON tsuzuki_content_bindings(canonical_title_id);
+
+CREATE INDEX tsuzuki_content_binding_addon_index
+ON tsuzuki_content_bindings(addon_id);
+
+getTsuzukiContentBinding:
+SELECT *
+FROM tsuzuki_content_bindings
+WHERE canonical_title_id = :canonicalTitleId
+AND addon_id = :addonId
+ORDER BY updated_at DESC, id ASC
+LIMIT 1;
+
+getTsuzukiContentBindingsByTitle:
+SELECT *
+FROM tsuzuki_content_bindings
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY created_at ASC, id ASC;
+
+getTsuzukiContentBindingsByAddon:
+SELECT *
+FROM tsuzuki_content_bindings
+WHERE addon_id = :addonId
+ORDER BY created_at ASC, id ASC;
+
+upsertTsuzukiContentBinding:
+INSERT INTO tsuzuki_content_bindings(
+    id,
+    canonical_title_id,
+    addon_id,
+    provider_title_key,
+    match_confidence,
+    verified_by_user,
+    availability,
+    runtime_payload,
+    created_at,
+    updated_at
+)
+VALUES (
+    :id,
+    :canonicalTitleId,
+    :addonId,
+    :providerTitleKey,
+    :matchConfidence,
+    :verifiedByUser,
+    :availability,
+    :runtimePayload,
+    :createdAt,
+    :updatedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    canonical_title_id = excluded.canonical_title_id,
+    addon_id = excluded.addon_id,
+    provider_title_key = excluded.provider_title_key,
+    match_confidence = excluded.match_confidence,
+    verified_by_user = excluded.verified_by_user,
+    availability = excluded.availability,
+    runtime_payload = excluded.runtime_payload,
+    updated_at = excluded.updated_at;
+
+markTsuzukiContentBindingUnavailable:
+UPDATE tsuzuki_content_bindings
+SET availability = 'UNAVAILABLE',
+    updated_at = :updatedAt
+WHERE id = :id;
+
+deleteTsuzukiContentBinding:
+DELETE FROM tsuzuki_content_bindings
+WHERE id = :id;

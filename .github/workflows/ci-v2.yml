@@ -1,0 +1,418 @@
+name: CI v2.1
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Verification scope
+        required: true
+        default: full
+        type: choice
+        options:
+          - affected
+          - full
+  push:
+    branches:
+      - main
+      - 'tsuzuki/**'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!fastlane/**'
+      - '!i18n/src/commonMain/moko-resources/**/strings.xml'
+      - '!i18n/src/commonMain/moko-resources/**/plurals.xml'
+      - 'i18n/src/commonMain/moko-resources/base/strings.xml'
+      - 'i18n/src/commonMain/moko-resources/base/plurals.xml'
+
+concurrency:
+  group: ci-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Change Planner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      test_matrix: ${{ steps.plan.outputs.test_matrix }}
+      compile_matrix: ${{ steps.plan.outputs.compile_matrix }}
+      run_tests: ${{ steps.plan.outputs.run_tests }}
+      run_compile: ${{ steps.plan.outputs.run_compile }}
+      run_format: ${{ steps.plan.outputs.run_format }}
+      run_database: ${{ steps.plan.outputs.run_database }}
+      run_supabase: ${{ steps.plan.outputs.run_supabase }}
+      run_native_package: ${{ steps.plan.outputs.run_native_package }}
+      run_release: ${{ steps.plan.outputs.run_release }}
+      selected_tests: ${{ steps.plan.outputs.selected_tests }}
+      selected_compiles: ${{ steps.plan.outputs.selected_compiles }}
+      mode: ${{ steps.scope.outputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Test CI routing
+        run: |
+          python3 .github/scripts/test_ci_v2_plan.py
+          python3 .github/scripts/test_apk_lane.py
+
+      - name: Resolve verification scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          mode="affected"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            mode="${REQUESTED_MODE:-full}"
+          fi
+
+          case "$REF_NAME" in
+            main|tsuzuki/bootstrap)
+              mode="full"
+              ;;
+          esac
+
+          if [[ "$COMMIT_MESSAGE" == *"[ci-full]"* ]]; then
+            mode="full"
+          fi
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Collect changed paths
+        id: changes
+        shell: bash
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          : > changed-paths.txt
+
+          if [ "$MODE" = "full" ]; then
+            echo "Full verification requested; diff planning is bypassed."
+            exit 0
+          fi
+
+          base="$BEFORE_SHA"
+          if [ "$EVENT_NAME" != "push" ] || [ -z "$base" ] || [[ "$base" =~ ^0+$ ]]; then
+            base="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "::warning::Unable to resolve a reliable base commit; planner will fail safe to full."
+            exit 0
+          fi
+
+          git diff --name-only "$base" "$GITHUB_SHA" > changed-paths.txt
+
+          echo "Changed paths:"
+          cat changed-paths.txt
+
+      - name: Build execution plan
+        id: plan
+        shell: bash
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+        run: |
+          python3 .github/scripts/ci_v2_plan.py \
+            --mode "$MODE" \
+            --paths-file changed-paths.txt \
+            | tee -a "$GITHUB_OUTPUT"
+
+      - name: Summarize plan
+        shell: bash
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          TESTS: ${{ steps.plan.outputs.selected_tests }}
+          COMPILES: ${{ steps.plan.outputs.selected_compiles }}
+          DATABASE: ${{ steps.plan.outputs.run_database }}
+          SUPABASE: ${{ steps.plan.outputs.run_supabase }}
+          NATIVE: ${{ steps.plan.outputs.run_native_package }}
+          RELEASE: ${{ steps.plan.outputs.run_release }}
+        run: |
+          {
+            echo "## CI v2.1 execution plan"
+            echo
+            echo "- Mode: \`$MODE\`"
+            echo "- Test shards: \`$TESTS\`"
+            echo "- Compile checks: \`$COMPILES\`"
+            echo "- SQLDelight migrations: \`$DATABASE\`"
+            echo "- Supabase backend: \`$SUPABASE\`"
+            echo "- Native package gate: \`$NATIVE\`"
+            echo "- Release compile: \`$RELEASE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  format:
+    name: Format
+    needs: plan
+    if: needs.plan.outputs.run_format == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Check code format
+        run: ./gradlew spotlessCheck
+
+  tests:
+    name: Tests — ${{ matrix.name }}
+    needs: plan
+    if: needs.plan.outputs.run_tests == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.test_matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Run ${{ matrix.name }} tests
+        id: unit_tests
+        shell: bash
+        env:
+          TEST_FILTER: ${{ matrix.filter }}
+        run: |
+          args=(./gradlew "${{ matrix.task }}")
+          if [ -n "$TEST_FILTER" ]; then
+            args+=(--tests "$TEST_FILTER")
+          fi
+          "${args[@]}"
+
+      - name: Upload failed test report
+        if: failure() && steps.unit_tests.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-report-${{ matrix.key }}-${{ github.sha }}
+          path: ${{ matrix.report }}
+          if-no-files-found: ignore
+          retention-days: 3
+
+  compile:
+    name: Compile — ${{ matrix.name }}
+    needs: plan
+    if: needs.plan.outputs.run_compile == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.compile_matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Run compile check
+        run: ./gradlew "${{ matrix.task }}"
+
+  database:
+    name: SQLDelight Migrations
+    needs: plan
+    if: needs.plan.outputs.run_database == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Verify SQLDelight migrations
+        run: ./gradlew verifySqlDelightMigration
+
+  supabase:
+    name: Supabase Backend
+    needs: plan
+    if: needs.plan.outputs.run_supabase == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Detect Supabase project
+        id: project
+        shell: bash
+        run: |
+          if [ -f supabase/config.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Supabase project not committed yet; backend lane is ready and intentionally skips."
+          fi
+
+      - name: Set up Supabase CLI
+        if: steps.project.outputs.present == 'true'
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: 2.117.0
+
+      - name: Start local Supabase
+        if: steps.project.outputs.present == 'true'
+        run: supabase start
+
+      - name: Reset database
+        if: steps.project.outputs.present == 'true'
+        run: supabase db reset
+
+      - name: Run database tests
+        if: steps.project.outputs.present == 'true'
+        run: supabase test db
+
+      - name: Stop local Supabase
+        if: always() && steps.project.outputs.present == 'true'
+        run: supabase stop --no-backup
+
+  native-package:
+    name: Native Package Gate
+    needs: plan
+    if: needs.plan.outputs.run_native_package == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Assemble debug package
+        run: ./gradlew :app:assembleDebug
+
+  release:
+    name: Release Compile
+    needs: plan
+    if: needs.plan.outputs.run_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: true
+
+      - name: Compile release
+        run: ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
+
+  gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - plan
+      - format
+      - tests
+      - compile
+      - database
+      - supabase
+      - native-package
+      - release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify required jobs
+        shell: bash
+        env:
+          PLAN: ${{ needs.plan.result }}
+          FORMAT: ${{ needs.format.result }}
+          TESTS: ${{ needs.tests.result }}
+          COMPILE: ${{ needs.compile.result }}
+          DATABASE: ${{ needs.database.result }}
+          SUPABASE: ${{ needs.supabase.result }}
+          NATIVE: ${{ needs.native-package.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: |
+          failed=0
+
+          check_result() {
+            name="$1"
+            result="$2"
+            case "$result" in
+              success|skipped)
+                echo "$name: $result"
+                ;;
+              *)
+                echo "::error::$name finished with result '$result'"
+                failed=1
+                ;;
+            esac
+          }
+
+          check_result "Change Planner" "$PLAN"
+          check_result "Format" "$FORMAT"
+          check_result "Tests" "$TESTS"
+          check_result "Compile" "$COMPILE"
+          check_result "SQLDelight Migrations" "$DATABASE"
+          check_result "Supabase Backend" "$SUPABASE"
+          check_result "Native Package Gate" "$NATIVE"
+          check_result "Release Compile" "$RELEASE"
+
+          exit "$failed"

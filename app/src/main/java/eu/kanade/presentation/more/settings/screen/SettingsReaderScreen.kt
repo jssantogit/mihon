@@ -1,17 +1,25 @@
 package eu.kanade.presentation.more.settings.screen
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.util.system.hasDisplayCutout
 import mihon.app.di.appGraph
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
@@ -28,6 +36,7 @@ object SettingsReaderScreen : SearchableSettings {
     override fun getPreferences(): List<Preference> {
         val context = LocalContext.current
         val readerPref = remember { context.appGraph.readerPreferences }
+        val canonicalReaderPref = remember { context.appGraph.canonicalReaderPreferences }
 
         return listOf(
             Preference.PreferenceItem.ListPreference(
@@ -59,6 +68,7 @@ object SettingsReaderScreen : SearchableSettings {
                 preference = readerPref.pageTransitions,
                 title = stringResource(MR.strings.pref_page_transitions),
             ),
+            getTsuzukiContentGroup(readerPreferences = canonicalReaderPref),
             getDisplayGroup(readerPreferences = readerPref),
             getEInkGroup(readerPreferences = readerPref),
             getReadingGroup(readerPreferences = readerPref),
@@ -66,6 +76,27 @@ object SettingsReaderScreen : SearchableSettings {
             getWebtoonGroup(readerPreferences = readerPref),
             getNavigationGroup(readerPreferences = readerPref),
             getActionsGroup(readerPreferences = readerPref),
+        )
+    }
+
+    @Composable
+    private fun getTsuzukiContentGroup(
+        readerPreferences: CanonicalReaderPreferences,
+    ): Preference.PreferenceGroup {
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.tsuzuki_content_settings_title),
+            preferenceItems = listOf(
+                Preference.PreferenceItem.CustomPreference(
+                    title = stringResource(MR.strings.tsuzuki_content_preferred_languages),
+                ) {
+                    PreferredLanguagesPreference(readerPreferences)
+                },
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = readerPreferences.automaticFallback,
+                    title = stringResource(MR.strings.tsuzuki_content_automatic_fallback),
+                    subtitle = stringResource(MR.strings.tsuzuki_content_automatic_fallback_summary),
+                ),
+            ),
         )
     }
 
@@ -440,4 +471,71 @@ object SettingsReaderScreen : SearchableSettings {
             ),
         )
     }
+}
+
+@Composable
+private fun PreferredLanguagesPreference(
+    readerPreferences: CanonicalReaderPreferences,
+) {
+    val languages by readerPreferences.preferredLanguages.collectAsState()
+    var showDialog by remember { mutableStateOf(false) }
+    var draft by remember(languages) { mutableStateOf(languages.joinToString(", ")) }
+
+    TextPreferenceWidget(
+        title = stringResource(MR.strings.tsuzuki_content_preferred_languages),
+        subtitle = buildString {
+            append(
+                languages.takeIf { it.isNotEmpty() }
+                    ?.joinToString(" → ")
+                    ?: stringResource(MR.strings.none),
+            )
+            append("\n")
+            append(stringResource(MR.strings.tsuzuki_content_languages_ranking_only))
+        },
+        onPreferenceClick = {
+            draft = languages.joinToString(", ")
+            showDialog = true
+        },
+    )
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = {
+                Text(stringResource(MR.strings.tsuzuki_content_preferred_languages))
+            },
+            text = {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    label = {
+                        Text(stringResource(MR.strings.tsuzuki_content_languages_hint))
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        readerPreferences.preferredLanguages.set(parsePreferredLanguages(draft))
+                        showDialog = false
+                    },
+                ) {
+                    Text(stringResource(MR.strings.action_ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(MR.strings.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+internal fun parsePreferredLanguages(raw: String): List<String> {
+    return raw
+        .split(',', '\n')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .distinct()
 }

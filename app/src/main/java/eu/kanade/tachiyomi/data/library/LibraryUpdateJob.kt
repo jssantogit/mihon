@@ -49,10 +49,11 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.getAndSet
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.model.NoChaptersException
-import tachiyomi.domain.library.model.LibraryManga
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_CHARGING
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_NETWORK_NOT_METERED
@@ -62,11 +63,16 @@ import tachiyomi.domain.library.service.LibraryPreferences.Companion.MANGA_NON_C
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.MANGA_NON_READ
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.MANGA_OUTSIDE_RELEASE_PERIOD
 import tachiyomi.domain.manga.interactor.FetchInterval
-import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
+import tachiyomi.domain.tsuzuki.library.interactor.GetLibraryTitlesForUpdate
+import tachiyomi.domain.tsuzuki.library.interactor.RefreshLibraryTitleForUpdate
+import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
+import tachiyomi.domain.tsuzuki.model.SourceRepresentation
 import tachiyomi.i18n.MR
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
@@ -89,9 +95,15 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
     @Inject private lateinit var downloadManager: DownloadManager
 
-    @Inject private lateinit var getLibraryManga: GetLibraryManga
+    @Inject private lateinit var getLibraryTitlesForUpdate: GetLibraryTitlesForUpdate
+
+    @Inject private lateinit var refreshLibraryTitleForUpdate: RefreshLibraryTitleForUpdate
 
     @Inject private lateinit var getManga: GetManga
+
+    @Inject private lateinit var getCategories: GetCategories
+
+    @Inject private lateinit var chapterRepository: ChapterRepository
 
     @Inject private lateinit var fetchInterval: FetchInterval
 
@@ -101,7 +113,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
     @Inject private lateinit var notifier: LibraryUpdateNotifier
 
-    private var mangaToUpdate: List<LibraryManga> = mutableListOf()
+    private var titlesToUpdate: List<CanonicalUpdateTarget> = emptyList()
 
     override suspend fun doWork(): Result {
         graph.inject(this)
@@ -163,15 +175,18 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
      * @param categoryId the ID of the category to update, or -1 if no category specified.
      */
     private suspend fun addMangaToQueue(categoryId: Long) {
-        val libraryManga = getLibraryManga.await()
+        val libraryTitles = getLibraryTitlesForUpdate.await()
+        val materializedTargets = libraryTitles.mapNotNull { title ->
+            resolveUpdateTarget(title)
+        }
 
         val listToUpdate = if (categoryId != -1L) {
-            libraryManga.filter { categoryId in it.categories }
+            materializedTargets.filter { categoryId in it.categories }
         } else {
             val includedCategories = libraryPreferences.updateCategories.get().map { it.toLong() }
             val excludedCategories = libraryPreferences.updateCategoriesExclude.get().map { it.toLong() }
 
-            libraryManga.filter {
+            materializedTargets.filter {
                 val included = includedCategories.isEmpty() || it.categories.intersect(includedCategories).isNotEmpty()
                 val excluded = it.categories.intersect(excludedCategories).isNotEmpty()
                 included && !excluded
@@ -186,7 +201,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             timeZone,
         )
 
-        mangaToUpdate = listToUpdate
+        titlesToUpdate = listToUpdate
             .filter {
                 when {
                     it.manga.updateStrategy == UpdateStrategy.ONLY_FETCH_ONCE && it.totalChapters > 0L -> {
@@ -221,12 +236,11 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                     else -> true
                 }
             }
-            .sortedBy { it.manga.title }
+            .sortedBy { it.libraryTitle.title.displayTitle }
 
-        notifier.showQueueSizeWarningNotificationIfNeeded(mangaToUpdate)
+        notifier.showQueueSizeWarningNotificationIfNeededForManga(titlesToUpdate.map { it.manga })
 
         if (skippedUpdates.isNotEmpty()) {
-            // TODO: surface skipped reasons to user?
             logcat {
                 skippedUpdates
                     .groupBy { it.second }
@@ -236,8 +250,30 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         }
     }
 
+    private suspend fun resolveUpdateTarget(libraryTitle: LibraryTitle): CanonicalUpdateTarget? {
+        val resolved = selectOperationalSourceRepresentations(libraryTitle.sources)
+            .mapNotNull { representation ->
+                val mangaId = representation.mihonMangaId ?: return@mapNotNull null
+                getManga.await(mangaId)?.let { representation to it }
+            }
+
+        val primary = resolved.firstOrNull() ?: return null
+        val validSources = resolved.map { it.first }
+        val manga = primary.second
+        val chapters = chapterRepository.getChapterByMangaId(manga.id)
+        val categories = getCategories.await(manga.id).map { it.id }
+
+        return CanonicalUpdateTarget(
+            libraryTitle = libraryTitle.copy(sources = validSources),
+            manga = manga,
+            categories = categories,
+            totalChapters = chapters.size.toLong(),
+            readCount = chapters.count { it.read }.toLong(),
+        )
+    }
+
     /**
-     * Method that updates manga in [mangaToUpdate]. It's called in a background thread, so it's safe
+     * Method that updates canonical library titles through their operational representation. It's called in a background thread, so it's safe
      * to do heavy operations or network calls here.
      * For each manga it calls [updateManga] and updates the notification showing the current
      * progress.
@@ -255,39 +291,42 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         val fetchWindow = fetchInterval.getWindow(Clock.System.now().toLocalDateTime(timeZone).date, timeZone)
 
         coroutineScope {
-            mangaToUpdate.groupBy { it.manga.source }.values
-                .map { mangaInSource ->
+            titlesToUpdate.groupBy { it.manga.source }.values
+                .map { titlesInSource ->
                     async {
                         semaphore.withPermit {
-                            mangaInSource.forEach { libraryManga ->
-                                val manga = libraryManga.manga
+                            titlesInSource.forEach { target ->
+                                val manga = target.manga
                                 ensureActive()
 
-                                // Don't continue to update if manga is not in library
-                                if (getManga.await(manga.id)?.favorite != true) {
-                                    return@forEach
-                                }
-
-                                withUpdateNotification(
-                                    currentlyUpdatingManga,
-                                    progressCount,
-                                    manga,
-                                ) {
+                                withUpdateNotification(currentlyUpdatingManga, progressCount, manga) {
                                     try {
-                                        val newChapters = updateManga(manga, fetchWindow)
-                                            .sortedByDescending { it.sourceOrder }
+                                        val cycle = runCanonicalUpdateCycle(
+                                            updateOperational = {
+                                                updateManga(manga, fetchWindow)
+                                                    .sortedByDescending { it.sourceOrder }
+                                            },
+                                            refreshCanonical = {
+                                                refreshLibraryTitleForUpdate.execute(target.libraryTitle)
+                                            },
+                                        )
+                                        val canonicalRefresh = cycle.canonicalRefresh
+                                        val newChapters = cycle.newOperationalChapters
+
+                                        val canonicalNewCount = canonicalRefresh
+                                            ?.createdCanonicalChapterIds
+                                            ?.size
+                                            ?: newChapters.size
+                                        if (canonicalNewCount > 0) {
+                                            libraryPreferences.newUpdatesCount.getAndSet { it + canonicalNewCount }
+                                        }
 
                                         if (newChapters.isNotEmpty()) {
                                             val chaptersToDownload = filterChaptersForDownload.await(manga, newChapters)
-
                                             if (chaptersToDownload.isNotEmpty()) {
                                                 downloadChapters(manga, chaptersToDownload)
                                                 hasDownloads.store(true)
                                             }
-
-                                            libraryPreferences.newUpdatesCount.getAndSet { it + newChapters.size }
-
-                                            // Convert to the manga that contains new chapters
                                             newUpdates.add(manga to newChapters.toTypedArray())
                                         }
                                     } catch (e: Throwable) {
@@ -295,7 +334,6 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                             is NoChaptersException -> context.stringResource(
                                                 MR.strings.no_chapters_error,
                                             )
-                                            // failedUpdates will already have the source, don't need to copy it into the message
                                             is SourceNotInstalledException -> context.stringResource(
                                                 MR.strings.loader_not_implemented_error,
                                             )
@@ -312,23 +350,15 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         }
 
         notifier.cancelProgressNotification()
-
         if (newUpdates.isNotEmpty()) {
             notifier.showUpdateNotifications(newUpdates)
-            if (hasDownloads.load()) {
-                downloadManager.startDownloads()
-            }
+            if (hasDownloads.load()) downloadManager.startDownloads()
         }
-
         if (failedUpdates.isNotEmpty()) {
             val errorFile = writeErrorFile(failedUpdates)
-            notifier.showUpdateErrorNotification(
-                failedUpdates.size,
-                errorFile.getUriCompat(context),
-            )
+            notifier.showUpdateErrorNotification(failedUpdates.size, errorFile.getUriCompat(context))
         }
     }
-
     private suspend fun downloadChapters(manga: Manga, chapters: List<Chapter>) {
         // We don't want to start downloading while the library is updating, because websites
         // may don't like it and they could ban the user.
@@ -353,7 +383,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         )
             .getOrThrow()
 
-        return if (update.manga.favorite) update.newChapters else emptyList()
+        return update.newChapters
     }
 
     private suspend fun withUpdateNotification(
@@ -368,7 +398,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         notifier.showProgressNotification(
             updatingManga,
             completed.load(),
-            mangaToUpdate.size,
+            titlesToUpdate.size,
         )
 
         block()
@@ -380,7 +410,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         notifier.showProgressNotification(
             updatingManga,
             completed.load(),
-            mangaToUpdate.size,
+            titlesToUpdate.size,
         )
     }
 
@@ -414,6 +444,19 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         return File("")
     }
 
+    private data class CanonicalUpdateTarget(
+        val libraryTitle: LibraryTitle,
+        val manga: Manga,
+        val categories: List<Long>,
+        val totalChapters: Long,
+        val readCount: Long,
+    ) {
+        val unreadCount: Long
+            get() = totalChapters - readCount
+
+        val hasStarted: Boolean
+            get() = readCount > 0
+    }
     companion object {
         private const val TAG = "LibraryUpdate"
         private const val WORK_NAME_AUTO = "LibraryUpdate-auto"
@@ -520,3 +563,33 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         }
     }
 }
+
+internal data class CanonicalUpdateCycleResult(
+    val newOperationalChapters: List<Chapter>,
+    val canonicalRefresh: ChapterReconciliationReport?,
+)
+
+internal suspend fun runCanonicalUpdateCycle(
+    updateOperational: suspend () -> List<Chapter>,
+    refreshCanonical: suspend () -> Result<ChapterReconciliationReport?>,
+): CanonicalUpdateCycleResult {
+    val newOperationalChapters = updateOperational()
+    val canonicalRefresh = refreshCanonical().getOrThrow()
+    return CanonicalUpdateCycleResult(
+        newOperationalChapters = newOperationalChapters,
+        canonicalRefresh = canonicalRefresh,
+    )
+}
+
+internal fun selectOperationalSourceRepresentations(
+    sources: List<SourceRepresentation>,
+): List<SourceRepresentation> = sources
+    .filter {
+        it.mihonMangaId != null &&
+            it.availability != SourceMappingAvailability.UNAVAILABLE
+    }
+    .sortedWith(
+        compareBy<SourceRepresentation> { if (it.preferredOverride) 0 else 1 }
+            .thenBy { if (it.verifiedByUser) 0 else 1 }
+            .thenBy(SourceRepresentation::id),
+    )

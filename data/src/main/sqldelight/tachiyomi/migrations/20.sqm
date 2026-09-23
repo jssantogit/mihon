@@ -1,0 +1,4 @@
+ALTER TABLE tsuzuki_chapter_progress
+ADD COLUMN last_variant_id TEXT
+REFERENCES tsuzuki_chapter_variants(id)
+ON DELETE SET NULL;

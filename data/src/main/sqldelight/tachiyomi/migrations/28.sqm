@@ -1,0 +1,68 @@
+DROP VIEW historyView;
+
+CREATE VIEW historyView AS
+WITH rankedVariants AS (
+    SELECT
+        variants.*,
+        mappings.preferred_override,
+        mappings.verified_by_user,
+        canonicalHistory.last_variant_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY variants.canonical_chapter_id
+            ORDER BY
+                CASE WHEN variants.id = canonicalHistory.last_variant_id THEN 0 ELSE 1 END,
+                mappings.preferred_override DESC,
+                mappings.verified_by_user DESC,
+                mappings.id ASC,
+                variants.id ASC
+        ) AS variantRank
+    FROM tsuzuki_chapter_variants variants
+    JOIN tsuzuki_source_mappings mappings
+    ON mappings.id = variants.source_mapping_id
+    JOIN tsuzuki_chapter_history canonicalHistory
+    ON canonicalHistory.canonical_chapter_id = variants.canonical_chapter_id
+    WHERE variants.mihon_manga_id IS NOT NULL
+    AND variants.mihon_chapter_id IS NOT NULL
+    AND mappings.availability != 'UNAVAILABLE'
+),
+selectedVariants AS (
+    SELECT *
+    FROM rankedVariants
+    WHERE variantRank = 1
+)
+SELECT
+    COALESCE(legacyHistory._id, selectedVariants.mihon_chapter_id) AS id,
+    selectedVariants.mihon_manga_id AS mangaId,
+    selectedVariants.mihon_chapter_id AS chapterId,
+    titles.display_title AS title,
+    mangas.thumbnail_url AS thumbnailUrl,
+    selectedVariants.source_id AS source,
+    library.favorite AS favorite,
+    mangas.cover_last_modified,
+    chapters.chapter_number AS chapterNumber,
+    canonicalHistory.last_read_at AS readAt,
+    canonicalHistory.time_read AS readDuration,
+    MAX(canonicalHistory.last_read_at) OVER (
+        PARTITION BY canonicalChapters.canonical_title_id
+    ) AS maxReadAt,
+    FIRST_VALUE(selectedVariants.mihon_chapter_id) OVER (
+        PARTITION BY canonicalChapters.canonical_title_id
+        ORDER BY canonicalHistory.last_read_at DESC, canonicalChapters.id ASC
+    ) AS maxReadAtChapterId
+FROM tsuzuki_chapter_history canonicalHistory
+JOIN tsuzuki_canonical_chapters canonicalChapters
+ON canonicalChapters.id = canonicalHistory.canonical_chapter_id
+JOIN tsuzuki_titles titles
+ON titles.id = canonicalChapters.canonical_title_id
+JOIN selectedVariants
+ON selectedVariants.canonical_chapter_id = canonicalChapters.id
+JOIN chapters
+ON chapters._id = selectedVariants.mihon_chapter_id
+JOIN mangas
+ON mangas._id = selectedVariants.mihon_manga_id
+AND mangas._id = chapters.manga_id
+AND mangas.source = selectedVariants.source_id
+LEFT JOIN tsuzuki_library_entries library
+ON library.canonical_title_id = canonicalChapters.canonical_title_id
+LEFT JOIN history legacyHistory
+ON legacyHistory.chapter_id = selectedVariants.mihon_chapter_id;

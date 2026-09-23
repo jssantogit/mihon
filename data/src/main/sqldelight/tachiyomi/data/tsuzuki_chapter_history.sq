@@ -1,0 +1,77 @@
+CREATE TABLE tsuzuki_chapter_history(
+    canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
+    last_variant_id TEXT,
+    last_read_at INTEGER,
+    time_read INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(last_variant_id) REFERENCES tsuzuki_chapter_variants(id) ON DELETE SET NULL
+);
+
+CREATE INDEX tsuzuki_chapter_history_last_read_index
+ON tsuzuki_chapter_history(last_read_at);
+
+getTsuzukiChapterHistory:
+SELECT *
+FROM tsuzuki_chapter_history
+WHERE canonical_chapter_id = :canonicalChapterId
+LIMIT 1;
+
+upsertTsuzukiChapterHistory:
+INSERT INTO tsuzuki_chapter_history(
+    canonical_chapter_id,
+    last_variant_id,
+    last_read_at,
+    time_read
+)
+VALUES (
+    :canonicalChapterId,
+    :variantId,
+    :readAt,
+    :sessionReadDuration
+)
+ON CONFLICT(canonical_chapter_id) DO UPDATE SET
+    last_variant_id = excluded.last_variant_id,
+    last_read_at = excluded.last_read_at,
+    time_read = tsuzuki_chapter_history.time_read + excluded.time_read;
+
+
+getTotalTsuzukiReadDuration:
+SELECT coalesce(sum(time_read), 0)
+FROM tsuzuki_chapter_history;
+
+resetTsuzukiHistoryByOperationalHistoryId:
+UPDATE tsuzuki_chapter_history
+SET last_read_at = 0
+WHERE canonical_chapter_id = (
+    SELECT variants.canonical_chapter_id
+    FROM tsuzuki_chapter_variants variants
+    LEFT JOIN history legacyHistory
+    ON legacyHistory.chapter_id = variants.mihon_chapter_id
+    WHERE legacyHistory._id = :historyId
+    OR (
+        NOT EXISTS (
+            SELECT 1
+            FROM history
+            WHERE _id = :historyId
+        )
+        AND variants.mihon_chapter_id = :historyId
+    )
+    ORDER BY
+        CASE WHEN legacyHistory._id = :historyId THEN 0 ELSE 1 END,
+        variants.id ASC
+    LIMIT 1
+);
+
+resetTsuzukiHistoryByMangaId:
+UPDATE tsuzuki_chapter_history
+SET last_read_at = 0
+WHERE canonical_chapter_id IN (
+    SELECT canonicalChapters.id
+    FROM tsuzuki_canonical_chapters canonicalChapters
+    JOIN tsuzuki_source_mappings mappings
+    ON mappings.canonical_title_id = canonicalChapters.canonical_title_id
+    WHERE mappings.mihon_manga_id = :mangaId
+);
+
+removeAllTsuzukiHistory:
+DELETE FROM tsuzuki_chapter_history;

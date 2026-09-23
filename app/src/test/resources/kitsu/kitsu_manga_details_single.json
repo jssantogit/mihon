@@ -1,0 +1,21 @@
+{
+  "data": {
+    "id": "1234",
+    "type": "manga",
+    "attributes": {
+      "slug": "berserk",
+      "synopsis": "Guts is a skilled wanderer...",
+      "titles": {
+        "en": "Berserk"
+      },
+      "canonicalTitle": "Berserk",
+      "averageRating": "84.56",
+      "userCount": 42000,
+      "status": "current",
+      "subtype": "manga",
+      "posterImage": {
+        "medium": "https://media.kitsu.io/manga/poster_images/1234/medium.jpg"
+      }
+    }
+  }
+}

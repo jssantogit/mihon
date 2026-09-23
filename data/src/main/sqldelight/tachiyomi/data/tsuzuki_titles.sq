@@ -1,0 +1,57 @@
+CREATE TABLE tsuzuki_titles(
+    id TEXT NOT NULL PRIMARY KEY,
+    display_title TEXT NOT NULL,
+    identity_state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+getTsuzukiTitleById:
+SELECT *
+FROM tsuzuki_titles
+WHERE id = :id;
+
+getAllTsuzukiTitles:
+SELECT *
+FROM tsuzuki_titles
+ORDER BY id ASC;
+
+insertTsuzukiTitle:
+INSERT INTO tsuzuki_titles(
+    id,
+    display_title,
+    identity_state,
+    created_at,
+    updated_at
+)
+VALUES (
+    :id,
+    :displayTitle,
+    :identityState,
+    :createdAt,
+    :updatedAt
+);
+
+upsertTsuzukiTitle:
+INSERT INTO tsuzuki_titles(
+    id,
+    display_title,
+    identity_state,
+    created_at,
+    updated_at
+)
+VALUES (
+    :id,
+    :displayTitle,
+    :identityState,
+    :createdAt,
+    :updatedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    display_title = excluded.display_title,
+    identity_state = excluded.identity_state,
+    updated_at = excluded.updated_at;
+
+deleteTsuzukiTitle:
+DELETE FROM tsuzuki_titles
+WHERE id = :id;

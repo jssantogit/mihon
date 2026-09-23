@@ -1,0 +1,65 @@
+DROP VIEW updatesView;
+
+CREATE VIEW updatesView AS
+WITH rankedVariants AS (
+    SELECT
+        variants.*,
+        mappings.preferred_override,
+        mappings.verified_by_user,
+        ROW_NUMBER() OVER (
+            PARTITION BY variants.canonical_chapter_id
+            ORDER BY
+                mappings.preferred_override DESC,
+                mappings.verified_by_user DESC,
+                mappings.id ASC,
+                variants.id ASC
+        ) AS variantRank
+    FROM tsuzuki_chapter_variants variants
+    JOIN tsuzuki_source_mappings mappings
+    ON mappings.id = variants.source_mapping_id
+    WHERE variants.mihon_manga_id IS NOT NULL
+    AND variants.mihon_chapter_id IS NOT NULL
+    AND mappings.availability != 'UNAVAILABLE'
+),
+selectedVariants AS (
+    SELECT *
+    FROM rankedVariants
+    WHERE variantRank = 1
+)
+SELECT
+    selectedVariants.mihon_manga_id AS mangaId,
+    titles.display_title AS mangaTitle,
+    selectedVariants.mihon_chapter_id AS chapterId,
+    chapters.name AS chapterName,
+    chapters.scanlator,
+    chapters.url AS chapterUrl,
+    COALESCE(progress.read, chapters.read) AS read,
+    chapters.bookmark,
+    COALESCE(progress.last_page_read, chapters.last_page_read) AS last_page_read,
+    selectedVariants.source_id AS source,
+    library.favorite AS favorite,
+    mangas.thumbnail_url AS thumbnailUrl,
+    mangas.cover_last_modified AS coverLastModified,
+    chapters.date_upload AS dateUpload,
+    chapters.date_fetch AS datefetch,
+    excluded_scanlators.scanlator AS excludedScanlator
+FROM tsuzuki_canonical_chapters canonicalChapters
+JOIN tsuzuki_library_entries library
+ON library.canonical_title_id = canonicalChapters.canonical_title_id
+JOIN tsuzuki_titles titles
+ON titles.id = canonicalChapters.canonical_title_id
+JOIN selectedVariants
+ON selectedVariants.canonical_chapter_id = canonicalChapters.id
+JOIN chapters
+ON chapters._id = selectedVariants.mihon_chapter_id
+JOIN mangas
+ON mangas._id = selectedVariants.mihon_manga_id
+AND mangas._id = chapters.manga_id
+AND mangas.source = selectedVariants.source_id
+LEFT JOIN tsuzuki_chapter_progress progress
+ON progress.canonical_chapter_id = canonicalChapters.id
+LEFT JOIN excluded_scanlators
+ON mangas._id = excluded_scanlators.manga_id
+AND chapters.scanlator = excluded_scanlators.scanlator
+WHERE chapters.date_fetch > library.added_at
+ORDER BY chapters.date_fetch DESC;

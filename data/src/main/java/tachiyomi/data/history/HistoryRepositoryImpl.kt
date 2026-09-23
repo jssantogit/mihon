@@ -37,8 +37,8 @@ class HistoryRepositoryImpl(
     }
 
     override suspend fun getTotalReadDuration(): Long {
-        return database.historyQueries
-            .getReadDuration()
+        return database.tsuzuki_chapter_historyQueries
+            .getTotalTsuzukiReadDuration()
             .awaitAsOne()
     }
 
@@ -50,7 +50,11 @@ class HistoryRepositoryImpl(
 
     override suspend fun resetHistory(historyId: Long) {
         try {
-            database.historyQueries.resetHistoryById(historyId)
+            database.transaction {
+                database.tsuzuki_chapter_historyQueries
+                    .resetTsuzukiHistoryByOperationalHistoryId(historyId)
+                database.historyQueries.resetHistoryById(historyId)
+            }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
@@ -58,7 +62,10 @@ class HistoryRepositoryImpl(
 
     override suspend fun resetHistoryByMangaId(mangaId: Long) {
         try {
-            database.historyQueries.resetHistoryByMangaId(mangaId)
+            database.transaction {
+                database.tsuzuki_chapter_historyQueries.resetTsuzukiHistoryByMangaId(mangaId)
+                database.historyQueries.resetHistoryByMangaId(mangaId)
+            }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
@@ -66,7 +73,10 @@ class HistoryRepositoryImpl(
 
     override suspend fun deleteAllHistory(): Boolean {
         return try {
-            database.historyQueries.removeAllHistory()
+            database.transaction {
+                database.tsuzuki_chapter_historyQueries.removeAllTsuzukiHistory()
+                database.historyQueries.removeAllHistory()
+            }
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)

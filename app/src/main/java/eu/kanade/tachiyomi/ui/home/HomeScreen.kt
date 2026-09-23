@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,13 +16,7 @@ import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
@@ -39,17 +32,16 @@ import eu.kanade.tachiyomi.ui.history.HistoryTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
+import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeTab
+import eu.kanade.tachiyomi.ui.tsuzuki.search.TsuzukiSearchTab
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiSettingsTab
 import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import mihon.app.di.appGraph
 import soup.compose.material.motion.animation.materialFadeThroughIn
 import soup.compose.material.motion.animation.materialFadeThroughOut
-import tachiyomi.i18n.MR
-import tachiyomi.presentation.core.i18n.pluralStringResource
 
 object HomeScreen : Screen() {
 
@@ -63,19 +55,18 @@ object HomeScreen : Screen() {
     @Suppress("ConstPropertyName")
     private const val TabNavigatorKey = "HomeTabs"
 
-    private val TABS = listOf(
+    internal val tabs = listOf(
+        TsuzukiHomeTab,
+        TsuzukiSearchTab,
         LibraryTab,
-        UpdatesTab,
-        HistoryTab,
-        BrowseTab,
-        MoreTab,
+        TsuzukiSettingsTab,
     )
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         TabNavigator(
-            tab = LibraryTab,
+            tab = TsuzukiHomeTab,
             key = TabNavigatorKey,
         ) { tabNavigator ->
             // Provide usable navigator to content screen
@@ -107,7 +98,7 @@ object HomeScreen : Screen() {
                     ),
                     navigationItemVerticalArrangement = Arrangement.Center,
                     navigationItems = {
-                        TABS.fastForEach { NavigationSuiteItem(it, navigationSuiteType) }
+                        tabs.fastForEach { NavigationSuiteItem(it, navigationSuiteType) }
                     },
                 ) {
                     AnimatedContent(
@@ -127,9 +118,10 @@ object HomeScreen : Screen() {
                 }
             }
 
+            val goToHomeTab = { tabNavigator.current = TsuzukiHomeTab }
             val goToLibraryTab = { tabNavigator.current = LibraryTab }
 
-            BackHandler(enabled = tabNavigator.current != LibraryTab, onBack = goToLibraryTab)
+            BackHandler(enabled = tabNavigator.current != TsuzukiHomeTab, onBack = goToHomeTab)
 
             LaunchedEffect(Unit) {
                 launch {
@@ -198,60 +190,7 @@ object HomeScreen : Screen() {
                     overflow = TextOverflow.Ellipsis,
                 )
             },
-            badge = tabBadge(tab),
         )
-    }
-
-    @Composable
-    private fun tabBadge(tab: eu.kanade.presentation.util.Tab): (@Composable () -> Unit)? {
-        val context = LocalContext.current
-        val count by produceState(initialValue = 0, tab) {
-            val graph = context.appGraph
-            when (tab) {
-                is UpdatesTab -> {
-                    combine(
-                        graph.libraryPreferences.newShowUpdatesCount.changes(),
-                        graph.libraryPreferences.newUpdatesCount.changes(),
-                    ) { show, count ->
-                        if (show) count else 0
-                    }
-                        .collectLatest { value = it }
-                }
-
-                is BrowseTab -> {
-                    graph.sourcePreferences.extensionUpdatesCount.changes()
-                        .collectLatest { value = it }
-                }
-
-                else -> value = 0
-            }
-        }
-        if (count <= 0) return null
-        return {
-            Badge {
-                val desc = when (tab) {
-                    is UpdatesTab -> pluralStringResource(
-                        MR.plurals.notification_chapters_generic,
-                        count = count,
-                        count,
-                    )
-
-                    is BrowseTab -> pluralStringResource(
-                        MR.plurals.update_check_notification_ext_updates,
-                        count = count,
-                        count,
-                    )
-
-                    else -> null
-                }
-                Text(
-                    text = count.toString(),
-                    modifier = Modifier.semantics {
-                        if (desc != null) contentDescription = desc
-                    },
-                )
-            }
-        }
     }
 
     suspend fun search(query: String) {

@@ -1,0 +1,471 @@
+CREATE TABLE tsuzuki_sync_outbox(
+    document_kind TEXT NOT NULL PRIMARY KEY,
+    enqueued_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL,
+    next_attempt_at INTEGER
+);
+
+CREATE INDEX tsuzuki_sync_outbox_ready_index
+ON tsuzuki_sync_outbox(next_attempt_at, enqueued_at);
+
+CREATE TABLE tsuzuki_sync_state(
+    document_kind TEXT NOT NULL PRIMARY KEY,
+    accepted_base_json TEXT,
+    remote_id TEXT,
+    remote_revision_token TEXT,
+    remote_modified_at INTEGER,
+    last_successful_sync_at INTEGER,
+    CHECK(remote_id IS NOT NULL OR (remote_revision_token IS NULL AND remote_modified_at IS NULL))
+);
+
+CREATE TABLE tsuzuki_sync_conflicts(
+    document_kind TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    conflict_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(document_kind, sort_order)
+);
+
+CREATE TRIGGER tsuzuki_library_entries_sync_dirty_insert
+AFTER INSERT ON tsuzuki_library_entries
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'LIBRARY',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'LIBRARY';
+END;
+
+CREATE TRIGGER tsuzuki_library_entries_sync_dirty_update
+AFTER UPDATE ON tsuzuki_library_entries
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'LIBRARY',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'LIBRARY';
+END;
+
+CREATE TRIGGER tsuzuki_library_entries_sync_dirty_delete
+AFTER DELETE ON tsuzuki_library_entries
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'LIBRARY',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'LIBRARY';
+END;
+
+CREATE TRIGGER tsuzuki_source_mappings_sync_dirty_insert
+AFTER INSERT ON tsuzuki_source_mappings
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'SOURCE_MAPPINGS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_source_mappings_sync_dirty_update
+AFTER UPDATE ON tsuzuki_source_mappings
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'SOURCE_MAPPINGS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_source_mappings_sync_dirty_delete
+AFTER DELETE ON tsuzuki_source_mappings
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'SOURCE_MAPPINGS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_source_preferences_sync_dirty_insert
+AFTER INSERT ON tsuzuki_source_preferences
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'SOURCE_MAPPINGS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_source_preferences_sync_dirty_update
+AFTER UPDATE ON tsuzuki_source_preferences
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'SOURCE_MAPPINGS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_source_preferences_sync_dirty_delete
+AFTER DELETE ON tsuzuki_source_preferences
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'SOURCE_MAPPINGS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_collections_sync_dirty_insert
+AFTER INSERT ON tsuzuki_collections
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_collections_sync_dirty_update
+AFTER UPDATE ON tsuzuki_collections
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_collections_sync_dirty_delete
+AFTER DELETE ON tsuzuki_collections
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_folders_sync_dirty_insert
+AFTER INSERT ON tsuzuki_folders
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_folders_sync_dirty_update
+AFTER UPDATE ON tsuzuki_folders
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_folders_sync_dirty_delete
+AFTER DELETE ON tsuzuki_folders
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_lists_sync_dirty_insert
+AFTER INSERT ON tsuzuki_lists
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_lists_sync_dirty_update
+AFTER UPDATE ON tsuzuki_lists
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_lists_sync_dirty_delete
+AFTER DELETE ON tsuzuki_lists
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(
+        document_kind,
+        enqueued_at,
+        attempt_count,
+        next_attempt_at
+    )
+    VALUES (
+        'COLLECTIONS',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+        0,
+        NULL
+    );
+
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0,
+        next_attempt_at = NULL
+    WHERE document_kind = 'COLLECTIONS';
+END;
+
+CREATE TRIGGER tsuzuki_titles_sync_dirty_insert
+AFTER INSERT ON tsuzuki_titles
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('LIBRARY', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0, next_attempt_at = NULL
+    WHERE document_kind = 'LIBRARY';
+
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('SOURCE_MAPPINGS', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0, next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_titles_sync_dirty_update
+AFTER UPDATE ON tsuzuki_titles
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('LIBRARY', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0, next_attempt_at = NULL
+    WHERE document_kind = 'LIBRARY';
+
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('SOURCE_MAPPINGS', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0, next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;
+
+CREATE TRIGGER tsuzuki_titles_sync_dirty_delete
+AFTER DELETE ON tsuzuki_titles
+BEGIN
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('LIBRARY', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0, next_attempt_at = NULL
+    WHERE document_kind = 'LIBRARY';
+
+    INSERT OR IGNORE INTO tsuzuki_sync_outbox(document_kind, enqueued_at, attempt_count, next_attempt_at)
+    VALUES ('SOURCE_MAPPINGS', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0, NULL);
+    UPDATE tsuzuki_sync_outbox
+    SET attempt_count = 0, next_attempt_at = NULL
+    WHERE document_kind = 'SOURCE_MAPPINGS';
+END;

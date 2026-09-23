@@ -23,10 +23,12 @@ import eu.kanade.domain.manga.interactor.UpdateManga
 import eu.kanade.domain.manga.model.readerOrientation
 import eu.kanade.domain.manga.model.readingMode
 import eu.kanade.domain.source.interactor.GetIncognitoState
+import eu.kanade.domain.track.interactor.TrackCanonicalChapter
 import eu.kanade.domain.track.interactor.TrackChapter
 import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.tachiyomi.data.cache.ChapterCache
 import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.database.models.ChapterImpl
 import eu.kanade.tachiyomi.data.database.models.toDomainChapter
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
@@ -40,6 +42,8 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.loader.ChapterLoader
 import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
+import eu.kanade.tachiyomi.ui.reader.loader.LocalChapterLoader
+import eu.kanade.tachiyomi.ui.reader.loader.ReaderChapterLoader
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -48,6 +52,7 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
+import eu.kanade.tachiyomi.ui.tsuzuki.content.SelectionResult
 import eu.kanade.tachiyomi.util.chapter.filterDownloaded
 import eu.kanade.tachiyomi.util.chapter.removeDuplicates
 import eu.kanade.tachiyomi.util.editCover
@@ -86,7 +91,21 @@ import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
+import tachiyomi.domain.tsuzuki.chapter.interactor.RepairZeroPlaceholderChapterSemantics
+import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
+import tachiyomi.domain.tsuzuki.reader.interactor.GetAdjacentCanonicalChapter
+import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
+import tachiyomi.domain.tsuzuki.reader.interactor.RecordCanonicalReaderProgress
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterDirection
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
+import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
+import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.isLocal
 import java.util.Date
@@ -108,11 +127,20 @@ class ReaderViewModel(
     private val downloadPreferences: DownloadPreferences,
     private val trackPreferences: TrackPreferences,
     private val trackChapter: TrackChapter,
+    private val trackCanonicalChapter: TrackCanonicalChapter,
     private val getManga: GetManga,
     private val getChaptersByMangaId: GetChaptersByMangaId,
     private val getNextChapters: GetNextChapters,
     private val upsertHistory: UpsertHistory,
     private val updateChapter: UpdateChapter,
+    private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val sourceTitleMappingRepository: SourceTitleMappingRepository,
+    private val refreshCanonicalChapters: RefreshCanonicalChapters,
+    private val repairZeroPlaceholderChapterSemantics: RepairZeroPlaceholderChapterSemantics,
+    private val prepareCanonicalChapterForReader: PrepareCanonicalChapterForReader,
+    private val recordCanonicalReaderProgress: RecordCanonicalReaderProgress,
+    private val canonicalReadingRepository: CanonicalReadingRepository,
+    private val getAdjacentCanonicalChapter: GetAdjacentCanonicalChapter,
     private val setMangaViewerFlags: SetMangaViewerFlags,
     private val getIncognitoState: GetIncognitoState,
     private val libraryPreferences: LibraryPreferences,
@@ -138,12 +166,26 @@ class ReaderViewModel(
     val state = mutableState.asStateFlow()
 
     /**
-     * Ids of the manga and chapter the reader was launched with, taken from the activity intent.
+     * Legacy Reader coordinates remain supported. Canonical launches instead
+     * resolve these coordinates lazily through the Tsuzuki compatibility bridge.
      */
-    val mangaId = savedState.get<Long>("manga") ?: -1L
-    private val initialChapterId = savedState.get<Long>("chapter") ?: -1L
+    private val canonicalChapterId = savedState.get<String>("canonical_chapter")
+    private val canonicalPreferredLanguage = savedState.get<String>("canonical_language")
 
-    val hasValidArgs = mangaId != -1L && initialChapterId != -1L
+    var mangaId = savedState.get<Long>("manga") ?: -1L
+        private set(value) {
+            savedState["manga"] = value
+            field = value
+        }
+
+    private var initialChapterId = savedState.get<Long>("chapter") ?: -1L
+        set(value) {
+            savedState["chapter"] = value
+            field = value
+        }
+
+    val hasValidArgs: Boolean
+        get() = canonicalChapterId != null || (mangaId != -1L && initialChapterId != -1L)
 
     private val eventChannel = Channel<Event>()
     val eventFlow = eventChannel.receiveAsFlow()
@@ -181,7 +223,17 @@ class ReaderViewModel(
     /**
      * The chapter loader for the loaded manga. It'll be null until [manga] is set.
      */
-    private var loader: ChapterLoader? = null
+    private var loader: ReaderChapterLoader? = null
+
+    private data class CanonicalReaderSession(
+        val canonicalChapterId: String,
+        val variantId: String?,
+        val readerChapterId: Long,
+        val mihonChapterId: Long?,
+    )
+
+    /** Canonical identity attached to the active Reader chapter for this session. */
+    private var canonicalSession: CanonicalReaderSession? = null
 
     /**
      * The time the chapter was started reading
@@ -320,15 +372,42 @@ class ReaderViewModel(
     private suspend fun init() {
         withIOContext {
             try {
-                val manga = getManga.await(mangaId) ?: error("Requested manga of id $mangaId not found")
-                val source = sourceManager.getOrStub(manga.source)
-                incognitoMode = getIncognitoState.await(manga.source)
-                mutableState.update { it.copy(manga = manga, source = source) }
-                if (chapterId == -1L) chapterId = initialChapterId
-
-                loader = ChapterLoader(context, downloadManager, downloadProvider, chapterCache, manga, source)
-
-                loadChapter(loader!!, chapterList.first { chapterId == it.chapter.id })
+                val canonicalId = canonicalChapterId
+                if (canonicalId != null) {
+                    when (
+                        val preparation = prepareCanonicalChapterForReader.execute(
+                            canonicalChapterId = canonicalId,
+                        )
+                    ) {
+                        is CanonicalReaderPreparation.Ready -> {
+                            loadCanonicalTarget(
+                                canonicalChapterId = preparation.canonicalChapterId,
+                                target = preparation.target,
+                                resetPage = false,
+                                selectedOption = preparation.selectedOption,
+                            )
+                        }
+                        is CanonicalReaderPreparation.SelectionRequired -> {
+                            showContentSelector(
+                                canonicalTitleId = preparation.canonicalTitleId,
+                                canonicalChapterId = preparation.canonicalChapterId,
+                                closeReaderOnDismiss = true,
+                            )
+                        }
+                        is CanonicalReaderPreparation.Unavailable -> {
+                            val chapter = canonicalChapterRepository.getById(canonicalId)
+                                ?: error("Canonical chapter $canonicalId not found")
+                            showContentSelector(
+                                canonicalTitleId = chapter.canonicalTitleId,
+                                canonicalChapterId = canonicalId,
+                                closeReaderOnDismiss = true,
+                            )
+                        }
+                        is CanonicalReaderPreparation.Failed -> throw preparation.error
+                    }
+                } else {
+                    loadLegacyInitialChapter()
+                }
             } catch (e: Throwable) {
                 if (e is CancellationException) {
                     throw e
@@ -338,22 +417,428 @@ class ReaderViewModel(
         }
     }
 
+    private suspend fun loadLegacyInitialChapter() {
+        val manga = getManga.await(mangaId) ?: error("Requested manga of id $mangaId not found")
+        val source = sourceManager.getOrStub(manga.source)
+        incognitoMode = getIncognitoState.await(manga.source)
+        mutableState.update { it.copy(manga = manga, source = source) }
+        if (chapterId == -1L) chapterId = initialChapterId
+
+        val initial = chapterList.first { chapterId == it.chapter.id }
+        attachCanonicalSessionForLegacy(manga, source, initial)
+
+        loader = ChapterLoader(context, downloadManager, downloadProvider, chapterCache, manga, source)
+        loadChapter(loader!!, initial)
+    }
+
+    private suspend fun attachCanonicalSessionForLegacy(
+        manga: Manga,
+        source: Source,
+        readerChapter: ReaderChapter,
+    ) {
+        try {
+            var mapping = sourceTitleMappingRepository.getBySource(
+                sourceId = manga.source,
+                sourceUrl = manga.url,
+            ) ?: return
+
+            val sourceAvailable = source !is StubSource
+            if (
+                mapping.mihonMangaId != manga.id ||
+                (sourceAvailable && mapping.availability == SourceMappingAvailability.UNAVAILABLE)
+            ) {
+                mapping = mapping.copy(
+                    mihonMangaId = manga.id,
+                    availability = if (sourceAvailable) {
+                        SourceMappingAvailability.AVAILABLE
+                    } else {
+                        mapping.availability
+                    },
+                    updatedAt = Clock.System.now().toEpochMilliseconds(),
+                )
+                sourceTitleMappingRepository.upsert(mapping)
+            }
+
+            try {
+                repairZeroPlaceholderChapterSemantics.execute(mapping.canonicalTitleId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                logcat(LogPriority.WARN, error) {
+                    "Failed to repair persisted canonical chapter semantics"
+                }
+            }
+
+            var variant = canonicalChapterRepository
+                .getVariantBySourceIdentity(
+                    sourceId = manga.source,
+                    sourceChapterId = readerChapter.chapter.url,
+                )
+                ?.takeIf { it.sourceMappingId == mapping.id }
+
+            if (variant == null && sourceAvailable) {
+                refreshCanonicalChapters.execute(
+                    canonicalTitleId = mapping.canonicalTitleId,
+                    mappingId = mapping.id,
+                ).getOrThrow()
+                variant = canonicalChapterRepository
+                    .getVariantBySourceIdentity(
+                        sourceId = manga.source,
+                        sourceChapterId = readerChapter.chapter.url,
+                    )
+                    ?.takeIf { it.sourceMappingId == mapping.id }
+            }
+
+            if (variant != null) {
+                canonicalSession = CanonicalReaderSession(
+                    canonicalChapterId = variant.canonicalChapterId,
+                    variantId = variant.id,
+                    readerChapterId = readerChapter.chapter.id!!,
+                    mihonChapterId = readerChapter.chapter.id,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logcat(LogPriority.WARN, error) {
+                "Failed to attach legacy Reader session to canonical progress"
+            }
+        }
+    }
+
+    /**
+     * Fully prepare the replacement before changing any active Reader coordinates. In
+     * particular, a provider failure or an empty page inventory must not evict the
+     * already-loaded viewer pages or corrupt the canonical progress session.
+     */
+    private suspend fun loadCanonicalTarget(
+        canonicalChapterId: String,
+        target: PreparedChapterContent,
+        resetPage: Boolean,
+        selectedOption: ContentOption? = null,
+        recordPreviousHistory: Boolean = false,
+    ) {
+        when (val plan = planCanonicalReaderTarget(canonicalChapterId, target)) {
+            is CanonicalReaderTargetPlan.Mihon -> {
+                val manga = getManga.await(plan.mangaId)
+                    ?: error("Requested manga of id ${plan.mangaId} not found")
+                val source = sourceManager.getOrStub(manga.source)
+                val nextIncognitoMode = getIncognitoState.await(manga.source)
+                val nextLoader = ChapterLoader(
+                    context,
+                    downloadManager,
+                    downloadProvider,
+                    chapterCache,
+                    manga,
+                    source,
+                )
+                val chapter = getChaptersByMangaId.await(manga.id, applyScanlatorFilter = false)
+                    .firstOrNull { it.id == plan.chapterId }
+                    ?: error("Operational chapter ${plan.chapterId} not found")
+                val nextChapter = stageCanonicalReaderChapter(
+                    nextLoader,
+                    ReaderChapter(chapter.toDbChapter()),
+                ) {
+                    if (recordPreviousHistory) updateHistory()
+                }
+                publishCanonicalReaderChapter(
+                    session = CanonicalReaderSession(
+                        canonicalChapterId = plan.canonicalChapterId,
+                        variantId = null,
+                        readerChapterId = plan.chapterId,
+                        mihonChapterId = plan.chapterId,
+                    ),
+                    nextLoader = nextLoader,
+                    nextChapter = nextChapter,
+                    nextManga = manga,
+                    nextSource = source,
+                    nextMangaId = plan.mangaId,
+                    nextInitialChapterId = plan.chapterId,
+                    nextIncognitoMode = nextIncognitoMode,
+                    resetPage = resetPage,
+                    selectedOption = selectedOption,
+                )
+            }
+
+            is CanonicalReaderTargetPlan.Local -> {
+                val canonicalChapter = canonicalChapterRepository.getById(plan.canonicalChapterId)
+                    ?: error("Canonical chapter ${plan.canonicalChapterId} not found")
+                val progress = canonicalReadingRepository.getProgress(plan.canonicalChapterId)
+                val readerChapterId = localReaderChapterId(plan.canonicalChapterId)
+                val nextIncognitoMode = getIncognitoState.await(null)
+                val requestedPage = resolveCanonicalLocalRequestedPage(
+                    resetPage = resetPage,
+                    savedPageIndex = chapterPageIndex,
+                    progress = progress,
+                )
+                val nextChapter = ReaderChapter(
+                    ChapterImpl().apply {
+                        id = readerChapterId
+                        manga_id = null
+                        url = plan.uri
+                        name = canonicalChapter.title
+                            ?.takeIf(String::isNotBlank)
+                            ?: "Chapter ${canonicalChapter.displayNumber}"
+                        read = progress?.read == true
+                        last_page_read = requestedPage
+                        chapter_number = canonicalChapter.baseNumber?.toFloat() ?: -1f
+                        date_upload = canonicalChapter.updatedAt
+                    },
+                )
+                val nextLoader = LocalChapterLoader.from(context, plan)
+                stageCanonicalReaderChapter(nextLoader, nextChapter) {
+                    if (recordPreviousHistory) updateHistory()
+                }
+                publishCanonicalReaderChapter(
+                    session = CanonicalReaderSession(
+                        canonicalChapterId = plan.canonicalChapterId,
+                        variantId = null,
+                        readerChapterId = readerChapterId,
+                        mihonChapterId = null,
+                    ),
+                    nextLoader = nextLoader,
+                    nextChapter = nextChapter,
+                    nextManga = null,
+                    nextSource = null,
+                    nextMangaId = -1L,
+                    nextInitialChapterId = -1L,
+                    nextIncognitoMode = nextIncognitoMode,
+                    resetPage = resetPage,
+                    selectedOption = selectedOption,
+                )
+            }
+        }
+    }
+
+    private suspend fun publishCanonicalReaderChapter(
+        session: CanonicalReaderSession,
+        nextLoader: ReaderChapterLoader,
+        nextChapter: ReaderChapter,
+        nextManga: Manga?,
+        nextSource: Source?,
+        nextMangaId: Long,
+        nextInitialChapterId: Long,
+        nextIncognitoMode: Boolean,
+        resetPage: Boolean,
+        selectedOption: ContentOption?,
+    ) {
+        // These queries are deliberately outside the publication boundary. If
+        // either fails, the previous viewer and canonical session remain intact.
+        val previous = getAdjacentCanonicalChapter.execute(
+            canonicalChapterId = session.canonicalChapterId,
+            direction = CanonicalChapterDirection.PREVIOUS,
+        )
+        val next = getAdjacentCanonicalChapter.execute(
+            canonicalChapterId = session.canonicalChapterId,
+            direction = CanonicalChapterDirection.NEXT,
+        )
+
+        withUIContext {
+            if (resetPage) {
+                chapterPageIndex = -1
+                nextChapter.requestedPage = 0
+            }
+            val nextViewerChapters = ViewerChapters(nextChapter, null, null)
+            nextViewerChapters.ref()
+            val oldViewerChapters = mutableState.value.viewerChapters
+
+            canonicalSession = session
+            loader = nextLoader
+            mangaId = nextMangaId
+            initialChapterId = nextInitialChapterId
+            chapterId = session.readerChapterId
+            incognitoMode = nextIncognitoMode
+            chapterToDownload = cancelQueuedDownloads(nextChapter)
+            mutableState.update {
+                it.copy(
+                    manga = nextManga,
+                    source = nextSource,
+                    activeContentLabel = canonicalContentLabel(nextSource?.name, selectedOption),
+                    activeContentOptionKey = selectedOption?.key,
+                    viewerChapters = nextViewerChapters,
+                    bookmarked = nextChapter.chapter.bookmark,
+                    canonicalCanNavigatePrevious = previous != null,
+                    canonicalCanNavigateNext = next != null,
+                    dialog = null,
+                )
+            }
+            oldViewerChapters?.unref()
+        }
+    }
+
+    private fun localReaderChapterId(canonicalChapterId: String): Long {
+        return Long.MIN_VALUE + (canonicalChapterId.hashCode().toLong() and 0x7FFFFFFFL)
+    }
+
+    private suspend fun showContentSelector(
+        canonicalTitleId: String,
+        canonicalChapterId: String,
+        closeReaderOnDismiss: Boolean,
+    ) {
+        withUIContext {
+            mutableState.update {
+                it.copy(
+                    dialog = Dialog.ContentSelector(
+                        canonicalTitleId = canonicalTitleId,
+                        canonicalChapterId = canonicalChapterId,
+                        closeReaderOnDismiss = closeReaderOnDismiss,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun canChangeCanonicalSource(): Boolean = canonicalSession != null
+
+    fun openContentSelector() {
+        val session = canonicalSession ?: return
+        viewModelScope.launchIO {
+            val chapter = canonicalChapterRepository.getById(session.canonicalChapterId)
+                ?: return@launchIO
+            showContentSelector(
+                canonicalTitleId = chapter.canonicalTitleId,
+                canonicalChapterId = session.canonicalChapterId,
+                closeReaderOnDismiss = false,
+            )
+        }
+    }
+
+    private var contentSelectionInProgress = false
+
+    fun selectCanonicalContent(selection: SelectionResult) {
+        val selector = mutableState.value.dialog as? Dialog.ContentSelector ?: return
+        require(selection.option.canonicalChapterId == selector.canonicalChapterId) {
+            "Selected content does not belong to the active canonical chapter"
+        }
+        // Serialize rapid taps. A second selection cannot supersede a prepared
+        // chapter halfway through the atomic viewer publication.
+        if (contentSelectionInProgress) return
+        contentSelectionInProgress = true
+        val hadActiveSession = canonicalSession != null
+        viewModelScope.launchIO {
+            try {
+                when (
+                    val preparation = prepareCanonicalChapterForReader.execute(
+                        canonicalChapterId = selector.canonicalChapterId,
+                        selectedOption = selection.option,
+                    )
+                ) {
+                    is CanonicalReaderPreparation.Ready -> {
+                        loadCanonicalTarget(
+                            canonicalChapterId = preparation.canonicalChapterId,
+                            target = preparation.target,
+                            resetPage = hadActiveSession,
+                            selectedOption = selection.option,
+                            recordPreviousHistory = hadActiveSession,
+                        )
+                        restartReadTimer()
+                        withUIContext {
+                            mutableState.update {
+                                it.copy(
+                                    activeContentLabel = listOfNotNull(
+                                        selection.addonDisplayName,
+                                        selection.option.language,
+                                        selection.option.scanlationGroup,
+                                    ).joinToString(" · "),
+                                    activeContentOptionKey = selection.option.key,
+                                )
+                            }
+                        }
+                        eventChannel.trySend(Event.ContentSelectionReady(selection))
+                        if (selection.offerSetAsPreferred) {
+                            withUIContext {
+                                mutableState.update {
+                                    it.copy(dialog = Dialog.SetPreferredAddon(selection))
+                                }
+                            }
+                        } else if (selection.offerSetLanguagePreferred) {
+                            withUIContext {
+                                mutableState.update {
+                                    it.copy(dialog = Dialog.SetPreferredLanguage(selection))
+                                }
+                            }
+                        }
+                    }
+                    is CanonicalReaderPreparation.SelectionRequired -> {
+                        showContentSelector(
+                            canonicalTitleId = preparation.canonicalTitleId,
+                            canonicalChapterId = preparation.canonicalChapterId,
+                            closeReaderOnDismiss = !hadActiveSession,
+                        )
+                    }
+                    is CanonicalReaderPreparation.Unavailable -> {
+                        error("Selected canonical content is no longer available")
+                    }
+                    is CanonicalReaderPreparation.Failed -> throw preparation.error
+                }
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                logcat(LogPriority.ERROR, error) { "Failed to prepare selected canonical content" }
+                eventChannel.trySend(
+                    Event.ContentSwitchFailed(error.message ?: "Could not load the selected source"),
+                )
+                // The selector remains open on failure, including an initial
+                // selection: initError would finish the ReaderActivity instead.
+            } finally {
+                contentSelectionInProgress = false
+            }
+        }
+    }
+
+    fun finishAddonPreferencePrompt(selection: SelectionResult) {
+        mutableState.update {
+            it.copy(
+                dialog = if (selection.offerSetLanguagePreferred) {
+                    Dialog.SetPreferredLanguage(selection)
+                } else {
+                    null
+                },
+            )
+        }
+    }
+
+    fun dismissContentSelector() {
+        val selector = mutableState.value.dialog as? Dialog.ContentSelector ?: return
+        mutableState.update { it.copy(dialog = null) }
+        if (selector.closeReaderOnDismiss && canonicalSession == null) {
+            eventChannel.trySend(Event.CloseReader)
+        }
+    }
+
     /**
      * Loads the given [chapter] with this [loader] and updates the currently active chapters.
      * Callers must handle errors.
      */
     private suspend fun loadChapter(
-        loader: ChapterLoader,
+        loader: ReaderChapterLoader,
         chapter: ReaderChapter,
     ): ViewerChapters {
         loader.loadChapter(chapter)
 
-        val chapterPos = chapterList.indexOf(chapter)
-        val newChapters = ViewerChapters(
-            chapter,
-            chapterList.getOrNull(chapterPos - 1),
-            chapterList.getOrNull(chapterPos + 1),
-        )
+        val session = canonicalSession
+        val canonicalPrevious = session?.let {
+            getAdjacentCanonicalChapter.execute(
+                canonicalChapterId = it.canonicalChapterId,
+                direction = CanonicalChapterDirection.PREVIOUS,
+            )
+        }
+        val canonicalNext = session?.let {
+            getAdjacentCanonicalChapter.execute(
+                canonicalChapterId = it.canonicalChapterId,
+                direction = CanonicalChapterDirection.NEXT,
+            )
+        }
+        val newChapters = if (session != null) {
+            // Source-specific adjacent rows are not canonical navigation.
+            ViewerChapters(chapter, null, null)
+        } else {
+            val chapterPos = chapterList.indexOf(chapter)
+            ViewerChapters(
+                chapter,
+                chapterList.getOrNull(chapterPos - 1),
+                chapterList.getOrNull(chapterPos + 1),
+            )
+        }
 
         withUIContext {
             mutableState.update {
@@ -365,6 +850,8 @@ class ReaderViewModel(
                 it.copy(
                     viewerChapters = newChapters,
                     bookmarked = newChapters.currChapter.chapter.bookmark,
+                    canonicalCanNavigatePrevious = canonicalPrevious != null,
+                    canonicalCanNavigateNext = canonicalNext != null,
                 )
             }
         }
@@ -536,7 +1023,9 @@ class ReaderViewModel(
      * if setting is enabled and [currentChapter] is queued for download
      */
     private fun cancelQueuedDownloads(currentChapter: ReaderChapter): Download? {
-        return downloadManager.getQueuedDownloadOrNull(currentChapter.chapter.id!!)?.also {
+        if (canonicalSessionFor(currentChapter) != null) return null
+        val chapterId = currentChapter.chapter.id ?: return null
+        return downloadManager.getQueuedDownloadOrNull(chapterId)?.also {
             downloadManager.cancelQueuedDownloads(listOf(it))
         }
     }
@@ -547,6 +1036,10 @@ class ReaderViewModel(
      * @param currentChapter current chapter, which is going to be marked as read.
      */
     private fun deleteChapterIfNeeded(currentChapter: ReaderChapter) {
+        if (canonicalSessionFor(currentChapter) != null) {
+            chapterToDownload = null
+            return
+        }
         val removeAfterReadSlots = downloadPreferences.removeAfterReadSlots.get()
         if (removeAfterReadSlots == -1) return
 
@@ -582,20 +1075,53 @@ class ReaderViewModel(
                 updateChapterProgressOnComplete(readerChapter)
             }
 
-            updateChapter.await(
-                ChapterUpdate(
-                    id = readerChapter.chapter.id!!,
-                    read = readerChapter.chapter.read,
-                    lastPageRead = readerChapter.chapter.last_page_read.toLong(),
-                ),
-            )
+            val canonicalSession = canonicalSessionFor(readerChapter)
+            if (canonicalSession != null) {
+                try {
+                    if (canonicalSession.variantId.isNullOrBlank()) {
+                        recordCanonicalReaderProgress.recordPage(
+                            canonicalChapterId = canonicalSession.canonicalChapterId,
+                            pageIndex = pageIndex,
+                            completed = readerChapter.pages?.lastIndex == pageIndex,
+                            mihonChapterId = canonicalSession.mihonChapterId,
+                        )
+                    } else {
+                        recordCanonicalReaderProgress.recordPage(
+                            canonicalChapterId = canonicalSession.canonicalChapterId,
+                            variantId = canonicalSession.variantId,
+                            pageIndex = pageIndex,
+                            completed = readerChapter.pages?.lastIndex == pageIndex,
+                            mihonChapterId = canonicalSession.mihonChapterId,
+                        )
+                    }
+                } catch (error: Throwable) {
+                    logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader progress" }
+                }
+            } else {
+                updateChapter.await(
+                    ChapterUpdate(
+                        id = readerChapter.chapter.id!!,
+                        read = readerChapter.chapter.read,
+                        lastPageRead = readerChapter.chapter.last_page_read.toLong(),
+                    ),
+                )
+            }
         }
     }
 
     private suspend fun updateChapterProgressOnComplete(readerChapter: ReaderChapter) {
         readerChapter.chapter.read = true
-        updateTrackChapterRead(readerChapter)
+        val canonical = canonicalSessionFor(readerChapter)
+        if (canonical == null) {
+            updateTrackChapterRead(readerChapter)
+        } else {
+            updateCanonicalTrackChapterRead(canonical)
+        }
         deleteChapterIfNeeded(readerChapter)
+
+        // Canonical progress owns cross-variant read state. Legacy duplicate
+        // marking would incorrectly make one source's numbering authoritative.
+        if (canonical != null) return
 
         val markDuplicateAsRead = libraryPreferences.markDuplicateReadChapterAsRead.get()
             .contains(LibraryPreferences.MARK_DUPLICATE_CHAPTER_READ_EXISTING)
@@ -627,11 +1153,25 @@ class ReaderViewModel(
         getCurrentChapter()?.let { readerChapter ->
             if (incognitoMode) return@let
 
-            val chapterId = readerChapter.chapter.id!!
             val endTime = Date()
             val sessionReadDuration = chapterReadStartTime?.let { endTime.time - it } ?: 0
 
-            upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
+            val canonicalSession = canonicalSessionFor(readerChapter)
+            if (canonicalSession != null) {
+                try {
+                    recordCanonicalReaderProgress.recordHistory(
+                        canonicalChapterId = canonicalSession.canonicalChapterId,
+                        variantId = canonicalSession.variantId?.takeIf(String::isNotBlank),
+                        sessionReadDuration = sessionReadDuration,
+                        mihonChapterId = canonicalSession.mihonChapterId,
+                    )
+                } catch (error: Throwable) {
+                    logcat(LogPriority.ERROR, error) { "Failed to persist canonical reader history" }
+                }
+            } else {
+                val chapterId = requireNotNull(readerChapter.chapter.id)
+                upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
+            }
             chapterReadStartTime = null
         }
     }
@@ -640,6 +1180,10 @@ class ReaderViewModel(
      * Called from the activity to load and set the next chapter as active.
      */
     suspend fun loadNextChapter() {
+        if (canonicalSession != null) {
+            loadAdjacentCanonical(CanonicalChapterDirection.NEXT)
+            return
+        }
         val nextChapter = state.value.viewerChapters?.nextChapter ?: return
         loadAdjacent(nextChapter)
     }
@@ -648,8 +1192,67 @@ class ReaderViewModel(
      * Called from the activity to load and set the previous chapter as active.
      */
     suspend fun loadPreviousChapter() {
+        if (canonicalSession != null) {
+            loadAdjacentCanonical(CanonicalChapterDirection.PREVIOUS)
+            return
+        }
         val prevChapter = state.value.viewerChapters?.prevChapter ?: return
         loadAdjacent(prevChapter)
+    }
+
+    private suspend fun loadAdjacentCanonical(direction: CanonicalChapterDirection) {
+        val session = canonicalSession ?: return
+        val adjacent = getAdjacentCanonicalChapter.execute(
+            canonicalChapterId = session.canonicalChapterId,
+            direction = direction,
+        ) ?: return
+
+        mutableState.update { it.copy(isLoadingAdjacentChapter = true) }
+        try {
+            when (
+                val preparation = prepareCanonicalChapterForReader.execute(
+                    canonicalChapterId = adjacent.id,
+                )
+            ) {
+                is CanonicalReaderPreparation.Ready -> {
+                    loadCanonicalTarget(
+                        canonicalChapterId = preparation.canonicalChapterId,
+                        target = preparation.target,
+                        resetPage = true,
+                        selectedOption = preparation.selectedOption,
+                        recordPreviousHistory = true,
+                    )
+                    restartReadTimer()
+                }
+                is CanonicalReaderPreparation.SelectionRequired -> {
+                    showContentSelector(
+                        canonicalTitleId = preparation.canonicalTitleId,
+                        canonicalChapterId = preparation.canonicalChapterId,
+                        closeReaderOnDismiss = false,
+                    )
+                }
+                is CanonicalReaderPreparation.Unavailable -> {
+                    val chapter = canonicalChapterRepository.getById(adjacent.id)
+                    if (chapter != null) {
+                        showContentSelector(
+                            canonicalTitleId = chapter.canonicalTitleId,
+                            canonicalChapterId = adjacent.id,
+                            closeReaderOnDismiss = false,
+                        )
+                    } else {
+                        logcat(LogPriority.WARN) {
+                            "Canonical adjacent chapter ${adjacent.id} has no readable content"
+                        }
+                    }
+                }
+                is CanonicalReaderPreparation.Failed -> throw preparation.error
+            }
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            logcat(LogPriority.ERROR, error) { "Failed to load canonical adjacent chapter" }
+        } finally {
+            mutableState.update { it.copy(isLoadingAdjacentChapter = false) }
+        }
     }
 
     /**
@@ -657,6 +1260,11 @@ class ReaderViewModel(
      */
     private fun getCurrentChapter(): ReaderChapter? {
         return state.value.currentChapter
+    }
+
+    private fun canonicalSessionFor(readerChapter: ReaderChapter): CanonicalReaderSession? {
+        val session = canonicalSession ?: return null
+        return session.takeIf { it.readerChapterId == readerChapter.chapter.id }
     }
 
     fun getSource() = state.value.source as? HttpSource
@@ -677,7 +1285,9 @@ class ReaderViewModel(
      * Bookmarks the currently active chapter.
      */
     fun toggleChapterBookmark() {
-        val chapter = getCurrentChapter()?.chapter ?: return
+        val readerChapter = getCurrentChapter() ?: return
+        if (canonicalSessionFor(readerChapter) != null) return
+        val chapter = readerChapter.chapter
         val bookmarked = !chapter.bookmark
         chapter.bookmark = bookmarked
 
@@ -702,6 +1312,7 @@ class ReaderViewModel(
      */
     fun getMangaReadingMode(resolveDefault: Boolean = true): Int {
         val default = readerPreferences.defaultReadingMode.get()
+        if (canonicalSession != null) return default
         val readingMode = ReadingMode.fromPreference(manga?.readingMode?.toInt())
         return when {
             resolveDefault && readingMode == ReadingMode.DEFAULT -> default
@@ -713,6 +1324,16 @@ class ReaderViewModel(
      * Updates the viewer position for the open manga.
      */
     fun setMangaReadingMode(readingMode: ReadingMode) {
+        if (canonicalSession != null) {
+            readerPreferences.defaultReadingMode.set(readingMode.flagValue)
+            runBlocking {
+                state.value.viewerChapters?.currChapter?.let { current ->
+                    current.requestedPage = current.chapter.last_page_read
+                }
+                eventChannel.send(Event.ReloadViewerChapters)
+            }
+            return
+        }
         val manga = manga ?: return
         runBlocking(Dispatchers.IO) {
             setMangaViewerFlags.awaitSetReadingMode(manga.id, readingMode.flagValue.toLong())
@@ -738,6 +1359,7 @@ class ReaderViewModel(
      */
     fun getMangaOrientation(resolveDefault: Boolean = true): Int {
         val default = readerPreferences.defaultOrientationType.get()
+        if (canonicalSession != null) return default
         val orientation = ReaderOrientation.fromPreference(manga?.readerOrientation?.toInt())
         return when {
             resolveDefault && orientation == ReaderOrientation.DEFAULT -> default
@@ -749,6 +1371,17 @@ class ReaderViewModel(
      * Updates the orientation type for the open manga.
      */
     fun setMangaOrientationType(orientation: ReaderOrientation) {
+        if (canonicalSession != null) {
+            readerPreferences.defaultOrientationType.set(orientation.flagValue)
+            viewModelScope.launch {
+                state.value.viewerChapters?.currChapter?.let { current ->
+                    current.requestedPage = current.chapter.last_page_read
+                }
+                eventChannel.send(Event.SetOrientation(getMangaOrientation()))
+                eventChannel.send(Event.ReloadViewerChapters)
+            }
+            return
+        }
         val manga = manga ?: return
         viewModelScope.launchIO {
             setMangaViewerFlags.awaitSetOrientation(manga.id, orientation.flagValue.toLong())
@@ -953,6 +1586,18 @@ class ReaderViewModel(
         }
     }
 
+    private fun updateCanonicalTrackChapterRead(session: CanonicalReaderSession) {
+        if (incognitoMode) return
+        if (!trackPreferences.autoUpdateTrack.get()) return
+
+        viewModelScope.launchNonCancellable {
+            trackCanonicalChapter.await(
+                context = context,
+                canonicalChapterId = session.canonicalChapterId,
+            )
+        }
+    }
+
     /**
      * Enqueues this [chapter] to be deleted when [deletePendingChapters] is called. The download
      * manager handles persisting it across process deaths.
@@ -980,10 +1625,14 @@ class ReaderViewModel(
     data class State(
         val manga: Manga? = null,
         val source: Source? = null,
+        val activeContentLabel: String? = null,
+        val activeContentOptionKey: String? = null,
         val initError: Throwable? = null,
         val viewerChapters: ViewerChapters? = null,
         val bookmarked: Boolean = false,
         val isLoadingAdjacentChapter: Boolean = false,
+        val canonicalCanNavigatePrevious: Boolean = false,
+        val canonicalCanNavigateNext: Boolean = false,
         val currentPage: Int = -1,
 
         /**
@@ -1007,11 +1656,26 @@ class ReaderViewModel(
         data object ReadingModeSelect : Dialog
         data object OrientationModeSelect : Dialog
         data class PageActions(val page: ReaderPage) : Dialog
+        data class ContentSelector(
+            val canonicalTitleId: String,
+            val canonicalChapterId: String,
+            val closeReaderOnDismiss: Boolean,
+        ) : Dialog
+
+        data class SetPreferredAddon(
+            val selection: SelectionResult,
+        ) : Dialog
+        data class SetPreferredLanguage(
+            val selection: SelectionResult,
+        ) : Dialog
     }
 
     sealed interface Event {
         data object ReloadViewerChapters : Event
         data object PageChanged : Event
+        data object CloseReader : Event
+        data class ContentSelectionReady(val selection: SelectionResult) : Event
+        data class ContentSwitchFailed(val message: String) : Event
         data class SetOrientation(val orientation: Int) : Event
         data class SetCoverResult(val result: SetAsCoverResult) : Event
 

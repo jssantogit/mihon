@@ -31,6 +31,7 @@ import eu.kanade.domain.track.interactor.RefreshTracks
 import eu.kanade.domain.track.interactor.TrackChapter
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.domain.track.service.TrackPreferences
+import eu.kanade.domain.tsuzuki.library.interactor.SetUnifiedLibraryMembership
 import eu.kanade.presentation.manga.DownloadAction
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.util.formattedMessage
@@ -85,8 +86,11 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.model.applyFilter
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
+import tachiyomi.domain.tsuzuki.library.model.SourceLibraryRepresentation
+import tachiyomi.domain.tsuzuki.reader.interactor.ObserveCanonicalTrackerBindingsForManga
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.isLocal
 import kotlin.math.floor
@@ -113,8 +117,10 @@ class MangaViewModel(
     private val setReadStatus: SetReadStatus,
     private val updateChapter: UpdateChapter,
     private val updateManga: UpdateManga,
+    private val setUnifiedLibraryMembership: SetUnifiedLibraryMembership,
     private val getCategories: GetCategories,
     private val getTracks: GetTracks,
+    private val observeCanonicalTrackerBindingsForManga: ObserveCanonicalTrackerBindingsForManga,
     private val addTracks: AddTracks,
     private val setMangaCategories: SetMangaCategories,
     private val mangaRepository: MangaRepository,
@@ -344,7 +350,7 @@ class MangaViewModel(
 
             if (isFavorited) {
                 // Remove from library
-                if (updateManga.awaitUpdateFavorite(manga.id, false)) {
+                if (setLibraryMembership(manga, state.source, inLibrary = false)) {
                     // Remove covers and update last modified in db
                     if (manga.removeCovers(coverCache) != manga) {
                         updateManga.awaitUpdateCoverLastModified(manga.id)
@@ -370,14 +376,14 @@ class MangaViewModel(
                 when {
                     // Default category set
                     defaultCategory != null -> {
-                        val result = updateManga.awaitUpdateFavorite(manga.id, true)
+                        val result = setLibraryMembership(manga, state.source, inLibrary = true)
                         if (!result) return@launchIO
                         moveMangaToCategory(defaultCategory)
                     }
 
                     // Automatic 'Default' or no categories
                     defaultCategoryId == 0L || categories.isEmpty() -> {
-                        val result = updateManga.awaitUpdateFavorite(manga.id, true)
+                        val result = setLibraryMembership(manga, state.source, inLibrary = true)
                         if (!result) return@launchIO
                         moveMangaToCategory(null)
                     }
@@ -468,9 +474,43 @@ class MangaViewModel(
     fun moveMangaToCategoriesAndAddToLibrary(manga: Manga, categories: List<Long>) {
         moveMangaToCategory(categories)
         if (manga.favorite) return
+        val source = successState?.source ?: return
 
         viewModelScope.launchIO {
-            updateManga.awaitUpdateFavorite(manga.id, true)
+            setLibraryMembership(manga, source, inLibrary = true)
+        }
+    }
+
+    private suspend fun setLibraryMembership(
+        manga: Manga,
+        source: Source,
+        inLibrary: Boolean,
+    ): Boolean {
+        val representation = SourceLibraryRepresentation(
+            mihonMangaId = manga.id,
+            sourceId = manga.source,
+            sourceUrl = manga.url,
+            language = source.lang,
+            sourceAvailable = source !is StubSource,
+            displayTitle = manga.title,
+            dateAdded = manga.dateAdded,
+            hasStarted = successState?.chapters?.any {
+                it.chapter.read || it.chapter.lastPageRead > 0L
+            } == true,
+        )
+
+        return try {
+            setUnifiedLibraryMembership.set(
+                source = representation,
+                inLibrary = inLibrary,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) {
+                "Failed to update unified library membership for manga ${manga.id}"
+            }
+            false
         }
     }
 
@@ -1041,14 +1081,19 @@ class MangaViewModel(
 
         viewModelScope.launchIO {
             combine(
-                getTracks.subscribe(manga.id).catch { logcat(LogPriority.ERROR, it) },
+                observeCanonicalTrackerBindingsForManga.execute(manga.id)
+                    .catch { logcat(LogPriority.ERROR, it) },
                 trackerManager.loggedInTrackersFlow(),
-            ) { mangaTracks, loggedInTrackers ->
-                // Show only if the service supports this manga's source
-                val supportedTrackers = loggedInTrackers.filter { (it as? EnhancedTracker)?.accept(source!!) ?: true }
-                val supportedTrackerIds = supportedTrackers.map { it.id }.toHashSet()
-                val supportedTrackerTracks = mangaTracks.filter { it.trackerId in supportedTrackerIds }
-                supportedTrackerTracks.size to supportedTrackers.isNotEmpty()
+            ) { resolution, loggedInTrackers ->
+                // Existing bindings belong to the canonical title and count from every representation.
+                val loggedInTrackerIds = loggedInTrackers.mapTo(hashSetOf()) { it.id }
+                val trackingCount = resolution.tracks.count { it.trackerId in loggedInTrackerIds }
+
+                // Availability for adding a new enhanced tracker still depends on the current source.
+                val supportedTrackers = loggedInTrackers.filter {
+                    (it as? EnhancedTracker)?.accept(source!!) ?: true
+                }
+                trackingCount to supportedTrackers.isNotEmpty()
             }
                 .distinctUntilChanged()
                 .collectLatest { (trackingCount, hasLoggedInTrackers) ->

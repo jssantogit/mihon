@@ -18,6 +18,7 @@ fun ReaderTopBar(
     navigateUp: () -> Unit,
     bookmarked: Boolean,
     onToggleBookmarked: () -> Unit,
+    onChangeSource: (() -> Unit)?,
     onOpenInWebView: (() -> Unit)?,
     onOpenInBrowser: (() -> Unit)?,
     onShare: (() -> Unit)?,
@@ -49,6 +50,14 @@ fun ReaderTopBar(
                             onClick = onToggleBookmarked,
                         ),
                     )
+                    onChangeSource?.let {
+                        add(
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.tsuzuki_content_change_source),
+                                onClick = it,
+                            ),
+                        )
+                    }
                     onOpenInWebView?.let {
                         add(
                             AppBar.OverflowAction(

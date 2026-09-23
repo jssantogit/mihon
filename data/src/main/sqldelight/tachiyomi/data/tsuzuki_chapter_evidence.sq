@@ -1,0 +1,116 @@
+CREATE TABLE tsuzuki_chapter_evidence(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    producer_kind TEXT NOT NULL,
+    producer_id TEXT NOT NULL,
+    external_chapter_key TEXT,
+    raw_label TEXT NOT NULL,
+    raw_number REAL,
+    volume INTEGER,
+    title TEXT,
+    observed_at INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    authority_class TEXT NOT NULL,
+    mapped_canonical_chapter_id TEXT,
+    raw_metadata BLOB NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE,
+    FOREIGN KEY(mapped_canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE SET NULL
+);
+
+CREATE INDEX tsuzuki_chapter_evidence_title_index
+ON tsuzuki_chapter_evidence(canonical_title_id);
+
+CREATE INDEX tsuzuki_chapter_evidence_mapped_chapter_index
+ON tsuzuki_chapter_evidence(mapped_canonical_chapter_id);
+
+CREATE UNIQUE INDEX tsuzuki_chapter_evidence_external_index
+ON tsuzuki_chapter_evidence(producer_kind, producer_id, external_chapter_key)
+WHERE external_chapter_key IS NOT NULL;
+
+getTsuzukiChapterEvidenceByTitle:
+SELECT *
+FROM tsuzuki_chapter_evidence
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY observed_at ASC, id ASC;
+
+getTsuzukiChapterEvidenceByProducerExternalKey:
+SELECT *
+FROM tsuzuki_chapter_evidence
+WHERE producer_kind = :producerKind
+AND producer_id = :producerId
+AND external_chapter_key = :externalChapterKey
+LIMIT 1;
+
+getTsuzukiChapterEvidenceByMappedChapter:
+SELECT *
+FROM tsuzuki_chapter_evidence
+WHERE mapped_canonical_chapter_id = :canonicalChapterId
+ORDER BY observed_at ASC, id ASC;
+
+upsertTsuzukiChapterEvidence:
+INSERT INTO tsuzuki_chapter_evidence(
+    id,
+    canonical_title_id,
+    producer_kind,
+    producer_id,
+    external_chapter_key,
+    raw_label,
+    raw_number,
+    volume,
+    title,
+    observed_at,
+    confidence,
+    authority_class,
+    mapped_canonical_chapter_id,
+    raw_metadata
+)
+VALUES (
+    :id,
+    :canonicalTitleId,
+    :producerKind,
+    :producerId,
+    :externalChapterKey,
+    :rawLabel,
+    :rawNumber,
+    :volume,
+    :title,
+    :observedAt,
+    :confidence,
+    :authorityClass,
+    :mappedCanonicalChapterId,
+    :rawMetadata
+)
+ON CONFLICT(id) DO UPDATE SET
+    canonical_title_id = excluded.canonical_title_id,
+    producer_kind = excluded.producer_kind,
+    producer_id = excluded.producer_id,
+    external_chapter_key = excluded.external_chapter_key,
+    raw_label = excluded.raw_label,
+    raw_number = excluded.raw_number,
+    volume = excluded.volume,
+    title = excluded.title,
+    observed_at = excluded.observed_at,
+    confidence = excluded.confidence,
+    authority_class = excluded.authority_class,
+    mapped_canonical_chapter_id = excluded.mapped_canonical_chapter_id,
+    raw_metadata = excluded.raw_metadata;
+
+deleteTsuzukiChapterEvidenceById:
+DELETE FROM tsuzuki_chapter_evidence
+WHERE id = :id;
+
+
+getPortableTsuzukiChapterEvidenceKey:
+SELECT producer_kind, producer_id, external_chapter_key
+FROM tsuzuki_chapter_evidence
+WHERE mapped_canonical_chapter_id = :canonicalChapterId
+AND external_chapter_key IS NOT NULL
+ORDER BY
+    CASE authority_class
+        WHEN 'EDITORIAL' THEN 0
+        WHEN 'ADDON_PROVISIONAL' THEN 1
+        ELSE 2
+    END ASC,
+    observed_at ASC,
+    id ASC
+LIMIT 1;

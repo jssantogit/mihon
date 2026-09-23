@@ -1,0 +1,75 @@
+CREATE TABLE tsuzuki_canonical_chapters(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    display_number TEXT NOT NULL,
+    volume INTEGER,
+    title TEXT,
+    type TEXT NOT NULL,
+    base_number INTEGER,
+    part INTEGER,
+    alpha_suffix TEXT,
+    confidence REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    confirmation_state TEXT NOT NULL DEFAULT 'PROVISIONAL',
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_canonical_chapter_title_index
+ON tsuzuki_canonical_chapters(canonical_title_id);
+
+getTsuzukiCanonicalChaptersByTitle:
+SELECT *
+FROM tsuzuki_canonical_chapters
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY created_at ASC, id ASC;
+
+getTsuzukiCanonicalChapterById:
+SELECT *
+FROM tsuzuki_canonical_chapters
+WHERE id = :id
+LIMIT 1;
+
+upsertTsuzukiCanonicalChapter:
+INSERT INTO tsuzuki_canonical_chapters(
+    id,
+    canonical_title_id,
+    display_number,
+    volume,
+    title,
+    type,
+    base_number,
+    part,
+    alpha_suffix,
+    confidence,
+    created_at,
+    updated_at,
+    confirmation_state
+)
+VALUES (
+    :id,
+    :canonicalTitleId,
+    :displayNumber,
+    :volume,
+    :title,
+    :type,
+    :baseNumber,
+    :part,
+    :alphaSuffix,
+    :confidence,
+    :createdAt,
+    :updatedAt,
+    :confirmationState
+)
+ON CONFLICT(id) DO UPDATE SET
+    canonical_title_id = excluded.canonical_title_id,
+    display_number = excluded.display_number,
+    volume = excluded.volume,
+    title = excluded.title,
+    type = excluded.type,
+    base_number = excluded.base_number,
+    part = excluded.part,
+    alpha_suffix = excluded.alpha_suffix,
+    confidence = excluded.confidence,
+    updated_at = excluded.updated_at,
+    confirmation_state = excluded.confirmation_state;

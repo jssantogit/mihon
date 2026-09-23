@@ -27,6 +27,15 @@ if (Config.includeTelemetry) {
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 
+fun String.asBuildConfigString(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val tsuzukiSupabaseUrl = providers.gradleProperty("TSUZUKI_SUPABASE_URL")
+    .orElse(providers.environmentVariable("TSUZUKI_SUPABASE_URL"))
+    .getOrElse("")
+val tsuzukiSupabasePublishableKey = providers.gradleProperty("TSUZUKI_SUPABASE_PUBLISHABLE_KEY")
+    .orElse(providers.environmentVariable("TSUZUKI_SUPABASE_PUBLISHABLE_KEY"))
+    .getOrElse("")
+
 android {
     namespace = "eu.kanade.tachiyomi"
 
@@ -41,6 +50,12 @@ android {
         buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLatestCommitTime = false)}\"")
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         buildConfigField("boolean", "UPDATER_ENABLED", "${Config.enableUpdater}")
+        buildConfigField("String", "TSUZUKI_SUPABASE_URL", tsuzukiSupabaseUrl.asBuildConfigString())
+        buildConfigField(
+            "String",
+            "TSUZUKI_SUPABASE_PUBLISHABLE_KEY",
+            tsuzukiSupabasePublishableKey.asBuildConfigString(),
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -110,6 +125,36 @@ android {
             matchingFallbacks.addAll(commonMatchingFallbacks)
 
             buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLatestCommitTime = false)}\"")
+        }
+        create("deva") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.deva"
+            versionNameSuffix = "-deva-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
+        create("devb") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.devb"
+            versionNameSuffix = "-devb-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
+        create("devc") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.devc"
+            versionNameSuffix = "-devc-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
         create("benchmark") {
             initWith(release)
@@ -336,6 +381,7 @@ dependencies {
     implementation(libs.leakCanary.plumber)
 
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }
 
 androidComponents {

@@ -37,6 +37,7 @@ fun MoreScreen(
     onIncognitoModeChange: (Boolean) -> Unit,
     onClickDownloadQueue: () -> Unit,
     onClickCategories: () -> Unit,
+    onClickCollections: () -> Unit,
     onClickStats: () -> Unit,
     onClickDataAndStorage: () -> Unit,
     onClickSettings: () -> Unit,
@@ -107,6 +108,14 @@ fun MoreScreen(
                     title = stringResource(MR.strings.categories),
                     icon = MaterialSymbols.AutoMirroredRounded.Label,
                     onPreferenceClick = onClickCategories,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = "Collections",
+                    subtitle = "Dynamic catalog lists and folders",
+                    icon = MaterialSymbols.AutoMirroredRounded.Label,
+                    onPreferenceClick = onClickCollections,
                 )
             }
             item {

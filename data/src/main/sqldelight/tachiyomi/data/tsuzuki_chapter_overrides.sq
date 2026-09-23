@@ -1,0 +1,87 @@
+CREATE TABLE tsuzuki_chapter_overrides(
+    id TEXT NOT NULL PRIMARY KEY,
+    canonical_title_id TEXT NOT NULL,
+    canonical_chapter_key TEXT,
+    source_id INTEGER,
+    source_title_url TEXT,
+    source_chapter_id TEXT,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    CHECK((source_id IS NULL) = (source_title_url IS NULL)),
+    CHECK(source_chapter_id IS NULL OR source_id IS NOT NULL)
+);
+
+CREATE INDEX tsuzuki_chapter_override_title_index
+ON tsuzuki_chapter_overrides(canonical_title_id);
+
+CREATE INDEX tsuzuki_chapter_override_chapter_key_index
+ON tsuzuki_chapter_overrides(canonical_title_id, canonical_chapter_key);
+
+CREATE INDEX tsuzuki_chapter_override_source_index
+ON tsuzuki_chapter_overrides(source_id, source_title_url, source_chapter_id);
+
+getTsuzukiChapterOverrideById:
+SELECT *
+FROM tsuzuki_chapter_overrides
+WHERE id = :id
+LIMIT 1;
+
+getAllTsuzukiChapterOverrides:
+SELECT *
+FROM tsuzuki_chapter_overrides
+ORDER BY id ASC;
+
+getActiveTsuzukiChapterOverrides:
+SELECT *
+FROM tsuzuki_chapter_overrides
+WHERE deleted_at IS NULL
+ORDER BY id ASC;
+
+upsertTsuzukiChapterOverride:
+INSERT INTO tsuzuki_chapter_overrides(
+    id,
+    canonical_title_id,
+    canonical_chapter_key,
+    source_id,
+    source_title_url,
+    source_chapter_id,
+    kind,
+    payload_json,
+    schema_version,
+    revision,
+    created_at,
+    updated_at,
+    deleted_at
+)
+VALUES (
+    :id,
+    :canonicalTitleId,
+    :canonicalChapterKey,
+    :sourceId,
+    :sourceTitleUrl,
+    :sourceChapterId,
+    :kind,
+    :payloadJson,
+    :schemaVersion,
+    :revision,
+    :createdAt,
+    :updatedAt,
+    :deletedAt
+)
+ON CONFLICT(id) DO UPDATE SET
+    canonical_title_id = excluded.canonical_title_id,
+    canonical_chapter_key = excluded.canonical_chapter_key,
+    source_id = excluded.source_id,
+    source_title_url = excluded.source_title_url,
+    source_chapter_id = excluded.source_chapter_id,
+    kind = excluded.kind,
+    payload_json = excluded.payload_json,
+    schema_version = excluded.schema_version,
+    revision = excluded.revision,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at;

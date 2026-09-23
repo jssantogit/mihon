@@ -1,0 +1,82 @@
+import kotlin.Boolean;
+
+CREATE TABLE tsuzuki_chapter_progress(
+    canonical_chapter_id TEXT NOT NULL PRIMARY KEY,
+    read INTEGER AS Boolean NOT NULL DEFAULT 0,
+    last_page_read INTEGER NOT NULL DEFAULT 0,
+    last_variant_id TEXT,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_chapter_id) REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE,
+    FOREIGN KEY(last_variant_id) REFERENCES tsuzuki_chapter_variants(id) ON DELETE SET NULL
+);
+
+CREATE INDEX tsuzuki_chapter_progress_updated_index
+ON tsuzuki_chapter_progress(updated_at);
+
+getTsuzukiChapterProgress:
+SELECT *
+FROM tsuzuki_chapter_progress
+WHERE canonical_chapter_id = :canonicalChapterId
+LIMIT 1;
+
+observeTsuzukiChapterProgress:
+SELECT *
+FROM tsuzuki_chapter_progress
+WHERE canonical_chapter_id = :canonicalChapterId
+LIMIT 1;
+
+getTsuzukiChapterProgressByTitle:
+SELECT P.*
+FROM tsuzuki_chapter_progress P
+JOIN tsuzuki_canonical_chapters C
+ON C.id = P.canonical_chapter_id
+WHERE C.canonical_title_id = :canonicalTitleId
+ORDER BY C.created_at ASC, C.id ASC;
+
+observeTsuzukiChapterProgressByTitle:
+SELECT P.*
+FROM tsuzuki_chapter_progress P
+JOIN tsuzuki_canonical_chapters C
+ON C.id = P.canonical_chapter_id
+WHERE C.canonical_title_id = :canonicalTitleId
+ORDER BY C.created_at ASC, C.id ASC;
+
+upsertTsuzukiChapterProgress:
+INSERT INTO tsuzuki_chapter_progress(
+    canonical_chapter_id,
+    read,
+    last_page_read,
+    last_variant_id,
+    updated_at
+)
+VALUES (
+    :canonicalChapterId,
+    :read,
+    :lastPageRead,
+    :lastVariantId,
+    :updatedAt
+)
+ON CONFLICT(canonical_chapter_id) DO UPDATE SET
+    read = excluded.read,
+    last_page_read = excluded.last_page_read,
+    last_variant_id = excluded.last_variant_id,
+    updated_at = excluded.updated_at;
+
+
+observeTsuzukiContinueReadingCandidates:
+SELECT
+    T.id AS canonical_title_id,
+    T.display_title,
+    C.id AS canonical_chapter_id,
+    C.display_number,
+    P.last_page_read,
+    P.read,
+    P.updated_at,
+    P.last_variant_id
+FROM tsuzuki_chapter_progress P
+JOIN tsuzuki_canonical_chapters C
+ON C.id = P.canonical_chapter_id
+JOIN tsuzuki_titles T
+ON T.id = C.canonical_title_id
+WHERE P.updated_at > 0
+ORDER BY P.updated_at DESC, C.id ASC;
