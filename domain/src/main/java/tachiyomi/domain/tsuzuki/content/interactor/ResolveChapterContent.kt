@@ -9,6 +9,15 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
@@ -25,15 +34,37 @@ data class ContentOptionLookup(
     val queriedProviderCount: Int,
 )
 
-@Inject
-class ResolveChapterContent(
+class ResolveChapterContent internal constructor(
     private val addonRegistry: AddonRegistry,
     private val contentPreferenceRepository: ContentPreferenceRepository,
     private val readerPreferences: CanonicalReaderPreferences,
     private val rankContentOptions: RankContentOptions,
     private val contentOptionCache: ContentOptionCache,
     private val inFlightContentResolution: InFlightContentResolution,
+    private val addonRepository: AddonRepository? = null,
+    private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) {
+
+    @Inject
+    constructor(
+        addonRegistry: AddonRegistry,
+        contentPreferenceRepository: ContentPreferenceRepository,
+        readerPreferences: CanonicalReaderPreferences,
+        rankContentOptions: RankContentOptions,
+        contentOptionCache: ContentOptionCache,
+        inFlightContentResolution: InFlightContentResolution,
+        addonRepository: AddonRepository,
+        diagnostics: ChapterInventoryDiagnostics,
+    ) : this(
+        addonRegistry = addonRegistry,
+        contentPreferenceRepository = contentPreferenceRepository,
+        readerPreferences = readerPreferences,
+        rankContentOptions = rankContentOptions,
+        contentOptionCache = contentOptionCache,
+        inFlightContentResolution = inFlightContentResolution,
+        addonRepository = addonRepository,
+        diagnostics = diagnostics,
+    )
 
     suspend fun execute(
         canonicalTitleId: String,
@@ -47,6 +78,7 @@ class ResolveChapterContent(
             readerPreferences.preferredLanguages.get(),
         )
         val providers = addonRegistry.contentProviders()
+        recordProviderRegistration(canonicalTitleId, providers)
         if (providers.isEmpty()) return ContentResolution.Unavailable
 
         val preferredProvider = preferredAddonId?.let { preferredId ->
@@ -145,6 +177,7 @@ class ResolveChapterContent(
         }
 
         val providers = addonRegistry.contentProviders()
+        recordProviderRegistration(canonicalTitleId, providers)
         if (providers.isEmpty()) return ContentOptionLookup(emptyList(), emptyList(), 0)
 
         val titlePreference = contentPreferenceRepository.get(canonicalTitleId)
@@ -211,11 +244,17 @@ class ResolveChapterContent(
             addonId = provider.addonId,
         )
         contentOptionCache.get(key)?.let { cached ->
+            recordSelector(canonicalTitleId, provider.addonId,
+                if (cached.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
+                cached.size, ChapterInventoryDiagnosticReason.CACHED_OPTIONS)
             return Result.success(cached)
         }
 
         return inFlightContentResolution.execute(key) resolution@{
             contentOptionCache.get(key)?.let { cached ->
+                recordSelector(canonicalTitleId, provider.addonId,
+                    if (cached.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
+                    cached.size, ChapterInventoryDiagnosticReason.CACHED_OPTIONS)
                 return@resolution Result.success(cached)
             }
             val result = try {
@@ -233,8 +272,59 @@ class ResolveChapterContent(
             result.getOrNull()?.let { options ->
                 contentOptionCache.put(key, options)
             }
+            val options = result.getOrNull()
+            if (options != null) {
+                recordSelector(canonicalTitleId, provider.addonId,
+                    if (options.isEmpty()) ChapterInventoryDiagnosticOutcome.EMPTY else ChapterInventoryDiagnosticOutcome.SUCCESS,
+                    options.size, if (options.isEmpty()) ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT else null)
+            } else {
+                val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(result.exceptionOrNull()!!)
+                recordSelector(canonicalTitleId, provider.addonId, outcome, 0, reason)
+            }
             result
         }
+    }
+
+    /** Detect providers absent from the selector even when their extension is installed. */
+    private suspend fun recordProviderRegistration(
+        canonicalTitleId: String,
+        providers: List<ContentProvider>,
+    ) {
+        val repository = addonRepository ?: return
+        if (!runCatching { diagnostics.isRecording(canonicalTitleId) }.getOrDefault(false)) return
+        val installed = try {
+            repository.snapshot()
+        } catch (_: Exception) {
+            return // Observational only.
+        }
+        val registered = providers.map { it.addonId }.toSet()
+        installed.forEach { addon ->
+            when {
+                !addon.enabled -> recordSelector(canonicalTitleId, addon.id,
+                    ChapterInventoryDiagnosticOutcome.DISABLED, 0,
+                    ChapterInventoryDiagnosticReason.ALL_SOURCES_DISABLED)
+                addon.id !in registered -> recordSelector(canonicalTitleId, addon.id,
+                    ChapterInventoryDiagnosticOutcome.NO_BINDING, 0,
+                    ChapterInventoryDiagnosticReason.PROVIDER_NOT_REGISTERED)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun recordSelector(
+        canonicalTitleId: String,
+        addonId: AddonId,
+        outcome: ChapterInventoryDiagnosticOutcome,
+        optionCount: Int,
+        reason: ChapterInventoryDiagnosticReason? = null,
+    ) {
+        diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
+            stage = ChapterInventoryDiagnosticStage.SELECTOR,
+            outcome = outcome,
+            addonId = addonId.value,
+            accepted = optionCount,
+            reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+        ))
     }
 
     private companion object {
