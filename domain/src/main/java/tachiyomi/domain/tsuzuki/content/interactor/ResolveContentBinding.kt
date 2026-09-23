@@ -464,12 +464,15 @@ class ResolveContentBinding internal constructor(
         elapsedMillis: Long? = null,
         reason: ChapterInventoryDiagnosticReason? = null,
     ) {
-        diagnostics.recordIfEnabled(canonicalTitleId, ChapterInventoryDiagnosticEvent(
-            stage = stage, outcome = outcome, addonId = addonId.value, sourceId = sourceId,
-            language = language, received = received, accepted = accepted,
-            attempt = attempt, elapsedMillis = elapsedMillis,
-            reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
-        ))
+        diagnostics.recordIfEnabled(
+            canonicalTitleId,
+            ChapterInventoryDiagnosticEvent(
+                stage = stage, outcome = outcome, addonId = addonId.value, sourceId = sourceId,
+                language = language, received = received, accepted = accepted,
+                attempt = attempt, elapsedMillis = elapsedMillis,
+                reasons = reason?.let { mapOf(it to 1) }.orEmpty(),
+            ),
+        )
     }
 
     private companion object {
