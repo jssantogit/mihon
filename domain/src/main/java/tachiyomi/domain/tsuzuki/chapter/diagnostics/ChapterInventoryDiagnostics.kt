@@ -2,6 +2,8 @@ package tachiyomi.domain.tsuzuki.chapter.diagnostics
 
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 
 /** Processing boundary recorded by the temporary chapter-inventory diagnostic. */
 enum class ChapterInventoryDiagnosticStage {
@@ -32,6 +34,10 @@ enum class ChapterInventoryDiagnosticOutcome {
     CAPTCHA_REQUIRED,
     NETWORK_ERROR,
     EXTENSION_ERROR,
+    HTTP_ERROR,
+    SOURCE_UNAVAILABLE,
+    MALFORMED_RESPONSE,
+    INDETERMINATE,
     TIMEOUT,
     NO_BINDING,
     LOW_CONFIDENCE,
@@ -65,6 +71,13 @@ enum class ChapterInventoryDiagnosticReason {
     NETWORK_FAILURE,
     TIMEOUT_FAILURE,
     EXTENSION_FAILURE,
+    HTTP_RESPONSE,
+    HTTP_FORBIDDEN,
+    HTTP_RATE_LIMITED,
+    HTTP_SERVER_ERROR,
+    SOURCE_UNAVAILABLE,
+    MALFORMED_RESPONSE,
+    INDETERMINATE_FAILURE,
     PROVIDER_FAILED,
     PROVIDER_NOT_REGISTERED,
     NO_CHAPTER_VARIANT,
@@ -151,6 +164,43 @@ fun ChapterInventoryDiagnostics.recordIfEnabled(
 object ChapterInventoryDiagnosticFailures {
     fun classify(error: Throwable): Pair<ChapterInventoryDiagnosticOutcome, ChapterInventoryDiagnosticReason> {
         val causes = generateSequence(error) { it.cause }.take(5).toList()
+        val sourceFailure = causes.filterIsInstance<ReadingSourceSearchFailure>().firstOrNull()
+        if (sourceFailure != null) {
+            return when (sourceFailure.kind) {
+                ReadingSourceFailureKind.SOURCE_DISABLED ->
+                    ChapterInventoryDiagnosticOutcome.DISABLED to ChapterInventoryDiagnosticReason.SOURCE_DISABLED
+                ReadingSourceFailureKind.SOURCE_UNAVAILABLE ->
+                    ChapterInventoryDiagnosticOutcome.SOURCE_UNAVAILABLE to
+                        ChapterInventoryDiagnosticReason.SOURCE_UNAVAILABLE
+                ReadingSourceFailureKind.HTTP_RESPONSE -> {
+                    val reason = when {
+                        sourceFailure.httpStatus == 403 -> ChapterInventoryDiagnosticReason.HTTP_FORBIDDEN
+                        sourceFailure.httpStatus == 429 -> ChapterInventoryDiagnosticReason.HTTP_RATE_LIMITED
+                        sourceFailure.httpStatus?.let { it in 500..599 } == true ->
+                            ChapterInventoryDiagnosticReason.HTTP_SERVER_ERROR
+                        else -> ChapterInventoryDiagnosticReason.HTTP_RESPONSE
+                    }
+                    ChapterInventoryDiagnosticOutcome.HTTP_ERROR to reason
+                }
+                ReadingSourceFailureKind.NETWORK_FAILURE ->
+                    ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
+                        ChapterInventoryDiagnosticReason.NETWORK_FAILURE
+                ReadingSourceFailureKind.TIMEOUT ->
+                    ChapterInventoryDiagnosticOutcome.TIMEOUT to ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE
+                ReadingSourceFailureKind.CAPTCHA_REQUIRED ->
+                    ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
+                        ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
+                ReadingSourceFailureKind.MALFORMED_RESPONSE ->
+                    ChapterInventoryDiagnosticOutcome.MALFORMED_RESPONSE to
+                        ChapterInventoryDiagnosticReason.MALFORMED_RESPONSE
+                ReadingSourceFailureKind.EXTENSION_FAILURE ->
+                    ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
+                        ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
+                ReadingSourceFailureKind.INDETERMINATE ->
+                    ChapterInventoryDiagnosticOutcome.INDETERMINATE to
+                        ChapterInventoryDiagnosticReason.INDETERMINATE_FAILURE
+            }
+        }
         return when {
             causes.any {
                 it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
@@ -162,9 +212,14 @@ object ChapterInventoryDiagnosticFailures {
             } ->
                 ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
                     ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
-            causes.any { it is java.io.IOException } ->
+            causes.any {
+                it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketException
+            } ->
                 ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
                     ChapterInventoryDiagnosticReason.NETWORK_FAILURE
+            causes.any { it is java.io.IOException } ->
+                ChapterInventoryDiagnosticOutcome.INDETERMINATE to
+                    ChapterInventoryDiagnosticReason.INDETERMINATE_FAILURE
             else ->
                 ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
                     ChapterInventoryDiagnosticReason.EXTENSION_FAILURE

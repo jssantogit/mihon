@@ -26,6 +26,7 @@ import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.util.UUID
@@ -271,6 +272,8 @@ class ResolveContentBinding internal constructor(
                     blockingStage == ChapterInventoryDiagnosticStage.BINDING_SEARCH
                 },
                 affectedSourceCount = affectedSourceCount,
+                httpStatus = (firstSearchFailure as? ReadingSourceSearchFailure)?.httpStatus
+                    .takeIf { blockingStage == ChapterInventoryDiagnosticStage.BINDING_SEARCH },
                 availabilityBlocked = true,
                 reason = blockReason,
             )
@@ -401,6 +404,7 @@ class ResolveContentBinding internal constructor(
                     sourceId = sourceId,
                     attempt = attemptIndex + 1,
                     elapsedMillis = started.elapsedNow().inWholeMilliseconds,
+                    httpStatus = (error as? ReadingSourceSearchFailure)?.httpStatus,
                     reason = reason,
                 )
                 return collected.distinctBy { it.sourceId to it.sourceUrl } to error
@@ -555,6 +559,7 @@ class ResolveContentBinding internal constructor(
         reason: ChapterInventoryDiagnosticReason? = null,
         availabilityBlocked: Boolean = false,
         affectedSourceCount: Int? = null,
+        httpStatus: Int? = null,
     ) {
         diagnostics.recordIfEnabled(
             canonicalTitleId,
@@ -562,6 +567,7 @@ class ResolveContentBinding internal constructor(
                 stage = stage, outcome = outcome, addonId = addonId.value, sourceId = sourceId,
                 language = language, received = received, accepted = accepted,
                 discarded = discarded,
+                httpStatus = httpStatus,
                 availabilityBlocked = availabilityBlocked,
                 affectedSourceCount = affectedSourceCount,
                 attempt = attempt, elapsedMillis = elapsedMillis,

@@ -28,6 +28,8 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 
 class MihonReadingSourceGatewayTest {
 
@@ -112,7 +114,16 @@ class MihonReadingSourceGatewayTest {
         sourceManager.sourcesList += TestCatalogueSource(10L, "Test", "en")
         sourcePreferences.disabledSources.set(setOf("10"))
 
-        gateway.search(10L, "query").isFailure shouldBe true
+        val failure = gateway.search(10L, "query").exceptionOrNull() as ReadingSourceSearchFailure
+        failure.kind shouldBe ReadingSourceFailureKind.SOURCE_DISABLED
+        mangaRepository.insertedCount shouldBe 0
+    }
+
+    @Test
+    fun `search reports unavailable source as distinct from an empty inventory`() = runTest {
+        val failure = gateway.search(404L, "query").exceptionOrNull() as ReadingSourceSearchFailure
+
+        failure.kind shouldBe ReadingSourceFailureKind.SOURCE_UNAVAILABLE
         mangaRepository.insertedCount shouldBe 0
     }
 

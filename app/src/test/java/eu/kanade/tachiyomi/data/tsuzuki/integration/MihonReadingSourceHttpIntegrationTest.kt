@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
@@ -83,6 +84,33 @@ class MihonReadingSourceHttpIntegrationTest {
             harness.enqueue(body = "extension_error")
             val extension = harness.gateway.search(harness.source.id, "query").searchFailure()
             extension.kind shouldBe ReadingSourceFailureKind.EXTENSION_FAILURE
+        }
+    }
+
+    @Test
+    fun `generic IO failure remains indeterminate rather than being guessed as network`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            harness.enqueue(body = "io_error")
+
+            val failure = harness.gateway.search(harness.source.id, "query").searchFailure()
+
+            failure.kind shouldBe ReadingSourceFailureKind.INDETERMINATE
+        }
+    }
+
+    @Test
+    fun `cancellation from extension parser propagates without becoming a search failure`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            harness.enqueue(body = "cancel_search")
+
+            var observedCancellation = false
+            try {
+                harness.gateway.search(harness.source.id, "query")
+            } catch (_: CancellationException) {
+                observedCancellation = true
+            }
+
+            observedCancellation shouldBe true
         }
     }
 

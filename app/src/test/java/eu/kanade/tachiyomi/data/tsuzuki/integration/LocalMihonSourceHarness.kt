@@ -9,6 +9,8 @@ import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import mockwebserver3.MockResponse
@@ -27,7 +29,6 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import java.io.Closeable
 import java.util.concurrent.TimeUnit
-import io.mockk.mockk
 
 /** Local-only Mihon HttpSource + gateway fixture for deterministic runtime integration tests. */
 internal class LocalMihonSourceHarness(
@@ -35,8 +36,12 @@ internal class LocalMihonSourceHarness(
 ) : Closeable {
     val server = MockWebServer()
 
+    init {
+        server.start()
+    }
+
     val source = FixtureHttpSource(
-        server = server,
+        baseUrl = server.url("/").toString().trimEnd('/'),
         client = OkHttpClient.Builder()
             .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
             .build(),
@@ -49,10 +54,6 @@ internal class LocalMihonSourceHarness(
         sourcePreferences = SourcePreferences(InMemoryPreferenceStore()),
         networkToLocalManga = NetworkToLocalManga(mockk<MangaRepository>(relaxed = true)),
     )
-
-    init {
-        server.start()
-    }
 
     fun enqueue(status: Int = 200, body: String = "") {
         server.enqueue(
@@ -79,14 +80,12 @@ internal class LocalMihonSourceHarness(
 }
 
 internal class FixtureHttpSource(
-    private val server: MockWebServer,
+    override val baseUrl: String,
     override val client: OkHttpClient,
 ) : HttpSource() {
     override val name: String = "Runtime Integration Fixture"
     override val lang: String = "en"
     override val supportsLatest: Boolean = false
-    override val baseUrl: String get() = server.url("/").toString().trimEnd('/')
-
     override fun getFilterList(): FilterList = FilterList()
 
     @Deprecated("fixture")
@@ -99,6 +98,8 @@ internal class FixtureHttpSource(
         if (body == "malformed") throw JSONException("fixture response was malformed")
         if (body == "captcha_required") throw IllegalStateException("captcha_required")
         if (body == "extension_error") throw IllegalStateException("private extension failure")
+        if (body == "io_error") throw java.io.IOException("private IO failure")
+        if (body == "cancel_search") throw CancellationException("fixture cancellation")
         val mangas = body.lineSequence()
             .filter(String::isNotBlank)
             .map { line ->

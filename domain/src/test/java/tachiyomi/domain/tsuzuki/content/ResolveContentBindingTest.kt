@@ -27,6 +27,8 @@ import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
 import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.io.IOException
 
@@ -220,6 +222,36 @@ class ResolveContentBindingTest {
         val blocker = diagnostics.events.single { it.availabilityBlocked }
         blocker.stage shouldBe ChapterInventoryDiagnosticStage.BINDING_SEARCH
         blocker.affectedSourceCount shouldBe 1
+    }
+
+    @Test
+    fun `binding search diagnostic preserves structured HTTP status without provider text`() = runTest {
+        val diagnostics = RecordingDiagnostics()
+        diagnostics.start("title")
+        val sourceCause = IllegalStateException("private provider body")
+        val gateway = FakeReadingSourceGateway(
+            searchFailure = ReadingSourceSearchFailure(
+                kind = ReadingSourceFailureKind.HTTP_RESPONSE,
+                httpStatus = 403,
+                cause = sourceCause,
+            ),
+        )
+
+        val result = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            title = "One-Punch Man",
+            diagnostics = diagnostics,
+        ).executeAll("title", AddonId("mangadex"))
+
+        result.isFailure shouldBe true
+        val searchEvent = diagnostics.events.first {
+            it.stage == ChapterInventoryDiagnosticStage.BINDING_SEARCH
+        }
+        searchEvent.outcome shouldBe ChapterInventoryDiagnosticOutcome.HTTP_ERROR
+        searchEvent.httpStatus shouldBe 403
+        searchEvent.reasons[ChapterInventoryDiagnosticReason.HTTP_FORBIDDEN] shouldBe 1
+        searchEvent.toString().contains("private provider body") shouldBe false
     }
 
     @Test

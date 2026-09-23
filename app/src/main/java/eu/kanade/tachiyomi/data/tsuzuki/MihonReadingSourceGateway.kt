@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
+import com.google.gson.JsonParseException
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -7,15 +8,25 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
+import eu.kanade.tachiyomi.network.HttpException
 import eu.kanade.tachiyomi.source.CatalogueSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.SerializationException
+import org.json.JSONException
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 @Inject
 @SingleIn(AppScope::class)
@@ -44,12 +55,22 @@ class MihonReadingSourceGateway(
     override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
         val disabledSources = sourcePreferences.disabledSources.get()
         if (sourceId.toString() in disabledSources) {
-            return Result.failure(IllegalStateException("Source $sourceId is disabled"))
+            return Result.failure(
+                ReadingSourceSearchFailure(
+                    kind = ReadingSourceFailureKind.SOURCE_DISABLED,
+                    cause = IllegalStateException("Source $sourceId is disabled"),
+                ),
+            )
         }
 
         val source = sourceManager.get(sourceId)
         if (source !is CatalogueSource) {
-            return Result.failure(IllegalStateException("Source $sourceId is not an installed CatalogueSource"))
+            return Result.failure(
+                ReadingSourceSearchFailure(
+                    kind = ReadingSourceFailureKind.SOURCE_UNAVAILABLE,
+                    cause = IllegalStateException("Source $sourceId is not an installed CatalogueSource"),
+                ),
+            )
         }
 
         return try {
@@ -80,8 +101,41 @@ class MihonReadingSourceGateway(
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            Result.failure(t)
+            Result.failure(t.toReadingSourceSearchFailure())
         }
+    }
+
+    private fun Throwable.toReadingSourceSearchFailure(): ReadingSourceSearchFailure {
+        if (this is ReadingSourceSearchFailure) return this
+
+        val causes = generateSequence(this) { it.cause }.take(5).toList()
+        val httpStatus = causes.filterIsInstance<HttpException>()
+            .map(HttpException::code)
+            .firstOrNull { it in 100..599 }
+        val hasExplicitCaptcha = causes.any { cause ->
+            val detail = cause.message.orEmpty()
+            detail.contains("captcha_required", ignoreCase = true) ||
+                detail.contains("shape-selecting captcha", ignoreCase = true)
+        }
+        val kind = when {
+            hasExplicitCaptcha -> ReadingSourceFailureKind.CAPTCHA_REQUIRED
+            causes.any { it is SocketTimeoutException } -> ReadingSourceFailureKind.TIMEOUT
+            httpStatus != null -> ReadingSourceFailureKind.HTTP_RESPONSE
+            causes.any {
+                it is JSONException || it is JsonParseException || it is SerializationException
+            } -> ReadingSourceFailureKind.MALFORMED_RESPONSE
+            causes.any {
+                it is UnknownHostException || it is ConnectException || it is SocketException
+            } -> ReadingSourceFailureKind.NETWORK_FAILURE
+            causes.any { it is IOException } -> ReadingSourceFailureKind.INDETERMINATE
+            else -> ReadingSourceFailureKind.EXTENSION_FAILURE
+        }
+
+        return ReadingSourceSearchFailure(
+            kind = kind,
+            httpStatus = httpStatus,
+            cause = this,
+        )
     }
 
     override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
