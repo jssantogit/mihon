@@ -15,6 +15,7 @@ import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.util.UUID
@@ -231,14 +232,13 @@ class ResolveContentBinding internal constructor(
                 .sortedByDescending { scoreSourceTitleMatch(title, it.title) }
             val best = ranked.firstOrNull()
             val runnerUp = ranked.getOrNull(1)
-            if (
-                best != null &&
-                scoreSourceTitleMatch(title, best.title) >= AUTO_MATCH_THRESHOLD &&
-                (runnerUp == null ||
-                    scoreSourceTitleMatch(title, best.title) -
-                    scoreSourceTitleMatch(title, runnerUp.title) > AUTO_MATCH_MARGIN)
-            ) {
-                break
+            if (best != null) {
+                val bestScore = scoreSourceTitleMatch(title, best.title)
+                val unambiguous = runnerUp == null ||
+                    bestScore - scoreSourceTitleMatch(title, runnerUp.title) > AUTO_MATCH_MARGIN
+                if (bestScore >= AUTO_MATCH_THRESHOLD && unambiguous) {
+                    break
+                }
             }
         }
         return collected.distinctBy { it.sourceId to it.sourceUrl } to null
