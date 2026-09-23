@@ -6,7 +6,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
-import java.net.ServerSocket
+import java.net.ConnectException
 
 class MihonReadingSourceHttpIntegrationTest {
 
@@ -117,13 +117,9 @@ class MihonReadingSourceHttpIntegrationTest {
 
     @Test
     fun `network failure and response timeout have distinct structured categories`() = runTest {
-        ServerSocket(0).use { reservedPort ->
-            val closedPortBaseUrl = "http://127.0.0.1:${reservedPort.localPort}"
-            LocalMihonSourceHarness(sourceBaseUrl = closedPortBaseUrl).use { harness ->
-                reservedPort.close()
-                val network = harness.gateway.search(harness.source.id, "query").searchFailure()
-                network.kind shouldBe ReadingSourceFailureKind.NETWORK_FAILURE
-            }
+        LocalMihonSourceHarness(clientFailure = ConnectException("synthetic connection refusal")).use { harness ->
+            val network = harness.gateway.search(harness.source.id, "query").searchFailure()
+            network.kind shouldBe ReadingSourceFailureKind.NETWORK_FAILURE
         }
 
         LocalMihonSourceHarness(readTimeoutMillis = 25).use { harness ->
