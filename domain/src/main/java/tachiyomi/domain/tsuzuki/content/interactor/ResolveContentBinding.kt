@@ -2,6 +2,7 @@ package tachiyomi.domain.tsuzuki.content.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -9,18 +10,17 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeout
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
@@ -39,10 +39,10 @@ import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
+import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
-import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.util.UUID
@@ -613,17 +613,17 @@ class ResolveContentBinding internal constructor(
         existing: ContentBinding?,
         timestamp: Long = clock(),
     ): ContentBinding = ContentBinding(
-            id = existing?.id ?: idFactory(),
-            canonicalTitleId = canonicalTitleId,
-            addonId = addonId,
-            providerTitleKey = materialized.providerTitleKey,
-            matchConfidence = scored.confidence,
-            verifiedByUser = existing?.verifiedByUser ?: false,
-            availability = ContentBindingAvailability.AVAILABLE,
-            runtimePayload = materialized.runtimePayload,
-            createdAt = existing?.createdAt ?: timestamp,
-            updatedAt = timestamp,
-        )
+        id = existing?.id ?: idFactory(),
+        canonicalTitleId = canonicalTitleId,
+        addonId = addonId,
+        providerTitleKey = materialized.providerTitleKey,
+        matchConfidence = scored.confidence,
+        verifiedByUser = existing?.verifiedByUser ?: false,
+        availability = ContentBindingAvailability.AVAILABLE,
+        runtimePayload = materialized.runtimePayload,
+        createdAt = existing?.createdAt ?: timestamp,
+        updatedAt = timestamp,
+    )
 
     private sealed interface CandidateDecision {
         data object Empty : CandidateDecision
