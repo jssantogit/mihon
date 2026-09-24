@@ -94,9 +94,9 @@ import java.net.UnknownHostException
 import java.util.UUID
 
 /**
- * Opt-in only. The composition uses production Mihon/Tsuzuki adapters and repositories, but gives
- * them the instrumentation APK's private SQLDelight database. It never writes to the target app's
- * library database, and every candidate must match the user's exact public MangaFire reference.
+ * Opt-in only. The composition uses production Mihon/Tsuzuki adapters and repositories with a
+ * disposable database context; the target-context smoke maps Mihon's database name to a random
+ * test-only file and never opens the target app's library database.
  */
 @RunWith(AndroidJUnit4::class)
 class MangaFireRealReadingJourneyInstrumentedTest {
@@ -161,32 +161,28 @@ class MangaFireRealReadingJourneyInstrumentedTest {
     @Test(timeout = 90_000L)
     fun instrumentationContextDatabasePersistsCanonicalTitle() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val testContext = instrumentation.context
-        val packageIsolated = testContext.packageName != instrumentation.targetContext.packageName
-        val applicationContext = runCatching { testContext.applicationContext }
-        val applicationContextStatus = when {
-            applicationContext.isFailure -> "error"
-            applicationContext.getOrNull() == null -> "null"
-            else -> "present"
-        }
-        val applicationContextValue = applicationContext.getOrNull()
-        val (databaseContext, wrapperApplied) = createInstrumentationDatabaseContext(
-            testContext,
-            applicationContextValue,
+        val targetContext = instrumentation.targetContext
+        val disposableDatabaseName = "tsuzuki-e2e-${UUID.randomUUID()}.db"
+        val databaseContext = DisposableTargetDatabaseContext(
+            targetContext = targetContext,
+            disposableDatabaseName = disposableDatabaseName,
+        )
+        val disposableDatabasePath = databaseContext.getDatabasePath(TARGET_DATABASE_NAME)
+        assertTrue("Disposable E2E database name must not pre-exist", !disposableDatabasePath.exists())
+        assertTrue(
+            "Logical production database name must map to a different disposable file",
+            disposableDatabasePath != targetContext.getDatabasePath(TARGET_DATABASE_NAME),
         )
         reportContextObservation(
-            applicationContextStatus,
-            packageIsolated,
-            if (wrapperApplied) "wrapped" else "raw",
+            applicationContext = "present",
+            storage = "TARGET_DISPOSABLE",
+            databaseContext = "wrapped",
         )
-        assertTrue("Persistence must use the instrumentation package database", packageIsolated)
-        assertTrue("Instrumentation application context could not be inspected", applicationContext.isSuccess)
         assertTrue(
-            "The isolated database context must expose an application context",
+            "The disposable database context must expose an application context",
             databaseContext.applicationContext != null,
         )
 
-        resetInstrumentationDatabase(databaseContext)
         val canonicalTitle = CanonicalTitle(
             id = UUID.randomUUID().toString(),
             displayTitle = "Disposable instrumentation title",
@@ -194,18 +190,20 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
         )
-        val driver = diagnosticSetupPhase("DRIVER_CREATE") {
-            AppBindings.providesSqlDriver(databaseContext)
-        }
+        var driver: app.cash.sqldelight.db.SqlDriver? = null
         try {
+            val sqlDriver = diagnosticSetupPhase("DRIVER_CREATE") {
+                AppBindings.providesSqlDriver(databaseContext)
+            }
+            driver = sqlDriver
             val database = diagnosticSetupPhase("DATABASE_CREATE") {
-                val database = AppBindings.providesDatabase(driver)
-                // Force the configured AndroidX driver to open the isolated database and
+                val database = AppBindings.providesDatabase(sqlDriver)
+                // Force the configured AndroidX driver to open the disposable database and
                 // initialize its configured SQLDelight schema before repository work.
-                driver.execute(null, "SELECT 1", 0)
+                sqlDriver.execute(null, "SELECT 1", 0)
                 database
             }
-            diagnosticSchemaProbe(driver)
+            diagnosticSchemaProbe(sqlDriver)
             val repository = CanonicalTitleRepositoryImpl(database)
             diagnosticSetupPhase("TITLE_INSERT") {
                 runBlocking { repository.insert(canonicalTitle) }
@@ -215,7 +213,18 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 assertEquals(canonicalTitle, recovered)
             }
         } finally {
-            diagnosticSetupPhase("DRIVER_CLOSE") { driver.close() }
+            try {
+                driver?.let { diagnosticSetupPhase("DRIVER_CLOSE") { it.close() } }
+            } finally {
+                diagnosticSetupPhase("DATABASE_CLEANUP") {
+                    check(databaseContext.deleteDatabase(TARGET_DATABASE_NAME)) {
+                        "Could not delete disposable instrumentation database"
+                    }
+                    check(!disposableDatabasePath.exists()) {
+                        "Disposable instrumentation database still exists after delete"
+                    }
+                }
+            }
         }
     }
 
@@ -295,7 +304,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 }
                 reportContextObservation(
                     applicationContext = if (applicationContext == null) "null" else "present",
-                    packageIsolated = true,
+                    storage = "INSTRUMENTATION_PRIVATE",
                     databaseContext = if (wrapperApplied) "wrapped" else "raw",
                 )
                 reportSetupPhase(setupPhase, Outcome.PASS)
@@ -774,12 +783,12 @@ class MangaFireRealReadingJourneyInstrumentedTest {
 
     private fun reportContextObservation(
         applicationContext: String,
-        packageIsolated: Boolean,
+        storage: String,
         databaseContext: String,
     ) {
         val stream = buildString {
             append("RUNTIME_CONTEXT|applicationContext=").append(applicationContext)
-            append("|targetIsolation=").append(if (packageIsolated) "isolated" else "same")
+            append("|storage=").append(storage)
             append("|databaseContext=").append(databaseContext)
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(
@@ -793,6 +802,27 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             !context.databaseList().contains("tachiyomi.db") || context.deleteDatabase("tachiyomi.db"),
         ) {
             "Could not reset the instrumentation-only database"
+        }
+    }
+
+    private class DisposableTargetDatabaseContext(
+        private val targetContext: Context,
+        private val disposableDatabaseName: String,
+    ) : ContextWrapper(targetContext) {
+        override fun getApplicationContext(): Context = this
+
+        override fun getDatabasePath(name: String): File {
+            check(name == TARGET_DATABASE_NAME) {
+                "Unexpected database name requested by test composition"
+            }
+            return targetContext.getDatabasePath(disposableDatabaseName)
+        }
+
+        override fun deleteDatabase(name: String): Boolean {
+            check(name == TARGET_DATABASE_NAME) {
+                "Unexpected database name deleted by test composition"
+            }
+            return targetContext.deleteDatabase(disposableDatabaseName)
         }
     }
 
@@ -1271,6 +1301,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
     }
 
     private companion object {
+        const val TARGET_DATABASE_NAME = "tachiyomi.db"
         const val PACKAGE_NAME = "eu.kanade.tachiyomi.extension.all.mangafire"
         const val EXPECTED_ENGLISH_SOURCE_ID = 6084907896154116083L
         const val EXPECTED_REFERENCE_SLUG = "729pj-one-punch-man"

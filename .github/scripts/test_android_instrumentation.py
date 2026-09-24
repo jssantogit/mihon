@@ -63,8 +63,8 @@ CONTEXT_DB_GOOD = (
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + CONTEXT_DB_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 1\n"
-    "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
-    "|targetIsolation=isolated|databaseContext=wrapped\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=present"
+    "|storage=TARGET_DISPOSABLE|databaseContext=wrapped\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CREATE|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=PASS|titles=present"
@@ -72,6 +72,7 @@ CONTEXT_DB_GOOD = (
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_READ|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CLOSE|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CLEANUP|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + CONTEXT_DB_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
@@ -217,8 +218,8 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
 
     def test_isolated_context_database_diagnostic_rejects_unsafe_context_event(self):
         output = CONTEXT_DB_GOOD.replace(
-            "|targetIsolation=isolated|databaseContext=wrapped",
-            "|targetIsolation=isolated|databaseContext=wrapped|path=/private/user/db",
+            "|storage=TARGET_DISPOSABLE|databaseContext=wrapped",
+            "|storage=TARGET_DISPOSABLE|databaseContext=wrapped|path=/private/user/db",
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(output, CONTEXT_DB_METHOD)
@@ -228,11 +229,24 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(wrong_context, CONTEXT_DB_METHOD)
 
+    def test_isolated_context_database_diagnostic_rejects_cleanup_failure(self):
+        cleanup_failure = CONTEXT_DB_GOOD.replace(
+            "RUNTIME_SETUP|phase=DATABASE_CLEANUP|outcome=PASS",
+            "RUNTIME_SETUP|phase=DATABASE_CLEANUP|outcome=FAIL",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(cleanup_failure, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_requires_disposable_target_mapping(self):
+        unsafe_context = CONTEXT_DB_GOOD.replace("storage=TARGET_DISPOSABLE", "storage=TARGET_RAW")
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(unsafe_context, CONTEXT_DB_METHOD)
+
     def test_isolated_context_database_diagnostic_rejects_duplicate_context_events(self):
         duplicate_context = CONTEXT_DB_GOOD.replace(
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|",
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
-            "|targetIsolation=isolated|databaseContext=wrapped\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=present"
+            "|storage=TARGET_DISPOSABLE|databaseContext=wrapped\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|",
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
@@ -246,6 +260,11 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(no_schema, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_requires_expected_schema_objects(self):
+        missing_object = CONTEXT_DB_GOOD.replace("outbox=present", "outbox=missing")
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(missing_object, CONTEXT_DB_METHOD)
 
     def test_isolated_context_database_diagnostic_rejects_unsafe_schema_fields(self):
         unsafe = CONTEXT_DB_GOOD.replace(

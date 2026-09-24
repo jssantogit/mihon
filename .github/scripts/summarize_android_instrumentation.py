@@ -30,7 +30,7 @@ E2E_LINE = re.compile(
 CONTEXT_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT"
     r"\|applicationContext=(present|null|error)"
-    r"\|targetIsolation=(isolated|same)"
+    r"\|storage=(INSTRUMENTATION_PRIVATE|TARGET_DISPOSABLE)"
     r"\|databaseContext=(raw|wrapped)$"
 )
 SCHEMA_LINE = re.compile(
@@ -78,7 +78,7 @@ SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
     r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
     r"CANONICAL_TITLE_CREATE|CANONICAL_TITLE_PERSIST|TEST_CANONICAL_TITLE_PERSIST|"
-    r"DRIVER_CREATE|DATABASE_CREATE|TITLE_INSERT|TITLE_READ|DRIVER_CLOSE)"
+    r"DRIVER_CREATE|DATABASE_CREATE|TITLE_INSERT|TITLE_READ|DRIVER_CLOSE|DATABASE_CLEANUP)"
     r"\|outcome=(PASS|FAIL)"
     r"(?:\|exception=(IllegalStateException|IllegalArgumentException|SecurityException|"
     r"SQLException|SQLiteException|SQLiteCantOpenDatabaseException|SQLiteReadOnlyDatabaseException|"
@@ -216,10 +216,10 @@ def summarize(runner: str, crash: str) -> list[str]:
             )
         context = CONTEXT_LINE.fullmatch(raw_line.strip())
         if context:
-            application_context, target_isolation, database_context = context.groups()
+            application_context, storage, database_context = context.groups()
             lines.append(
                 "DIAGNOSTIC|contextApplicationContext=" + application_context +
-                "|targetIsolation=" + target_isolation + "|databaseContext=" + database_context
+                "|storage=" + storage + "|databaseContext=" + database_context
             )
         parsed = SETUP_LINE.fullmatch(raw_line.strip())
         if parsed:

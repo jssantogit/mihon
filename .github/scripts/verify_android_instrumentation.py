@@ -40,11 +40,13 @@ E2E_STAGES = (
     "GET_PAGE_LIST",
 )
 E2E_OUTCOMES = frozenset(("PASS", "FAIL", "INCONCLUSIVE", "NOT_RUN"))
-CONTEXT_DB_PHASES = ("DRIVER_CREATE", "DATABASE_CREATE", "TITLE_INSERT", "TITLE_READ", "DRIVER_CLOSE")
+CONTEXT_DB_PHASES = (
+    "DRIVER_CREATE", "DATABASE_CREATE", "TITLE_INSERT", "TITLE_READ", "DRIVER_CLOSE", "DATABASE_CLEANUP",
+)
 SCHEMA_EVENT = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA"
-    r"\|outcome=PASS\|titles=(present|missing)\|outbox=(present|missing)"
-    r"\|dirtyInsertTrigger=(present|missing)$"
+    r"\|outcome=PASS\|titles=present\|outbox=present"
+    r"\|dirtyInsertTrigger=present$"
 )
 E2E_CATEGORIES = frozenset((
     "NONE", "NO_RESULTS", "SOURCE_DISABLED", "AMBIGUOUS", "LOW_CONFIDENCE", "HTTP_403", "HTTP_429",
@@ -128,9 +130,9 @@ def verify_database_identity_probe(output: str) -> None:
 def verify_context_database_diagnostic(output: str) -> None:
     context_pattern = re.compile(
         r"^INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT"
-        r"\|applicationContext=(present|null)"
-        r"\|targetIsolation=isolated"
-        r"\|databaseContext=(raw|wrapped)$"
+        r"\|applicationContext=present"
+        r"\|storage=TARGET_DISPOSABLE"
+        r"\|databaseContext=wrapped$"
     )
     context_events = [line for line in output.splitlines() if "RUNTIME_CONTEXT|" in line]
     if len(context_events) != 1 or not context_pattern.fullmatch(context_events[0]):

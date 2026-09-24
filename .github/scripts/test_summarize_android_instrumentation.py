@@ -316,16 +316,16 @@ class SummaryTest(unittest.TestCase):
 
     def test_isolated_context_database_events_keep_only_closed_context_and_persist_fields(self):
         runner = (
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
-            "|targetIsolation=isolated|databaseContext=wrapped\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=present"
-            "|targetIsolation=isolated|databaseContext=raw|path=/private/user/db\n"
+            "|storage=TARGET_DISPOSABLE|databaseContext=wrapped\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=present"
+            "|storage=INSTRUMENTATION_PRIVATE|databaseContext=raw|path=/private/user/db\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|"
             "outcome=FAIL|exception=NullPointerException|frame=EYGRABER_ANDROIDX_DRIVER\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn(
-            "contextApplicationContext=null|targetIsolation=isolated|databaseContext=wrapped",
+            "contextApplicationContext=present|storage=TARGET_DISPOSABLE|databaseContext=wrapped",
             result,
         )
         self.assertIn(
