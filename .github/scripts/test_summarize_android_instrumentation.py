@@ -209,8 +209,10 @@ class SummaryTest(unittest.TestCase):
             "|outbox=present|dirtyInsertTrigger=missing\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=FAIL"
             "|exception=SQLException|frame=ANDROIDX_BUNDLED_DRIVER|sqlCategory=SQLITE_OTHER\n"
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=FAIL|titles=missing"
-            "|outbox=missing|dirtyInsertTrigger=missing|sqlCategory=PRIVATE\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=FAIL|titles=unknown"
+            "|outbox=unknown|dirtyInsertTrigger=unknown|sqlCategory=NOT_SQLITE\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=FAIL|titles=unknown"
+            "|outbox=unknown|dirtyInsertTrigger=unknown|sqlCategory=PRIVATE\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn(
@@ -218,6 +220,10 @@ class SummaryTest(unittest.TestCase):
             result,
         )
         self.assertIn("sqlCategory=SQLITE_OTHER", result)
+        self.assertIn(
+            "DIAGNOSTIC|schemaOutcome=FAIL|titles=unknown|outbox=unknown|dirtyInsertTrigger=unknown",
+            result,
+        )
         self.assertNotIn("PRIVATE", result)
         self.assertNotIn("message=", result)
 

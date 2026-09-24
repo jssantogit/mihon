@@ -35,8 +35,8 @@ CONTEXT_LINE = re.compile(
 )
 SCHEMA_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA"
-    r"\|outcome=(PASS|FAIL)\|titles=(present|missing)\|outbox=(present|missing)"
-    r"\|dirtyInsertTrigger=(present|missing)(?:\|sqlCategory=(SQLITE_CONSTRAINT|SQLITE_CORRUPT|"
+    r"\|outcome=(PASS|FAIL)\|titles=(present|missing|unknown)\|outbox=(present|missing|unknown)"
+    r"\|dirtyInsertTrigger=(present|missing|unknown)(?:\|sqlCategory=(SQLITE_CONSTRAINT|SQLITE_CORRUPT|"
     r"SQLITE_IO|SQLITE_FULL|SQLITE_READ_ONLY|SQLITE_OPEN|SQLITE_OTHER|NOT_SQLITE))?$"
 )
 SETUP_LINE = re.compile(

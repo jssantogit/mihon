@@ -737,31 +737,34 @@ class MangaFireRealReadingJourneyInstrumentedTest {
 
     private fun diagnosticSchemaProbe(driver: app.cash.sqldelight.db.SqlDriver) {
         try {
-            val foundObjects = driver.executeQuery(
-                null,
-                "SELECT name FROM sqlite_master WHERE name IN " +
-                    "('tsuzuki_titles', 'tsuzuki_sync_outbox', 'tsuzuki_titles_sync_dirty_insert')",
-                { cursor ->
-                    val names = buildSet {
-                        while (cursor.next().value) cursor.getString(0)?.let(::add)
-                    }
-                    QueryResult.Value(names)
-                },
-                0,
-                {},
-            ).value
+            val foundObjects = runBlocking {
+                driver.executeQuery(
+                    null,
+                    "SELECT name FROM sqlite_master WHERE name IN " +
+                        "('tsuzuki_titles', 'tsuzuki_sync_outbox', 'tsuzuki_titles_sync_dirty_insert')",
+                    { cursor ->
+                        QueryResult.AsyncValue {
+                            buildSet {
+                                while (cursor.next().await()) cursor.getString(0)?.let(::add)
+                            }
+                        }
+                    },
+                    0,
+                    {},
+                ).await()
+            }
             reportSchemaObservation(
                 "PASS",
-                "tsuzuki_titles" in foundObjects,
-                "tsuzuki_sync_outbox" in foundObjects,
-                "tsuzuki_titles_sync_dirty_insert" in foundObjects,
+                schemaObjectState("tsuzuki_titles" in foundObjects),
+                schemaObjectState("tsuzuki_sync_outbox" in foundObjects),
+                schemaObjectState("tsuzuki_titles_sync_dirty_insert" in foundObjects),
             )
         } catch (error: Throwable) {
             reportSchemaObservation(
                 "FAIL",
-                titles = false,
-                outbox = false,
-                trigger = false,
+                titles = "unknown",
+                outbox = "unknown",
+                trigger = "unknown",
                 sqlCategory = setupSqlCategory(error),
             )
             throw error
@@ -770,16 +773,16 @@ class MangaFireRealReadingJourneyInstrumentedTest {
 
     private fun reportSchemaObservation(
         outcome: String,
-        titles: Boolean,
-        outbox: Boolean,
-        trigger: Boolean,
+        titles: String,
+        outbox: String,
+        trigger: String,
         sqlCategory: String? = null,
     ) {
         val stream = buildString {
             append("RUNTIME_SCHEMA|outcome=").append(outcome)
-            append("|titles=").append(if (titles) "present" else "missing")
-            append("|outbox=").append(if (outbox) "present" else "missing")
-            append("|dirtyInsertTrigger=").append(if (trigger) "present" else "missing")
+            append("|titles=").append(titles)
+            append("|outbox=").append(outbox)
+            append("|dirtyInsertTrigger=").append(trigger)
             sqlCategory?.let { append("|sqlCategory=").append(it) }
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(
@@ -787,6 +790,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             Bundle().apply { putString("stream", stream) },
         )
     }
+
+    private fun schemaObjectState(found: Boolean): String = if (found) "present" else "missing"
 
     private fun setupSqlCategory(error: Throwable): String {
         val classNames = generateSequence(error) { it.cause }
