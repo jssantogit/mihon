@@ -31,22 +31,22 @@ The Android probe wraps a gateway search in coroutine `withTimeout`, but an exte
 
 ## Next actions
 
-1. All current shard artifacts have been preserved; do not rerun the full matrix.
-2. The available logs do not reveal why JUnit did not pass; no provider/runtime/timeout/HTTP root cause is established. The focused diagnostic-observability change, safe stage events, and targeted-dispatch option are local only.
-3. Push `3d6189c5` Fast CI completed successfully (App Tsuzuki tests + Format; all other release/database/compile lanes skipped by the affected-mode plan). The MangaFire instrumentation compile passed; the general fixture workflow's byte checks and compile passed, while its emulator run was skipped. APK Build was skipped.
-4. The live workflow itself failed before creating jobs on `3d6189c5`. Local actionlint v1.7.12 identified the precise error: job-level `if` referenced `matrix.shard`, a context unavailable at that key. No provider searches ran in this failed workflow. The workflow now derives a dynamic shard matrix from its input and avoids `matrix` in the job condition; this correction is still unpushed.
-5. Validate the correction through Fast CI and the workflow's contract/compile-only jobs; ensure this push does not launch provider searches. The planner regression confirms that documentation/CSV handoffs cannot force a full release build.
-6. Manually dispatch only the three incomplete batches (`animexnovel`, `mangalivreto`, then `mangafire`) sequentially, review each sanitized artifact, and stop additional requests on CAPTCHA/429. These are at most nine internal-source attempts; do not rerun the full matrix.
-7. Use the new stage events to identify the last confirmed boundary. Implement a runtime correction only if a reproducible runtime cause is demonstrated; otherwise fix instrumentation or document uncertainty.
+1. Preserve the original full-matrix artifacts under `/tmp/tsuzuki-source-matrix`; do not rerun that 222-source matrix.
+2. The first focused retry (`35948648078`) was inconclusive, but the enhanced retry (`35949995253`) confirmed `EXTENSION_LOOKUP_TIMEOUT|elapsedMs=30002` in the test's trusted-only extension lookup, with no source search. The exact absent/mis-trusted state remains unknown.
+3. The lookup harness now checks both trusted-installed and untrusted extension state and performs test-only trust for the exact fixture in the disposable emulator; terminal stage records are allowlisted. It has passed Python RED/GREEN and the instrumentation compilation lane, but a post-change source probe is pending.
+4. The next external requests remain targeted, sequential and capped at the previously missing source groups: AnimeXNovel (currently running as `35951192811`), then Manga Livre.to, then MangaFire if evidence justifies. Stop on explicit 429/CAPTCHA. Never rerun all shards.
+5. A `RESULTS` outcome is only evidence that search returned candidates, not proof of correct binding, inventory coverage, or readable chapters. Use runtime changes only after an exact stage reproduces an application-side cause.
 
 ## Current status
 
 - 8/8 user-provided extension APK loading/registration remains prior evidence; 222/222 exposed sources are not yet evidence that every live search works.
 - Current live run `35944402938`: shard 0 54/56 accepted; shard 1 56/56; shard 2 56/56; shard 3 47/54. Total 213 accepted source observations: 212 results, one HTTP 403; nine outcomes unknown.
-- Root cause for AnimeXNovel, Manga Livre.to, and MangaFire: **unknown**. Their JUnit failures do not prove provider, runtime, timeout, network, HTTP, CAPTCHA, or extension causes.
+- Targeted retry `35949995253` confirms an Android instrumentation-stage timeout while seeking the expected installed extension. It establishes no HTTP/provider result and does not yet identify why the current extension manager state lacks the trusted-flow match.
+- The new targeted retry `35951192811` is executing the revised trusted-or-untrusted lookup. Its compilation passed; the emulator search step is still in progress. Do not make claims until its sanitized artifact arrives.
 - Mangas Brasuka HTTP 403 is a confirmed response category only, not evidence of CAPTCHA or Tsuzuki defect.
-- Push `3d6189c5` contains the diagnostics, CSV report, and targeted dispatch, but its live workflow parse failed as detailed above. The corrected dynamic-matrix version (`97e6f551`) is remote and its contract/compile check passed.
-- No regression has yet established the provider cause. Do not infer MangaFire root cause from the workflow parse error.
+- Commits `3d6189c5`, `97e6f551`, `803a5340`, and `174ad565` are on the exclusive branch. The invalid workflow condition was fixed in `97e6f551`; no provider requests ran on that push.
+- Fast CI for `803a5340` and `174ad565` passed (planner, App Tsuzuki tests, Format, CI gate). Fixture/MangaFire/live-workflow compile/contract checks also passed; emulator load checks were skipped by push conditions. APK Build was skipped.
+- Terminal lookup instrumentation compiled in live-workflow compile job `35951192811`. The opt-in Android search shard for that run remains in progress. Do not infer AnimeXNovel or MangaFire provider failure from the prior timeout.
 - MangaFire/chapter inventory/fallback on these actual extensions are not proven by this search matrix.
 
 ## Targeted retry and follow-up instrumentation (2026-09-24)
