@@ -1,0 +1,100 @@
+name: Live all-source extension compatibility matrix
+
+on:
+  push:
+    branches:
+      - tsuzuki/runtime-e2e-tests
+    paths:
+      - '.github/workflows/extension-live-search.yml'
+      - '.github/scripts/run_extension_live_android.sh'
+      - '.github/scripts/verify_extension_live_report.py'
+      - '.github/scripts/test_extension_live_report.py'
+      - 'app/src/androidTest/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: all-source-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Source accounting and privacy regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify all fixture and sanitized-report contracts
+        run: |
+          python3 .github/scripts/test_extension_live_report.py
+          python3 .github/scripts/test_extension_matrix_fixture.py
+          python3 .github/scripts/test_detect_extension_package.py
+          python3 .github/scripts/verify_extension_matrix_fixture.py
+          bash -n .github/scripts/run_extension_live_android.sh
+
+  compile:
+    name: Compile source-probe Android instrumentation
+    needs: contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Compile and verify both JUnit4 method signatures
+        run: |
+          ./gradlew :app:compileDebugAndroidTestKotlin
+          set -euo pipefail
+          class_file="$(find app/build -type f -name 'InstalledExtensionFixtureInstrumentedTest.class' -print -quit)"
+          test -n "$class_file"
+          suffix='/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/InstalledExtensionFixtureInstrumentedTest.class'
+          class_dir="$(printf '%s' "$class_file" | sed "s!$suffix!!")"
+          javap -classpath "$class_dir" eu.kanade.tachiyomi.data.tsuzuki.instrumentation.InstalledExtensionFixtureInstrumentedTest |
+            grep -E 'public final void (loadsRealExtensionAndRegistersSources|optionalLiveSearchSourceBatch)\(\);' > junit-methods.txt
+          test "$(wc -l < junit-methods.txt)" -eq 2
+
+  live:
+    name: Search all sources — shard ${{ matrix.shard }}
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[android-live-matrix]')
+    needs: compile
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Enable Android emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Probe this disjoint source shard
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash .github/scripts/run_extension_live_android.sh ${{ matrix.shard }}
+      - name: Upload only sanitized per-source outcomes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-shard-${{ matrix.shard }}-${{ github.sha }}
+          path: .github/results/extension-live/shard-${{ matrix.shard }}/**
+          if-no-files-found: ignore
+          retention-days: 3
