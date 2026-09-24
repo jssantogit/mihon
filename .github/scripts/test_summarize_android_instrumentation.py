@@ -186,14 +186,14 @@ class SummaryTest(unittest.TestCase):
     def test_persistence_failure_frame_is_closed_and_sanitized(self):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
-            "outcome=FAIL|exception=NullPointerException|frame=SQLDELIGHT_QUERY\n"
+            "outcome=FAIL|exception=NullPointerException|frame=SQLDELIGHT_NOTIFY_QUERIES\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
             "outcome=FAIL|exception=NullPointerException|frame=private.Method|token=SECRET\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn(
             "setupPhase=CANONICAL_TITLE_PERSIST|outcome=FAIL|"
-            "exception=NullPointerException|frame=SQLDELIGHT_QUERY",
+            "exception=NullPointerException|frame=SQLDELIGHT_NOTIFY_QUERIES",
             result,
         )
         self.assertNotIn("SECRET", result)

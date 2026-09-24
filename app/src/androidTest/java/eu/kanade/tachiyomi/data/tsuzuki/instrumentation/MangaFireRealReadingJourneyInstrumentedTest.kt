@@ -550,6 +550,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         frame.methodName == "insert" -> "TITLE_REPOSITORY_INSERT"
                     frame.className == "tachiyomi.data.Tsuzuki_titlesQueries" &&
                         frame.methodName == "insertTsuzukiTitle" -> "SQLDELIGHT_QUERY"
+                    frame.className == "app.cash.sqldelight.BaseTransacterImpl" &&
+                        frame.methodName == "notifyQueries" -> "SQLDELIGHT_NOTIFY_QUERIES"
                     frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
                     frame.className.startsWith("androidx.sqlite.") -> "ANDROIDX_SQLITE_DRIVER"
                     else -> null
