@@ -558,6 +558,15 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriverHolder") ->
                         "EYGRABER_SCHEMA_DRIVER"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConfigurableDriver") ->
+                        "EYGRABER_CONFIGURABLE_DRIVER"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConnectionFactory") ||
+                        frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.DefaultAndroidxSqliteConnectionFactory") ->
+                        "EYGRABER_CONNECTION_FACTORY"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriver") ->
+                        "EYGRABER_SQLITE_DRIVER"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriverKt") ->
+                        "EYGRABER_EXECUTING_DRIVER_KT"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxDriverConnectionPool") ->
                         "EYGRABER_CONNECTION_POOL"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriver") ->
@@ -566,6 +575,12 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         "EYGRABER_PREPARED_STATEMENT"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxQuery") ->
                         "EYGRABER_QUERY"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxStatement") ->
+                        "EYGRABER_STATEMENT"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteUtils") ->
+                        "EYGRABER_SQLITE_UTILS"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.ActiveTransaction") ->
+                        "EYGRABER_ACTIVE_TRANSACTION"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.") ->
                         "EYGRABER_ANDROIDX_DRIVER"
                     frame.className.startsWith("androidx.sqlite.driver.bundled.") -> "ANDROIDX_BUNDLED_DRIVER"
