@@ -74,6 +74,7 @@ def verify(output: str, method: str) -> None:
         raise AndroidTestVerificationError("Zero-test or failing instrumentation is not green")
     if method == "optionalRealEnglishReadingJourney":
         verify_e2e_stages(output)
+        verify_e2e_database_context(output)
     elif method == "instrumentationContextDatabasePersistsCanonicalTitle":
         verify_context_database_diagnostic(output)
     elif method == "instrumentationDatabaseIdentityProbe":
@@ -157,6 +158,22 @@ def verify_context_database_diagnostic(output: str) -> None:
         ordered_events.index(expected[2])
     ):
         raise AndroidTestVerificationError("Schema observation must precede title persistence")
+
+
+def verify_e2e_database_context(output: str) -> None:
+    context_pattern = re.compile(
+        r"^INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT"
+        r"\|applicationContext=present"
+        r"\|storage=TARGET_DISPOSABLE"
+        r"\|databaseContext=wrapped$"
+    )
+    context_events = [line for line in output.splitlines() if "RUNTIME_CONTEXT|" in line]
+    if len(context_events) != 1 or not context_pattern.fullmatch(context_events[0]):
+        raise AndroidTestVerificationError("Live journey did not prove use of one disposable target database")
+    for phase in ("DRIVER_CLOSE", "DATABASE_CLEANUP"):
+        event = "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=" + phase + "|outcome=PASS"
+        if output.splitlines().count(event) != 1:
+            raise AndroidTestVerificationError("Live journey did not prove database " + phase.lower())
 
 
 def verify_e2e_stages(output: str) -> None:

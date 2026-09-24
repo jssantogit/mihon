@@ -241,6 +241,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             var currentStage = STAGES.first()
             var stopCategory = "INSTRUMENTATION"
             var setupPhase: String? = null
+            var disposableDatabaseContext: DisposableTargetDatabaseContext? = null
+            var sqlDriver: app.cash.sqldelight.db.SqlDriver? = null
             try {
                 val app = instrumentation.targetContext.applicationContext as App
                 val extension = loadTrustedFixture(app)
@@ -290,31 +292,33 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                 setupPhase = "CONTEXT_ISOLATION"
-                val rawTestContext = instrumentation.context
-                val applicationContext = rawTestContext.applicationContext
-                val (testContext, wrapperApplied) = createInstrumentationDatabaseContext(
-                    rawTestContext,
-                    applicationContext,
+                val disposableDatabaseName = "tsuzuki-e2e-${UUID.randomUUID()}.db"
+                val databaseContext = DisposableTargetDatabaseContext(
+                    targetContext = instrumentation.targetContext,
+                    disposableDatabaseName = disposableDatabaseName,
                 )
-                check(testContext.packageName != app.packageName) {
-                    "Instrumentation DB must not share the target package"
+                disposableDatabaseContext = databaseContext
+                val disposableDatabasePath = databaseContext.getDatabasePath(TARGET_DATABASE_NAME)
+                check(!disposableDatabasePath.exists()) {
+                    "Disposable E2E database name must not pre-exist"
                 }
-                check(testContext.applicationContext != null) {
-                    "Instrumentation database context must provide an application context"
+                check(disposableDatabasePath != instrumentation.targetContext.getDatabasePath(TARGET_DATABASE_NAME)) {
+                    "Logical production database name must map to a different disposable file"
+                }
+                check(databaseContext.applicationContext != null) {
+                    "Disposable database context must provide an application context"
                 }
                 reportContextObservation(
-                    applicationContext = if (applicationContext == null) "null" else "present",
-                    storage = "INSTRUMENTATION_PRIVATE",
-                    databaseContext = if (wrapperApplied) "wrapped" else "raw",
+                    applicationContext = "present",
+                    storage = "TARGET_DISPOSABLE",
+                    databaseContext = "wrapped",
                 )
                 reportSetupPhase(setupPhase, Outcome.PASS)
-                setupPhase = "DB_RESET"
-                resetInstrumentationDatabase(testContext)
-                reportSetupPhase(setupPhase, Outcome.PASS)
                 setupPhase = "SQL_DRIVER"
-                val driver = AppBindings.providesSqlDriver(testContext)
-                reportSetupPhase(setupPhase, Outcome.PASS)
                 try {
+                    val driver = AppBindings.providesSqlDriver(databaseContext)
+                    sqlDriver = driver
+                    reportSetupPhase(setupPhase, Outcome.PASS)
                     setupPhase = "DATABASE_ADAPTERS"
                     val database = AppBindings.providesDatabase(driver)
                     reportSetupPhase(setupPhase, Outcome.PASS)
@@ -564,7 +568,23 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     report(currentStage, Outcome.PASS, count = pageList.size, sourceId = sourceId, language = "en")
                     terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
                 } finally {
-                    driver.close()
+                    try {
+                        sqlDriver?.let { driver ->
+                            diagnosticSetupPhase("DRIVER_CLOSE") { driver.close() }
+                        }
+                    } finally {
+                        disposableDatabaseContext?.let { context ->
+                            diagnosticSetupPhase("DATABASE_CLEANUP") {
+                                val path = context.getDatabasePath(TARGET_DATABASE_NAME)
+                                check(context.deleteDatabase(TARGET_DATABASE_NAME)) {
+                                    "Could not delete disposable journey database"
+                                }
+                                check(!path.exists()) {
+                                    "Disposable journey database remains after cleanup"
+                                }
+                            }
+                        }
+                    }
                 }
             } catch (stop: JourneyStop) {
                 currentStage = stop.stage ?: currentStage
@@ -795,14 +815,6 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             1,
             Bundle().apply { putString("stream", stream) },
         )
-    }
-
-    private fun resetInstrumentationDatabase(context: Context) {
-        check(
-            !context.databaseList().contains("tachiyomi.db") || context.deleteDatabase("tachiyomi.db"),
-        ) {
-            "Could not reset the instrumentation-only database"
-        }
     }
 
     private class DisposableTargetDatabaseContext(
@@ -1091,17 +1103,6 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             classNames.any { it == "SQLException" || it == "SQLiteException" } -> "SQLITE_OTHER"
             else -> "NOT_SQLITE"
         }
-    }
-
-    private fun createInstrumentationDatabaseContext(
-        context: Context,
-        applicationContext: Context?,
-    ): Pair<Context, Boolean> {
-        if (applicationContext != null) return context to false
-        val contextWithApplicationContext = object : ContextWrapper(context) {
-            override fun getApplicationContext(): Context = this
-        }
-        return contextWithApplicationContext to true
     }
 
     private fun report(

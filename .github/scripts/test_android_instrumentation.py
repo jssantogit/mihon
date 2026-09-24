@@ -48,6 +48,10 @@ LIVE_GOOD = (
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + LIVE_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 1\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=present"
+    "|storage=TARGET_DISPOSABLE|databaseContext=wrapped\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CLOSE|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CLEANUP|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + LIVE_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
@@ -300,6 +304,19 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_live_journey_wrong_class_is_rejected(self):
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(LIVE_GOOD.replace(E2E_CLASS, checker.CLASS), LIVE_METHOD)
+
+    def test_live_journey_requires_disposable_database_context_and_cleanup(self):
+        no_cleanup = LIVE_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CLEANUP|outcome=PASS\n",
+            "",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(no_cleanup, LIVE_METHOD)
+
+    def test_live_journey_rejects_instrumentation_private_database_context(self):
+        wrong_storage = LIVE_GOOD.replace("storage=TARGET_DISPOSABLE", "storage=INSTRUMENTATION_PRIVATE")
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(wrong_storage, LIVE_METHOD)
 
     def test_missing_stage_is_not_a_green_live_journey(self):
         output = "\n".join(
