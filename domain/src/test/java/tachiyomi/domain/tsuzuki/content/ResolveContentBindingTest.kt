@@ -1,8 +1,13 @@
 package tachiyomi.domain.tsuzuki.content
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -19,6 +24,12 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnost
 import tachiyomi.domain.tsuzuki.content.interactor.ConfirmContentBinding
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceSearchException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchMode
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchProgress
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchRequest
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureKind
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureStage
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceOutcome
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
@@ -34,6 +45,237 @@ import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.io.IOException
 
 class ResolveContentBindingTest {
+
+    @Test
+    fun `initial search orders preferred languages and respects the batch limit`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            installedByLanguage = mapOf(
+                "pt-BR" to listOf(descriptor(14L, "pt-BR"), descriptor(99L, "pt-BR")),
+                "en" to listOf(descriptor(13L, "en"), descriptor(11L, "en")),
+            ),
+        )
+        val resolver = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(11L, 12L, 13L, 14L),
+        )
+
+        val events = resolver.searchProgress(
+            ContentBindingSearchRequest(
+                canonicalTitleId = "title",
+                addonId = AddonId("mangadex"),
+                preferredLanguages = listOf("pt-BR", "en"),
+                batchSize = 2,
+            ),
+        ).toList()
+
+        gateway.searchedSourceIds.toSet() shouldBe setOf(14L, 13L)
+        gateway.searchedSourceIds.size shouldBe 2
+        events.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
+            .remainingSourceCount shouldBe 2
+    }
+
+    @Test
+    fun `broadening searches only remaining enabled source ids and never repeats queried ids`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            installedByLanguage = mapOf(
+                "pt-BR" to listOf(descriptor(14L, "pt-BR")),
+                "en" to listOf(descriptor(13L, "en"), descriptor(11L, "en")),
+            ),
+        )
+        val resolver = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(11L, 12L, 13L, 14L),
+        )
+
+        val events = resolver.searchProgress(
+            ContentBindingSearchRequest(
+                canonicalTitleId = "title",
+                addonId = AddonId("mangadex"),
+                preferredLanguages = listOf("pt-BR", "en"),
+                mode = ContentBindingSearchMode.BROADEN,
+                alreadyQueriedSourceIds = setOf(14L, 13L),
+                batchSize = 2,
+            ),
+        ).toList()
+
+        gateway.searchedSourceIds shouldBe listOf(11L, 12L)
+        events.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
+            .remainingSourceCount shouldBe 0
+    }
+
+    @Test
+    fun `healthy source result is emitted even when a peer source fails`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchHandler = { sourceId, _ ->
+                if (sourceId == 7L) {
+                    delay(10)
+                    Result.success(listOf(candidate(7L, "/dandadan", "Dandadan")))
+                } else {
+                    delay(20)
+                    Result.failure(IOException("network unavailable"))
+                }
+            },
+            materializedBySource = mapOf(
+                7L to materialized(7L, "/dandadan", "en"),
+            ),
+        )
+        val repository = FakeContentBindingRepository(null)
+        val events = resolver(
+            repository,
+            gateway,
+            addonSourceIds = listOf(7L, 8L),
+        ).searchProgress(request(batchSize = 2)).toList()
+
+        val sourceEvents = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+        sourceEvents.map { it.sourceId } shouldBe listOf(7L, 8L)
+        sourceEvents[0].outcome shouldBe ContentBindingSourceOutcome.BOUND
+        sourceEvents[1].outcome shouldBe ContentBindingSourceOutcome.FAILURE
+        sourceEvents[1].failure?.kind shouldBe ContentBindingSearchFailureKind.INDETERMINATE
+        repository.getByTitle("title").size shouldBe 1
+        events.last()::class shouldBe ContentBindingSearchProgress.Completed::class
+    }
+
+    @Test
+    fun `empty result and source error have distinct progress outcomes`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchHandler = { sourceId, _ ->
+                when (sourceId) {
+                    7L -> Result.success(emptyList())
+                    else -> Result.failure(IOException("lookup failed"))
+                }
+            },
+        )
+        val events = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(7L, 8L),
+        ).searchProgress(request(batchSize = 2)).toList()
+
+        val bySource = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .associateBy { it.sourceId }
+        bySource.getValue(7L).outcome shouldBe ContentBindingSourceOutcome.EMPTY
+        bySource.getValue(8L).outcome shouldBe ContentBindingSourceOutcome.FAILURE
+        bySource.getValue(8L).failure?.stage shouldBe ContentBindingSearchFailureStage.SEARCH
+    }
+
+    @Test
+    fun `cooperative source timeout is reported as timeout not empty`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchHandler = { _, _ ->
+                delay(1_000)
+                Result.success(emptyList())
+            },
+        )
+
+        val events = resolver(FakeContentBindingRepository(null), gateway)
+            .searchProgress(request(timeoutMillis = 50))
+            .toList()
+
+        val source = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>().single()
+        source.outcome shouldBe ContentBindingSourceOutcome.FAILURE
+        source.failure?.kind shouldBe ContentBindingSearchFailureKind.TIMEOUT
+    }
+
+    @Test
+    fun `ambiguous source editions request confirmation without binding`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(
+                    candidate(7L, "/edition-a", "Dandadan"),
+                    candidate(7L, "/edition-b", "Dandadan"),
+                ),
+            ),
+        )
+        val repository = FakeContentBindingRepository(null)
+        val events = resolver(repository, gateway)
+            .searchProgress(request())
+            .toList()
+
+        val source = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>().single()
+        source.outcome shouldBe ContentBindingSourceOutcome.CONFIRMATION_REQUIRED
+        source.candidates.size shouldBe 2
+        gateway.materializeCalls shouldBe 0
+        repository.getByTitle("title").isEmpty() shouldBe true
+    }
+
+    @Test
+    fun `existing binding is emitted as reused and initial search does not repeat work`() = runTest {
+        val existing = binding("remote-123", ContentBindingAvailability.AVAILABLE)
+        val gateway = FakeReadingSourceGateway()
+        val events = resolver(FakeContentBindingRepository(existing), gateway)
+            .searchProgress(request())
+            .toList()
+
+        events.filterIsInstance<ContentBindingSearchProgress.BindingReused>()
+            .single().bindings.single().providerTitleKey shouldBe "remote-123"
+        gateway.searchCalls shouldBe 0
+        events.last()::class shouldBe ContentBindingSearchProgress.Completed::class
+    }
+
+    @Test
+    fun `explicit repeated search upserts the same provider binding idempotently`() = runTest {
+        val repository = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/dandadan", "Dandadan")),
+            ),
+            materialized = materialized(7L, "/dandadan", "en"),
+        )
+        val resolver = resolver(repository, gateway)
+
+        resolver.searchProgress(request(mode = ContentBindingSearchMode.BROADEN)).toList()
+        val firstId = repository.getByTitle("title").single().id
+        resolver.searchProgress(request(mode = ContentBindingSearchMode.BROADEN)).toList()
+
+        repository.getByTitle("title").size shouldBe 1
+        repository.getByTitle("title").single().id shouldBe firstId
+    }
+
+    @Test
+    fun `cancelling progressive search propagates and does not persist binding`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val gateway = FakeReadingSourceGateway(
+            searchHandler = { _, _ ->
+                started.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            },
+        )
+        val repository = FakeContentBindingRepository(null)
+        val resolver = resolver(repository, gateway)
+        val job = async {
+            resolver.searchProgress(request()).toList()
+        }
+
+        started.await()
+        job.cancelAndJoin()
+
+        job.isCancelled shouldBe true
+        repository.getByTitle("title").isEmpty() shouldBe true
+        gateway.materializeCalls shouldBe 0
+    }
+
+    @Test
+    fun `legacy executeAll still resolves the complete addon source set`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/en/dandadan", "Dandadan")),
+                8L to listOf(candidate(8L, "/pt/dandadan", "Dandadan")),
+            ),
+            materializedBySource = mapOf(
+                7L to materialized(7L, "/en/dandadan", "en"),
+                8L to materialized(8L, "/pt/dandadan", "pt-BR"),
+            ),
+        )
+
+        val result = resolver(FakeContentBindingRepository(null), gateway, addonSourceIds = listOf(7L, 8L))
+            .executeAll("title", AddonId("mangadex"))
+            .getOrThrow()
+
+        result.size shouldBe 2
+        gateway.searchedSourceIds.toSet() shouldBe setOf(7L, 8L)
+    }
 
     @Test
     fun `diagnostic reports enabled and disabled internal sources without searching disabled ones`() = runTest {
@@ -469,6 +711,18 @@ class ResolveContentBindingTest {
         )
     }
 
+    private fun request(
+        mode: ContentBindingSearchMode = ContentBindingSearchMode.INITIAL,
+        batchSize: Int = 3,
+        timeoutMillis: Long = 20_000,
+    ) = ContentBindingSearchRequest(
+        canonicalTitleId = "title",
+        addonId = AddonId("mangadex"),
+        mode = mode,
+        batchSize = batchSize,
+        sourceTimeoutMillis = timeoutMillis,
+    )
+
     private fun binding(
         providerTitleKey: String,
         availability: ContentBindingAvailability,
@@ -501,6 +755,20 @@ class ResolveContentBindingTest {
         description = null,
         genres = null,
         status = 0L,
+    )
+
+    private fun descriptor(sourceId: Long, language: String) = ReadingSourceDescriptor(
+        sourceId = sourceId,
+        name = "Source $sourceId",
+        language = language,
+    )
+
+    private fun materialized(sourceId: Long, sourceUrl: String, language: String) = MaterializedReadingSource(
+        mihonMangaId = sourceId * 10,
+        sourceId = sourceId,
+        sourceUrl = sourceUrl,
+        language = language,
+        runtimePayload = byteArrayOf(sourceId.toByte()),
     )
 
     private class FakeContentBindingRepository(
@@ -610,18 +878,22 @@ class ResolveContentBindingTest {
         private val searchResultsByQuery: Map<Pair<Long, String>, List<ReadingSourceCandidate>> = emptyMap(),
         private val searchFailure: Throwable? = null,
         private val materializeFailure: Throwable? = null,
+        private val installedByLanguage: Map<String, List<ReadingSourceDescriptor>> = emptyMap(),
+        private val searchHandler: (suspend (Long, String) -> Result<List<ReadingSourceCandidate>>)? = null,
     ) : ReadingSourceGateway {
         var searchCalls = 0
         val searchedSourceIds = mutableListOf<Long>()
         val searchedQueries = mutableListOf<String>()
         var materializeCalls = 0
 
-        override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> = emptyList()
+        override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> =
+            installedByLanguage[language].orEmpty()
 
         override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
             searchCalls += 1
             searchedSourceIds += sourceId
             searchedQueries += query
+            searchHandler?.let { return it(sourceId, query) }
             searchFailure?.let { return Result.failure(it) }
             return Result.success(searchResultsByQuery[sourceId to query] ?: searchResults[sourceId].orEmpty())
         }
