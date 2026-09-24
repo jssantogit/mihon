@@ -51,6 +51,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -63,6 +64,9 @@ import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
@@ -386,12 +390,8 @@ class MihonRuntimeEndToEndIntegrationTest {
             readerPreparation = PrepareCanonicalChapterForReader(
                 resolveChapterContent = selector,
                 canonicalChapterRepository = canonicalChapters,
-                canonicalReadingRepository = mockk<CanonicalReadingRepository> {
-                    coEvery { getProgress(any()) } returns null
-                },
-                canonicalDownloadRepository = mockk<CanonicalDownloadRepository> {
-                    coEvery { get(any()) } returns null
-                },
+                canonicalReadingRepository = EmptyCanonicalReadingRepository,
+                canonicalDownloadRepository = EmptyCanonicalDownloadRepository,
                 chapterContentPreparer = MihonChapterContentPreparer(
                     MihonCanonicalReaderGateway(chapterRows.repository),
                 ),
@@ -547,6 +547,29 @@ class MihonRuntimeEndToEndIntegrationTest {
         override fun observe(canonicalTitleId: String): Flow<ContentPreference?> = MutableStateFlow(null)
         override suspend fun upsert(preference: ContentPreference) = error("Preference must not be written")
         override suspend fun delete(canonicalTitleId: String) = error("Preference must not be deleted")
+    }
+
+    private object EmptyCanonicalDownloadRepository : CanonicalDownloadRepository {
+        override suspend fun get(canonicalChapterId: String): CanonicalDownloadArtifact? = null
+        override suspend fun upsert(artifact: CanonicalDownloadArtifact) = Unit
+        override suspend fun delete(canonicalChapterId: String) = Unit
+        override suspend fun deleteOriginMetadata(addonId: AddonId) = Unit
+    }
+
+    private object EmptyCanonicalReadingRepository : CanonicalReadingRepository {
+        override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? = null
+        override fun observeProgress(
+            canonicalChapterId: String,
+        ): Flow<CanonicalChapterProgress?> = MutableStateFlow(null)
+        override suspend fun getProgressByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapterProgress> =
+            emptyList()
+        override suspend fun upsertProgress(progress: CanonicalChapterProgress) = Unit
+        override suspend fun getHistory(canonicalChapterId: String): CanonicalChapterHistory? = null
+        override suspend fun recordHistory(update: CanonicalChapterHistoryUpdate) = Unit
+        override suspend fun recordCheckpoint(
+            progress: CanonicalChapterProgress,
+            history: CanonicalChapterHistoryUpdate?,
+        ) = Unit
     }
 
     private object EmptyIntegrationRegistry : IntegrationRegistry {
