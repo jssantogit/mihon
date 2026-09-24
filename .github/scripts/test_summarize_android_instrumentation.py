@@ -183,6 +183,26 @@ class SummaryTest(unittest.TestCase):
         )
         self.assertNotIn("One-Punch Man", result)
 
+    def test_focused_database_phases_are_independently_summarized_and_sanitized(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|outcome=PASS\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CREATE|outcome=PASS\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|"
+            "outcome=FAIL|exception=SQLException|frame=ANDROIDX_BUNDLED_DRIVER\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=PRIVATE|outcome=FAIL|sql=SECRET\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CLOSE|outcome=PASS\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn("setupPhase=DRIVER_CREATE|outcome=PASS", result)
+        self.assertIn("setupPhase=DATABASE_CREATE|outcome=PASS", result)
+        self.assertIn(
+            "setupPhase=TITLE_INSERT|outcome=FAIL|exception=SQLException|frame=ANDROIDX_BUNDLED_DRIVER",
+            result,
+        )
+        self.assertIn("setupPhase=DRIVER_CLOSE|outcome=PASS", result)
+        self.assertNotIn("SECRET", result)
+        self.assertNotIn("sql=", result)
+
     def test_isolated_context_database_events_keep_only_closed_context_and_persist_fields(self):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"

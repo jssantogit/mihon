@@ -132,30 +132,28 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
         )
-        val persistence = runCatching {
-            val driver = AppBindings.providesSqlDriver(databaseContext)
-            try {
-                val repository = CanonicalTitleRepositoryImpl(AppBindings.providesDatabase(driver))
-                runBlocking {
-                    repository.insert(canonicalTitle)
-                    assertEquals(canonicalTitle, repository.getById(canonicalTitle.id))
-                }
-            } finally {
-                driver.close()
-            }
+        val driver = diagnosticSetupPhase("DRIVER_CREATE") {
+            AppBindings.providesSqlDriver(databaseContext)
         }
-        persistence.fold(
-            onSuccess = { reportSetupPhase("TEST_CANONICAL_TITLE_PERSIST", Outcome.PASS) },
-            onFailure = { error ->
-                reportSetupPhase(
-                    "TEST_CANONICAL_TITLE_PERSIST",
-                    Outcome.FAIL,
-                    setupExceptionType(error),
-                    setupFailureFrame(error),
-                )
-                throw error
-            },
-        )
+        try {
+            val database = diagnosticSetupPhase("DATABASE_CREATE") {
+                val database = AppBindings.providesDatabase(driver)
+                // Force the configured AndroidX driver to open the isolated database and
+                // initialize its configured SQLDelight schema before repository work.
+                driver.execute(null, "SELECT 1", 0)
+                database
+            }
+            val repository = CanonicalTitleRepositoryImpl(database)
+            diagnosticSetupPhase("TITLE_INSERT") {
+                runBlocking { repository.insert(canonicalTitle) }
+            }
+            diagnosticSetupPhase("TITLE_READ") {
+                val recovered = runBlocking { repository.getById(canonicalTitle.id) }
+                assertEquals(canonicalTitle, recovered)
+            }
+        } finally {
+            diagnosticSetupPhase("DRIVER_CLOSE") { driver.close() }
+        }
     }
 
     @Test(timeout = 240_000L)
@@ -603,7 +601,10 @@ class MangaFireRealReadingJourneyInstrumentedTest {
     private fun setupExceptionType(error: Throwable): String {
         val allowed = setOf(
             "IllegalStateException", "IllegalArgumentException", "SecurityException",
-            "SQLiteException", "SQLiteCantOpenDatabaseException", "SQLiteReadOnlyDatabaseException",
+            "SQLException", "SQLiteException", "SQLiteCantOpenDatabaseException", "SQLiteReadOnlyDatabaseException",
+            "SQLiteConstraintException", "SQLiteDatabaseCorruptException", "SQLiteDiskIOException",
+            "SQLiteFullException", "SQLiteBlobTooBigException", "SQLiteDatatypeMismatchException",
+            "SQLiteMisuseException", "SQLiteAccessPermException", "SQLiteBindOrColumnIndexOutOfRangeException",
             "UnsatisfiedLinkError", "NoClassDefFoundError", "ExceptionInInitializerError",
             "ClassNotFoundException", "NullPointerException", "IOException",
         )
@@ -673,6 +674,19 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 }
             }
             .firstOrNull()
+
+    private inline fun <T> diagnosticSetupPhase(phase: String, block: () -> T): T =
+        try {
+            block().also { reportSetupPhase(phase, Outcome.PASS) }
+        } catch (error: Throwable) {
+            reportSetupPhase(
+                phase,
+                Outcome.FAIL,
+                setupExceptionType(error),
+                setupFailureFrame(error),
+            )
+            throw error
+        }
 
     private fun reportSetupPhase(
         phase: String?,

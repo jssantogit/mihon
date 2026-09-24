@@ -38,6 +38,7 @@ E2E_STAGES = (
     "GET_PAGE_LIST",
 )
 E2E_OUTCOMES = frozenset(("PASS", "FAIL", "INCONCLUSIVE", "NOT_RUN"))
+CONTEXT_DB_PHASES = ("DRIVER_CREATE", "DATABASE_CREATE", "TITLE_INSERT", "TITLE_READ", "DRIVER_CLOSE")
 E2E_CATEGORIES = frozenset((
     "NONE", "NO_RESULTS", "SOURCE_DISABLED", "AMBIGUOUS", "LOW_CONFIDENCE", "HTTP_403", "HTTP_429",
     "HTTP_5XX", "HTTP_OTHER", "NETWORK", "TIMEOUT", "CAPTCHA", "MALFORMED",
@@ -78,14 +79,17 @@ def verify_context_database_diagnostic(output: str) -> None:
     context_events = [line for line in output.splitlines() if "RUNTIME_CONTEXT|" in line]
     if len(context_events) != 1 or not context_pattern.fullmatch(context_events[0]):
         raise AndroidTestVerificationError("Expected one sanitized context-isolation observation")
-    persist_events = [
+    phase_events = [
         line for line in output.splitlines()
-        if "RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|" in line
+        if "RUNTIME_SETUP|phase=" in line
+        and any("|phase=" + phase + "|" in line for phase in CONTEXT_DB_PHASES)
     ]
-    if persist_events != [
-        "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|outcome=PASS",
-    ]:
-        raise AndroidTestVerificationError("Isolated canonical-title persistence was not proven")
+    expected = [
+        "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=" + phase + "|outcome=PASS"
+        for phase in CONTEXT_DB_PHASES
+    ]
+    if phase_events != expected:
+        raise AndroidTestVerificationError("Isolated database diagnostic phases were not proven exactly once")
 
 
 def verify_e2e_stages(output: str) -> None:

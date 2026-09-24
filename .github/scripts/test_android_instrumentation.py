@@ -64,8 +64,11 @@ CONTEXT_DB_GOOD = (
     "INSTRUMENTATION_STATUS_CODE: 1\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
     "|targetIsolation=isolated|databaseContext=wrapped\n"
-    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|"
-    "outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CREATE|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_READ|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CLOSE|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + CONTEXT_DB_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
@@ -99,11 +102,19 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_isolated_context_database_diagnostic_requires_safe_context_and_persist_events(self):
         checker.verify(CONTEXT_DB_GOOD, CONTEXT_DB_METHOD)
 
-    def test_isolated_context_database_diagnostic_rejects_missing_persist_event(self):
+    def test_isolated_context_database_diagnostic_rejects_missing_phase(self):
         output = CONTEXT_DB_GOOD.replace(
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|"
-            "outcome=PASS\n",
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n",
             "",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(output, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_duplicate_phase(self):
+        output = CONTEXT_DB_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n",
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n",
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(output, CONTEXT_DB_METHOD)
@@ -123,10 +134,10 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
 
     def test_isolated_context_database_diagnostic_rejects_duplicate_context_events(self):
         duplicate_context = CONTEXT_DB_GOOD.replace(
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|",
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|",
             "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
             "|targetIsolation=isolated|databaseContext=wrapped\n"
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|",
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|",
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(duplicate_context, CONTEXT_DB_METHOD)
