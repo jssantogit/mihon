@@ -109,6 +109,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val targetPackageUid = packageUid(targetContext)
         val testDatabaseParent = databaseParentObservation(testContext)
         val targetDatabaseParent = databaseParentObservation(targetContext)
+        val testDataDirectory = dataDirectoryObservation(testContext)
+        val targetDataDirectory = dataDirectoryObservation(targetContext)
 
         val stream = buildString {
             append("RUNTIME_DB_IDENTITY|processIsTestUid=")
@@ -118,6 +120,12 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             append("|testDbParentState=").append(testDatabaseParent.state)
             append("|targetDbParentWritable=").append(targetDatabaseParent.writable)
             append("|targetDbParentState=").append(targetDatabaseParent.state)
+            append("|testDataDirWritable=").append(testDataDirectory.writable)
+            append("|testDataDirExecutable=").append(testDataDirectory.executable)
+            append("|testDataDirState=").append(testDataDirectory.state)
+            append("|targetDataDirWritable=").append(targetDataDirectory.writable)
+            append("|targetDataDirExecutable=").append(targetDataDirectory.executable)
+            append("|targetDataDirState=").append(targetDataDirectory.state)
         }
         instrumentation.sendStatus(1, Bundle().apply { putString("stream", stream) })
     }
@@ -785,6 +793,27 @@ class MangaFireRealReadingJourneyInstrumentedTest {
     }
 
     private data class DatabaseParentObservation(val writable: String, val state: String)
+
+    private fun dataDirectoryObservation(context: Context): DataDirectoryObservation = try {
+        val directory = File(context.applicationInfo.dataDir)
+        when {
+            !directory.exists() -> DataDirectoryObservation("unknown", "unknown", "MISSING")
+            !directory.isDirectory -> DataDirectoryObservation("unknown", "unknown", "NOT_DIRECTORY")
+            else -> DataDirectoryObservation(
+                writable = directory.canWrite().toString(),
+                executable = directory.canExecute().toString(),
+                state = "EXISTS",
+            )
+        }
+    } catch (_: Exception) {
+        DataDirectoryObservation("unknown", "unknown", "ERROR")
+    }
+
+    private data class DataDirectoryObservation(
+        val writable: String,
+        val executable: String,
+        val state: String,
+    )
 
     private fun diagnosticSchemaProbe(driver: app.cash.sqldelight.db.SqlDriver) {
         try {

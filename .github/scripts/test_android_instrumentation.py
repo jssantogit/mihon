@@ -86,7 +86,9 @@ DB_IDENTITY_GOOD = (
     "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
     "|processIsTestUid=true|processIsTargetUid=false"
     "|testDbParentWritable=true|testDbParentState=EXISTS"
-    "|targetDbParentWritable=false|targetDbParentState=EXISTS\n"
+    "|targetDbParentWritable=false|targetDbParentState=EXISTS"
+    "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
+    "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS\n"
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + DB_IDENTITY_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
@@ -128,7 +130,9 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
             "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
             "|processIsTestUid=true|processIsTargetUid=false"
             "|testDbParentWritable=true|testDbParentState=EXISTS"
-            "|targetDbParentWritable=false|targetDbParentState=EXISTS\n",
+            "|targetDbParentWritable=false|targetDbParentState=EXISTS"
+            "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
+            "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS\n",
             "",
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
@@ -148,7 +152,9 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
             "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
             "|processIsTestUid=true|processIsTargetUid=false"
             "|testDbParentWritable=true|testDbParentState=EXISTS"
-            "|targetDbParentWritable=false|targetDbParentState=EXISTS\n"
+            "|targetDbParentWritable=false|targetDbParentState=EXISTS"
+            "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
+            "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS\n"
             "INSTRUMENTATION_STATUS: class=" + E2E_CLASS,
         )
         with self.assertRaises(checker.AndroidTestVerificationError):

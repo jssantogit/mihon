@@ -86,7 +86,13 @@ def verify_database_identity_probe(output: str) -> None:
         r"\|testDbParentWritable=(true|false|unknown)"
         r"\|testDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
         r"\|targetDbParentWritable=(true|false|unknown)"
-        r"\|targetDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
+        r"\|targetDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+        r"\|testDataDirWritable=(true|false|unknown)"
+        r"\|testDataDirExecutable=(true|false|unknown)"
+        r"\|testDataDirState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+        r"\|targetDataDirWritable=(true|false|unknown)"
+        r"\|targetDataDirExecutable=(true|false|unknown)"
+        r"\|targetDataDirState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
     )
     events = [line for line in output.splitlines() if "RUNTIME_DB_IDENTITY|" in line]
     if len(events) != 1 or not pattern.fullmatch(events[0]):

@@ -21,23 +21,41 @@ class SummaryTest(unittest.TestCase):
             "|processIsTestUid=true|processIsTargetUid=false"
             "|testDbParentWritable=unknown|testDbParentState=MISSING"
             "|targetDbParentWritable=true|targetDbParentState=EXISTS"
+            "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
+            "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS"
             "\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
             "|processIsTestUid=true|processIsTargetUid=false"
             "|testDbParentWritable=unknown|testDbParentState=MISSING"
             "|targetDbParentWritable=true|targetDbParentState=EXISTS"
+            "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
+            "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS"
             "|uid=1234|path=/data/user/0/private|token=SECRET\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn(
             "DIAGNOSTIC|dbIdentity|processIsTestUid=true|processIsTargetUid=false"
             "|testDbParentWritable=unknown|testDbParentState=MISSING"
-            "|targetDbParentWritable=true|targetDbParentState=EXISTS",
+            "|targetDbParentWritable=true|targetDbParentState=EXISTS"
+            "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
+            "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS",
             result,
         )
         self.assertNotIn("1234", result)
         self.assertNotIn("/data/user", result)
         self.assertNotIn("SECRET", result)
+
+    def test_database_directory_probe_drops_unrecognized_states_and_values(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+            "|processIsTestUid=false|processIsTargetUid=true"
+            "|testDbParentWritable=unknown|testDbParentState=MISSING"
+            "|targetDbParentWritable=true|targetDbParentState=EXISTS"
+            "|testDataDirWritable=false|testDataDirExecutable=false|testDataDirState=EXISTS"
+            "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn("testDataDirWritable=false|testDataDirExecutable=false", result)
 
     def test_startup_crash_is_classified_without_message_leaks(self):
         runner = ("INSTRUMENTATION_RESULT: shortMsg=Process crashed token=SECRET\n"

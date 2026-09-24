@@ -46,7 +46,13 @@ DB_IDENTITY_LINE = re.compile(
     r"\|testDbParentWritable=(true|false|unknown)"
     r"\|testDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
     r"\|targetDbParentWritable=(true|false|unknown)"
-    r"\|targetDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
+    r"\|targetDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+    r"\|testDataDirWritable=(true|false|unknown)"
+    r"\|testDataDirExecutable=(true|false|unknown)"
+    r"\|testDataDirState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+    r"\|targetDataDirWritable=(true|false|unknown)"
+    r"\|targetDataDirExecutable=(true|false|unknown)"
+    r"\|targetDataDirState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
 )
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
@@ -141,14 +147,24 @@ def summarize(runner: str, crash: str) -> list[str]:
     for raw_line in runner.splitlines():
         identity = DB_IDENTITY_LINE.fullmatch(raw_line.strip())
         if identity:
-            test_uid, target_uid, test_writable, test_state, target_writable, target_state = identity.groups()
+            (
+                test_uid, target_uid, test_writable, test_state, target_writable, target_state,
+                test_data_writable, test_data_executable, test_data_state,
+                target_data_writable, target_data_executable, target_data_state,
+            ) = identity.groups()
             lines.append(
                 "DIAGNOSTIC|dbIdentity|processIsTestUid=" + test_uid +
                 "|processIsTargetUid=" + target_uid +
                 "|testDbParentWritable=" + test_writable +
                 "|testDbParentState=" + test_state +
                 "|targetDbParentWritable=" + target_writable +
-                "|targetDbParentState=" + target_state
+                "|targetDbParentState=" + target_state +
+                "|testDataDirWritable=" + test_data_writable +
+                "|testDataDirExecutable=" + test_data_executable +
+                "|testDataDirState=" + test_data_state +
+                "|targetDataDirWritable=" + target_data_writable +
+                "|targetDataDirExecutable=" + target_data_executable +
+                "|targetDataDirState=" + target_data_state
             )
         context = CONTEXT_LINE.fullmatch(raw_line.strip())
         if context:
