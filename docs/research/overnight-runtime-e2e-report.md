@@ -139,3 +139,37 @@ CI for `cc85f111` (`35978668537`) found two test harness issues before execution
 - `4d8f4c51`: the fixture now overrides page-list request construction to use MockWebServer directly; CI `35980679829` passed App Tsuzuki, Format, planner, and gate; Domain was planner-skipped.
 
 All commits were pushed to `tsuzuki/runtime-e2e-tests`. APK Build workflows for `cc85f111`, `16ea7623`, `bc438aa4`, `5bd0714d`, and `4d8f4c51` were planner-skipped; no Tsuzuki APK was generated. No merge, PR, or new branch was created. The next evidence-raising task is a separately authorized and bounded real-extension run that carries one known result past search into exact binding/inventory validation. Do not repeat the 222-source matrix. If the runtime test graph cannot be safely exercised without production-data writes or user confirmation, document that blocker and wait for an isolated test harness rather than claiming the real extension works.
+
+## Real-extension end-to-end follow-up (2026-09-24)
+
+### Start-state verification
+
+- Local branch was `tsuzuki/runtime-e2e-tests`, at `523b514dc012b0e4f6b97335df2afa44d637b56a`, with a clean working tree.
+- Direct `git fetch origin` failed with exit 128 because this environment could not resolve `github.com`. The remote branch was independently checked using the configured GitHub connector: comparing remote `tsuzuki/runtime-e2e-tests` with `523b514dc012b0e4f6b97335df2afa44d637b56a` returned `identical`, ahead 0 / behind 0. Thus the remote head at this check was verified without treating the failed fetch as evidence.
+- The current checkout contains all eight immutable extension fixtures. The MangaFire APK's observed SHA-256 is `f5a2bedca694bcf1ef7b133c82d0c0d99a8e1c59e9237b0d93f9153d9c3c7378`, matching `.github/scripts/verify_extension_fixture.py`. This establishes fixture integrity, not publisher authenticity; its user-supplied provenance limitation above remains.
+- `adb` is not installed in this environment. No physical device or local emulator is available. Local Gradle execution is disallowed by the project-owned `CI_FIRST` policy (`localHeavyAttempts: 0`).
+
+### Runtime path audit and evidence boundary
+
+The repository already has a real-extension fixture workflow and a separate opt-in live MangaFire search, but neither currently traverses the full production Tsuzuki reading path:
+
+| Stage | Evidence in this checkout | Result |
+|---|---|---|
+| Fixture load / internal source registration | `MangaFireFixtureInstrumentedTest.loadsRealExtensionAndRegistersInternalSources` | Prior Android run proves MangaFire 1.6.34 loaded and its seven internal languages registered. |
+| Real source search | `InstalledExtensionFixtureInstrumentedTest.optionalLiveSearchSourceBatch` calls `app.graph.readingSourceGateway.search`; historical run `35952770951` observed candidate results on the seven MangaFire source IDs. The other live method in `MangaFireFixtureInstrumentedTest` calls `CatalogueSource.getSearchManga` directly. | Search outcome only. Neither observation verifies title identity. Do not repeat the seven-source batch. |
+| Binding / persistence | Current `AppGraph` exposes `addonRepository` and `readingSourceGateway`, but not the Tsuzuki canonical/binding repositories or their production interactors. Existing Android tests do not create a disposable canonical title and persist/reload a real candidate binding. | Not demonstrated by a real extension. |
+| Inventory / reconciliation / alternatives | Production gateways and providers exist, and the deterministic `MihonRuntimeEndToEndIntegrationTest` uses a `MockWebServer` journey. Existing real-extension instrumentation does not invoke them with the APK's English source. | Synthetic path only; real MangaFire stages unverified. |
+| Reader target / `getPageList` | The synthetic test reaches `CatalogueSource.getPageList` for a local HTTP fixture. Existing real-extension instrumentation does not resolve a chapter through the production canonical providers or call the extension's page-list method. | Synthetic path only; no real chapter/page-list proof. |
+
+The static constraint is not a demonstrated runtime defect: the current instrumentation's `AppGraph` surface does not expose the canonical-title, binding, chapter-evidence repositories/use cases needed to construct the exact journey without either (a) adding a test-only dependency graph around the real storage graph, or (b) widening the production `AppGraph` API. The latter was not done. AppGraph also exposes the real `MihonReadingSourceGateway`, so a safe limited real search is possible; it is not sufficient for this task's requested end-to-end proof. A fresh CI emulator is the appropriate isolated store for any materialization that creates Mihon rows, but no emulator run was initiated because there is no implemented end-to-end instrumentation method to execute.
+
+### Disposition
+
+- No new runtime failure was reproduced, so no production correction or regression test was justified in this follow-up.
+- No additional MangaFire, MangaBall, or MangaDex provider request was made. Historical provider-search records remain search-only evidence.
+- No Android instrumentation, new CI, Gradle command, APK generation, commit, or push occurred in this session. The direct Git transport remains unavailable; the successful GitHub connector comparison only verified the initial branch head and did not provide a write/push path for source changes.
+- Therefore this follow-up is **INCONCLUSIVE** for the requested real E2E, not a passing validation. It does not establish that MangaFire binding, inventory, reconciliation, alternatives, reader preparation, or page loading works or fails.
+
+### Smallest next experiment
+
+Add an opt-in Android instrumentation composition dedicated to the disposable emulator that wires the actual production `ResolveContentBinding` / `ConfirmContentBinding`, `MihonChapterInventoryGateway`, chapter probe/reconciliation, content provider, and reader preparation against the emulator's real repositories and `AppGraph` source manager. Keep the query to one English source and one selected, score-checked candidate; if more than one plausible edition is returned, require the test's explicit selection of an exactly verified candidate or end as `INCONCLUSIVE`. Persist only a unique throwaway canonical title/binding in the fresh emulator DB; do not run against user library state. Then record each stage as a sanitized terminal outcome and call `getPageList` only for a chapter whose binding/inventory identity has already been verified. Run that lane manually, separately from Fast CI and without repeating the 222-source matrix. Extend the same harness to MangaBall pt-BR and MangaDex pt-BR only after this first journey is green.
