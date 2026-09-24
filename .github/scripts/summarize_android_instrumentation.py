@@ -101,8 +101,10 @@ def summarize(runner: str, crash: str) -> list[str]:
     return lines
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: summarize_android_instrumentation.py <runner-output> <crash-log>")
-    for line in summarize(Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace'),
-                          Path(sys.argv[2]).read_text(encoding='utf-8', errors='replace')):
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("usage: summarize_android_instrumentation.py <runner-output> [crash-log]")
+    runner = Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace')
+    crash_path = sys.argv[2] if len(sys.argv) == 3 else ""
+    crash = Path(crash_path).read_text(encoding='utf-8', errors='replace') if crash_path else ""
+    for line in summarize(runner, crash):
         print(line)
