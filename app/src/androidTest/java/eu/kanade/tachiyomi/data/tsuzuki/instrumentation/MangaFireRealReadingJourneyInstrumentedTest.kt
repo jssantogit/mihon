@@ -36,10 +36,10 @@ import tachiyomi.data.manga.MangaRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
-import tachiyomi.data.tsuzuki.download.CanonicalDownloadRepositoryImpl
 import tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
+import tachiyomi.data.tsuzuki.download.CanonicalDownloadRepositoryImpl
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.repository.MangaRepository
