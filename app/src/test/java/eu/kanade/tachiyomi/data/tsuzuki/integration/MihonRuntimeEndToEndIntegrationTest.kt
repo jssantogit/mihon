@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
+import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.tachiyomi.data.tsuzuki.MihonCanonicalReaderGateway
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterContentPreparer
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
@@ -107,7 +108,9 @@ class MihonRuntimeEndToEndIntegrationTest {
                     mangaId = 9001L,
                     chapterId = journey.chapterRows.onlyRow().id,
                 )
-                journey.prepare(option) shouldBe CanonicalReaderPreparation.Ready(
+                harness.enqueue(body = "/page/1")
+                val prepared = journey.prepare(option)
+                prepared shouldBe CanonicalReaderPreparation.Ready(
                     canonicalChapterId = reconciled.id,
                     target = PreparedChapterContent.MihonOperational(
                         mangaId = 9001L,
@@ -117,7 +120,10 @@ class MihonRuntimeEndToEndIntegrationTest {
                     usedFallback = false,
                     selectedOption = option,
                 )
-                harness.server.requestCount shouldBe 2
+                val readerTarget = (prepared as CanonicalReaderPreparation.Ready)
+                    .target as PreparedChapterContent.MihonOperational
+                journey.fetchReaderPages(readerTarget).map { it.url } shouldBe listOf("/page/1")
+                harness.server.requestCount shouldBe 3
             }
         }
 
@@ -417,6 +423,13 @@ class MihonRuntimeEndToEndIntegrationTest {
         suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
         suspend fun prepare(option: ContentOption) =
             readerPreparation.execute(option.canonicalChapterId, selectedOption = option)
+
+        suspend fun fetchReaderPages(target: PreparedChapterContent.MihonOperational) =
+            harness.sources.single { it.id == target.sourceId }.getPageList(
+                requireNotNull(chapterRows.repository.getChapterById(target.chapterId)) {
+                    "Prepared reader target must point at an operational chapter row"
+                }.toSChapter(),
+            )
     }
 
     private class RecordingDiagnostics(private val titleId: String) : ChapterInventoryDiagnostics {

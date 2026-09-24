@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -133,6 +134,13 @@ internal class FixtureHttpSource(
             }
             .toList()
     }
+
+    @Deprecated("fixture")
+    override fun pageListParse(response: Response): List<Page> = response.body.string()
+        .lineSequence()
+        .filter(String::isNotBlank)
+        .mapIndexed { index, url -> Page(index, url, imageUrl = "$baseUrl$url") }
+        .toList()
 }
 
 internal class FixtureSourceManager(
