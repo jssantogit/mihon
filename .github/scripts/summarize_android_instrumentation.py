@@ -33,6 +33,12 @@ CONTEXT_LINE = re.compile(
     r"\|targetIsolation=(isolated|same)"
     r"\|databaseContext=(raw|wrapped)$"
 )
+SCHEMA_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA"
+    r"\|outcome=(PASS|FAIL)\|titles=(present|missing)\|outbox=(present|missing)"
+    r"\|dirtyInsertTrigger=(present|missing)(?:\|sqlCategory=(SQLITE_CONSTRAINT|SQLITE_CORRUPT|"
+    r"SQLITE_IO|SQLITE_FULL|SQLITE_READ_ONLY|SQLITE_OPEN|SQLITE_OTHER|NOT_SQLITE))?$"
+)
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
     r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
@@ -52,7 +58,9 @@ SETUP_LINE = re.compile(
     r"EYGRABER_CONFIGURABLE_DRIVER|EYGRABER_CONNECTION_FACTORY|EYGRABER_SQLITE_DRIVER|"
     r"EYGRABER_EXECUTING_DRIVER_KT|EYGRABER_STATEMENT|EYGRABER_SQLITE_UTILS|"
     r"EYGRABER_ACTIVE_TRANSACTION|EYGRABER_EXECUTING_DRIVER|EYGRABER_PREPARED_STATEMENT|EYGRABER_QUERY|"
-    r"ANDROIDX_BUNDLED_DRIVER|ANDROIDX_SQLITE_CORE|ANDROIDX_SQLITE_DRIVER))?$"
+    r"ANDROIDX_BUNDLED_DRIVER|ANDROIDX_SQLITE_CORE|ANDROIDX_SQLITE_DRIVER))?"
+    r"(?:\|sqlCategory=(SQLITE_CONSTRAINT|SQLITE_CORRUPT|SQLITE_IO|SQLITE_FULL|"
+    r"SQLITE_READ_ONLY|SQLITE_OPEN|SQLITE_OTHER|NOT_SQLITE))?$"
 )
 MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
 MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')
@@ -130,12 +138,24 @@ def summarize(runner: str, crash: str) -> list[str]:
             )
         parsed = SETUP_LINE.fullmatch(raw_line.strip())
         if parsed:
-            phase, outcome, exception, frame = parsed.groups()
+            phase, outcome, exception, frame, sql_category = parsed.groups()
             summary = "DIAGNOSTIC|setupPhase=" + phase + "|outcome=" + outcome
             if exception:
                 summary += "|exception=" + exception
             if frame:
                 summary += "|frame=" + frame
+            if sql_category:
+                summary += "|sqlCategory=" + sql_category
+            lines.append(summary)
+        schema = SCHEMA_LINE.fullmatch(raw_line.strip())
+        if schema:
+            outcome, titles, outbox, trigger, sql_category = schema.groups()
+            summary = (
+                "DIAGNOSTIC|schemaOutcome=" + outcome + "|titles=" + titles +
+                "|outbox=" + outbox + "|dirtyInsertTrigger=" + trigger
+            )
+            if sql_category:
+                summary += "|sqlCategory=" + sql_category
             lines.append(summary)
     missing_source = runner + "\n" + crash
     missing = set(MISSING_QUOTED_CLASS.findall(missing_source))

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.cash.sqldelight.db.QueryResult
 import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.tachiyomi.App
 import eu.kanade.tachiyomi.data.tsuzuki.MihonCanonicalReaderGateway
@@ -143,6 +144,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 driver.execute(null, "SELECT 1", 0)
                 database
             }
+            diagnosticSchemaProbe(driver)
             val repository = CanonicalTitleRepositoryImpl(database)
             diagnosticSetupPhase("TITLE_INSERT") {
                 runBlocking { repository.insert(canonicalTitle) }
@@ -684,6 +686,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 Outcome.FAIL,
                 setupExceptionType(error),
                 setupFailureFrame(error),
+                setupSqlCategory(error).takeUnless { it == "NOT_SQLITE" },
             )
             throw error
         }
@@ -693,12 +696,14 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         outcome: Outcome,
         exception: String? = null,
         frame: String? = null,
+        sqlCategory: String? = null,
     ) {
         if (phase == null) return
         val stream = buildString {
             append("RUNTIME_SETUP|phase=").append(phase).append("|outcome=").append(outcome.name)
             exception?.let { append("|exception=").append(it) }
             frame?.let { append("|frame=").append(it) }
+            sqlCategory?.let { append("|sqlCategory=").append(it) }
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,
@@ -727,6 +732,76 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             !context.databaseList().contains("tachiyomi.db") || context.deleteDatabase("tachiyomi.db"),
         ) {
             "Could not reset the instrumentation-only database"
+        }
+    }
+
+    private fun diagnosticSchemaProbe(driver: app.cash.sqldelight.db.SqlDriver) {
+        try {
+            val foundObjects = driver.executeQuery(
+                null,
+                "SELECT name FROM sqlite_master WHERE name IN " +
+                    "('tsuzuki_titles', 'tsuzuki_sync_outbox', 'tsuzuki_titles_sync_dirty_insert')",
+                { cursor ->
+                    val names = buildSet {
+                        while (cursor.next().value) cursor.getString(0)?.let(::add)
+                    }
+                    QueryResult.Value(names)
+                },
+                0,
+                {},
+            ).value
+            reportSchemaObservation(
+                "PASS",
+                "tsuzuki_titles" in foundObjects,
+                "tsuzuki_sync_outbox" in foundObjects,
+                "tsuzuki_titles_sync_dirty_insert" in foundObjects,
+            )
+        } catch (error: Throwable) {
+            reportSchemaObservation(
+                "FAIL",
+                titles = false,
+                outbox = false,
+                trigger = false,
+                sqlCategory = setupSqlCategory(error),
+            )
+            throw error
+        }
+    }
+
+    private fun reportSchemaObservation(
+        outcome: String,
+        titles: Boolean,
+        outbox: Boolean,
+        trigger: Boolean,
+        sqlCategory: String? = null,
+    ) {
+        val stream = buildString {
+            append("RUNTIME_SCHEMA|outcome=").append(outcome)
+            append("|titles=").append(if (titles) "present" else "missing")
+            append("|outbox=").append(if (outbox) "present" else "missing")
+            append("|dirtyInsertTrigger=").append(if (trigger) "present" else "missing")
+            sqlCategory?.let { append("|sqlCategory=").append(it) }
+        }
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            1,
+            Bundle().apply { putString("stream", stream) },
+        )
+    }
+
+    private fun setupSqlCategory(error: Throwable): String {
+        val classNames = generateSequence(error) { it.cause }
+            .take(6)
+            .map { it.javaClass.simpleName }
+            .toSet()
+        return when {
+            "SQLiteConstraintException" in classNames -> "SQLITE_CONSTRAINT"
+            "SQLiteDatabaseCorruptException" in classNames -> "SQLITE_CORRUPT"
+            "SQLiteDiskIOException" in classNames -> "SQLITE_IO"
+            "SQLiteFullException" in classNames -> "SQLITE_FULL"
+            "SQLiteReadOnlyDatabaseException" in classNames -> "SQLITE_READ_ONLY"
+            "SQLiteCantOpenDatabaseException" in classNames -> "SQLITE_OPEN"
+            classNames.any { it == "SQLException" || it == "SQLiteException" } -> "SQLITE_OTHER"
+            else -> "NOT_SQLITE"
         }
     }
 

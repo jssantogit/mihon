@@ -66,6 +66,8 @@ CONTEXT_DB_GOOD = (
     "|targetIsolation=isolated|databaseContext=wrapped\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CREATE|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DATABASE_CREATE|outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=PASS|titles=present"
+    "|outbox=present|dirtyInsertTrigger=present\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_READ|outcome=PASS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DRIVER_CLOSE|outcome=PASS\n"
@@ -141,6 +143,35 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(duplicate_context, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_requires_one_schema_observation(self):
+        no_schema = CONTEXT_DB_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=PASS|titles=present"
+            "|outbox=present|dirtyInsertTrigger=present\n",
+            "",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(no_schema, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_unsafe_schema_fields(self):
+        unsafe = CONTEXT_DB_GOOD.replace(
+            "|dirtyInsertTrigger=present",
+            "|dirtyInsertTrigger=present|sql=PRIVATE",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(unsafe, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_schema_after_insert(self):
+        schema = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=PASS|titles=present"
+            "|outbox=present|dirtyInsertTrigger=present\n"
+        )
+        moved = CONTEXT_DB_GOOD.replace(schema, "").replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n",
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=PASS\n" + schema,
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(moved, CONTEXT_DB_METHOD)
 
     def test_live_journey_accepts_the_real_long_source_id_on_registration(self):
         registration = (

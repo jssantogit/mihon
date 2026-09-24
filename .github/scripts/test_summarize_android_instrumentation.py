@@ -203,6 +203,24 @@ class SummaryTest(unittest.TestCase):
         self.assertNotIn("SECRET", result)
         self.assertNotIn("sql=", result)
 
+    def test_schema_probe_and_sql_error_categories_are_allowlisted(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=PASS|titles=missing"
+            "|outbox=present|dirtyInsertTrigger=missing\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TITLE_INSERT|outcome=FAIL"
+            "|exception=SQLException|frame=ANDROIDX_BUNDLED_DRIVER|sqlCategory=SQLITE_OTHER\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA|outcome=FAIL|titles=missing"
+            "|outbox=missing|dirtyInsertTrigger=missing|sqlCategory=PRIVATE\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "DIAGNOSTIC|schemaOutcome=PASS|titles=missing|outbox=present|dirtyInsertTrigger=missing",
+            result,
+        )
+        self.assertIn("sqlCategory=SQLITE_OTHER", result)
+        self.assertNotIn("PRIVATE", result)
+        self.assertNotIn("message=", result)
+
     def test_isolated_context_database_events_keep_only_closed_context_and_persist_fields(self):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"

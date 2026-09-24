@@ -39,6 +39,11 @@ E2E_STAGES = (
 )
 E2E_OUTCOMES = frozenset(("PASS", "FAIL", "INCONCLUSIVE", "NOT_RUN"))
 CONTEXT_DB_PHASES = ("DRIVER_CREATE", "DATABASE_CREATE", "TITLE_INSERT", "TITLE_READ", "DRIVER_CLOSE")
+SCHEMA_EVENT = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SCHEMA"
+    r"\|outcome=PASS\|titles=(present|missing)\|outbox=(present|missing)"
+    r"\|dirtyInsertTrigger=(present|missing)$"
+)
 E2E_CATEGORIES = frozenset((
     "NONE", "NO_RESULTS", "SOURCE_DISABLED", "AMBIGUOUS", "LOW_CONFIDENCE", "HTTP_403", "HTTP_429",
     "HTTP_5XX", "HTTP_OTHER", "NETWORK", "TIMEOUT", "CAPTCHA", "MALFORMED",
@@ -90,6 +95,15 @@ def verify_context_database_diagnostic(output: str) -> None:
     ]
     if phase_events != expected:
         raise AndroidTestVerificationError("Isolated database diagnostic phases were not proven exactly once")
+    schema_events = [line for line in output.splitlines() if "RUNTIME_SCHEMA|" in line]
+    if len(schema_events) != 1 or not SCHEMA_EVENT.fullmatch(schema_events[0]):
+        raise AndroidTestVerificationError("Expected one sanitized database schema observation")
+    ordered_events = [line for line in output.splitlines() if "RUNTIME_SCHEMA|" in line or "RUNTIME_SETUP|phase=" in line]
+    if not (
+        ordered_events.index(expected[1]) < ordered_events.index(schema_events[0]) <
+        ordered_events.index(expected[2])
+    ):
+        raise AndroidTestVerificationError("Schema observation must precede title persistence")
 
 
 def verify_e2e_stages(output: str) -> None:
