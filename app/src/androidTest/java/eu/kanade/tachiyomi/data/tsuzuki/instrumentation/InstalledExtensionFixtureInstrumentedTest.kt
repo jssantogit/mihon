@@ -71,10 +71,38 @@ class InstalledExtensionFixtureInstrumentedTest {
                     registered.any { it.id == found.id }
                 },
             )
+
+            // Test the Tsuzuki facade for EVERY real internal source, not just the extension loader.
+            // Disabled internal languages must never leak into the product-facing Add-on snapshot.
+            val disabled = app.graph.sourcePreferences.disabledSources.get()
+            val expectedEnabled = extension.sources
+                .filter { it.id.toString() !in disabled }
+                .map { it.id }
+                .toSet()
+            val addon = app.graph.addonRepository.snapshot().single { it.id.value == packageName }
+            assertEquals(expectedEnabled, addon.mihonSourceIds.toSet())
+            assertEquals(expectedEnabled.isNotEmpty(), addon.enabled)
+            val eligibleByLanguage = extension.sources
+                .filter { it.id in expectedEnabled }
+                .groupBy { it.lang }
+            for ((language, sources) in eligibleByLanguage) {
+                val facadeIds = app.graph.readingSourceGateway.listInstalled(language)
+                    .map { it.sourceId }
+                    .toSet()
+                assertTrue(
+                    "Tsuzuki source facade omitted internal sources for language $language",
+                    sources.all { it.id in facadeIds },
+                )
+            }
             instrumentation.sendStatus(
                 1,
                 Bundle().apply {
-                    putString("stream", "EXTENSION_FIXTURE|sourceCount=" + extension.sources.size)
+                    putString(
+                        "stream",
+                        "EXTENSION_FIXTURE|sourceCount=" + extension.sources.size +
+                            "|eligibleSources=" + expectedEnabled.size +
+                            "|languages=" + eligibleByLanguage.size,
+                    )
                 },
             )
         }

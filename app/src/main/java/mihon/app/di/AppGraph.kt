@@ -57,6 +57,7 @@ import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSyncIntentRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
+import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
 @DependencyGraph(
     scope = AppScope::class,
@@ -107,6 +108,7 @@ interface AppGraph : ViewModelGraph {
 
     val sourceManager: SourceManager
     val addonRepository: AddonRepository
+    val readingSourceGateway: ReadingSourceGateway
     val addonSyncIntentRepository: AddonSyncIntentRepository
     val trackerManager: TrackerManager
     val accountRepository: AccountRepository
