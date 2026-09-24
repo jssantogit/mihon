@@ -136,6 +136,9 @@ internal class FixtureHttpSource(
     }
 
     @Deprecated("fixture")
+    override fun pageListRequest(chapter: SChapter) = GET("$baseUrl${chapter.url}")
+
+    @Deprecated("fixture")
     override fun pageListParse(response: Response): List<Page> = response.body.string()
         .lineSequence()
         .filter(String::isNotBlank)
