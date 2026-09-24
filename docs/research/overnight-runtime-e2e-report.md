@@ -45,6 +45,22 @@ The Android probe wraps a gateway search in coroutine `withTimeout`, but an exte
 - Current live run `35944402938`: shard 0 54/56 accepted; shard 1 56/56; shard 2 56/56; shard 3 47/54. Total 213 accepted source observations: 212 results, one HTTP 403; nine outcomes unknown.
 - Root cause for AnimeXNovel, Manga Livre.to, and MangaFire: **unknown**. Their JUnit failures do not prove provider, runtime, timeout, network, HTTP, CAPTCHA, or extension causes.
 - Mangas Brasuka HTTP 403 is a confirmed response category only, not evidence of CAPTCHA or Tsuzuki defect.
-- Push `3d6189c5` contains the diagnostics, CSV report, and targeted dispatch, but its live workflow parse failed as detailed above. A corrected dynamic-matrix version is local and actionlint + YAML parsing pass; it is not yet on the remote branch.
-- No regression has yet established whether the failing provider batches block during extension lookup or a specific source query. Do not infer MangaFire root cause from the workflow parse error.
+- Push `3d6189c5` contains the diagnostics, CSV report, and targeted dispatch, but its live workflow parse failed as detailed above. The corrected dynamic-matrix version (`97e6f551`) is remote and its contract/compile check passed.
+- No regression has yet established the provider cause. Do not infer MangaFire root cause from the workflow parse error.
 - MangaFire/chapter inventory/fallback on these actual extensions are not proven by this search matrix.
+
+## Targeted retry and follow-up instrumentation (2026-09-24)
+
+The dynamic matrix was manually dispatched for **AnimeXNovel only** (`35948648078`, SHA `97e6f551`). It instantiated only shard 0. The sanitized artifact at
+`/tmp/tsuzuki-targeted-animexnovel/animexnovel-1.6.19.apk.diagnostic.txt` reports:
+
+```text
+runnerExit=0; expectedClass=true; expectedMethod=true; singleTestDeclared=true
+junitPass=false; probeEvents=0; stage=EXTENSION_LOOKUP_START
+```
+
+This narrows the observed stopping point: the test method was discovered and emitted `EXTENSION_LOOKUP_START`, but no `EXTENSION_READY`, source attempt, or provider search event was retained. Offline extension installation/trust/registration checks in the workflow's preceding phase passed. The available evidence does **not** distinguish a 30-second lookup timeout from another lookup exception or cancellation; no cause is confirmed. No source request can be attributed to this attempt.
+
+A test-first follow-up now extends the allowlisted diagnostic format with terminal extension lookup stages (`TIMEOUT`, `CANCELLED`, `FAILURE`) and a bounded elapsed-time field. The Android test rethrows the original throwable after emitting only the closed stage category and elapsed time; it does not change extension or provider behavior. Python RED was observed before the parser update (the timeout stage was omitted), then the focused suite passed (8 tests) after the update; report-sanitizer tests also pass (7). `git diff --check` and Actionlint pass. No Gradle task was run locally. This code has not yet been pushed/compiled by CI.
+
+The upcoming ordinary push to the live-workflow paths is expected to trigger the workflow but **not** external provider requests because the commit will not carry `[android-live-matrix]`; its shard job is marker-gated. The next allowed external actions are sequential targeted dispatches only, first AnimeXNovel with the richer stage, then Manga Livre.to and MangaFire if the artifact leaves requests warranted. Stop on explicit rate-limit/CAPTCHA observations.

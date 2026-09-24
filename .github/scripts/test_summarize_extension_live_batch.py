@@ -115,6 +115,20 @@ class ExtensionLiveBatchSummaryTest(unittest.TestCase):
         self.assertIn("SOURCE_ATTEMPT|ordinal=1|sourceId=456|lang=pt-BR", report)
         self.assertNotIn("SECRET", report)
 
+    def test_retains_sanitized_extension_lookup_failure_boundary(self):
+        raw = BASE + (
+            "INSTRUMENTATION_STATUS: stream=LIVE_STAGE|stage=EXTENSION_LOOKUP_START\n"
+            "INSTRUMENTATION_STATUS: stream=LIVE_STAGE|stage=EXTENSION_LOOKUP_TIMEOUT|elapsedMs=30000\n"
+            "INSTRUMENTATION_RESULT: shortMsg=private URL https://example.invalid/token\n"
+        )
+
+        report = "\n".join(summary.summarize(raw, process_exit=0))
+
+        self.assertIn("LIVE_STAGE|stage=EXTENSION_LOOKUP_START", report)
+        self.assertIn("LIVE_STAGE|stage=EXTENSION_LOOKUP_TIMEOUT|elapsedMs=30000", report)
+        self.assertNotIn("private URL", report)
+        self.assertNotIn("https://", report)
+
     def test_detail_output_is_bounded_for_repeated_or_malformed_events(self):
         valid = (
             "INSTRUMENTATION_STATUS: stream=SOURCE_PROBE|sourceId=123|lang=en"

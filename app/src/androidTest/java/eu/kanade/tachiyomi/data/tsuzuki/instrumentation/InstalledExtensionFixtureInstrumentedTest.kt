@@ -136,23 +136,49 @@ class InstalledExtensionFixtureInstrumentedTest {
             val count = requireNotNull(arguments.getString("sourceCount")).toInt()
             require(start >= 0 && count in 1..MAX_LIVE_BATCH)
             val app = instrumentation.targetContext.applicationContext as App
-            fun sendStage(stage: String, sourceCount: Int? = null) {
+            fun sendStage(
+                stage: String,
+                sourceCount: Int? = null,
+                elapsedMs: Long? = null,
+            ) {
                 instrumentation.sendStatus(
                     1,
                     Bundle().apply {
                         putString(
                             "stream",
                             "LIVE_STAGE|stage=" + stage +
-                                (sourceCount?.let { "|sourceCount=$it" } ?: ""),
+                                (sourceCount?.let { "|sourceCount=$it" } ?: "") +
+                                (elapsedMs?.let { "|elapsedMs=$it" } ?: ""),
                         )
                     },
                 )
             }
             sendStage("EXTENSION_LOOKUP_START")
-            val extension = withTimeout(30_000L) {
-                app.graph.extensionManager.installedExtensionsFlow.first { installed ->
-                    installed.any { it.pkgName == packageName }
-                }.single { it.pkgName == packageName }
+            val lookupStarted = SystemClock.elapsedRealtime()
+            val extension = try {
+                withTimeout(30_000L) {
+                    app.graph.extensionManager.installedExtensionsFlow.first { installed ->
+                        installed.any { it.pkgName == packageName }
+                    }.single { it.pkgName == packageName }
+                }
+            } catch (error: TimeoutCancellationException) {
+                sendStage(
+                    "EXTENSION_LOOKUP_TIMEOUT",
+                    elapsedMs = (SystemClock.elapsedRealtime() - lookupStarted).coerceAtLeast(0L),
+                )
+                throw error
+            } catch (error: CancellationException) {
+                sendStage(
+                    "EXTENSION_LOOKUP_CANCELLED",
+                    elapsedMs = (SystemClock.elapsedRealtime() - lookupStarted).coerceAtLeast(0L),
+                )
+                throw error
+            } catch (error: Throwable) {
+                sendStage(
+                    "EXTENSION_LOOKUP_FAILURE",
+                    elapsedMs = (SystemClock.elapsedRealtime() - lookupStarted).coerceAtLeast(0L),
+                )
+                throw error
             }
             sendStage("EXTENSION_READY", extension.sources.size)
             val sources = extension.sources.sortedBy { it.id }

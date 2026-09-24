@@ -22,12 +22,13 @@ TEST_KEYS = {
     "numtests": "1",
 }
 MAX_BATCH_SOURCES = 56
-MAX_DETAIL_EVENTS = 2 * MAX_BATCH_SOURCES + 4
+MAX_DETAIL_EVENTS = 2 * MAX_BATCH_SOURCES + 6
 SAFE_STATUS = re.compile(r"^INSTRUMENTATION_STATUS: (class|test|numtests)=([^\s]+)$")
 LIVE_STAGE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=LIVE_STAGE\|stage="
-    r"(EXTENSION_LOOKUP_START|EXTENSION_READY|SOURCE_LOOP_START|BATCH_COMPLETE)"
-    r"(?:\|sourceCount=(\d{1,3}))?$"
+    r"(EXTENSION_LOOKUP_START|EXTENSION_LOOKUP_TIMEOUT|EXTENSION_LOOKUP_CANCELLED|"
+    r"EXTENSION_LOOKUP_FAILURE|EXTENSION_READY|SOURCE_LOOP_START|BATCH_COMPLETE)"
+    r"(?:\|sourceCount=(\d{1,3})|\|elapsedMs=(\d{1,6}))?$"
 )
 SOURCE_ATTEMPT = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=SOURCE_ATTEMPT\|ordinal=(\d{1,3})"
@@ -66,7 +67,7 @@ def summarize(raw: str, process_exit: int, input_rejected: bool = False) -> list
         "ANDROID_LIVE_DIAGNOSTIC|invalidProbeEvents=" + str(max(0, source_event_lines - len(rows))),
         "ANDROID_LIVE_DIAGNOSTIC|detailsTruncated=" + str(
             len(all_rows) > MAX_BATCH_SOURCES or
-                stage_event_count > 4 or
+                stage_event_count > 6 or
                 attempt_event_count > MAX_BATCH_SOURCES
         ).lower(),
     ]
@@ -76,10 +77,12 @@ def summarize(raw: str, process_exit: int, input_rejected: bool = False) -> list
             break
         stage_match = LIVE_STAGE.fullmatch(line.strip())
         if stage_match:
-            stage, source_count = stage_match.groups()
+            stage, source_count, elapsed_ms = stage_match.groups()
             event = "LIVE_STAGE|stage=" + stage
             if source_count is not None:
                 event += "|sourceCount=" + source_count
+            if elapsed_ms is not None:
+                event += "|elapsedMs=" + elapsed_ms
             report.append(event)
             detail_count += 1
             continue
