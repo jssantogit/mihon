@@ -556,6 +556,16 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         frame.methodName.startsWith("await") -> "SQLDELIGHT_DRIVER_AWAIT"
                     frame.className.startsWith("app.cash.sqldelight.db.QueryResult") -> "SQLDELIGHT_RESULT_VALUE"
                     frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriverHolder") ->
+                        "EYGRABER_SCHEMA_DRIVER"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxDriverConnectionPool") ->
+                        "EYGRABER_CONNECTION_POOL"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriver") ->
+                        "EYGRABER_EXECUTING_DRIVER"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxPreparedStatement") ->
+                        "EYGRABER_PREPARED_STATEMENT"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxQuery") ->
+                        "EYGRABER_QUERY"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.") ->
                         "EYGRABER_ANDROIDX_DRIVER"
                     frame.className.startsWith("androidx.sqlite.driver.bundled.") -> "ANDROIDX_BUNDLED_DRIVER"
