@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,6 +41,10 @@ data class CanonicalTitleScreen(
         var linkSheetOpen by remember { mutableStateOf(false) }
         val state by screenModel.state.collectAsStateWithLifecycle()
         val contentSelectorState by contentSelectorViewModel.state.collectAsStateWithLifecycle()
+        val loaded = (state as? CanonicalTitleScreenState.Loaded)
+            ?.takeIf { it.title.id == canonicalTitleId }
+        val downloadSelectionChapterId = loaded?.downloadSelectionChapterId
+        val currentDownloadSelectionChapterId = rememberUpdatedState(downloadSelectionChapterId)
 
         LaunchedEffect(canonicalTitleId) {
             screenModel.start(canonicalTitleId)
@@ -91,6 +96,9 @@ data class CanonicalTitleScreen(
         LaunchedEffect(linkViewModel) {
             linkViewModel.bindingChanges.collect {
                 screenModel.refresh()
+                if (currentDownloadSelectionChapterId.value != null) {
+                    contentSelectorViewModel.retry()
+                }
             }
         }
         if (linkSheetOpen) {
@@ -107,9 +115,7 @@ data class CanonicalTitleScreen(
             )
         }
 
-        val loaded = state as? CanonicalTitleScreenState.Loaded
-        val downloadSelectionChapterId = loaded?.downloadSelectionChapterId
-        if (downloadSelectionChapterId != null) {
+        if (downloadSelectionChapterId != null && !linkSheetOpen) {
             LaunchedEffect(canonicalTitleId, downloadSelectionChapterId) {
                 contentSelectorViewModel.start(
                     canonicalTitleId = canonicalTitleId,
@@ -123,6 +129,10 @@ data class CanonicalTitleScreen(
                     screenModel.downloadSelectedOption(selection.option)
                 },
                 onRetry = { contentSelectorViewModel.retry() },
+                onFindOrAddSource = { sourceCanonicalTitleId ->
+                    linkViewModel.start(sourceCanonicalTitleId)
+                    linkSheetOpen = true
+                },
                 onOpenAddonsSettings = {
                     context.startActivity(
                         Intent(context, MainActivity::class.java)

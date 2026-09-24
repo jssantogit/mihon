@@ -18,7 +18,11 @@ class ContentOptionSelectorDiscoveryTest {
             canonicalChapterId = "canonical-chapter",
         )
 
-        state.shouldOfferSourceDiscovery() shouldBe true
+        state.sourceDiscoveryTitleId() shouldBe "canonical-title"
+
+        var requestedTitleId: String? = null
+        sourceDiscoveryAction(state) { requestedTitleId = it }?.invoke()
+        requestedTitleId shouldBe "canonical-title"
     }
 
     @Test
@@ -29,13 +33,13 @@ class ContentOptionSelectorDiscoveryTest {
             error = IllegalStateException("Provider failed"),
         )
 
-        state.shouldOfferSourceDiscovery() shouldBe true
+        state.sourceDiscoveryTitleId() shouldBe "canonical-title"
         state.shouldBeInstanceOf<ContentSelectorScreenState.Error>()
     }
 
     @Test
     fun `discovery is not offered while loading or when readable options exist`() {
-        ContentSelectorScreenState.Loading.shouldOfferSourceDiscovery() shouldBe false
+        ContentSelectorScreenState.Loading.sourceDiscoveryTitleId() shouldBe null
         ContentSelectorScreenState.Ready(
             canonicalTitleId = "canonical-title",
             canonicalChapterId = "canonical-chapter",
@@ -60,6 +64,22 @@ class ContentOptionSelectorDiscoveryTest {
             preferredOptionKey = null,
             preferredLanguage = null,
             preferredUnavailable = false,
-        ).shouldOfferSourceDiscovery() shouldBe false
+        ).sourceDiscoveryTitleId() shouldBe null
+    }
+
+    @Test
+    fun `empty ready state does not invent an option and still allows discovery`() {
+        val state = ContentSelectorScreenState.Ready(
+            canonicalTitleId = "canonical-title",
+            canonicalChapterId = "canonical-chapter",
+            options = emptyList(),
+            preferredAddonId = null,
+            preferredOptionKey = null,
+            preferredLanguage = null,
+            preferredUnavailable = false,
+        )
+
+        state.options shouldBe emptyList()
+        state.sourceDiscoveryTitleId() shouldBe "canonical-title"
     }
 }

@@ -28,6 +28,22 @@ import tachiyomi.presentation.core.i18n.stringResource
 import java.text.DateFormat
 import java.util.Date
 
+/** Search can be offered only when the selected chapter has no real reading option. */
+internal fun ContentSelectorScreenState.sourceDiscoveryTitleId(): String? = when (this) {
+    ContentSelectorScreenState.Loading -> null
+    is ContentSelectorScreenState.Ready -> canonicalTitleId.takeIf { options.isEmpty() }
+    is ContentSelectorScreenState.Empty, is ContentSelectorScreenState.Error -> canonicalTitleId
+}
+
+internal fun sourceDiscoveryAction(
+    state: ContentSelectorScreenState,
+    onFindOrAddSource: ((canonicalTitleId: String) -> Unit)?,
+): (() -> Unit)? {
+    val canonicalTitleId = state.sourceDiscoveryTitleId() ?: return null
+    val action = onFindOrAddSource ?: return null
+    return { action(canonicalTitleId) }
+}
+
 @Composable
 fun ContentOptionSelectorSheet(
     state: ContentSelectorScreenState,
@@ -36,6 +52,7 @@ fun ContentOptionSelectorSheet(
     activeContentLabel: String? = null,
     onRetry: () -> Unit,
     onOpenAddonsSettings: () -> Unit,
+    onFindOrAddSource: ((canonicalTitleId: String) -> Unit)? = null,
     onDismissRequest: () -> Unit,
 ) {
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
@@ -68,29 +85,38 @@ fun ContentOptionSelectorSheet(
                 }
 
                 is ContentSelectorScreenState.Ready -> {
-                    if (state.failedProviderCount > 0) {
-                        Text(
-                            text = "${state.failedProviderCount} reading Add-on(s) could not be queried. " +
-                                "Available alternatives are shown below.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                    if (state.shouldOfferSourceDiscovery()) {
+                        SelectorUnavailableContent(
+                            message = stringResource(MR.strings.tsuzuki_content_no_options),
+                            onRetry = onRetry,
+                            onOpenAddonsSettings = onOpenAddonsSettings,
+                            onFindOrAddSource = sourceDiscoveryAction(state, onFindOrAddSource),
                         )
-                    }
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 480.dp),
-                    ) {
-                        items(
-                            items = state.options,
-                            key = { it.option.key },
-                        ) { item ->
-                            ContentOptionRow(
-                                item = item,
-                                preferred = state.preferredOptionKey == item.option.key,
-                                active = activeOptionKey == item.option.key,
-                                onClick = { onSelect(item) },
+                    } else {
+                        if (state.failedProviderCount > 0) {
+                            Text(
+                                text = "${state.failedProviderCount} reading Add-on(s) could not be queried. " +
+                                    "Available alternatives are shown below.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
                             )
+                        }
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 480.dp),
+                        ) {
+                            items(
+                                items = state.options,
+                                key = { it.option.key },
+                            ) { item ->
+                                ContentOptionRow(
+                                    item = item,
+                                    preferred = state.preferredOptionKey == item.option.key,
+                                    active = activeOptionKey == item.option.key,
+                                    onClick = { onSelect(item) },
+                                )
+                            }
                         }
                     }
                 }
@@ -104,6 +130,7 @@ fun ContentOptionSelectorSheet(
                         },
                         onRetry = onRetry,
                         onOpenAddonsSettings = onOpenAddonsSettings,
+                        onFindOrAddSource = sourceDiscoveryAction(state, onFindOrAddSource),
                     )
                 }
 
@@ -113,6 +140,7 @@ fun ContentOptionSelectorSheet(
                             ?: stringResource(MR.strings.tsuzuki_content_selector_error),
                         onRetry = onRetry,
                         onOpenAddonsSettings = onOpenAddonsSettings,
+                        onFindOrAddSource = sourceDiscoveryAction(state, onFindOrAddSource),
                     )
                 }
             }
@@ -171,6 +199,7 @@ private fun SelectorUnavailableContent(
     message: String,
     onRetry: () -> Unit,
     onOpenAddonsSettings: () -> Unit,
+    onFindOrAddSource: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -190,6 +219,14 @@ private fun SelectorUnavailableContent(
             }
             OutlinedButton(onClick = onOpenAddonsSettings) {
                 Text(stringResource(MR.strings.tsuzuki_content_open_addons))
+            }
+        }
+        onFindOrAddSource?.let { onClick ->
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onClick,
+            ) {
+                Text("Find or add reading source")
             }
         }
     }

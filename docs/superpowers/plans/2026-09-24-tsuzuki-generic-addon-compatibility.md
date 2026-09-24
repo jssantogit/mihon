@@ -55,8 +55,8 @@
 
 **Domain:** UI. **Files:** `app/src/main/java/eu/kanade/presentation/tsuzuki/content/ContentOptionSelectorSheet.kt`, `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/detail/CanonicalTitleScreen.kt`, `app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderActivity.kt`, relevant screen-model/UI tests.
 
-- [ ] RED tests: no actual option shows “find/add reading source”; failed providers remain distinct; selecting this action opens the existing binding flow and refreshes options only after valid binding. Do not add search candidates directly to selector options.
-- [ ] Implement minimal navigation/interaction. Preserve Reader preference timing and canonical chapter ID; no Reader core rewrite.
+- [x] RED tests: no actual option shows “find/add reading source”; failed providers remain distinct; selecting this action opens the existing binding flow and refreshes options only after valid binding. Do not add search candidates directly to selector options. App Tsuzuki run `36072373031` failed at the expected unresolved discovery-state helper after imports were corrected.
+- [x] Implement minimal navigation/interaction. On title detail, the action opens the existing binding sheet for the current canonical title; successful binding events refresh title and active chapter options. Reader discovery navigation remains unavailable because ReaderActivity has no safe existing route to canonical title detail; it retains its existing Add-ons settings action. No Reader core or preference behavior changed.
 - [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
 
 ## Task 5 — Generic contract/E2E validation and checkpoint
