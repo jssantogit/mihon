@@ -31,9 +31,13 @@ import java.util.Date
 /** Search can be offered only when the selected chapter has no real reading option. */
 internal fun ContentSelectorScreenState.sourceDiscoveryTitleId(): String? = when (this) {
     ContentSelectorScreenState.Loading -> null
-    is ContentSelectorScreenState.Ready -> canonicalTitleId.takeIf { options.isEmpty() }
-    is ContentSelectorScreenState.Empty, is ContentSelectorScreenState.Error -> canonicalTitleId
+    is ContentSelectorScreenState.Ready -> this.canonicalTitleId.takeIf { options.isEmpty() }
+    is ContentSelectorScreenState.Empty -> this.canonicalTitleId
+    is ContentSelectorScreenState.Error -> this.canonicalTitleId
 }
+
+internal fun ContentSelectorScreenState.shouldOfferSourceDiscovery(): Boolean =
+    sourceDiscoveryTitleId() != null
 
 internal fun sourceDiscoveryAction(
     state: ContentSelectorScreenState,
