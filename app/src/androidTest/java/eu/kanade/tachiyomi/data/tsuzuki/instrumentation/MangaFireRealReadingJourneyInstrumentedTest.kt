@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Process
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -82,6 +83,7 @@ import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
+import java.io.File
 import java.net.ConnectException
 import java.net.SocketException
 import java.net.SocketTimeoutException
@@ -96,6 +98,29 @@ import java.util.UUID
  */
 @RunWith(AndroidJUnit4::class)
 class MangaFireRealReadingJourneyInstrumentedTest {
+
+    @Test(timeout = 30_000L)
+    fun instrumentationDatabaseIdentityProbe() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val testContext = instrumentation.context
+        val targetContext = instrumentation.targetContext
+        val processUid = runCatching { Process.myUid() }.getOrNull()
+        val testPackageUid = packageUid(testContext)
+        val targetPackageUid = packageUid(targetContext)
+        val testDatabaseParent = databaseParentObservation(testContext)
+        val targetDatabaseParent = databaseParentObservation(targetContext)
+
+        val stream = buildString {
+            append("RUNTIME_DB_IDENTITY|processIsTestUid=")
+                .append(uidMatches(processUid, testPackageUid))
+            append("|processIsTargetUid=").append(uidMatches(processUid, targetPackageUid))
+            append("|testDbParentWritable=").append(testDatabaseParent.writable)
+            append("|testDbParentState=").append(testDatabaseParent.state)
+            append("|targetDbParentWritable=").append(targetDatabaseParent.writable)
+            append("|targetDbParentState=").append(targetDatabaseParent.state)
+        }
+        instrumentation.sendStatus(1, Bundle().apply { putString("stream", stream) })
+    }
 
     @Test(timeout = 90_000L)
     fun instrumentationContextDatabasePersistsCanonicalTitle() {
@@ -734,6 +759,32 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             "Could not reset the instrumentation-only database"
         }
     }
+
+    private fun packageUid(context: Context): Int? = try {
+        context.packageManager.getApplicationInfo(context.packageName, 0).uid
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun uidMatches(processUid: Int?, packageUid: Int?): String = when {
+        processUid == null || packageUid == null -> "unknown"
+        processUid == packageUid -> "true"
+        else -> "false"
+    }
+
+    private fun databaseParentObservation(context: Context): DatabaseParentObservation = try {
+        // Avoid Context.getDatabasePath(): Android may create the database directory as a side effect.
+        val parent = File(context.applicationInfo.dataDir, "databases")
+        when {
+            !parent.exists() -> DatabaseParentObservation("unknown", "MISSING")
+            !parent.isDirectory -> DatabaseParentObservation("unknown", "NOT_DIRECTORY")
+            else -> DatabaseParentObservation(parent.canWrite().toString(), "EXISTS")
+        }
+    } catch (_: Exception) {
+        DatabaseParentObservation("unknown", "ERROR")
+    }
+
+    private data class DatabaseParentObservation(val writable: String, val state: String)
 
     private fun diagnosticSchemaProbe(driver: app.cash.sqldelight.db.SqlDriver) {
         try {

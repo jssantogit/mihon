@@ -14,6 +14,7 @@ SPEC.loader.exec_module(checker)
 METHOD = "loadsRealExtensionAndRegistersInternalSources"
 LIVE_METHOD = "optionalRealEnglishReadingJourney"
 CONTEXT_DB_METHOD = "instrumentationContextDatabasePersistsCanonicalTitle"
+DB_IDENTITY_METHOD = "instrumentationDatabaseIdentityProbe"
 E2E_CLASS = checker.E2E_CLASS
 E2E_STAGES = (
     "EXTENSION_INSTALL",
@@ -77,6 +78,21 @@ CONTEXT_DB_GOOD = (
     "INSTRUMENTATION_RESULT: stream=\nTime: 2.0\n\nOK (1 test)\n"
     "INSTRUMENTATION_CODE: -1\n"
 )
+DB_IDENTITY_GOOD = (
+    "INSTRUMENTATION_STATUS: numtests=1\n"
+    "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
+    "INSTRUMENTATION_STATUS: test=" + DB_IDENTITY_METHOD + "\n"
+    "INSTRUMENTATION_STATUS_CODE: 1\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+    "|processIsTestUid=true|processIsTargetUid=false"
+    "|testDbParentWritable=true|testDbParentState=EXISTS"
+    "|targetDbParentWritable=false|targetDbParentState=EXISTS\n"
+    "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
+    "INSTRUMENTATION_STATUS: test=" + DB_IDENTITY_METHOD + "\n"
+    "INSTRUMENTATION_STATUS_CODE: 0\n"
+    "INSTRUMENTATION_RESULT: stream=\nTime: 2.0\n\nOK (1 test)\n"
+    "INSTRUMENTATION_CODE: -1\n"
+)
 
 class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_proven_single_test_is_accepted(self):
@@ -103,6 +119,40 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
 
     def test_isolated_context_database_diagnostic_requires_safe_context_and_persist_events(self):
         checker.verify(CONTEXT_DB_GOOD, CONTEXT_DB_METHOD)
+
+    def test_database_identity_probe_requires_one_sanitized_observation(self):
+        checker.verify(DB_IDENTITY_GOOD, DB_IDENTITY_METHOD)
+
+    def test_database_identity_probe_rejects_missing_observation(self):
+        output = DB_IDENTITY_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+            "|processIsTestUid=true|processIsTargetUid=false"
+            "|testDbParentWritable=true|testDbParentState=EXISTS"
+            "|targetDbParentWritable=false|targetDbParentState=EXISTS\n",
+            "",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(output, DB_IDENTITY_METHOD)
+
+    def test_database_identity_probe_rejects_paths_and_uid_values(self):
+        unsafe = DB_IDENTITY_GOOD.replace(
+            "|targetDbParentState=EXISTS",
+            "|targetDbParentState=EXISTS|uid=1234|path=/data/user/0/private",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(unsafe, DB_IDENTITY_METHOD)
+
+    def test_database_identity_probe_rejects_duplicate_observations(self):
+        duplicate = DB_IDENTITY_GOOD.replace(
+            "INSTRUMENTATION_STATUS: class=" + E2E_CLASS,
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+            "|processIsTestUid=true|processIsTargetUid=false"
+            "|testDbParentWritable=true|testDbParentState=EXISTS"
+            "|targetDbParentWritable=false|targetDbParentState=EXISTS\n"
+            "INSTRUMENTATION_STATUS: class=" + E2E_CLASS,
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(duplicate, DB_IDENTITY_METHOD)
 
     def test_isolated_context_database_diagnostic_rejects_missing_phase(self):
         output = CONTEXT_DB_GOOD.replace(

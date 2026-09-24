@@ -14,12 +14,14 @@ METHOD_CLASS = {
     "optionalLiveEnglishSearch": CLASS,
     "optionalRealEnglishReadingJourney": E2E_CLASS,
     "instrumentationContextDatabasePersistsCanonicalTitle": E2E_CLASS,
+    "instrumentationDatabaseIdentityProbe": E2E_CLASS,
 }
 ALLOWED = frozenset((
     "loadsRealExtensionAndRegistersInternalSources",
     "optionalLiveEnglishSearch",
     "optionalRealEnglishReadingJourney",
     "instrumentationContextDatabasePersistsCanonicalTitle",
+    "instrumentationDatabaseIdentityProbe",
 ))
 E2E_STAGES = (
     "EXTENSION_INSTALL",
@@ -72,6 +74,23 @@ def verify(output: str, method: str) -> None:
         verify_e2e_stages(output)
     elif method == "instrumentationContextDatabasePersistsCanonicalTitle":
         verify_context_database_diagnostic(output)
+    elif method == "instrumentationDatabaseIdentityProbe":
+        verify_database_identity_probe(output)
+
+
+def verify_database_identity_probe(output: str) -> None:
+    pattern = re.compile(
+        r"^INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+        r"\|processIsTestUid=(true|false|unknown)"
+        r"\|processIsTargetUid=(true|false|unknown)"
+        r"\|testDbParentWritable=(true|false|unknown)"
+        r"\|testDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+        r"\|targetDbParentWritable=(true|false|unknown)"
+        r"\|targetDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
+    )
+    events = [line for line in output.splitlines() if "RUNTIME_DB_IDENTITY|" in line]
+    if len(events) != 1 or not pattern.fullmatch(events[0]):
+        raise AndroidTestVerificationError("Expected one sanitized database identity observation")
 
 
 def verify_context_database_diagnostic(output: str) -> None:

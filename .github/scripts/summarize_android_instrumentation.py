@@ -39,6 +39,15 @@ SCHEMA_LINE = re.compile(
     r"\|dirtyInsertTrigger=(present|missing|unknown)(?:\|sqlCategory=(SQLITE_CONSTRAINT|SQLITE_CORRUPT|"
     r"SQLITE_IO|SQLITE_FULL|SQLITE_READ_ONLY|SQLITE_OPEN|SQLITE_OTHER|NOT_SQLITE))?$"
 )
+DB_IDENTITY_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+    r"\|processIsTestUid=(true|false|unknown)"
+    r"\|processIsTargetUid=(true|false|unknown)"
+    r"\|testDbParentWritable=(true|false|unknown)"
+    r"\|testDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+    r"\|targetDbParentWritable=(true|false|unknown)"
+    r"\|targetDbParentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
+)
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
     r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
@@ -91,6 +100,7 @@ def summarize(runner: str, crash: str) -> list[str]:
                     "optionalLiveEnglishSearch",
                     "optionalRealEnglishReadingJourney",
                     "instrumentationContextDatabasePersistsCanonicalTitle",
+                    "instrumentationDatabaseIdentityProbe",
                 )))
         if line.startswith('INSTRUMENTATION_RESULT: shortMsg='):
             # The short message can include arbitrary values: never echo it.
@@ -129,6 +139,17 @@ def summarize(runner: str, crash: str) -> list[str]:
             summary += "|elapsedMs=" + elapsed
         lines.append(summary)
     for raw_line in runner.splitlines():
+        identity = DB_IDENTITY_LINE.fullmatch(raw_line.strip())
+        if identity:
+            test_uid, target_uid, test_writable, test_state, target_writable, target_state = identity.groups()
+            lines.append(
+                "DIAGNOSTIC|dbIdentity|processIsTestUid=" + test_uid +
+                "|processIsTargetUid=" + target_uid +
+                "|testDbParentWritable=" + test_writable +
+                "|testDbParentState=" + test_state +
+                "|targetDbParentWritable=" + target_writable +
+                "|targetDbParentState=" + target_state
+            )
         context = CONTEXT_LINE.fullmatch(raw_line.strip())
         if context:
             application_context, target_isolation, database_context = context.groups()

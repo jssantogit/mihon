@@ -15,6 +15,30 @@ diagnostic = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(diagnostic)
 
 class SummaryTest(unittest.TestCase):
+    def test_database_identity_probe_is_summarized_without_sensitive_values(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+            "|processIsTestUid=true|processIsTargetUid=false"
+            "|testDbParentWritable=unknown|testDbParentState=MISSING"
+            "|targetDbParentWritable=true|targetDbParentState=EXISTS"
+            "\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_IDENTITY"
+            "|processIsTestUid=true|processIsTargetUid=false"
+            "|testDbParentWritable=unknown|testDbParentState=MISSING"
+            "|targetDbParentWritable=true|targetDbParentState=EXISTS"
+            "|uid=1234|path=/data/user/0/private|token=SECRET\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "DIAGNOSTIC|dbIdentity|processIsTestUid=true|processIsTargetUid=false"
+            "|testDbParentWritable=unknown|testDbParentState=MISSING"
+            "|targetDbParentWritable=true|targetDbParentState=EXISTS",
+            result,
+        )
+        self.assertNotIn("1234", result)
+        self.assertNotIn("/data/user", result)
+        self.assertNotIn("SECRET", result)
+
     def test_startup_crash_is_classified_without_message_leaks(self):
         runner = ("INSTRUMENTATION_RESULT: shortMsg=Process crashed token=SECRET\n"
                   "INSTRUMENTATION_CODE: 0\n"
