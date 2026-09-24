@@ -29,6 +29,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
@@ -201,6 +202,52 @@ class MihonChapterInventoryGatewayTest {
 
         gateway.fetch(mapping().copy(mihonMangaId = null)).isFailure shouldBe true
         source.wasCalled shouldBe false
+    }
+
+    @Test
+    fun `fetch rejects materialized manga whose source differs from binding`() = runTest {
+        val diagnostics = RecordingChapterInventoryDiagnostics().also { it.start("title-1") }
+        val source = TestSource(7L) { listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L)) }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(
+                Manga.create().copy(id = 42L, source = 8L, url = "/title"),
+            ),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            diagnostics = diagnostics,
+        )
+
+        val result = gateway.fetch(mapping())
+
+        result.isFailure shouldBe true
+        source.wasCalled shouldBe false
+        diagnostics.events.single().reasons shouldBe mapOf(
+            ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH to 1,
+        )
+        diagnostics.report().contains("/title") shouldBe false
+    }
+
+    @Test
+    fun `fetch rejects materialized manga whose source url differs from binding`() = runTest {
+        val diagnostics = RecordingChapterInventoryDiagnostics().also { it.start("title-1") }
+        val source = TestSource(7L) { listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L)) }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(
+                Manga.create().copy(id = 42L, source = 7L, url = "/other-title"),
+            ),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            diagnostics = diagnostics,
+        )
+
+        val result = gateway.fetch(mapping())
+
+        result.isFailure shouldBe true
+        source.wasCalled shouldBe false
+        diagnostics.events.single().reasons shouldBe mapOf(
+            ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH to 1,
+        )
+        diagnostics.report().contains("/other-title") shouldBe false
     }
 
     @Test
