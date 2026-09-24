@@ -26,14 +26,15 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 
 /**
- * An explicit choice is required when several editions match the same canonical title.
- * Candidates from different editions are never silently merged by display title.
+ * Add-on search results are discovery evidence, not chapter options. Only confirmed candidates
+ * are linked, and the user may continue to another bounded batch without closing the sheet.
  */
 @Composable
 fun ContentBindingLinkSheet(
     state: ContentBindingLinkState,
     onSelectAddon: (AddonId) -> Unit,
     onConfirmCandidate: (ScoredSourceCandidate) -> Unit,
+    onSearchMore: () -> Unit,
     onBack: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -56,7 +57,7 @@ fun ContentBindingLinkSheet(
                     if (state.enabled.isEmpty()) {
                         Text("No enabled reading Add-ons with internal sources were found.")
                     } else {
-                        Text("Choose the Add-on that contains this title.")
+                        Text("Choose an installed, enabled Add-on to search for this title.")
                         LazyColumn(modifier = Modifier.heightIn(max = 440.dp)) {
                             items(state.enabled, key = { it.id.value }) { addon ->
                                 ListItem(
@@ -68,52 +69,82 @@ fun ContentBindingLinkSheet(
                         }
                     }
                 }
-                is ContentBindingLinkState.Searching -> {
-                    Text("Searching ${state.addonName}…")
-                    CircularProgressIndicator()
-                }
-                is ContentBindingLinkState.Candidates -> {
-                    Text(
-                        "Several editions match your title in ${state.addon.displayName}. " +
-                            "Choose the exact edition you want to link.",
-                    )
-                    Text(
-                        "This will not merge titles or change your reading progress.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    LazyColumn(modifier = Modifier.heightIn(max = 440.dp)) {
-                        items(
-                            state.candidates,
-                            key = { it.candidate.sourceId.toString() + ":" + it.candidate.sourceUrl },
-                        ) { item ->
-                            val candidate = item.candidate
-                            ListItem(
-                                leadingContent = {
-                                    MangaCover.Book(
-                                        data = candidate.thumbnailUrl,
-                                        contentDescription = candidate.title,
-                                        modifier = Modifier.width(56.dp).padding(end = 4.dp),
-                                    )
-                                },
-                                headlineContent = { Text(candidate.title) },
-                                supportingContent = {
-                                    Column {
-                                        Text(candidate.sourceName + " · " + candidate.language)
-                                        candidate.author?.takeIf(String::isNotBlank)?.let { Text(it) }
-                                        Text(
-                                            candidate.sourceUrl,
-                                            style = MaterialTheme.typography.bodySmall,
+                is ContentBindingLinkState.SearchResults -> {
+                    Text("Searching ${state.addon.displayName}…")
+                    if (state.isSearching) CircularProgressIndicator()
+
+                    Text("Bindings resolved in this search: ${state.boundCount}")
+                    if (state.existingBindingCount > 0) {
+                        Text(
+                            "Previously stored bindings: ${state.existingBindingCount}. " +
+                                "This count is informational and does not confirm readable chapters.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (state.emptySourceCount > 0) {
+                        Text("Sources with an empty search: ${state.emptySourceCount}")
+                    }
+                    if (state.noMatchSourceCount > 0) {
+                        Text("Sources without a safe title match: ${state.noMatchSourceCount}")
+                    }
+                    if (state.failureCount > 0) {
+                        Text(
+                            "Sources that could not be searched: ${state.failureCount}",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+                    if (state.confirmationCandidates.isNotEmpty()) {
+                        Text(
+                            "Confirm the exact edition before linking. Internal source and language " +
+                                "are shown only as candidate provenance.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                            items(
+                                state.confirmationCandidates,
+                                key = { it.candidate.sourceId.toString() + ":" + it.candidate.sourceUrl },
+                            ) { item ->
+                                val candidate = item.candidate
+                                ListItem(
+                                    leadingContent = {
+                                        MangaCover.Book(
+                                            data = candidate.thumbnailUrl,
+                                            contentDescription = candidate.title,
+                                            modifier = Modifier.width(56.dp).padding(end = 4.dp),
                                         )
-                                    }
-                                },
-                                modifier = Modifier.clickable { onConfirmCandidate(item) },
-                            )
+                                    },
+                                    headlineContent = { Text(candidate.title) },
+                                    supportingContent = {
+                                        Column {
+                                            Text(candidate.sourceName + " · " + candidate.language)
+                                            candidate.author?.takeIf(String::isNotBlank)?.let { Text(it) }
+                                            Text(
+                                                candidate.sourceUrl,
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.clickable(
+                                        enabled = !state.isConfirming,
+                                        onClick = { onConfirmCandidate(item) },
+                                    ),
+                                )
+                            }
+                        }
+                    }
+
+                    if (state.isConfirming) {
+                        Text("Saving the selected edition…")
+                        CircularProgressIndicator()
+                    }
+                    if (!state.isSearching && !state.isConfirming && state.remainingSourceCount > 0) {
+                        TextButton(onClick = onSearchMore) {
+                            Text("Search more sources (${state.remainingSourceCount} remaining)")
                         }
                     }
                     TextButton(onClick = onBack) { Text("Choose another Add-on") }
-                }
-                is ContentBindingLinkState.Linked -> {
-                    Text("${state.addonName} linked. Refreshing chapter alternatives…")
                 }
                 is ContentBindingLinkState.Error -> {
                     Text(state.message, color = MaterialTheme.colorScheme.error)
@@ -121,7 +152,7 @@ fun ContentBindingLinkSheet(
                 }
             }
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                Text("Close")
+                Text("Done")
             }
         }
     }

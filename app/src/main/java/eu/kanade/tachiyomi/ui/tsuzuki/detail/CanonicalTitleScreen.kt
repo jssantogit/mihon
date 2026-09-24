@@ -23,6 +23,7 @@ import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkState
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
+import kotlinx.coroutines.flow.collect
 
 data class CanonicalTitleScreen(
     val canonicalTitleId: String,
@@ -87,10 +88,8 @@ data class CanonicalTitleScreen(
             },
         )
 
-        LaunchedEffect(linkState) {
-            if (linkSheetOpen && linkState is ContentBindingLinkState.Linked) {
-                linkSheetOpen = false
-                linkViewModel.close()
+        LaunchedEffect(linkViewModel) {
+            linkViewModel.bindingChanges.collect {
                 screenModel.refresh()
             }
         }
@@ -99,6 +98,7 @@ data class CanonicalTitleScreen(
                 state = linkState,
                 onSelectAddon = linkViewModel::selectAddon,
                 onConfirmCandidate = linkViewModel::confirm,
+                onSearchMore = linkViewModel::searchMore,
                 onBack = linkViewModel::backToAddons,
                 onDismiss = {
                     linkSheetOpen = false

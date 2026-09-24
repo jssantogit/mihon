@@ -10,8 +10,10 @@ import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -139,6 +141,7 @@ class ContentBindingLinkScreenModelTest {
             contentPreferences = preferences,
             readerPreferences = globalPreferences,
         )
+        val bindingCreated = async { model.bindingChanges.first() }
 
         model.start("canonical")
         advanceUntilIdle()
@@ -150,6 +153,7 @@ class ContentBindingLinkScreenModelTest {
         partial.boundCount shouldBe 1
         partial.failureCount shouldBe 0
         firstSourceObserved.isCompleted shouldBe true
+        bindingCreated.await()
 
         releasePeer.complete(Unit)
         advanceUntilIdle()

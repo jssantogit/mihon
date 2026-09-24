@@ -9,28 +9,50 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.content.interactor.ConfirmContentBinding
-import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureKind
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchMode
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchProgress
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchRequest
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceOutcome
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
+import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 
 sealed interface ContentBindingLinkState {
     data object Idle : ContentBindingLinkState
     data object Loading : ContentBindingLinkState
     data class Addons(val enabled: List<InstalledAddon>) : ContentBindingLinkState
-    data class Searching(val addonName: String) : ContentBindingLinkState
-    data class Candidates(
+    data class SearchResults(
         val addon: InstalledAddon,
-        val candidates: List<ScoredSourceCandidate>,
+        val isSearching: Boolean,
+        /** Prior persisted rows are informational and never imply chapter readability. */
+        val existingBindingCount: Int = 0,
+        /** Bindings resolved by this search; not chapter options. */
+        val boundCount: Int = 0,
+        /** Only candidates that require explicit edition confirmation. */
+        val confirmationCandidates: List<ScoredSourceCandidate> = emptyList(),
+        val emptySourceCount: Int = 0,
+        val noMatchSourceCount: Int = 0,
+        val failureCount: Int = 0,
+        val failureKinds: List<ContentBindingSearchFailureKind> = emptyList(),
+        val queriedSourceIds: Set<Long> = emptySet(),
+        val remainingSourceCount: Int = 0,
+        val isConfirming: Boolean = false,
+        val error: String? = null,
     ) : ContentBindingLinkState
-    data class Linked(val addonName: String) : ContentBindingLinkState
     data class Error(val message: String) : ContentBindingLinkState
 }
 
@@ -41,92 +63,239 @@ class ContentBindingLinkScreenModel(
     private val addonRepository: AddonRepository,
     private val resolveContentBinding: ResolveContentBinding,
     private val confirmContentBinding: ConfirmContentBinding,
+    private val contentPreferenceRepository: ContentPreferenceRepository,
+    private val readerPreferences: CanonicalReaderPreferences,
 ) : ViewModel() {
     private val _state = MutableStateFlow<ContentBindingLinkState>(ContentBindingLinkState.Idle)
     val state: StateFlow<ContentBindingLinkState> = _state.asStateFlow()
 
+    private val _bindingChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** Signals title-detail refresh only; it does not change reading preferences or progress. */
+    val bindingChanges: SharedFlow<Unit> = _bindingChanges.asSharedFlow()
+
     private var titleId: String? = null
     private var enabledAddons = emptyList<InstalledAddon>()
-    private var operation: Job? = null
+    private var searchOperation: Job? = null
+    private var confirmationOperation: Job? = null
+    private var generation = 0L
 
     fun start(canonicalTitleId: String) {
-        operation?.cancel()
+        searchOperation?.cancel()
+        confirmationOperation?.cancel()
+        val currentGeneration = ++generation
         titleId = canonicalTitleId
         _state.value = ContentBindingLinkState.Loading
-        operation = viewModelScope.launch {
+        searchOperation = viewModelScope.launch {
             try {
-                enabledAddons = addonRepository.snapshot()
+                val installed = addonRepository.snapshot()
+                if (currentGeneration != generation) return@launch
+                // Package ID is the user-visible Add-on identity. A multi-source extension stays
+                // one row; the internal source IDs remain owned by the resolver.
+                enabledAddons = installed
                     .filter { it.enabled && it.mihonSourceIds.isNotEmpty() }
+                    .distinctBy { it.id }
                     .sortedBy { it.displayName }
                 _state.value = ContentBindingLinkState.Addons(enabledAddons)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                _state.value = ContentBindingLinkState.Error("Unable to list installed reading Add-ons.")
+                if (currentGeneration == generation) {
+                    _state.value = ContentBindingLinkState.Error("Unable to list installed reading Add-ons.")
+                }
             }
         }
     }
 
     fun selectAddon(addonId: AddonId) {
         val title = titleId ?: return
-        val addon = enabledAddons.firstOrNull { it.id == addonId } ?: return
-        operation?.cancel()
-        _state.value = ContentBindingLinkState.Searching(addon.displayName)
-        operation = viewModelScope.launch {
-            try {
-                val result = resolveContentBinding.executeAll(title, addonId)
-                val failure = result.exceptionOrNull()
-                when {
-                    failure is ContentBindingConfirmationRequiredException -> {
-                        _state.value = ContentBindingLinkState.Candidates(addon, failure.candidates)
+        val addon = enabledAddons.firstOrNull { it.id == addonId && it.enabled } ?: return
+        searchOperation?.cancel()
+        confirmationOperation?.cancel()
+        val currentGeneration = ++generation
+        _state.value = ContentBindingLinkState.SearchResults(addon = addon, isSearching = true)
+        searchOperation = viewModelScope.launch {
+            runSearch(
+                generation = currentGeneration,
+                titleId = title,
+                addon = addon,
+                mode = ContentBindingSearchMode.INITIAL,
+                alreadyQueriedSourceIds = emptySet(),
+            )
+        }
+    }
+
+    /** Starts the next explicit bounded batch, never repeating IDs queried in earlier batches. */
+    fun searchMore() {
+        val current = _state.value as? ContentBindingLinkState.SearchResults ?: return
+        if (current.isSearching || current.isConfirming || current.remainingSourceCount <= 0) return
+        val title = titleId ?: return
+        searchOperation?.cancel()
+        val currentGeneration = ++generation
+        _state.value = current.copy(isSearching = true, error = null)
+        searchOperation = viewModelScope.launch {
+            runSearch(
+                generation = currentGeneration,
+                titleId = title,
+                addon = current.addon,
+                mode = ContentBindingSearchMode.BROADEN,
+                alreadyQueriedSourceIds = current.queriedSourceIds,
+            )
+        }
+    }
+
+    private suspend fun runSearch(
+        generation: Long,
+        titleId: String,
+        addon: InstalledAddon,
+        mode: ContentBindingSearchMode,
+        alreadyQueriedSourceIds: Set<Long>,
+    ) {
+        try {
+            val titlePreference = contentPreferenceRepository.get(titleId)?.preferredLanguage
+            val preferredLanguages = buildList {
+                titlePreference?.let(::add)
+                addAll(readerPreferences.preferredLanguages.get())
+            }.map(String::trim).filter(String::isNotEmpty).distinct()
+            val request = ContentBindingSearchRequest(
+                canonicalTitleId = titleId,
+                addonId = addon.id,
+                preferredLanguages = preferredLanguages,
+                mode = mode,
+                alreadyQueriedSourceIds = alreadyQueriedSourceIds,
+            )
+            resolveContentBinding.searchProgress(request).collect { event ->
+                if (generation != this@ContentBindingLinkScreenModel.generation) return@collect
+                when (event) {
+                    is ContentBindingSearchProgress.ExistingBindingsObserved -> {
+                        updateSearch(generation) { it.copy(existingBindingCount = event.bindingCount) }
                     }
-                    failure != null -> {
-                        _state.value = ContentBindingLinkState.Error(
-                            "Could not link this Add-on. Its search may be unavailable or have no matching title.",
-                        )
+                    is ContentBindingSearchProgress.SourceCompleted -> {
+                        updateSearch(generation) { current ->
+                            when (event.outcome) {
+                                ContentBindingSourceOutcome.BOUND -> current.copy(
+                                    boundCount = current.boundCount + event.bindings.size,
+                                )
+                                ContentBindingSourceOutcome.CONFIRMATION_REQUIRED -> current.copy(
+                                    confirmationCandidates = mergeCandidates(
+                                        current.confirmationCandidates,
+                                        event.candidates,
+                                    ),
+                                )
+                                ContentBindingSourceOutcome.EMPTY -> current.copy(
+                                    emptySourceCount = current.emptySourceCount + 1,
+                                )
+                                ContentBindingSourceOutcome.NO_MATCH -> current.copy(
+                                    noMatchSourceCount = current.noMatchSourceCount + 1,
+                                )
+                                ContentBindingSourceOutcome.FAILURE -> current.copy(
+                                    failureCount = current.failureCount + 1,
+                                    failureKinds = event.failure?.kind?.let(current.failureKinds::plus)
+                                        ?: current.failureKinds,
+                                )
+                            }
+                        }
+                        if (event.outcome == ContentBindingSourceOutcome.BOUND && event.bindings.isNotEmpty()) {
+                            _bindingChanges.tryEmit(Unit)
+                        }
                     }
-                    result.getOrThrow().isNotEmpty() -> {
-                        _state.value = ContentBindingLinkState.Linked(addon.displayName)
-                    }
-                    else -> {
-                        _state.value = ContentBindingLinkState.Error("No matching title was found in this Add-on.")
+                    is ContentBindingSearchProgress.Completed -> {
+                        updateSearch(generation) { current ->
+                            current.copy(
+                                isSearching = false,
+                                queriedSourceIds = current.queriedSourceIds + event.queriedSourceIds,
+                                remainingSourceCount = event.remainingSourceCount,
+                            )
+                        }
                     }
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                _state.value = ContentBindingLinkState.Error("Unable to search this Add-on.")
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            updateSearch(generation) {
+                it.copy(
+                    isSearching = false,
+                    error = "Unable to finish this search. You can retry or choose another Add-on.",
+                )
             }
         }
     }
 
     fun confirm(candidate: ScoredSourceCandidate) {
         val title = titleId ?: return
-        val candidates = _state.value as? ContentBindingLinkState.Candidates ?: return
-        val selected = candidates.candidates.firstOrNull {
+        val current = _state.value as? ContentBindingLinkState.SearchResults ?: return
+        val selected = current.confirmationCandidates.firstOrNull {
             it.candidate.sourceId == candidate.candidate.sourceId &&
                 it.candidate.sourceUrl == candidate.candidate.sourceUrl
         } ?: return
-        operation?.cancel()
-        _state.value = ContentBindingLinkState.Searching(candidates.addon.displayName)
-        operation = viewModelScope.launch {
-            val result = confirmContentBinding.execute(title, candidates.addon.id, selected)
-            _state.value = if (result.isSuccess) {
-                ContentBindingLinkState.Linked(candidates.addon.displayName)
-            } else {
-                ContentBindingLinkState.Error("Unable to save this reading source. Please retry.")
+        if (current.isConfirming) return
+        confirmationOperation?.cancel()
+        val currentGeneration = generation
+        _state.value = current.copy(isConfirming = true, error = null)
+        confirmationOperation = viewModelScope.launch {
+            try {
+                val result = confirmContentBinding.execute(title, current.addon.id, selected)
+                if (currentGeneration != generation) return@launch
+                val latest = _state.value as? ContentBindingLinkState.SearchResults ?: return@launch
+                _state.value = if (result.isSuccess) {
+                    _bindingChanges.tryEmit(Unit)
+                    latest.copy(
+                        isConfirming = false,
+                        boundCount = latest.boundCount + 1,
+                        confirmationCandidates = latest.confirmationCandidates.filterNot {
+                            it.candidate.sourceId == selected.candidate.sourceId &&
+                                it.candidate.sourceUrl == selected.candidate.sourceUrl
+                        },
+                    )
+                } else {
+                    latest.copy(
+                        isConfirming = false,
+                        error = "Unable to save this reading source. Please retry.",
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                if (currentGeneration == generation) {
+                    val latest = _state.value as? ContentBindingLinkState.SearchResults ?: return@launch
+                    _state.value = latest.copy(
+                        isConfirming = false,
+                        error = "Unable to save this reading source. Please retry.",
+                    )
+                }
             }
         }
     }
 
     fun backToAddons() {
-        operation?.cancel()
+        searchOperation?.cancel()
+        confirmationOperation?.cancel()
+        ++generation
         _state.value = ContentBindingLinkState.Addons(enabledAddons)
     }
 
     fun close() {
-        operation?.cancel()
+        searchOperation?.cancel()
+        confirmationOperation?.cancel()
+        ++generation
         titleId = null
         _state.value = ContentBindingLinkState.Idle
+    }
+
+    private fun updateSearch(
+        expectedGeneration: Long,
+        transform: (ContentBindingLinkState.SearchResults) -> ContentBindingLinkState.SearchResults,
+    ) {
+        if (expectedGeneration != generation) return
+        val current = _state.value as? ContentBindingLinkState.SearchResults ?: return
+        _state.value = transform(current)
+    }
+
+    private fun mergeCandidates(
+        existing: List<ScoredSourceCandidate>,
+        incoming: List<ScoredSourceCandidate>,
+    ): List<ScoredSourceCandidate> {
+        val seen = existing.mapTo(mutableSetOf()) { it.candidate.sourceId to it.candidate.sourceUrl }
+        return existing + incoming.filter { seen.add(it.candidate.sourceId to it.candidate.sourceUrl) }
     }
 }
