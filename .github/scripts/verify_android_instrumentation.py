@@ -102,7 +102,6 @@ def verify_database_identity_probe(output: str) -> None:
         r"\|outcome=(PREEXISTING|CREATED|PARENT_MISSING|PARENT_NOT_DIRECTORY|SECURITY_ERROR|IO_ERROR|OTHER_ERROR)"
         r"\|parentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
         r"\|parentWritable=(true|false|unknown)"
-        r"\|parentExecutable=(true|false|unknown)"
         r"\|cleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
     )
     path_events = [line for line in output.splitlines() if "RUNTIME_DB_PATH_PROBE|" in line]

@@ -90,7 +90,7 @@ DB_IDENTITY_GOOD = (
     "|testDataDirWritable=true|testDataDirExecutable=true|testDataDirState=EXISTS"
     "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE|outcome=CREATED"
-    "|parentState=EXISTS|parentWritable=true|parentExecutable=true|cleanup=REMOVED\n"
+    "|parentState=EXISTS|parentWritable=true|cleanup=REMOVED\n"
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + DB_IDENTITY_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
@@ -165,7 +165,7 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_database_identity_probe_requires_path_creation_result(self):
         output = DB_IDENTITY_GOOD.replace(
             "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE|outcome=CREATED"
-            "|parentState=EXISTS|parentWritable=true|parentExecutable=true|cleanup=REMOVED\n",
+            "|parentState=EXISTS|parentWritable=true|cleanup=REMOVED\n",
             "",
         )
         with self.assertRaises(checker.AndroidTestVerificationError):

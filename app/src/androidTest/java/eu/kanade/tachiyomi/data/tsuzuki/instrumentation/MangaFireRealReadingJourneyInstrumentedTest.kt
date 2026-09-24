@@ -133,7 +133,6 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             append("RUNTIME_DB_PATH_PROBE|outcome=").append(testDatabasePath.outcome)
             append("|parentState=").append(testDatabasePath.parent.state)
             append("|parentWritable=").append(testDatabasePath.parent.writable)
-            append("|parentExecutable=").append(testDatabasePath.parent.executable)
             append("|cleanup=").append(testDatabasePath.cleanup)
         }
         instrumentation.sendStatus(1, Bundle().apply { putString("stream", pathProbe) })

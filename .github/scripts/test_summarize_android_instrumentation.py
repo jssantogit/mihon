@@ -61,15 +61,15 @@ class SummaryTest(unittest.TestCase):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE"
             "|outcome=PARENT_MISSING|parentState=MISSING|parentWritable=unknown"
-            "|parentExecutable=unknown|cleanup=NOT_NEEDED\n"
+            "|cleanup=NOT_NEEDED\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE"
             "|outcome=CREATED|parentState=EXISTS|parentWritable=true"
-            "|parentExecutable=true|cleanup=REMOVED|path=/private|name=secret.db\n"
+            "|cleanup=REMOVED|path=/private|name=secret.db\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn(
             "DIAGNOSTIC|dbPathProbe|outcome=PARENT_MISSING|parentState=MISSING"
-            "|parentWritable=unknown|parentExecutable=unknown|cleanup=NOT_NEEDED",
+            "|parentWritable=unknown|cleanup=NOT_NEEDED",
             result,
         )
         self.assertNotIn("/private", result)

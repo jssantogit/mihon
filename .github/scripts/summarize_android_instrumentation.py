@@ -59,7 +59,6 @@ DB_PATH_PROBE_LINE = re.compile(
     r"\|outcome=(PREEXISTING|CREATED|PARENT_MISSING|PARENT_NOT_DIRECTORY|SECURITY_ERROR|IO_ERROR|OTHER_ERROR)"
     r"\|parentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
     r"\|parentWritable=(true|false|unknown)"
-    r"\|parentExecutable=(true|false|unknown)"
     r"\|cleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
 )
 SETUP_LINE = re.compile(
@@ -176,12 +175,11 @@ def summarize(runner: str, crash: str) -> list[str]:
             )
         path_probe = DB_PATH_PROBE_LINE.fullmatch(raw_line.strip())
         if path_probe:
-            outcome, state, writable, executable, cleanup = path_probe.groups()
+            outcome, state, writable, cleanup = path_probe.groups()
             lines.append(
                 "DIAGNOSTIC|dbPathProbe|outcome=" + outcome +
                 "|parentState=" + state +
                 "|parentWritable=" + writable +
-                "|parentExecutable=" + executable +
                 "|cleanup=" + cleanup
             )
         context = CONTEXT_LINE.fullmatch(raw_line.strip())
