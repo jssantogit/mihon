@@ -33,20 +33,24 @@ The Android probe wraps a gateway search in coroutine `withTimeout`, but an exte
 
 1. Preserve the original full-matrix artifacts under `/tmp/tsuzuki-source-matrix`; do not rerun that 222-source matrix.
 2. The first focused retry (`35948648078`) was inconclusive, but the enhanced retry (`35949995253`) confirmed `EXTENSION_LOOKUP_TIMEOUT|elapsedMs=30002` in the test's trusted-only extension lookup, with no source search. The exact absent/mis-trusted state remains unknown.
-3. The lookup harness now checks both trusted-installed and untrusted extension state and performs test-only trust for the exact fixture in the disposable emulator; terminal stage records are allowlisted. It has passed Python RED/GREEN and the instrumentation compilation lane, but a post-change source probe is pending.
-4. The next external requests remain targeted, sequential and capped at the previously missing source groups: AnimeXNovel (currently running as `35951192811`), then Manga Livre.to, then MangaFire if evidence justifies. Stop on explicit 429/CAPTCHA. Never rerun all shards.
-5. A `RESULTS` outcome is only evidence that search returned candidates, not proof of correct binding, inventory coverage, or readable chapters. Use runtime changes only after an exact stage reproduces an application-side cause.
+3. The lookup harness now checks both trusted-installed and untrusted extension state and performs test-only trust for the exact fixture in the disposable emulator; terminal stage records are allowlisted. The new instrumentation compiled and proceeded to actual source searches.
+4. Targeted retries are complete for AnimeXNovel (`35951192811`: its single `pt-BR` source returned `EMPTY`, 0 results, 1368 ms) and Manga Livre.to (`35951908581`: its single `pt-BR` source returned `RESULTS`, one candidate, 2982 ms). Neither proves canonical identity, chapter inventory, or readability.
+5. MangaFire-only shard 3 (`35952770951`) is currently running. Stop on explicit 429/CAPTCHA. Never rerun all shards.
+6. A `RESULTS` outcome is only evidence that search returned candidates, not proof of correct binding, inventory coverage, or readable chapters. Use runtime changes only after an exact stage reproduces an application-side cause.
 
 ## Current status
 
 - 8/8 user-provided extension APK loading/registration remains prior evidence; 222/222 exposed sources are not yet evidence that every live search works.
 - Current live run `35944402938`: shard 0 54/56 accepted; shard 1 56/56; shard 2 56/56; shard 3 47/54. Total 213 accepted source observations: 212 results, one HTTP 403; nine outcomes unknown.
 - Targeted retry `35949995253` confirms an Android instrumentation-stage timeout while seeking the expected installed extension. It establishes no HTTP/provider result and does not yet identify why the current extension manager state lacks the trusted-flow match.
-- The new targeted retry `35951192811` is executing the revised trusted-or-untrusted lookup. Its compilation passed; the emulator search step is still in progress. Do not make claims until its sanitized artifact arrives.
+- The new targeted retry `35951192811` completed: the single AnimeXNovel source query was `EMPTY` (0 candidates, 1368 ms). This shows the revised probe reached the search gateway, unlike its prior timed-out invocation.
+- Manga Livre.to targeted retry `35951908581` completed: its only `pt-BR` source returned `RESULTS` with one candidate (2982 ms). Exact title matching/reading are untested.
+- MangaFire targeted retry `35952770951` is in progress, limited to shard 3 and the seven MangaFire sources.
 - Mangas Brasuka HTTP 403 is a confirmed response category only, not evidence of CAPTCHA or Tsuzuki defect.
 - Commits `3d6189c5`, `97e6f551`, `803a5340`, and `174ad565` are on the exclusive branch. The invalid workflow condition was fixed in `97e6f551`; no provider requests ran on that push.
 - Fast CI for `803a5340` and `174ad565` passed (planner, App Tsuzuki tests, Format, CI gate). Fixture/MangaFire/live-workflow compile/contract checks also passed; emulator load checks were skipped by push conditions. APK Build was skipped.
-- Terminal lookup instrumentation compiled in live-workflow compile job `35951192811`. The opt-in Android search shard for that run remains in progress. Do not infer AnimeXNovel or MangaFire provider failure from the prior timeout.
+- Terminal lookup instrumentation compiled in live-workflow compile job `35951192811`; its opt-in Android shard completed and queried AnimeXNovel successfully as a test flow, with an `EMPTY` provider search response. The prior 30-second timeout was therefore at the test's lookup boundary, not in an AnimeXNovel provider request. The precise trusted/untrusted state at the first failure was not retained, so do not claim the untrusted branch specifically caused recovery.
+- Manga Livre.to returned one candidate in a separate one-source targeted probe. MangaFire remains unverified until run `35952770951` finishes.
 - MangaFire/chapter inventory/fallback on these actual extensions are not proven by this search matrix.
 
 ## Targeted retry and follow-up instrumentation (2026-09-24)
