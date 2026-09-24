@@ -101,14 +101,16 @@ class MihonChapterInventoryGateway(
             val manga = mangaRepository.getMangaById(mihonMangaId)
             if (manga.source != mapping.sourceId || manga.url != mapping.sourceUrl) {
                 val error = IllegalStateException("Materialized manga identity does not match source mapping")
-                recordInventoryFailure(
-                    canonicalTitleId = mapping.canonicalTitleId,
-                    sourceId = mapping.sourceId,
-                    language = mapping.language,
-                    addonId = null,
-                    error = error,
-                    elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
-                    reason = ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH,
+                diagnostics.recordIfEnabled(
+                    mapping.canonicalTitleId,
+                    ChapterInventoryDiagnosticEvent(
+                        stage = ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY,
+                        outcome = ChapterInventoryDiagnosticOutcome.INDETERMINATE,
+                        sourceId = mapping.sourceId,
+                        language = mapping.language,
+                        elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
+                        reasons = mapOf(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH to 1),
+                    ),
                 )
                 return Result.failure(error)
             }
