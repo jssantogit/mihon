@@ -109,7 +109,7 @@ class SummaryTest(unittest.TestCase):
         # Reproduce run_mangafire_android.sh's successful-instrumentation call.
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "runner.txt"
-            output.write_text("INSTRUMENTATION_STATUS: numtests=1\\n", encoding="utf-8")
+            output.write_text("INSTRUMENTATION_STATUS: numtests=1\n", encoding="utf-8")
             completed = subprocess.run(
                 [sys.executable, str(MODULE), str(output), ""],
                 capture_output=True,
@@ -122,7 +122,7 @@ class SummaryTest(unittest.TestCase):
     def test_cli_accepts_omitted_crash_argument(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "runner.txt"
-            output.write_text("INSTRUMENTATION_STATUS: numtests=1\\n", encoding="utf-8")
+            output.write_text("INSTRUMENTATION_STATUS: numtests=1\n", encoding="utf-8")
             completed = subprocess.run(
                 [sys.executable, str(MODULE), str(output)],
                 capture_output=True,
