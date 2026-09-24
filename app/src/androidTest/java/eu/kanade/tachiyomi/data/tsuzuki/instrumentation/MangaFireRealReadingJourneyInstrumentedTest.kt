@@ -190,19 +190,19 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         materializationElapsedMs = elapsedMs
                     }
                     reportSetupPhase(setupPhase, Outcome.PASS)
-                    setupPhase = "CANONICAL_TITLE_INSERT"
+                    setupPhase = "CANONICAL_TITLE_CREATE"
                     val canonicalTitleId = UUID.randomUUID().toString()
                     val now = System.currentTimeMillis()
-                    composition.canonicalTitleRepository.insert(
-                        CanonicalTitle(
-                            id = canonicalTitleId,
-                            displayTitle = "One-Punch Man",
-                            identityState = CanonicalIdentityState.SOURCE_ONLY,
-                            createdAt = now,
-                            updatedAt = now,
-                        ),
+                    val canonicalTitle = CanonicalTitle(
+                        id = canonicalTitleId,
+                        displayTitle = "One-Punch Man",
+                        identityState = CanonicalIdentityState.SOURCE_ONLY,
+                        createdAt = now,
+                        updatedAt = now,
                     )
-
+                    reportSetupPhase(setupPhase, Outcome.PASS)
+                    setupPhase = "CANONICAL_TITLE_PERSIST"
+                    composition.canonicalTitleRepository.insert(canonicalTitle)
                     reportSetupPhase(setupPhase, Outcome.PASS)
                     setupPhase = null
                     currentStage = "LIVE_SEARCH"

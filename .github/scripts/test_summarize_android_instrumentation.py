@@ -151,7 +151,7 @@ class SummaryTest(unittest.TestCase):
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CONTEXT_ISOLATION"
             "|outcome=FAIL|exception=NullPointerException\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=SQL_DRIVER|outcome=PASS\n"
-            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_INSERT"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST"
             "|outcome=FAIL|exception=SQLiteException\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=DB_RESET"
             "|outcome=FAIL|exception=PRIVATE|token=SECRET\n"
@@ -163,11 +163,25 @@ class SummaryTest(unittest.TestCase):
         )
         self.assertIn("setupPhase=SQL_DRIVER|outcome=PASS", result)
         self.assertIn(
-            "setupPhase=CANONICAL_TITLE_INSERT|outcome=FAIL|exception=SQLiteException",
+            "setupPhase=CANONICAL_TITLE_PERSIST|outcome=FAIL|exception=SQLiteException",
             result,
         )
         self.assertNotIn("PRIVATE", result)
         self.assertNotIn("SECRET", result)
+
+    def test_canonical_title_construction_and_persistence_are_distinct_phases(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_CREATE|outcome=PASS\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
+            "outcome=FAIL|exception=NullPointerException\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn("setupPhase=CANONICAL_TITLE_CREATE|outcome=PASS", result)
+        self.assertIn(
+            "setupPhase=CANONICAL_TITLE_PERSIST|outcome=FAIL|exception=NullPointerException",
+            result,
+        )
+        self.assertNotIn("One-Punch Man", result)
 
     def test_unknown_setup_diagnostics_are_dropped(self):
         runner = (

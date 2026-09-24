@@ -29,7 +29,8 @@ E2E_LINE = re.compile(
 )
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
-    r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|CANONICAL_TITLE_INSERT)"
+    r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
+    r"CANONICAL_TITLE_CREATE|CANONICAL_TITLE_PERSIST)"
     r"\|outcome=(PASS|FAIL)"
     r"(?:\|exception=(IllegalStateException|IllegalArgumentException|SecurityException|"
     r"SQLiteException|SQLiteCantOpenDatabaseException|SQLiteReadOnlyDatabaseException|"
