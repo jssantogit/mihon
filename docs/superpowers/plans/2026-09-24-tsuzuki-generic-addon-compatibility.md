@@ -1,0 +1,71 @@
+# Generic Mihon Add-on Compatibility Implementation Plan
+
+> **For agentic workers:** implement one bounded task at a time with RED → GREEN evidence. The project is `CI_FIRST`: the named Gradle commands below run in GitHub Actions, not locally (`localHeavyAttempts=0`).
+
+**Goal:** Make installed and enabled Mihon extensions participate safely in Change Source, canonical binding, chapter alternatives, and Reader delivery without site-specific code.
+
+**Architecture:** Reuse Mihon's repository/extension/runtime stack and Tsuzuki's existing `AddonRepository`, `ResolveContentBinding`, `ContentBindingRepository`, chapter/content resolver, and Reader preparation. Add only the missing search-progress and UI affordances. Keep catalog metadata separate from executable runtime eligibility.
+
+**Tech stack:** Kotlin, coroutines/Flow, Metro, Compose, SQLDelight, Mihon `CatalogueSource`, MockWebServer, Android instrumentation.
+
+**Spec:** `docs/superpowers/specs/2026-09-24-tsuzuki-generic-addon-compatibility-design.md`; authoritative parent: `docs/superpowers/specs/2026-09-20-tsuzuki-modular-runtime-architecture-design.md`.
+
+## Global constraints
+
+- `CanonicalTitle != Source Manga`, `CanonicalChapter != Source Chapter`, and metadata/index entries do not establish reading availability.
+- Only loaded, trusted, installed, enabled internal `CatalogueSource`s may be searched. One extension package remains one visible Add-on.
+- No silent title merge, preference change, extension installation, source enablement, or CAPTCHA bypass.
+- Preserve cancellation, canonical progress/history, and current fallback policy. Provider calls remain bounded and external tests opt-in.
+- No local Gradle. Each product slice requires Fast CI v2.1 success before the next slice. Two focused correction attempts per slice; on repeated failure, stop and report.
+
+## Review focus
+
+1. Mixed enabled/disabled sources in a multi-source extension must never search the disabled one.
+2. A slow/failed source cannot erase completed candidate results from another source; error is not empty.
+3. Similar editions across languages/sources must not be silently bound to one canonical title.
+4. An empty selector must guide discovery without treating search candidates as readable chapters.
+5. Switching providers must preserve canonical progress and only save a preference after successful Reader preparation.
+
+## Task 1 — Confirm discovery and repository contracts
+
+**Domain:** Add-on runtime adapter. **Files:** `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonRepositoryTest.kt`, `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/MihonReadingSourceGatewayTest.kt`, relevant extension-store tests; production adapter only if a failing test proves a defect.
+
+- [ ] Add tests for a trusted multi-source extension (one visible Add-on), mixed enabled/disabled IDs, no loaded source, uninstall/update state, non-catalogue source, and catalog-only/untrusted entry. Assert search targets derive from runtime, never from `index.pb` alone.
+- [ ] Confirm RED only for a real missing contract; otherwise record baseline GREEN and avoid redundant production code.
+- [ ] Verify with App Tsuzuki and Format jobs in Fast CI, review `git diff --name-only`, then commit/push this isolated adapter/test slice.
+
+## Task 2 — Bounded, progressive search and safe binding
+
+**Domain:** Content binding. **Files:** `domain/src/main/java/tachiyomi/domain/tsuzuki/content/interactor/ResolveContentBinding.kt`, `domain/src/test/java/tachiyomi/domain/tsuzuki/content/ResolveContentBindingTest.kt`, and only necessary small domain search-progress types.
+
+- [ ] Write tests first: preferred-language/source ordering, explicit broadening, per-source completion/failure, timeout, coroutine cancellation, ambiguous editions, reuse of a persisted binding, and partial healthy result when a peer fails. No test may treat equal titles as canonical proof.
+- [ ] Expose a bounded progress contract from the existing resolver rather than a second resolver. Keep existing `execute`/`executeAll` behavior for callers until migrated; use limited concurrency and a visible per-source deadline. Never relabel timeout/network/error as empty.
+- [ ] GREEN in Domain and App Tsuzuki Fast CI jobs; inspect architecture/risk and commit/push before UI changes. If a third-party synchronous call cannot be interrupted, retain bounded user-visible progress and document the limitation.
+
+## Task 3 — Change Source integration
+
+**Domain:** UI. **Files:** `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentBindingLinkScreenModel.kt`, `app/src/main/java/eu/kanade/presentation/tsuzuki/content/ContentBindingLinkSheet.kt`, their tests; title-detail wiring only if required.
+
+- [ ] RED tests for installed/enabled Add-ons, existing binding status, preferred-language first pass, explicit “search more”, progressive candidates/errors, explicit ambiguous-edition confirmation, and stale/cancelled search not overwriting a newer state.
+- [ ] Consume Task 2's resolver contract. Do not search all device Add-ons or duplicate title scoring in the ViewModel. Retain one visible Add-on per extension and show internal source/language only as candidate provenance.
+- [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
+
+## Task 4 — Chapter-selector discovery path
+
+**Domain:** UI. **Files:** `app/src/main/java/eu/kanade/presentation/tsuzuki/content/ContentOptionSelectorSheet.kt`, `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/detail/CanonicalTitleScreen.kt`, `app/src/main/java/eu/kanade/tachiyomi/ui/reader/ReaderActivity.kt`, relevant screen-model/UI tests.
+
+- [ ] RED tests: no actual option shows “find/add reading source”; failed providers remain distinct; selecting this action opens the existing binding flow and refreshes options only after valid binding. Do not add search candidates directly to selector options.
+- [ ] Implement minimal navigation/interaction. Preserve Reader preference timing and canonical chapter ID; no Reader core rewrite.
+- [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
+
+## Task 5 — Generic contract/E2E validation and checkpoint
+
+**Domain:** Test infrastructure. **Files:** `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/integration/LocalMihonSourceHarness.kt`, focused contract tests, `.github/scripts` routing tests if needed, `docs/research/` handoff.
+
+- [ ] Reuse controlled HTTP/fake Mihon source harness for two independent synthetic profiles (single-source and multi-source/multi-language). Assert search → explicit/safe binding → inventory → reconciliation → selector option → Reader preparation on the same canonical title/store. Cover empty/partial inventory, disabled/removal, failure isolation, identity mismatch, fallback on/off, and unchanged progress/history.
+- [ ] Keep the existing MangaFire real E2E as a separate opt-in regression. Do not run the 222-source matrix. If a second real extension is exercised, use a single explicitly authorized source/title probe and classify the evidence separately from deterministic tests.
+- [ ] Check CI change-planner routing for adapter/binding/selector/test paths. Run selected Fast CI jobs; request one `[ci-full]` checkpoint only if the final code actually spans domain + adapter + UI. Review final diff, document proven vs unproven behavior, commit/push on `tsuzuki/generic-addon-compatibility` only. No merge/PR/APK.
+
+## Stop conditions
+
+Stop a slice for an untrusted/private source, impossible safe identity match, repeated CI failure beyond the task's two focused corrections, or a needed second architecture domain not covered by that slice. Document `CROSS_DOMAIN_REQUEST` or the blocker and continue only with an independent approved slice; never weaken confidence gates or fabricate a GREEN.
