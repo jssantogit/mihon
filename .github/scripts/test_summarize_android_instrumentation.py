@@ -188,6 +188,8 @@ class SummaryTest(unittest.TestCase):
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
             "outcome=FAIL|exception=NullPointerException|frame=SQLDELIGHT_DRIVER_AWAIT\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
+            "outcome=FAIL|exception=NullPointerException|frame=ANDROIDX_BUNDLED_DRIVER\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
             "outcome=FAIL|exception=NullPointerException|frame=private.Method|token=SECRET\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
@@ -198,6 +200,7 @@ class SummaryTest(unittest.TestCase):
         )
         self.assertNotIn("SECRET", result)
         self.assertNotIn("private.Method", result)
+        self.assertIn("frame=ANDROIDX_BUNDLED_DRIVER", result)
 
     def test_unknown_setup_diagnostics_are_dropped(self):
         runner = (

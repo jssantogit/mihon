@@ -557,8 +557,9 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     frame.className.startsWith("app.cash.sqldelight.db.QueryResult") -> "SQLDELIGHT_RESULT_VALUE"
                     frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.") ->
-                        "ANDROIDX_SQLITE_DRIVER"
-                    frame.className.startsWith("androidx.sqlite.") -> "ANDROIDX_SQLITE_DRIVER"
+                        "EYGRABER_ANDROIDX_DRIVER"
+                    frame.className.startsWith("androidx.sqlite.driver.bundled.") -> "ANDROIDX_BUNDLED_DRIVER"
+                    frame.className.startsWith("androidx.sqlite.") -> "ANDROIDX_SQLITE_CORE"
                     else -> null
                 }
             }
