@@ -28,7 +28,7 @@ data class ContentBindingSearchRequest(
     companion object {
         const val DEFAULT_BATCH_SIZE = 3
         const val MAX_BATCH_SIZE = 5
-        const val DEFAULT_SOURCE_TIMEOUT_MILLIS = 15_000L
+        const val DEFAULT_SOURCE_TIMEOUT_MILLIS = 25_000L
         const val MAX_SOURCE_TIMEOUT_MILLIS = 30_000L
     }
 }

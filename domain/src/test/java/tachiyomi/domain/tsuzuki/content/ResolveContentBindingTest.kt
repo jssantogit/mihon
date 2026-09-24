@@ -69,10 +69,11 @@ class ResolveContentBindingTest {
             ),
         ).toList()
 
+        val completed = events.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
+        completed.queriedSourceIds shouldBe listOf(14L, 13L)
+        completed.remainingSourceCount shouldBe 2
         gateway.searchedSourceIds.toSet() shouldBe setOf(14L, 13L)
         gateway.searchedSourceIds.size shouldBe 2
-        events.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
-            .remainingSourceCount shouldBe 2
     }
 
     @Test
@@ -353,6 +354,31 @@ class ResolveContentBindingTest {
         job.isCancelled shouldBe true
         repository.getByTitle("title").isEmpty() shouldBe true
         gateway.materializeCalls shouldBe 0
+    }
+
+    @Test
+    fun `cancellation during materialization is checked before persistence`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/dandadan", "Dandadan")),
+            ),
+            materializeHandler = {
+                started.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            },
+        )
+        val repository = FakeContentBindingRepository(null)
+        val job = async {
+            resolver(repository, gateway).searchProgress(request()).toList()
+        }
+
+        started.await()
+        job.cancelAndJoin()
+
+        job.isCancelled shouldBe true
+        gateway.materializeCalls shouldBe 1
+        repository.getByTitle("title").isEmpty() shouldBe true
     }
 
     @Test
@@ -981,6 +1007,8 @@ class ResolveContentBindingTest {
         private val materializeFailure: Throwable? = null,
         private val installedByLanguage: Map<String, List<ReadingSourceDescriptor>> = emptyMap(),
         private val searchHandler: (suspend (Long, String) -> Result<List<ReadingSourceCandidate>>)? = null,
+        private val materializeHandler: (suspend (ReadingSourceCandidate) -> Result<MaterializedReadingSource>)? =
+            null,
     ) : ReadingSourceGateway {
         var searchCalls = 0
         val searchedSourceIds = mutableListOf<Long>()
@@ -994,13 +1022,16 @@ class ResolveContentBindingTest {
             searchCalls += 1
             searchedSourceIds += sourceId
             searchedQueries += query
-            searchHandler?.let { return it(sourceId, query) }
+            val handler = searchHandler
+            if (handler != null) return handler(sourceId, query)
             searchFailure?.let { return Result.failure(it) }
             return Result.success(searchResultsByQuery[sourceId to query] ?: searchResults[sourceId].orEmpty())
         }
 
         override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
             materializeCalls += 1
+            val handler = materializeHandler
+            if (handler != null) return handler(candidate)
             materializeFailure?.let { return Result.failure(it) }
             return (materializedBySource[candidate.sourceId] ?: materialized)
                 ?.let(Result.Companion::success)
