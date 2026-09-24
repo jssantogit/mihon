@@ -1,9 +1,13 @@
 package eu.kanade.presentation.tsuzuki.content
 
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentOptionPresentation
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.ContentOption
 
 class ContentOptionSelectorDiscoveryTest {
 
@@ -37,14 +41,14 @@ class ContentOptionSelectorDiscoveryTest {
             canonicalChapterId = "canonical-chapter",
             options = listOf(
                 ContentOptionPresentation(
-                    option = tachiyomi.domain.tsuzuki.content.ContentOption(
+                    option = ContentOption(
                         key = "reader:chapter",
                         canonicalChapterId = "canonical-chapter",
                         addonId = AddonId("reader"),
                         language = "en",
                         scanlationGroup = null,
                         releaseDate = null,
-                        delivery = tachiyomi.domain.tsuzuki.content.ContentDelivery.LocalArchive("content://chapter"),
+                        delivery = ContentDelivery.LocalArchive("content://chapter"),
                     ),
                     addonDisplayName = "Reader",
                     language = "en",
