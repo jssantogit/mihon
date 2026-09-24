@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.tsuzuki.content
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -241,7 +242,7 @@ class ContentBindingLinkScreenModelTest {
 
         model.confirm(candidate(7L, "/not-listed"))
         advanceUntilIdle()
-        verify(exactly = 0) { confirm.execute(any(), any(), any()) }
+        coVerify(exactly = 0) { confirm.execute(any(), any(), any()) }
 
         model.confirm(choices.last())
         advanceUntilIdle()
@@ -249,7 +250,7 @@ class ContentBindingLinkScreenModelTest {
         result = model.state.value.shouldBeInstanceOf<ContentBindingLinkState.SearchResults>()
         result.boundCount shouldBe 1
         result.confirmationCandidates.map { it.candidate.sourceUrl } shouldBe listOf("/edition-one")
-        verify(exactly = 1) { confirm.execute("canonical", reader.id, choices.last()) }
+        coVerify(exactly = 1) { confirm.execute("canonical", reader.id, choices.last()) }
     }
 
     @Test
