@@ -199,7 +199,7 @@ def plan(paths: list[str], mode: str) -> dict[str, object]:
         select_full(state)
     else:
         for path in meaningful:
-            if path.endswith(".md") or path.startswith("fastlane/"):
+            if path.endswith(".md") or path.startswith(("docs/", "fastlane/")):
                 continue
 
             if path.startswith(".github/"):

@@ -220,6 +220,20 @@ class PlannerTest(unittest.TestCase):
         self.assertTrue(result["run_database"])
         self.assertTrue(result["run_release"])
 
+    def test_research_documents_and_csv_data_do_not_trigger_release_build(self):
+        result = plan(
+            [
+                "docs/research/overnight-runtime-e2e-report.md",
+                "docs/research/overnight-runtime-e2e-results.csv",
+            ],
+            "affected",
+        )
+        self.assertEqual(result["selected_tests"], [])
+        self.assertEqual(result["selected_compiles"], [])
+        self.assertFalse(result["run_database"])
+        self.assertFalse(result["run_supabase"])
+        self.assertFalse(result["run_release"])
+
 
 if __name__ == "__main__":
     unittest.main()

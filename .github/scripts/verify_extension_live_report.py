@@ -31,6 +31,25 @@ class EvidenceError(ValueError):
     pass
 
 
+def safe_observations(raw: str) -> list[tuple[str, ...]]:
+    """Extract only structurally valid allowlisted probe events from arbitrary runner output."""
+    rows = []
+    for line in raw.splitlines():
+        match = STATUS.fullmatch(line.strip())
+        if not match:
+            continue
+        row = match.groups()
+        source, lang, kind, code, results, ms = row
+        if kind not in ALLOWED or (kind == "HTTP_RESPONSE") != (code != "none"):
+            continue
+        if (kind == "RESULTS") != (int(results) > 0):
+            continue
+        if int(ms) > 90_000:
+            continue
+        rows.append(row)
+    return rows
+
+
 def inspect(raw: str, count: int) -> list[tuple[str, ...]]:
     if count not in range(1, 57):
         raise EvidenceError("Live batch count is out of bounds")
@@ -40,22 +59,11 @@ def inspect(raw: str, count: int) -> list[tuple[str, ...]]:
             raise EvidenceError("AndroidJUnitRunner did not execute the expected test")
     if "INSTRUMENTATION_CODE: -1" not in raw.splitlines() or "OK (1 test)" not in raw.splitlines():
         raise EvidenceError("Instrumented live batch did not finish with one passing method")
-    rows = []
-    for line in raw.splitlines():
-        match = STATUS.fullmatch(line.strip())
-        if match:
-            rows.append(match.groups())
+    rows = safe_observations(raw)
     if len(rows) != count:
         raise EvidenceError("One sanitized observation is required for every requested source")
     if len({row[0] for row in rows}) != count:
         raise EvidenceError("Duplicate source ID in one live batch")
-    for source, lang, kind, code, results, ms in rows:
-        if kind not in ALLOWED or (kind == "HTTP_RESPONSE") != (code != "none"):
-            raise EvidenceError("Unsupported or contradictory outcome/HTTP metadata")
-        if (kind == "RESULTS") != (int(results) > 0):
-            raise EvidenceError("Contradictory result count")
-        if int(ms) > 90_000:
-            raise EvidenceError("Implausible duration")
     return rows
 
 

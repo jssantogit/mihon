@@ -7,6 +7,19 @@ shard="$1"
 if [[ ! "$shard" =~ ^[0-3]$ ]]; then
   echo "::error::Expected shard 0, 1, 2 or 3"; exit 2
 fi
+probe="${2:-all}"
+case "$probe" in
+  all) target_fixture="all" ;;
+  animexnovel) target_fixture="animexnovel-1.6.19.apk" ;;
+  mangalivreto) target_fixture="manga-livre.to-1.6.57.apk" ;;
+  mangafire) target_fixture="mangafire-v1.6.34.apk" ;;
+  *) echo "::error::Probe must be all, animexnovel, mangalivreto or mangafire"; exit 2 ;;
+esac
+target_shard=0
+if [[ "$probe" == "mangafire" ]]; then target_shard=3; fi
+if [[ "$probe" != "all" && "$shard" != "$target_shard" ]]; then
+  echo "::error::Targeted source probe is in shard $target_shard"; exit 2
+fi
 first=$((shard * 56))
 last=$((first + 56))
 global_offset=0
@@ -61,6 +74,9 @@ for entry in "${fixtures[@]}"; do
   fixture_count="$(printf '%s' "$entry" | cut -d: -f2)"
   fixture_start=$global_offset
   global_offset=$((global_offset + fixture_count))
+  if [[ "$target_fixture" != "all" && "$filename" != "$target_fixture" ]]; then
+    continue
+  fi
   local_start=$((first - fixture_start))
   local_end=$((last - fixture_start))
   if ((local_start < 0)); then local_start=0; fi
@@ -109,17 +125,23 @@ for entry in "${fixtures[@]}"; do
   fi
   # A single JUnit4 method observes every source for this fixture/shard, with
   # in-method 2.5-second spacing and backoff on HTTP 429 or explicit CAPTCHA.
-  if ! adb shell am instrument -w -r \
+  runner_exit=0
+  if adb shell am instrument -w -r \
       -e class "$class#optionalLiveSearchSourceBatch" \
       -e allowLiveProvider true -e fixturePackageName "$package_name" \
       -e sourceStart "$local_start" -e sourceCount "$local_count" \
       "$android_runner" > "$output" 2>&1; then
-    echo "::error::Live AndroidJUnitRunner process failed for $filename"
-    infra_failures=$((infra_failures + 1))
-  elif python3 .github/scripts/verify_extension_live_report.py "$output" "$filename" "$shard" "$local_count"; then
+    runner_exit=0
+  else
+    runner_exit=$?
+  fi
+  if ((runner_exit == 0)) &&
+    python3 .github/scripts/verify_extension_live_report.py "$output" "$filename" "$shard" "$local_count"; then
     observed_sources=$((observed_sources + local_count))
   else
     echo "::error::Incomplete live source observations for $filename"
+    python3 .github/scripts/summarize_extension_live_batch.py "$output" "$runner_exit" \
+      > ".github/results/extension-live/shard-$shard/$filename.diagnostic.txt"
     infra_failures=$((infra_failures + 1))
   fi
   # Never upload, display or persist raw test output containing third-party details.
@@ -129,6 +151,11 @@ done
 
 expected_shard=56
 if [[ "$shard" == 3 ]]; then expected_shard=54; fi
+if [[ "$probe" == "animexnovel" || "$probe" == "mangalivreto" ]]; then
+  expected_shard=1
+elif [[ "$probe" == "mangafire" ]]; then
+  expected_shard=7
+fi
 echo "SOURCE_SHARD|shard=$shard|requested=$attempted_sources|observed=$observed_sources|infraFailures=$infra_failures|total=$global_offset"
 if ((global_offset != expected_total || attempted_sources != expected_shard ||
      observed_sources != expected_shard || infra_failures != 0)); then exit 1; fi

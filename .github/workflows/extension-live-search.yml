@@ -7,10 +7,23 @@ on:
     paths:
       - '.github/workflows/extension-live-search.yml'
       - '.github/scripts/run_extension_live_android.sh'
+      - '.github/scripts/summarize_extension_live_batch.py'
+      - '.github/scripts/test_summarize_extension_live_batch.py'
       - '.github/scripts/verify_extension_live_report.py'
       - '.github/scripts/test_extension_live_report.py'
       - 'app/src/androidTest/**'
   workflow_dispatch:
+    inputs:
+      probe:
+        description: "Use all shards or retry only an incomplete extension batch"
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - animexnovel
+          - mangalivreto
+          - mangafire
 
 permissions:
   contents: read
@@ -29,6 +42,7 @@ jobs:
       - name: Verify all fixture and sanitized-report contracts
         run: |
           python3 .github/scripts/test_extension_live_report.py
+          python3 .github/scripts/test_summarize_extension_live_batch.py
           python3 .github/scripts/test_extension_matrix_fixture.py
           python3 .github/scripts/test_detect_extension_package.py
           python3 .github/scripts/verify_extension_matrix_fixture.py
@@ -62,7 +76,12 @@ jobs:
   # Third-party 429/CAPTCHA responses trigger backoff; do not treat 503 as an app defect.
   live:
     name: Search all sources — shard ${{ matrix.shard }}
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[android-live-matrix]')
+    if: >-
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-matrix]')) ||
+      (github.event_name == 'workflow_dispatch' &&
+        (inputs.probe == 'all' ||
+          ((inputs.probe == 'animexnovel' || inputs.probe == 'mangalivreto') && matrix.shard == 0) ||
+          (inputs.probe == 'mangafire' && matrix.shard == 3)))
     needs: compile
     strategy:
       fail-fast: false
@@ -91,7 +110,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: bash .github/scripts/run_extension_live_android.sh ${{ matrix.shard }}
+          script: bash .github/scripts/run_extension_live_android.sh ${{ matrix.shard }} "${{ inputs.probe || 'all' }}"
       - name: Upload only sanitized per-source outcomes
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

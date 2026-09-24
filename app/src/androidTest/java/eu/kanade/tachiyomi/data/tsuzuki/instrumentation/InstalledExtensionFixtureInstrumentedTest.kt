@@ -136,19 +136,47 @@ class InstalledExtensionFixtureInstrumentedTest {
             val count = requireNotNull(arguments.getString("sourceCount")).toInt()
             require(start >= 0 && count in 1..MAX_LIVE_BATCH)
             val app = instrumentation.targetContext.applicationContext as App
+            fun sendStage(stage: String, sourceCount: Int? = null) {
+                instrumentation.sendStatus(
+                    1,
+                    Bundle().apply {
+                        putString(
+                            "stream",
+                            "LIVE_STAGE|stage=" + stage +
+                                (sourceCount?.let { "|sourceCount=$it" } ?: ""),
+                        )
+                    },
+                )
+            }
+            sendStage("EXTENSION_LOOKUP_START")
             val extension = withTimeout(30_000L) {
                 app.graph.extensionManager.installedExtensionsFlow.first { installed ->
                     installed.any { it.pkgName == packageName }
                 }.single { it.pkgName == packageName }
             }
+            sendStage("EXTENSION_READY", extension.sources.size)
             val sources = extension.sources.sortedBy { it.id }
             require(start + count <= sources.size) {
                 "The shard range exceeds the verified internal source inventory"
             }
+            sendStage("SOURCE_LOOP_START", count)
             val disabled = app.graph.sourcePreferences.disabledSources.get()
             var pausedForProvider = false
-            for (source in sources.subList(start, start + count)) {
+            for ((index, source) in sources.subList(start, start + count).withIndex()) {
                 val began = SystemClock.elapsedRealtime()
+                val safeLang = source.lang.takeIf {
+                    it.length in 1..15 && it.all { char -> char.isLetterOrDigit() || char == '-' }
+                } ?: "und"
+                instrumentation.sendStatus(
+                    1,
+                    Bundle().apply {
+                        putString(
+                            "stream",
+                            "SOURCE_ATTEMPT|ordinal=" + (index + 1) +
+                                "|sourceId=" + source.id + "|lang=" + safeLang,
+                        )
+                    },
+                )
                 val result = when {
                     pausedForProvider -> Triple("PAUSED_BACKOFF", "none", 0)
                     source.id.toString() in disabled -> Triple("SOURCE_DISABLED", "none", 0)
@@ -195,9 +223,6 @@ class InstalledExtensionFixtureInstrumentedTest {
                     }
                 }
                 val elapsed = (SystemClock.elapsedRealtime() - began).coerceAtLeast(0L)
-                val safeLang = source.lang.takeIf {
-                    it.length in 1..15 && it.all { char -> char.isLetterOrDigit() || char == '-' }
-                } ?: "und"
                 instrumentation.sendStatus(
                     1,
                     Bundle().apply {
@@ -225,6 +250,7 @@ class InstalledExtensionFixtureInstrumentedTest {
                     delay(2_500L)
                 }
             }
+            sendStage("BATCH_COMPLETE", count)
         }
     }
 
