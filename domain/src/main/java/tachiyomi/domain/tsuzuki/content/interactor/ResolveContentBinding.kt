@@ -154,18 +154,7 @@ class ResolveContentBinding internal constructor(
                     it.availability != ContentBindingAvailability.UNAVAILABLE
             }
         if (existingBindings.isNotEmpty()) {
-            emit(ContentBindingSearchProgress.BindingReused(existingBindings))
-            if (request.mode == ContentBindingSearchMode.INITIAL) {
-                emit(
-                    ContentBindingSearchProgress.Completed(
-                        queriedSourceIds = emptyList(),
-                        remainingSourceCount = enabledSourceIds.count {
-                            it !in request.alreadyQueriedSourceIds
-                        },
-                    ),
-                )
-                return@flow
-            }
+            emit(ContentBindingSearchProgress.ExistingBindingsObserved(existingBindings.size))
         }
 
         val canonicalTitle = canonicalTitleRepository.getById(request.canonicalTitleId)
@@ -422,7 +411,8 @@ class ResolveContentBinding internal constructor(
                         currentCoroutineContext().ensureActive()
                         val current = contentBindingRepository.getByTitle(request.canonicalTitleId)
                             .firstOrNull {
-                                it.addonId == request.addonId &&
+                                it.canonicalTitleId == request.canonicalTitleId &&
+                                    it.addonId == request.addonId &&
                                     it.providerTitleKey == materialized.providerTitleKey
                             }
                         val value = createBinding(
@@ -433,8 +423,28 @@ class ResolveContentBinding internal constructor(
                             existing = current,
                         )
                         currentCoroutineContext().ensureActive()
-                        contentBindingRepository.upsert(value)
-                        value
+                        try {
+                            contentBindingRepository.upsert(value)
+                            value
+                        } catch (upsertError: CancellationException) {
+                            throw upsertError
+                        } catch (upsertError: Throwable) {
+                            if (current != null) throw upsertError
+
+                            val concurrentlyPersisted = try {
+                                contentBindingRepository.getByTitle(request.canonicalTitleId)
+                                    .firstOrNull {
+                                        it.canonicalTitleId == request.canonicalTitleId &&
+                                            it.addonId == request.addonId &&
+                                            it.providerTitleKey == materialized.providerTitleKey
+                                    }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Throwable) {
+                                null
+                            }
+                            concurrentlyPersisted ?: throw upsertError
+                        }
                     } finally {
                         persistenceLock.unlock()
                     }

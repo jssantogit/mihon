@@ -84,8 +84,12 @@ data class ContentBindingSearchFailure(
  * existing confirmation threshold; a candidate is never treated as a chapter/content option.
  */
 sealed interface ContentBindingSearchProgress {
-    data class BindingReused(
-        val bindings: List<ContentBinding>,
+    /**
+     * Existing persisted rows are informational only. They do not prove that the internal source
+     * is still installed/enabled or that the source title remains readable.
+     */
+    data class ExistingBindingsObserved(
+        val bindingCount: Int,
     ) : ContentBindingSearchProgress
 
     data class SourceCompleted(

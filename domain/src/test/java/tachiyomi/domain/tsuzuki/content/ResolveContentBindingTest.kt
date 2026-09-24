@@ -285,16 +285,18 @@ class ResolveContentBindingTest {
     }
 
     @Test
-    fun `existing binding is emitted as reused and initial search does not repeat work`() = runTest {
+    fun `existing binding is only observed and initial search still verifies current source`() = runTest {
         val existing = binding("remote-123", ContentBindingAvailability.AVAILABLE)
         val gateway = FakeReadingSourceGateway()
         val events = resolver(FakeContentBindingRepository(existing), gateway)
             .searchProgress(request())
             .toList()
 
-        events.filterIsInstance<ContentBindingSearchProgress.BindingReused>()
-            .single().bindings.single().providerTitleKey shouldBe "remote-123"
-        gateway.searchCalls shouldBe 0
+        events.filterIsInstance<ContentBindingSearchProgress.ExistingBindingsObserved>()
+            .single().bindingCount shouldBe 1
+        gateway.searchCalls shouldBe 1
+        events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .single().outcome shouldBe ContentBindingSourceOutcome.EMPTY
         events.last()::class shouldBe ContentBindingSearchProgress.Completed::class
     }
 
@@ -317,7 +319,8 @@ class ResolveContentBindingTest {
             addonSourceIds = listOf(8L),
         ).searchProgress(request()).toList()
 
-        events.filterIsInstance<ContentBindingSearchProgress.BindingReused>() shouldBe emptyList()
+        events.filterIsInstance<ContentBindingSearchProgress.ExistingBindingsObserved>()
+            .single().bindingCount shouldBe 1
         gateway.searchedSourceIds shouldBe listOf(8L)
         events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
             .single { it.sourceId == 8L }.outcome shouldBe ContentBindingSourceOutcome.BOUND
@@ -350,6 +353,34 @@ class ResolveContentBindingTest {
         repository.snapshot().size shouldBe 1
         repository.snapshot().single().canonicalTitleId shouldBe "title"
         repository.snapshot().single().providerTitleKey shouldBe "source-7:/dandadan"
+    }
+
+    @Test
+    fun `unique conflict owned by another canonical title remains a persistence failure`() = runTest {
+        val otherTitleBinding = binding("7:/dandadan", ContentBindingAvailability.AVAILABLE)
+            .copy(canonicalTitleId = "other-title")
+        val repository = ConcurrentUniqueContentBindingRepository(
+            initial = listOf(otherTitleBinding),
+            synchronizeConcurrentReads = false,
+        )
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/dandadan", "Dandadan")),
+            ),
+            materializedBySource = mapOf(
+                7L to materialized(7L, "/dandadan", "en"),
+            ),
+        )
+
+        val source = resolver(repository, gateway)
+            .searchProgress(request())
+            .toList()
+            .filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .single()
+
+        source.outcome shouldBe ContentBindingSourceOutcome.FAILURE
+        source.failure?.stage shouldBe ContentBindingSearchFailureStage.PERSISTENCE
+        repository.snapshot().single().canonicalTitleId shouldBe "other-title"
     }
 
     @Test
@@ -986,9 +1017,12 @@ class ResolveContentBindingTest {
     }
 
     /** A small SQL unique-index analogue with two controlled read races for separate collectors. */
-    private class ConcurrentUniqueContentBindingRepository : ContentBindingRepository {
+    private class ConcurrentUniqueContentBindingRepository(
+        initial: List<ContentBinding> = emptyList(),
+        private val synchronizeConcurrentReads: Boolean = true,
+    ) : ContentBindingRepository {
         private val lock = Any()
-        private val values = mutableListOf<ContentBinding>()
+        private val values = initial.toMutableList()
         private val pairedReadGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
         private var getByTitleCalls = 0
 
@@ -1000,7 +1034,7 @@ class ResolveContentBindingTest {
         override suspend fun getByTitle(canonicalTitleId: String): List<ContentBinding> {
             val (gate, snapshot) = synchronized(lock) {
                 val callIndex = getByTitleCalls++
-                val gate = if (callIndex < 4) {
+                val gate = if (synchronizeConcurrentReads && callIndex < 4) {
                     val pair = callIndex / 2
                     pairedReadGates.getOrPut(pair) { CompletableDeferred() }.also {
                         if (callIndex % 2 == 1) it.complete(Unit)
