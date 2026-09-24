@@ -148,6 +148,8 @@ class SummaryTest(unittest.TestCase):
 
     def test_setup_diagnostics_are_sanitized_and_retained(self):
         runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CONTEXT_ISOLATION"
+            "|outcome=FAIL|exception=NullPointerException\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=SQL_DRIVER|outcome=PASS\n"
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_INSERT"
             "|outcome=FAIL|exception=SQLiteException\n"
@@ -155,6 +157,10 @@ class SummaryTest(unittest.TestCase):
             "|outcome=FAIL|exception=PRIVATE|token=SECRET\n"
         )
         result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "setupPhase=CONTEXT_ISOLATION|outcome=FAIL|exception=NullPointerException",
+            result,
+        )
         self.assertIn("setupPhase=SQL_DRIVER|outcome=PASS", result)
         self.assertIn(
             "setupPhase=CANONICAL_TITLE_INSERT|outcome=FAIL|exception=SQLiteException",

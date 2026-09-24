@@ -244,3 +244,18 @@ The fixture test in the same workflow validates MangaFire 1.6.34's English sourc
 ### Next validation and status
 
 The source-registration wait and validator correction are instrumented/test changes, not a production runtime fix. No MangaFire search request has been made by the failed `36001018885` E2E. The next required experiment is one explicitly opted-in rerun of the same real English MangaFire/One-Punch Man journey; it must emit one ordered event for each of the 14 stages. A registration timeout, missing source, or wrong type will now be distinguishable from database composition. The CI_FIRST policy has `localHeavyAttempts=0`; no local Gradle command was run. Current correction is pending review/CI submission at the time of this report entry.
+
+## E2E instrumentation context isolation failure (2026-09-24)
+
+### Result after source-registration correction
+
+- Commit `6a2e1b1cf744ba457b54b7f56d152794975b2062` was pushed to the same exclusive branch with `[android-live]`; no new branch was created.
+- Fast CI v2.1 `36003608709` passed Change Planner, Format, App — Tsuzuki and CI Gate. The real-extension job `36003608865` passed the APK fixture verifier and Kotlin instrumentation compilation, then failed on the emulator. The eight-extension fixture's emulator job and the 222-source search shards were skipped; no matrix requests were repeated.
+- Sanitized artifact `10810296483` now records `EXTENSION_INSTALL=PASS` and `SOURCE_REGISTRATION=PASS|sourceId=6084907896154116083|language=en`. This verifies the source wait correction for the actual installed MangaFire extension and shows the run progressed farther than `9104e9f7`.
+- The first failed setup phase is `CONTEXT_ISOLATION|outcome=FAIL|exception=NullPointerException`. `DB_RESET`, SQL driver, database adapters, production composition, title insertion, and all later E2E stages are not reached. There is no `LIVE_SEARCH` event, so this run made no MangaFire provider search request. The reported `java.lang.AssertionError` is again the final incomplete-stage assertion, not the root exception.
+
+### Diagnosis and next minimal correction
+
+The code at this failure boundary obtained `instrumentation.context.applicationContext` before checking that the database package differs from the target app. The exception type and phase isolate the fault to context acquisition/isolation, but the sanitized run intentionally contains no stack/message, so the precise dereference is not directly observed. The test only requires the instrumentation APK's package context to open its own database; the application-context conversion is unnecessary. The pending correction now uses `instrumentation.context` directly, then still checks `testContext.packageName != app.packageName` before database reset/creation. This preserves the disposable test database and does not expose or modify target-app data. The direct-context change is not yet validated by CI.
+
+The source-registration race is no longer the blocking stage: the event changed from `INCONCLUSIVE|INSTRUMENTATION` to a single `PASS` with the exact English source ID after replacing immediate `get()` with a `sources` Flow wait. This is observed behavioral confirmation for the correction; the original `get()` null result was not itself logged, so the specific pre-fix branch remains inferred from the code/event boundary.

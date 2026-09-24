@@ -156,7 +156,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                 setupPhase = "CONTEXT_ISOLATION"
-                val testContext = instrumentation.context.applicationContext
+                val testContext = instrumentation.context
                 check(testContext.packageName != app.packageName) {
                     "Instrumentation DB must not share the target package"
                 }
