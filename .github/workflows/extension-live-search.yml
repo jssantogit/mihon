@@ -58,6 +58,8 @@ jobs:
             grep -E 'public final void (loadsRealExtensionAndRegistersSources|optionalLiveSearchSourceBatch)\(\);' > junit-methods.txt
           test "$(wc -l < junit-methods.txt)" -eq 2
 
+  # Explicit one-off opt-in. Each shard searches disjoint installed sources serially.
+  # Third-party 429/CAPTCHA responses trigger backoff; do not treat 503 as an app defect.
   live:
     name: Search all sources — shard ${{ matrix.shard }}
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[android-live-matrix]')
