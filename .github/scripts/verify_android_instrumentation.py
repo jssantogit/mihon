@@ -13,11 +13,13 @@ METHOD_CLASS = {
     "loadsRealExtensionAndRegistersInternalSources": CLASS,
     "optionalLiveEnglishSearch": CLASS,
     "optionalRealEnglishReadingJourney": E2E_CLASS,
+    "instrumentationContextDatabasePersistsCanonicalTitle": E2E_CLASS,
 }
 ALLOWED = frozenset((
     "loadsRealExtensionAndRegistersInternalSources",
     "optionalLiveEnglishSearch",
     "optionalRealEnglishReadingJourney",
+    "instrumentationContextDatabasePersistsCanonicalTitle",
 ))
 E2E_STAGES = (
     "EXTENSION_INSTALL",
@@ -62,6 +64,28 @@ def verify(output: str, method: str) -> None:
         raise AndroidTestVerificationError("Zero-test or failing instrumentation is not green")
     if method == "optionalRealEnglishReadingJourney":
         verify_e2e_stages(output)
+    elif method == "instrumentationContextDatabasePersistsCanonicalTitle":
+        verify_context_database_diagnostic(output)
+
+
+def verify_context_database_diagnostic(output: str) -> None:
+    context_pattern = re.compile(
+        r"^INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT"
+        r"\|applicationContext=(present|null)"
+        r"\|targetIsolation=isolated"
+        r"\|databaseContext=(raw|wrapped)$"
+    )
+    context_events = [line for line in output.splitlines() if "RUNTIME_CONTEXT|" in line]
+    if len(context_events) != 1 or not context_pattern.fullmatch(context_events[0]):
+        raise AndroidTestVerificationError("Expected one sanitized context-isolation observation")
+    persist_events = [
+        line for line in output.splitlines()
+        if "RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|" in line
+    ]
+    if persist_events != [
+        "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|outcome=PASS",
+    ]:
+        raise AndroidTestVerificationError("Isolated canonical-title persistence was not proven")
 
 
 def verify_e2e_stages(output: str) -> None:

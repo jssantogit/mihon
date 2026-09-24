@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.instrumentation
 
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
@@ -93,6 +94,55 @@ import java.util.UUID
  */
 @RunWith(AndroidJUnit4::class)
 class MangaFireRealReadingJourneyInstrumentedTest {
+
+    @Test(timeout = 90_000L)
+    fun instrumentationContextDatabasePersistsCanonicalTitle() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val testContext = instrumentation.context
+        val packageIsolated = testContext.packageName != instrumentation.targetContext.packageName
+        val applicationContext = runCatching { testContext.applicationContext }
+        val applicationContextStatus = when {
+            applicationContext.isFailure -> "error"
+            applicationContext.getOrNull() == null -> "null"
+            else -> "present"
+        }
+        reportContextObservation(applicationContextStatus, packageIsolated, "raw")
+        assertTrue("Persistence must use the instrumentation package database", packageIsolated)
+        assertTrue("Instrumentation application context could not be inspected", applicationContext.isSuccess)
+
+        resetInstrumentationDatabase(testContext)
+        val canonicalTitle = CanonicalTitle(
+            id = UUID.randomUUID().toString(),
+            displayTitle = "Disposable instrumentation title",
+            identityState = CanonicalIdentityState.SOURCE_ONLY,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+        )
+        val persistence = runCatching {
+            val driver = AppBindings.providesSqlDriver(testContext)
+            try {
+                val repository = CanonicalTitleRepositoryImpl(AppBindings.providesDatabase(driver))
+                runBlocking {
+                    repository.insert(canonicalTitle)
+                    assertEquals(canonicalTitle, repository.getById(canonicalTitle.id))
+                }
+            } finally {
+                driver.close()
+            }
+        }
+        persistence.fold(
+            onSuccess = { reportSetupPhase("TEST_CANONICAL_TITLE_PERSIST", Outcome.PASS) },
+            onFailure = { error ->
+                reportSetupPhase(
+                    "TEST_CANONICAL_TITLE_PERSIST",
+                    Outcome.FAIL,
+                    setupExceptionType(error),
+                    setupFailureFrame(error),
+                )
+                throw error
+            },
+        )
+    }
 
     @Test(timeout = 240_000L)
     fun optionalRealEnglishReadingJourney() {
@@ -558,18 +608,30 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriverHolder") ->
                         "EYGRABER_SCHEMA_DRIVER"
-                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConfigurableDriver") ->
+                    frame.className.startsWith(
+                        "com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConfigurableDriver",
+                    ) ->
                         "EYGRABER_CONFIGURABLE_DRIVER"
-                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConnectionFactory") ||
-                        frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.DefaultAndroidxSqliteConnectionFactory") ->
+                    frame.className.startsWith(
+                        "com.eygraber.sqldelight.androidx.driver.AndroidxSqliteConnectionFactory",
+                    ) ||
+                        frame.className.startsWith(
+                            "com.eygraber.sqldelight.androidx.driver.DefaultAndroidxSqliteConnectionFactory",
+                        ) ->
                         "EYGRABER_CONNECTION_FACTORY"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteDriver") ->
                         "EYGRABER_SQLITE_DRIVER"
-                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriverKt") ->
+                    frame.className.startsWith(
+                        "com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriverKt",
+                    ) ->
                         "EYGRABER_EXECUTING_DRIVER_KT"
-                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxDriverConnectionPool") ->
+                    frame.className.startsWith(
+                        "com.eygraber.sqldelight.androidx.driver.AndroidxDriverConnectionPool",
+                    ) ->
                         "EYGRABER_CONNECTION_POOL"
-                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriver") ->
+                    frame.className.startsWith(
+                        "com.eygraber.sqldelight.androidx.driver.AndroidxSqliteExecutingDriver",
+                    ) ->
                         "EYGRABER_EXECUTING_DRIVER"
                     frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.AndroidxPreparedStatement") ->
                         "EYGRABER_PREPARED_STATEMENT"
@@ -606,6 +668,30 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             1,
             Bundle().apply { putString("stream", stream) },
         )
+    }
+
+    private fun reportContextObservation(
+        applicationContext: String,
+        packageIsolated: Boolean,
+        databaseContext: String,
+    ) {
+        val stream = buildString {
+            append("RUNTIME_CONTEXT|applicationContext=").append(applicationContext)
+            append("|targetIsolation=").append(if (packageIsolated) "isolated" else "same")
+            append("|databaseContext=").append(databaseContext)
+        }
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            1,
+            Bundle().apply { putString("stream", stream) },
+        )
+    }
+
+    private fun resetInstrumentationDatabase(context: Context) {
+        check(
+            !context.databaseList().contains("tachiyomi.db") || context.deleteDatabase("tachiyomi.db"),
+        ) {
+            "Could not reset the instrumentation-only database"
+        }
     }
 
     private fun report(

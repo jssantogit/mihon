@@ -183,6 +183,28 @@ class SummaryTest(unittest.TestCase):
         )
         self.assertNotIn("One-Punch Man", result)
 
+    def test_isolated_context_database_events_keep_only_closed_context_and_persist_fields(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
+            "|targetIsolation=isolated|databaseContext=wrapped\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=present"
+            "|targetIsolation=isolated|databaseContext=raw|path=/private/user/db\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|"
+            "outcome=FAIL|exception=NullPointerException|frame=EYGRABER_ANDROIDX_DRIVER\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "contextApplicationContext=null|targetIsolation=isolated|databaseContext=wrapped",
+            result,
+        )
+        self.assertIn(
+            "setupPhase=TEST_CANONICAL_TITLE_PERSIST|outcome=FAIL|"
+            "exception=NullPointerException|frame=EYGRABER_ANDROIDX_DRIVER",
+            result,
+        )
+        self.assertNotIn("private/user", result)
+        self.assertNotIn("path=", result)
+
     def test_persistence_failure_frame_is_closed_and_sanitized(self):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"

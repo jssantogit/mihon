@@ -62,6 +62,7 @@ run_one() {
 fixture_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest'
 journey_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireRealReadingJourneyInstrumentedTest'
 run_one "$fixture_class" loadsRealExtensionAndRegistersInternalSources
+run_one "$journey_class" instrumentationContextDatabasePersistsCanonicalTitle
 if [[ "$live_probe" == "true" ]]; then
   # Explicit manual opt-in only. One work and one internal source; no CAPTCHA circumvention.
   run_one "$journey_class" optionalRealEnglishReadingJourney -e allowLiveProvider true

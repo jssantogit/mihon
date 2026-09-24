@@ -74,6 +74,7 @@ jobs:
               grep -F 'public final void loadsRealExtensionAndRegistersInternalSources();' junit-signatures.txt
             else
               grep -F 'public final void optionalRealEnglishReadingJourney();' junit-signatures.txt
+              grep -F 'public final void instrumentationContextDatabasePersistsCanonicalTitle();' junit-signatures.txt
             fi
           done
 

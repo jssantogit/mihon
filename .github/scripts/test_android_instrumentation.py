@@ -13,6 +13,7 @@ checker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(checker)
 METHOD = "loadsRealExtensionAndRegistersInternalSources"
 LIVE_METHOD = "optionalRealEnglishReadingJourney"
+CONTEXT_DB_METHOD = "instrumentationContextDatabasePersistsCanonicalTitle"
 E2E_CLASS = checker.E2E_CLASS
 E2E_STAGES = (
     "EXTENSION_INSTALL",
@@ -56,6 +57,21 @@ LIVE_GOOD = (
     "INSTRUMENTATION_RESULT: stream=\nTime: 2.0\n\nOK (1 test)\n"
     "INSTRUMENTATION_CODE: -1\n"
 )
+CONTEXT_DB_GOOD = (
+    "INSTRUMENTATION_STATUS: numtests=1\n"
+    "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
+    "INSTRUMENTATION_STATUS: test=" + CONTEXT_DB_METHOD + "\n"
+    "INSTRUMENTATION_STATUS_CODE: 1\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
+    "|targetIsolation=isolated|databaseContext=wrapped\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|"
+    "outcome=PASS\n"
+    "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
+    "INSTRUMENTATION_STATUS: test=" + CONTEXT_DB_METHOD + "\n"
+    "INSTRUMENTATION_STATUS_CODE: 0\n"
+    "INSTRUMENTATION_RESULT: stream=\nTime: 2.0\n\nOK (1 test)\n"
+    "INSTRUMENTATION_CODE: -1\n"
+)
 
 class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_proven_single_test_is_accepted(self):
@@ -79,6 +95,41 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
 
     def test_live_journey_requires_real_class_method_and_all_pass_stages(self):
         checker.verify(LIVE_GOOD, LIVE_METHOD)
+
+    def test_isolated_context_database_diagnostic_requires_safe_context_and_persist_events(self):
+        checker.verify(CONTEXT_DB_GOOD, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_missing_persist_event(self):
+        output = CONTEXT_DB_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|"
+            "outcome=PASS\n",
+            "",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(output, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_unsafe_context_event(self):
+        output = CONTEXT_DB_GOOD.replace(
+            "|targetIsolation=isolated|databaseContext=wrapped",
+            "|targetIsolation=isolated|databaseContext=wrapped|path=/private/user/db",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(output, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_unknown_database_context(self):
+        wrong_context = CONTEXT_DB_GOOD.replace("databaseContext=wrapped", "databaseContext=other")
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(wrong_context, CONTEXT_DB_METHOD)
+
+    def test_isolated_context_database_diagnostic_rejects_duplicate_context_events(self):
+        duplicate_context = CONTEXT_DB_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|",
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT|applicationContext=null"
+            "|targetIsolation=isolated|databaseContext=wrapped\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=TEST_CANONICAL_TITLE_PERSIST|",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(duplicate_context, CONTEXT_DB_METHOD)
 
     def test_live_journey_accepts_the_real_long_source_id_on_registration(self):
         registration = (

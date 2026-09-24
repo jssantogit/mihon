@@ -27,10 +27,16 @@ E2E_LINE = re.compile(
     r"(?:\|count=(\d{1,10}))?(?:\|sourceId=(\d{1,20}))?"
     r"(?:\|language=([A-Za-z0-9-]{1,16}))?(?:\|elapsedMs=(\d{1,10}))?$"
 )
+CONTEXT_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_CONTEXT"
+    r"\|applicationContext=(present|null|error)"
+    r"\|targetIsolation=(isolated|same)"
+    r"\|databaseContext=(raw|wrapped)$"
+)
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
     r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
-    r"CANONICAL_TITLE_CREATE|CANONICAL_TITLE_PERSIST)"
+    r"CANONICAL_TITLE_CREATE|CANONICAL_TITLE_PERSIST|TEST_CANONICAL_TITLE_PERSIST)"
     r"\|outcome=(PASS|FAIL)"
     r"(?:\|exception=(IllegalStateException|IllegalArgumentException|SecurityException|"
     r"SQLiteException|SQLiteCantOpenDatabaseException|SQLiteReadOnlyDatabaseException|"
@@ -68,7 +74,12 @@ def summarize(runner: str, crash: str) -> list[str]:
                 ))
                 lines.append("DIAGNOSTIC|classMatchesFixture=" + str(is_fixture))
             elif key == 'test':
-                lines.append("DIAGNOSTIC|testMatchesFixture=" + str(value in ("loadsRealExtensionAndRegistersInternalSources", "optionalLiveEnglishSearch", "optionalRealEnglishReadingJourney")))
+                lines.append("DIAGNOSTIC|testMatchesFixture=" + str(value in (
+                    "loadsRealExtensionAndRegistersInternalSources",
+                    "optionalLiveEnglishSearch",
+                    "optionalRealEnglishReadingJourney",
+                    "instrumentationContextDatabasePersistsCanonicalTitle",
+                )))
         if line.startswith('INSTRUMENTATION_RESULT: shortMsg='):
             # The short message can include arbitrary values: never echo it.
             lines.append("DIAGNOSTIC|hasShortMsg=true")
@@ -106,6 +117,13 @@ def summarize(runner: str, crash: str) -> list[str]:
             summary += "|elapsedMs=" + elapsed
         lines.append(summary)
     for raw_line in runner.splitlines():
+        context = CONTEXT_LINE.fullmatch(raw_line.strip())
+        if context:
+            application_context, target_isolation, database_context = context.groups()
+            lines.append(
+                "DIAGNOSTIC|contextApplicationContext=" + application_context +
+                "|targetIsolation=" + target_isolation + "|databaseContext=" + database_context
+            )
         parsed = SETUP_LINE.fullmatch(raw_line.strip())
         if parsed:
             phase, outcome, exception, frame = parsed.groups()
