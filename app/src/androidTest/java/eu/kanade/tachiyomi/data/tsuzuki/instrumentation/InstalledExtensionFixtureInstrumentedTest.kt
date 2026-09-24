@@ -1,8 +1,8 @@
 package eu.kanade.tachiyomi.data.tsuzuki.instrumentation
 
 import android.content.pm.PackageManager
-import android.os.SystemClock
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import eu.kanade.tachiyomi.App
@@ -212,12 +212,14 @@ class InstalledExtensionFixtureInstrumentedTest {
                         )
                     },
                 )
-                if (result.first == "CAPTCHA_REQUIRED" ||
+                if (
+                    result.first == "CAPTCHA_REQUIRED" ||
                     (result.first == "HTTP_RESPONSE" && result.second == "429")
                 ) {
                     pausedForProvider = true
                 }
-                if (!pausedForProvider &&
+                if (
+                    !pausedForProvider &&
                     result.first !in setOf("SOURCE_DISABLED", "UNSUPPORTED", "PAUSED_BACKOFF")
                 ) {
                     delay(2_500L)
@@ -227,6 +229,6 @@ class InstalledExtensionFixtureInstrumentedTest {
     }
 
     private companion object {
-        const val MAX_LIVE_BATCH = 12
+        const val MAX_LIVE_BATCH = 56
     }
 }
