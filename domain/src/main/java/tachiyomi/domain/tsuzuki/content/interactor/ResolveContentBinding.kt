@@ -2,11 +2,23 @@ package tachiyomi.domain.tsuzuki.content.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
@@ -26,7 +38,9 @@ import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
+import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.util.UUID
@@ -98,6 +112,516 @@ class ResolveContentBinding internal constructor(
         }
     }
 
+    /**
+     * Search one bounded batch of installed, enabled sources and emit results as each source
+     * finishes. [ContentBindingSearchMode.BROADEN] is an explicit caller action; this resolver
+     * never fans out across every source unless the caller requests successive batches.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun searchProgress(request: ContentBindingSearchRequest): Flow<ContentBindingSearchProgress> = flow {
+        val addon = addonRepository.snapshot().firstOrNull { it.id == request.addonId }
+        if (addon == null) {
+            emitFailure(
+                sourceId = null,
+                stage = ContentBindingSearchFailureStage.ADDON_DISCOVERY,
+                kind = ContentBindingSearchFailureKind.ADDON_NOT_INSTALLED,
+            )
+            emit(ContentBindingSearchProgress.Completed(emptyList(), 0))
+            return@flow
+        }
+
+        val enabledSourceIds = addon.mihonSourceIds.distinct()
+        if (!addon.enabled || enabledSourceIds.isEmpty()) {
+            emitFailure(
+                sourceId = null,
+                stage = ContentBindingSearchFailureStage.ADDON_DISCOVERY,
+                kind = if (addon.enabled) {
+                    ContentBindingSearchFailureKind.NO_ENABLED_SOURCES
+                } else {
+                    ContentBindingSearchFailureKind.ADDON_DISABLED
+                },
+            )
+            emit(ContentBindingSearchProgress.Completed(emptyList(), 0))
+            return@flow
+        }
+
+        val existingBindings = contentBindingRepository.getByTitle(request.canonicalTitleId)
+            .filter {
+                it.addonId == request.addonId &&
+                    it.availability != ContentBindingAvailability.UNAVAILABLE
+            }
+        if (existingBindings.isNotEmpty()) {
+            emit(ContentBindingSearchProgress.BindingReused(existingBindings))
+            if (request.mode == ContentBindingSearchMode.INITIAL) {
+                emit(
+                    ContentBindingSearchProgress.Completed(
+                        queriedSourceIds = emptyList(),
+                        remainingSourceCount = enabledSourceIds.count {
+                            it !in request.alreadyQueriedSourceIds
+                        },
+                    ),
+                )
+                return@flow
+            }
+        }
+
+        val canonicalTitle = canonicalTitleRepository.getById(request.canonicalTitleId)
+        if (canonicalTitle == null) {
+            emitFailure(
+                sourceId = null,
+                stage = ContentBindingSearchFailureStage.ADDON_DISCOVERY,
+                kind = ContentBindingSearchFailureKind.INDETERMINATE,
+            )
+            emit(ContentBindingSearchProgress.Completed(emptyList(), 0))
+            return@flow
+        }
+
+        val (orderedSourceIds, sourceLanguages) = orderSources(
+            enabledSourceIds = enabledSourceIds,
+            preferredLanguages = request.preferredLanguages,
+        )
+        val remainingSourceIds = orderedSourceIds.filterNot { it in request.alreadyQueriedSourceIds }
+        val batch = remainingSourceIds.take(request.batchSize)
+        val remainingCount = remainingSourceIds.size - batch.size
+        if (batch.isEmpty()) {
+            emit(ContentBindingSearchProgress.Completed(emptyList(), remainingCount))
+            return@flow
+        }
+
+        val gate = Semaphore(MAX_CONCURRENT_SOURCE_SEARCHES)
+        val persistenceLock = Mutex()
+        channelFlow {
+            batch.forEachIndexed { sourceRank, sourceId ->
+                launch {
+                    gate.withPermit {
+                        val event = resolveProgressiveSource(
+                            request = request,
+                            sourceId = sourceId,
+                            sourceRank = sourceRank,
+                            language = sourceLanguages[sourceId],
+                            canonicalTitle = canonicalTitle,
+                            persistenceLock = persistenceLock,
+                        )
+                        send(event)
+                    }
+                }
+            }
+        }.collect { event -> emit(event) }
+
+        emit(
+            ContentBindingSearchProgress.Completed(
+                queriedSourceIds = batch,
+                remainingSourceCount = remainingCount,
+            ),
+        )
+    }
+
+    private suspend fun resolveProgressiveSource(
+        request: ContentBindingSearchRequest,
+        sourceId: Long,
+        sourceRank: Int,
+        language: String?,
+        canonicalTitle: tachiyomi.domain.tsuzuki.model.CanonicalTitle,
+        persistenceLock: Mutex,
+    ): ContentBindingSearchProgress.SourceCompleted {
+        val (candidates, searchFailure) = try {
+            withTimeout(request.sourceTimeoutMillis) {
+                searchSourceTitle(
+                    canonicalTitleId = request.canonicalTitleId,
+                    addonId = request.addonId,
+                    sourceId = sourceId,
+                    title = canonicalTitle.displayTitle,
+                )
+            }
+        } catch (_: TimeoutCancellationException) {
+            recordBinding(
+                request.canonicalTitleId,
+                request.addonId,
+                ChapterInventoryDiagnosticStage.BINDING_SEARCH,
+                ChapterInventoryDiagnosticOutcome.TIMEOUT,
+                sourceId = sourceId,
+                language = language,
+                reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
+            )
+            return failedSource(
+                sourceId,
+                language,
+                ContentBindingSearchFailureStage.SEARCH,
+                ContentBindingSearchFailureKind.TIMEOUT,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            return failedSource(
+                sourceId,
+                language,
+                ContentBindingSearchFailureStage.SEARCH,
+                classifyFailure(error),
+                (error as? ReadingSourceSearchFailure)?.httpStatus,
+            )
+        }
+
+        if (searchFailure != null && candidates.isEmpty()) {
+            return failedSource(
+                sourceId,
+                language,
+                ContentBindingSearchFailureStage.SEARCH,
+                classifyFailure(searchFailure),
+                (searchFailure as? ReadingSourceSearchFailure)?.httpStatus,
+            )
+        }
+
+        if (candidates.any { it.sourceId != sourceId }) {
+            return failedSource(
+                sourceId,
+                language,
+                ContentBindingSearchFailureStage.SEARCH,
+                ContentBindingSearchFailureKind.MALFORMED_RESPONSE,
+            )
+        }
+
+        val scored = scoreCandidates(canonicalTitle.displayTitle, sourceRank, candidates)
+        val decision = decideCandidates(scored)
+        if (searchFailure != null && decision !is CandidateDecision.Confirmation) {
+            return failedSource(
+                sourceId,
+                language,
+                ContentBindingSearchFailureStage.SEARCH,
+                classifyFailure(searchFailure),
+                (searchFailure as? ReadingSourceSearchFailure)?.httpStatus,
+            )
+        }
+
+        return when (decision) {
+            CandidateDecision.Empty -> {
+                recordBinding(
+                    request.canonicalTitleId,
+                    request.addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    ChapterInventoryDiagnosticOutcome.EMPTY,
+                    sourceId = sourceId,
+                    language = language,
+                    reason = ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS,
+                )
+                ContentBindingSearchProgress.SourceCompleted(
+                    sourceId = sourceId,
+                    language = language,
+                    outcome = ContentBindingSourceOutcome.EMPTY,
+                )
+            }
+            CandidateDecision.BelowThreshold -> {
+                recordBinding(
+                    request.canonicalTitleId,
+                    request.addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                    sourceId = sourceId,
+                    received = candidates.size,
+                    reason = ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD,
+                )
+                ContentBindingSearchProgress.SourceCompleted(
+                    sourceId = sourceId,
+                    language = language,
+                    outcome = ContentBindingSourceOutcome.NO_MATCH,
+                )
+            }
+            is CandidateDecision.Confirmation -> {
+                val diagnosticOutcome = if (decision.reason == ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES) {
+                    ChapterInventoryDiagnosticOutcome.AMBIGUOUS
+                } else {
+                    ChapterInventoryDiagnosticOutcome.PARTIAL
+                }
+                recordBinding(
+                    request.canonicalTitleId,
+                    request.addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    diagnosticOutcome,
+                    sourceId = sourceId,
+                    language = language ?: decision.candidates.firstOrNull()?.candidate?.language,
+                    received = candidates.size,
+                    reason = decision.reason,
+                )
+                ContentBindingSearchProgress.SourceCompleted(
+                    sourceId = sourceId,
+                    language = language ?: decision.candidates.firstOrNull()?.candidate?.language,
+                    outcome = ContentBindingSourceOutcome.CONFIRMATION_REQUIRED,
+                    candidates = decision.candidates,
+                    failure = searchFailure?.let {
+                        ContentBindingSearchFailure(
+                            stage = ContentBindingSearchFailureStage.SEARCH,
+                            kind = classifyFailure(it),
+                            httpStatus = (it as? ReadingSourceSearchFailure)?.httpStatus,
+                        )
+                    },
+                )
+            }
+            is CandidateDecision.Automatic -> {
+                val selected = decision.candidate
+                recordBinding(
+                    request.canonicalTitleId,
+                    request.addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                    ChapterInventoryDiagnosticOutcome.SUCCESS,
+                    sourceId = sourceId,
+                    language = selected.candidate.language,
+                    received = candidates.size,
+                    accepted = 1,
+                )
+                val materialized = try {
+                    withTimeout(request.sourceTimeoutMillis) {
+                        materializeCandidate(selected.candidate)
+                    }
+                } catch (_: TimeoutCancellationException) {
+                    recordBinding(
+                        request.canonicalTitleId,
+                        request.addonId,
+                        ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                        ChapterInventoryDiagnosticOutcome.TIMEOUT,
+                        sourceId = sourceId,
+                        language = selected.candidate.language,
+                        reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
+                    )
+                    return failedSource(
+                        sourceId,
+                        selected.candidate.language,
+                        ContentBindingSearchFailureStage.MATERIALIZATION,
+                        ContentBindingSearchFailureKind.TIMEOUT,
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(error)
+                    recordBinding(
+                        request.canonicalTitleId,
+                        request.addonId,
+                        ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                        outcome,
+                        sourceId = sourceId,
+                        language = selected.candidate.language,
+                        reason = if (outcome == ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR) {
+                            ChapterInventoryDiagnosticReason.MATERIALIZATION_FAILED
+                        } else {
+                            failureReason
+                        },
+                    )
+                    return failedSource(
+                        sourceId,
+                        selected.candidate.language,
+                        ContentBindingSearchFailureStage.MATERIALIZATION,
+                        classifyFailure(error),
+                        (error as? ReadingSourceSearchFailure)?.httpStatus,
+                    )
+                }
+
+                val binding = try {
+                    persistenceLock.lock()
+                    try {
+                        currentCoroutineContext().ensureActive()
+                        val current = contentBindingRepository.getByTitle(request.canonicalTitleId)
+                            .firstOrNull {
+                                it.addonId == request.addonId &&
+                                    it.providerTitleKey == materialized.providerTitleKey
+                            }
+                        val value = createBinding(
+                            canonicalTitleId = request.canonicalTitleId,
+                            addonId = request.addonId,
+                            scored = selected,
+                            materialized = materialized,
+                            existing = current,
+                        )
+                        currentCoroutineContext().ensureActive()
+                        contentBindingRepository.upsert(value)
+                        value
+                    } finally {
+                        persistenceLock.unlock()
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    recordBinding(
+                        request.canonicalTitleId,
+                        request.addonId,
+                        ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                        ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR,
+                        sourceId = sourceId,
+                        language = selected.candidate.language,
+                        reason = ChapterInventoryDiagnosticReason.BINDING_PERSISTENCE_FAILED,
+                    )
+                    return failedSource(
+                        sourceId,
+                        selected.candidate.language,
+                        ContentBindingSearchFailureStage.PERSISTENCE,
+                        classifyFailure(error),
+                    )
+                }
+
+                recordBinding(
+                    request.canonicalTitleId,
+                    request.addonId,
+                    ChapterInventoryDiagnosticStage.BINDING_MATERIALIZATION,
+                    ChapterInventoryDiagnosticOutcome.SUCCESS,
+                    sourceId = sourceId,
+                    language = selected.candidate.language,
+                    accepted = 1,
+                )
+
+                ContentBindingSearchProgress.SourceCompleted(
+                    sourceId = sourceId,
+                    language = selected.candidate.language,
+                    outcome = ContentBindingSourceOutcome.BOUND,
+                    candidates = listOf(selected),
+                    bindings = listOf(binding),
+                )
+            }
+        }
+    }
+
+    private fun failedSource(
+        sourceId: Long,
+        language: String?,
+        stage: ContentBindingSearchFailureStage,
+        kind: ContentBindingSearchFailureKind,
+        httpStatus: Int? = null,
+    ) = ContentBindingSearchProgress.SourceCompleted(
+        sourceId = sourceId,
+        language = language,
+        outcome = ContentBindingSourceOutcome.FAILURE,
+        failure = ContentBindingSearchFailure(stage, kind, httpStatus),
+    )
+
+    private suspend fun FlowCollector<ContentBindingSearchProgress>.emitFailure(
+        sourceId: Long?,
+        stage: ContentBindingSearchFailureStage,
+        kind: ContentBindingSearchFailureKind,
+    ) {
+        emit(
+            ContentBindingSearchProgress.SourceCompleted(
+                sourceId = sourceId,
+                language = null,
+                outcome = ContentBindingSourceOutcome.FAILURE,
+                failure = ContentBindingSearchFailure(stage, kind),
+            ),
+        )
+    }
+
+    private suspend fun orderSources(
+        enabledSourceIds: List<Long>,
+        preferredLanguages: List<String>,
+    ): Pair<List<Long>, Map<Long, String>> {
+        val allowed = enabledSourceIds.toSet()
+        val preferredIds = linkedMapOf<Long, String>()
+        for (language in preferredLanguages.distinct().filter(String::isNotBlank)) {
+            val installed = try {
+                readingSourceGateway.listInstalled(language)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emptyList()
+            }
+            installed.filter { it.sourceId in allowed }.forEach { descriptor ->
+                preferredIds.putIfAbsent(descriptor.sourceId, descriptor.language)
+            }
+        }
+        val ordered = preferredIds.keys.toList() + enabledSourceIds.filterNot { it in preferredIds }
+        return ordered.distinct() to preferredIds
+    }
+
+    private fun classifyFailure(error: Throwable): ContentBindingSearchFailureKind {
+        val sourceFailure = generateSequence(error) { it.cause }
+            .filterIsInstance<ReadingSourceSearchFailure>()
+            .firstOrNull()
+        if (sourceFailure != null) return sourceFailure.kind.toContentBindingFailureKind()
+        return when (ChapterInventoryDiagnosticFailures.classify(error).first) {
+            ChapterInventoryDiagnosticOutcome.DISABLED -> ContentBindingSearchFailureKind.SOURCE_DISABLED
+            ChapterInventoryDiagnosticOutcome.SOURCE_UNAVAILABLE -> ContentBindingSearchFailureKind.SOURCE_UNAVAILABLE
+            ChapterInventoryDiagnosticOutcome.HTTP_ERROR -> ContentBindingSearchFailureKind.HTTP_RESPONSE
+            ChapterInventoryDiagnosticOutcome.NETWORK_ERROR -> ContentBindingSearchFailureKind.NETWORK_FAILURE
+            ChapterInventoryDiagnosticOutcome.TIMEOUT -> ContentBindingSearchFailureKind.TIMEOUT
+            ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED -> ContentBindingSearchFailureKind.CAPTCHA_REQUIRED
+            ChapterInventoryDiagnosticOutcome.MALFORMED_RESPONSE -> ContentBindingSearchFailureKind.MALFORMED_RESPONSE
+            ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR -> ContentBindingSearchFailureKind.EXTENSION_FAILURE
+            else -> ContentBindingSearchFailureKind.INDETERMINATE
+        }
+    }
+
+    private fun scoreCandidates(
+        canonicalTitle: String,
+        sourceRank: Int,
+        candidates: List<ReadingSourceCandidate>,
+    ): List<ScoredSourceCandidate> = candidates.map { candidate ->
+        ScoredSourceCandidate(
+            candidate = candidate,
+            confidence = scoreSourceTitleMatch(
+                targetTitle = canonicalTitle,
+                candidateTitle = candidate.title,
+            ),
+            sourcePreferenceRank = sourceRank,
+        )
+    }.sortedByDescending { it.confidence }
+
+    private fun decideCandidates(candidates: List<ScoredSourceCandidate>): CandidateDecision {
+        val best = candidates.firstOrNull() ?: return CandidateDecision.Empty
+        val second = candidates.getOrNull(1)
+        val unambiguous = second == null || best.confidence - second.confidence > AUTO_MATCH_MARGIN
+        if (best.confidence < CONFIRMATION_THRESHOLD) return CandidateDecision.BelowThreshold
+        if (best.confidence >= AUTO_MATCH_THRESHOLD && unambiguous) {
+            return CandidateDecision.Automatic(best)
+        }
+        return CandidateDecision.Confirmation(
+            candidates = candidates
+                .filter { it.confidence >= CONFIRMATION_THRESHOLD }
+                .take(MAX_CONFIRMATION_CANDIDATES),
+            reason = if (unambiguous) {
+                ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+            } else {
+                ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
+            },
+        )
+    }
+
+    private suspend fun materializeCandidate(candidate: ReadingSourceCandidate) =
+        readingSourceGateway.materialize(candidate).getOrThrow().also { materialized ->
+            require(materialized.sourceId == candidate.sourceId) {
+                "Materialized source does not match selected candidate"
+            }
+            require(materialized.sourceUrl == candidate.sourceUrl) {
+                "Materialized URL does not match selected candidate"
+            }
+            require(materialized.runtimePayload.isNotEmpty()) {
+                "Materialized binding must include provider runtime payload"
+            }
+        }
+
+    private fun createBinding(
+        canonicalTitleId: String,
+        addonId: AddonId,
+        scored: ScoredSourceCandidate,
+        materialized: MaterializedReadingSource,
+        existing: ContentBinding?,
+        timestamp: Long = clock(),
+    ): ContentBinding = ContentBinding(
+            id = existing?.id ?: idFactory(),
+            canonicalTitleId = canonicalTitleId,
+            addonId = addonId,
+            providerTitleKey = materialized.providerTitleKey,
+            matchConfidence = scored.confidence,
+            verifiedByUser = existing?.verifiedByUser ?: false,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = materialized.runtimePayload,
+            createdAt = existing?.createdAt ?: timestamp,
+            updatedAt = timestamp,
+        )
+
+    private sealed interface CandidateDecision {
+        data object Empty : CandidateDecision
+        data object BelowThreshold : CandidateDecision
+        data class Automatic(val candidate: ScoredSourceCandidate) : CandidateDecision
+        data class Confirmation(
+            val candidates: List<ScoredSourceCandidate>,
+            val reason: ChapterInventoryDiagnosticReason,
+        ) : CandidateDecision
+    }
+
     private suspend fun resolveAll(
         canonicalTitleId: String,
         addonId: AddonId,
@@ -141,16 +665,7 @@ class ResolveContentBinding internal constructor(
                         }
                         Triple(
                             sourceRank,
-                            results.map { candidate ->
-                                ScoredSourceCandidate(
-                                    candidate = candidate,
-                                    confidence = scoreSourceTitleMatch(
-                                        targetTitle = canonicalTitle.displayTitle,
-                                        candidateTitle = candidate.title,
-                                    ),
-                                    sourcePreferenceRank = sourceRank,
-                                )
-                            }.sortedByDescending { it.confidence },
+                            scoreCandidates(canonicalTitle.displayTitle, sourceRank, results),
                             failure,
                         )
                     }
@@ -167,67 +682,68 @@ class ResolveContentBinding internal constructor(
                 firstSearchFailure = failure
                 firstSearchFailureSourceId = sourceId
             }
-            val best = candidates.firstOrNull()
-            if (best == null) {
-                if (failure == null) {
+            when (val decision = decideCandidates(candidates)) {
+                CandidateDecision.Empty -> {
+                    if (failure == null) {
+                        recordBinding(
+                            canonicalTitleId,
+                            addonId,
+                            ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                            ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                            sourceId = sourceId,
+                            reason = ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS,
+                        )
+                    }
+                }
+                CandidateDecision.BelowThreshold -> {
+                    hasLowConfidenceMatch = true
                     recordBinding(
                         canonicalTitleId,
                         addonId,
                         ChapterInventoryDiagnosticStage.BINDING_MATCH,
                         ChapterInventoryDiagnosticOutcome.NO_MATCH,
                         sourceId = sourceId,
-                        reason = ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS,
+                        language = candidates.firstOrNull()?.candidate?.language,
+                        received = candidates.size,
+                        reason = ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD,
                     )
                 }
-                continue
-            }
-            val second = candidates.getOrNull(1)
-            val highConfidence = best.confidence >= AUTO_MATCH_THRESHOLD
-            val unambiguousWithinSource =
-                second == null || best.confidence - second.confidence > AUTO_MATCH_MARGIN
-
-            if (highConfidence && unambiguousWithinSource) {
-                selected += best
-                recordBinding(
-                    canonicalTitleId,
-                    addonId,
-                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
-                    ChapterInventoryDiagnosticOutcome.SUCCESS,
-                    sourceId = sourceId,
-                    language = best.candidate.language,
-                    received = candidates.size,
-                    accepted = 1,
-                )
-            } else {
-                hasLowConfidenceMatch = hasLowConfidenceMatch ||
-                    best.confidence < CONFIRMATION_THRESHOLD
-                val reason = when {
-                    best.confidence < CONFIRMATION_THRESHOLD ->
-                        ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD
-                    !unambiguousWithinSource ->
-                        ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES
-                    else -> ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
+                is CandidateDecision.Automatic -> {
+                    val best = decision.candidate
+                    selected += best
+                    recordBinding(
+                        canonicalTitleId,
+                        addonId,
+                        ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                        ChapterInventoryDiagnosticOutcome.SUCCESS,
+                        sourceId = sourceId,
+                        language = best.candidate.language,
+                        received = candidates.size,
+                        accepted = 1,
+                    )
                 }
-                val outcome = when (reason) {
-                    ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES ->
-                        ChapterInventoryDiagnosticOutcome.AMBIGUOUS
-                    ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD ->
-                        ChapterInventoryDiagnosticOutcome.NO_MATCH
-                    else -> ChapterInventoryDiagnosticOutcome.PARTIAL
+                is CandidateDecision.Confirmation -> {
+                    val best = candidates.first()
+                    val reason = decision.reason
+                    val outcome = when (reason) {
+                        ChapterInventoryDiagnosticReason.AMBIGUOUS_CANDIDATES ->
+                            ChapterInventoryDiagnosticOutcome.AMBIGUOUS
+                        ChapterInventoryDiagnosticReason.MATCH_BELOW_THRESHOLD ->
+                            ChapterInventoryDiagnosticOutcome.NO_MATCH
+                        else -> ChapterInventoryDiagnosticOutcome.PARTIAL
+                    }
+                    recordBinding(
+                        canonicalTitleId,
+                        addonId,
+                        ChapterInventoryDiagnosticStage.BINDING_MATCH,
+                        outcome,
+                        sourceId = sourceId,
+                        language = best.candidate.language,
+                        received = candidates.size,
+                        reason = reason,
+                    )
+                    confirmationCandidates += decision.candidates
                 }
-                recordBinding(
-                    canonicalTitleId,
-                    addonId,
-                    ChapterInventoryDiagnosticStage.BINDING_MATCH,
-                    outcome,
-                    sourceId = sourceId,
-                    language = best.candidate.language,
-                    received = candidates.size,
-                    reason = reason,
-                )
-                confirmationCandidates += candidates
-                    .filter { it.confidence >= CONFIRMATION_THRESHOLD }
-                    .take(MAX_CONFIRMATION_CANDIDATES)
             }
         }
 
@@ -289,17 +805,7 @@ class ResolveContentBinding internal constructor(
         val bindings = mutableListOf<ContentBinding>()
         for (scored in selected) {
             val materialized = try {
-                val value = readingSourceGateway.materialize(scored.candidate).getOrThrow()
-                require(value.sourceId == scored.candidate.sourceId) {
-                    "Materialized source does not match selected candidate"
-                }
-                require(value.sourceUrl == scored.candidate.sourceUrl) {
-                    "Materialized URL does not match selected candidate"
-                }
-                require(value.runtimePayload.isNotEmpty()) {
-                    "Materialized binding must include provider runtime payload"
-                }
-                value
+                materializeCandidate(scored.candidate)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -327,17 +833,13 @@ class ResolveContentBinding internal constructor(
                 it.providerTitleKey == materialized.providerTitleKey
             } ?: existingBindings.singleOrNull()
                 ?.takeIf { selected.size == 1 }
-            val binding = ContentBinding(
-                id = existing?.id ?: idFactory(),
+            val binding = createBinding(
                 canonicalTitleId = canonicalTitleId,
                 addonId = addonId,
-                providerTitleKey = materialized.providerTitleKey,
-                matchConfidence = scored.confidence,
-                verifiedByUser = existing?.verifiedByUser ?: false,
-                availability = ContentBindingAvailability.AVAILABLE,
-                runtimePayload = materialized.runtimePayload,
-                createdAt = existing?.createdAt ?: now,
-                updatedAt = now,
+                scored = scored,
+                materialized = materialized,
+                existing = existing,
+                timestamp = now,
             )
             try {
                 contentBindingRepository.upsert(binding)

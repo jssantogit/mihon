@@ -76,6 +76,22 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `initial search without language preferences uses only a small source batch`() = runTest {
+        val gateway = FakeReadingSourceGateway()
+
+        val events = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(7L, 8L, 9L, 10L),
+        ).searchProgress(request(batchSize = 3)).toList()
+
+        events.filterIsInstance<ContentBindingSearchProgress.Completed>().single().queriedSourceIds shouldBe
+            listOf(7L, 8L, 9L)
+        events.filterIsInstance<ContentBindingSearchProgress.Completed>().single().remainingSourceCount shouldBe 1
+        gateway.searchedSourceIds.toSet() shouldBe setOf(7L, 8L, 9L)
+    }
+
+    @Test
     fun `broadening searches only remaining enabled source ids and never repeats queried ids`() = runTest {
         val gateway = FakeReadingSourceGateway(
             installedByLanguage = mapOf(
@@ -100,7 +116,8 @@ class ResolveContentBindingTest {
             ),
         ).toList()
 
-        gateway.searchedSourceIds shouldBe listOf(11L, 12L)
+        gateway.searchedSourceIds.toSet() shouldBe setOf(11L, 12L)
+        gateway.searchedSourceIds.size shouldBe 2
         events.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
             .remainingSourceCount shouldBe 0
     }
@@ -161,6 +178,72 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `HTTP rate limit is classified without exposing arbitrary exception text`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchHandler = { _, _ ->
+                Result.failure(
+                    ReadingSourceSearchFailure(
+                        kind = ReadingSourceFailureKind.HTTP_RESPONSE,
+                        httpStatus = 429,
+                        cause = IOException("provider response body"),
+                    ),
+                )
+            },
+        )
+
+        val source = resolver(FakeContentBindingRepository(null), gateway)
+            .searchProgress(request())
+            .toList()
+            .filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .single()
+
+        source.failure?.kind shouldBe ContentBindingSearchFailureKind.HTTP_RESPONSE
+        source.failure?.httpStatus shouldBe 429
+        source.outcome shouldBe ContentBindingSourceOutcome.FAILURE
+    }
+
+    @Test
+    fun `low confidence title candidate is no match and is not materialized`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/unrelated", "Unrelated Work")),
+            ),
+        )
+
+        val source = resolver(FakeContentBindingRepository(null), gateway)
+            .searchProgress(request())
+            .toList()
+            .filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .single()
+
+        source.outcome shouldBe ContentBindingSourceOutcome.NO_MATCH
+        source.candidates shouldBe emptyList()
+        gateway.materializeCalls shouldBe 0
+    }
+
+    @Test
+    fun `result whose internal source id differs from queried id cannot be bound`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(99L, "/foreign", "Dandadan")),
+            ),
+            materialized = materialized(99L, "/foreign", "en"),
+        )
+        val repository = FakeContentBindingRepository(null)
+
+        val source = resolver(repository, gateway)
+            .searchProgress(request())
+            .toList()
+            .filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .single()
+
+        source.outcome shouldBe ContentBindingSourceOutcome.FAILURE
+        source.failure?.kind shouldBe ContentBindingSearchFailureKind.MALFORMED_RESPONSE
+        gateway.materializeCalls shouldBe 0
+        repository.getByTitle("title").isEmpty() shouldBe true
+    }
+
+    @Test
     fun `cooperative source timeout is reported as timeout not empty`() = runTest {
         val gateway = FakeReadingSourceGateway(
             searchHandler = { _, _ ->
@@ -212,6 +295,22 @@ class ResolveContentBindingTest {
             .single().bindings.single().providerTitleKey shouldBe "remote-123"
         gateway.searchCalls shouldBe 0
         events.last()::class shouldBe ContentBindingSearchProgress.Completed::class
+    }
+
+    @Test
+    fun `disabled addon produces a classified result without querying its sources`() = runTest {
+        val gateway = FakeReadingSourceGateway()
+        val events = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(7L),
+            addonEnabled = false,
+        ).searchProgress(request()).toList()
+
+        val failure = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>().single()
+        failure.failure?.kind shouldBe ContentBindingSearchFailureKind.ADDON_DISABLED
+        failure.failure?.stage shouldBe ContentBindingSearchFailureStage.ADDON_DISCOVERY
+        gateway.searchCalls shouldBe 0
     }
 
     @Test
@@ -695,12 +794,13 @@ class ResolveContentBindingTest {
         diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
         addonSources: List<AddonSourceEligibility> = emptyList(),
         addonSourceEligibilityRepository: AddonSourceEligibilityRepository? = null,
+        addonEnabled: Boolean = true,
     ): ResolveContentBinding {
         var nextId = 0
         return ResolveContentBinding(
             contentBindingRepository = repository,
             canonicalTitleRepository = FakeCanonicalTitleRepository(title),
-            addonRepository = FakeAddonRepository(addonSourceIds),
+            addonRepository = FakeAddonRepository(addonSourceIds, enabled = addonEnabled),
             readingSourceGateway = gateway,
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
             idFactory = { "new-binding-${nextId++}" },
@@ -829,11 +929,12 @@ class ResolveContentBindingTest {
 
     private class FakeAddonRepository(
         sourceIds: List<Long> = listOf(7L),
+        enabled: Boolean = true,
     ) : AddonRepository {
         private val addon = InstalledAddon(
             id = AddonId("mangadex"),
             displayName = "MangaDex",
-            enabled = true,
+            enabled = enabled,
             versionName = "1.0",
             mihonSourceIds = sourceIds,
             hasSettings = false,
