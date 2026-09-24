@@ -30,9 +30,9 @@
 
 **Domain:** Add-on runtime adapter. **Files:** `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/addon/MihonAddonRepositoryTest.kt`, `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/MihonReadingSourceGatewayTest.kt`, relevant extension-store tests; production adapter only if a failing test proves a defect.
 
-- [ ] Add tests for a trusted multi-source extension (one visible Add-on), mixed enabled/disabled IDs, no loaded source, uninstall/update state, non-catalogue source, and catalog-only/untrusted entry. Assert search targets derive from runtime, never from `index.pb` alone.
-- [ ] Confirm RED only for a real missing contract; otherwise record baseline GREEN and avoid redundant production code.
-- [ ] Verify with App Tsuzuki and Format jobs in Fast CI, review `git diff --name-only`, then commit/push this isolated adapter/test slice.
+- [x] Add/confirm tests for a trusted multi-source extension (one visible Add-on), mixed enabled/disabled IDs, no loaded runtime extension, uninstall/update state, and non-catalogue search exclusion. Assert search targets derive from runtime, never from `index.pb` alone.
+- [x] Baseline GREEN: the focused contracts matched existing behavior; no adapter defect was demonstrated, so no production change was made. `ExtensionManager` supplies `Extension.Installed` only for successful trusted loads; `MihonAddonRepository` consumes only that runtime list; `MihonReadingSourceGateway` uses loaded `CatalogueSource`s and excludes disabled IDs. There is no extension-store test suite in the repository, and the Add-on adapter has no catalog-index dependency.
+- [x] Fast CI v2.1 run `36059811270` passed the Change Planner, App — Tsuzuki, Domain — Tsuzuki, and CI Gate jobs. Format was not selected by the planner for these test-only paths; `git diff --check` passed before commit. No local Gradle was run. Test slice committed/pushed as `fa6b952a3cb0e9bb8b033d05d2c6bd96f456c41d`.
 
 ## Task 2 — Bounded, progressive search and safe binding
 
