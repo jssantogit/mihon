@@ -26,6 +26,15 @@ E2E_LINE = re.compile(
     r"(?:\|count=(\d{1,10}))?(?:\|sourceId=(\d{1,20}))?"
     r"(?:\|language=([A-Za-z0-9-]{1,16}))?(?:\|elapsedMs=(\d{1,10}))?$"
 )
+SETUP_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
+    r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|CANONICAL_TITLE_INSERT)"
+    r"\|outcome=(PASS|FAIL)"
+    r"(?:\|exception=(IllegalStateException|IllegalArgumentException|SecurityException|"
+    r"SQLiteException|SQLiteCantOpenDatabaseException|SQLiteReadOnlyDatabaseException|"
+    r"UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|"
+    r"ClassNotFoundException|NullPointerException|IOException|OTHER))?$"
+)
 MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
 MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')
 PUBLIC_CLASS_PREFIXES = ("androidx.test.", "eu.kanade.tachiyomi.", "mihon.", "org.junit.", "kotlin.")
@@ -87,6 +96,14 @@ def summarize(runner: str, crash: str) -> list[str]:
         if elapsed:
             summary += "|elapsedMs=" + elapsed
         lines.append(summary)
+    for raw_line in runner.splitlines():
+        parsed = SETUP_LINE.fullmatch(raw_line.strip())
+        if parsed:
+            phase, outcome, exception = parsed.groups()
+            summary = "DIAGNOSTIC|setupPhase=" + phase + "|outcome=" + outcome
+            if exception:
+                summary += "|exception=" + exception
+            lines.append(summary)
     missing_source = runner + "\n" + crash
     missing = set(MISSING_QUOTED_CLASS.findall(missing_source))
     missing.update(MISSING_DIRECT_CLASS.findall(missing_source))

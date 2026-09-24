@@ -106,6 +106,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             val terminal = linkedMapOf<String, StageResult>()
             var currentStage = STAGES.first()
             var stopCategory = "INSTRUMENTATION"
+            var setupPhase: String? = null
             try {
                 val app = instrumentation.targetContext.applicationContext as App
                 val extension = loadTrustedFixture(app)
@@ -131,19 +132,28 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 report(currentStage, Outcome.PASS, sourceId = sourceId, language = source.lang)
                 terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
+                setupPhase = "CONTEXT_ISOLATION"
                 val testContext = instrumentation.context.applicationContext
                 check(testContext.packageName != app.packageName) {
                     "Instrumentation DB must not share the target package"
                 }
+                reportSetupPhase(setupPhase, Outcome.PASS)
+                setupPhase = "DB_RESET"
                 check(
                     !testContext.databaseList().contains("tachiyomi.db") ||
                         testContext.deleteDatabase("tachiyomi.db"),
                 ) {
                     "Could not reset the instrumentation-only database"
                 }
+                reportSetupPhase(setupPhase, Outcome.PASS)
+                setupPhase = "SQL_DRIVER"
                 val driver = AppBindings.providesSqlDriver(testContext)
+                reportSetupPhase(setupPhase, Outcome.PASS)
                 try {
+                    setupPhase = "DATABASE_ADAPTERS"
                     val database = AppBindings.providesDatabase(driver)
+                    reportSetupPhase(setupPhase, Outcome.PASS)
+                    setupPhase = "COMPOSITION"
                     var materializationOutcome: Outcome? = null
                     var materializationCategory = "NONE"
                     var materializationElapsedMs: Long? = null
@@ -156,6 +166,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         materializationCategory = if (result.isSuccess) "NONE" else "MATERIALIZATION"
                         materializationElapsedMs = elapsedMs
                     }
+                    reportSetupPhase(setupPhase, Outcome.PASS)
+                    setupPhase = "CANONICAL_TITLE_INSERT"
                     val canonicalTitleId = UUID.randomUUID().toString()
                     val now = System.currentTimeMillis()
                     composition.canonicalTitleRepository.insert(
@@ -168,6 +180,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         ),
                     )
 
+                    reportSetupPhase(setupPhase, Outcome.PASS)
+                    setupPhase = null
                     currentStage = "LIVE_SEARCH"
                     val searchStarted = SystemClock.elapsedRealtime()
                     val search = try {
@@ -407,10 +421,19 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 stopCategory = "TIMEOUT"
                 report(currentStage, Outcome.INCONCLUSIVE, category = stopCategory)
                 terminal[currentStage] = StageResult(Outcome.INCONCLUSIVE, stopCategory)
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
                 stopCategory = "INSTRUMENTATION"
-                report(currentStage, Outcome.FAIL, category = stopCategory)
-                terminal[currentStage] = StageResult(Outcome.FAIL, stopCategory)
+                val inSetup = setupPhase != null
+                if (inSetup) {
+                    reportSetupPhase(setupPhase, Outcome.FAIL, setupExceptionType(error))
+                }
+                if (currentStage !in terminal) {
+                    report(currentStage, Outcome.FAIL, category = stopCategory)
+                    terminal[currentStage] = StageResult(Outcome.FAIL, stopCategory)
+                } else if (!inSetup) {
+                    // Do not let a failure after a PASS produce a false all-pass result.
+                    terminal[currentStage] = StageResult(Outcome.FAIL, stopCategory)
+                }
             }
 
             var blocker = false
@@ -475,6 +498,31 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             path.endsWith("title/$EXPECTED_REFERENCE_SLUG", ignoreCase = true)
     } catch (_: Exception) {
         false
+    }
+
+    private fun setupExceptionType(error: Throwable): String {
+        val allowed = setOf(
+            "IllegalStateException", "IllegalArgumentException", "SecurityException",
+            "SQLiteException", "SQLiteCantOpenDatabaseException", "SQLiteReadOnlyDatabaseException",
+            "UnsatisfiedLinkError", "NoClassDefFoundError", "ExceptionInInitializerError",
+            "ClassNotFoundException", "NullPointerException", "IOException",
+        )
+        return generateSequence(error) { it.cause }
+            .take(6)
+            .map { it.javaClass.simpleName }
+            .firstOrNull { it in allowed } ?: "OTHER"
+    }
+
+    private fun reportSetupPhase(phase: String?, outcome: Outcome, exception: String? = null) {
+        if (phase == null) return
+        val stream = buildString {
+            append("RUNTIME_SETUP|phase=").append(phase).append("|outcome=").append(outcome.name)
+            exception?.let { append("|exception=").append(it) }
+        }
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            1,
+            Bundle().apply { putString("stream", stream) },
+        )
     }
 
     private fun report(
