@@ -29,6 +29,7 @@ class InstalledExtensionFixtureInstrumentedTest {
             )
             assertTrue(packageName.startsWith("eu.kanade.tachiyomi.extension."))
             val app = instrumentation.targetContext.applicationContext as App
+
             @Suppress("DEPRECATION")
             val installedPackage = app.packageManager.getPackageInfo(
                 packageName,
@@ -65,9 +66,11 @@ class InstalledExtensionFixtureInstrumentedTest {
                     extension.sources.all { found -> sources.any { it.id == found.id } }
                 }
             }
-            assertTrue(extension.sources.all { found ->
-                registered.any { it.id == found.id }
-            })
+            assertTrue(
+                extension.sources.all { found ->
+                    registered.any { it.id == found.id }
+                },
+            )
             instrumentation.sendStatus(
                 1,
                 Bundle().apply {

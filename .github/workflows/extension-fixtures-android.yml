@@ -10,6 +10,8 @@ on:
       - '.github/scripts/verify_extension_matrix_fixture.py'
       - '.github/scripts/test_extension_matrix_fixture.py'
       - '.github/scripts/run_extension_matrix_android.sh'
+      - '.github/scripts/detect_extension_package.py'
+      - '.github/scripts/test_detect_extension_package.py'
       - '.github/workflows/extension-fixtures-android.yml'
   workflow_dispatch:
 
@@ -30,6 +32,7 @@ jobs:
       - name: Verify fixture bytes, ZIP CRC, and runner syntax
         run: |
           python3 .github/scripts/test_extension_matrix_fixture.py
+          python3 .github/scripts/test_detect_extension_package.py
           python3 .github/scripts/verify_extension_matrix_fixture.py
           bash -n .github/scripts/run_extension_matrix_android.sh
 

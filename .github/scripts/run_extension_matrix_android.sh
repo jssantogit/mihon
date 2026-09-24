@@ -5,9 +5,8 @@ set -euo pipefail
 python3 .github/scripts/verify_extension_matrix_fixture.py
 
 signer="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
-if [[ -z "$signer" || -z "$aapt" ]]; then
-  echo "::error::Android build-tools aapt/apksigner missing"; exit 1
+if [[ -z "$signer" ]]; then
+  echo "::error::Android build-tools apksigner missing"; exit 1
 fi
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
 target="$(find app/build/outputs/apk/debug -type f \( -name '*universal*.apk' -o -name 'app-debug.apk' \) | sort | head -n 1)"
@@ -30,7 +29,10 @@ class="eu.kanade.tachiyomi.data.tsuzuki.instrumentation.InstalledExtensionFixtur
 method="loadsRealExtensionAndRegistersSources"
 output="$(mktemp)"
 crash="$(mktemp)"
-trap 'rm -f "$output" "$crash"' EXIT
+before="$(mktemp)"
+after="$(mktemp)"
+dump="$(mktemp)"
+trap 'rm -f "$output" "$crash" "$before" "$after" "$dump"' EXIT
 failures=0
 successes=0
 mkdir -p .github/results/extension-matrix
@@ -47,21 +49,31 @@ for filename in manga-ball-1.6.1.apk animexnovel-1.6.19.apk \
     echo "::endgroup::"
     continue
   fi
-  badge="$("$aapt" dump badging "$apk" 2>/dev/null | grep -m 1 '^package:')" || true
-  package_name="$(printf '%s\n' "$badge" | sed -n "s/.*name='\([^']*\)'.*/\1/p")"
-  version_name="$(printf '%s\n' "$badge" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
-  if [[ ! "$package_name" =~ ^eu\.kanade\.tachiyomi\.extension\.[a-z0-9._]+$ || -z "$version_name" ]]; then
-    echo "::error::Unrecognized APK package/version: $filename"
-    ((failures+=1))
-    echo "::endgroup::"
-    continue
-  fi
+  # Identify the package Android actually installed, rather than parsing an
+  # aapt badging line that failed identically for all eight uploaded APKs.
+  adb shell pm list packages -3 | tr -d '\r' > "$before"
   if ! adb install -r "$apk" >/dev/null; then
     echo "::error::APK install failed: $filename"
     ((failures+=1))
     echo "::endgroup::"
     continue
   fi
+  adb shell pm list packages -3 | tr -d '\r' > "$after"
+  if ! package_name="$(python3 .github/scripts/detect_extension_package.py package "$before" "$after")"; then
+    echo "::error::Could not identify the installed extension: $filename"
+    ((failures+=1))
+    echo "::endgroup::"
+    continue
+  fi
+  adb shell dumpsys package "$package_name" | tr -d '\r' > "$dump"
+  if ! version_name="$(python3 .github/scripts/detect_extension_package.py version "$dump")"; then
+    echo "::error::Could not identify extension version: $filename"
+    adb uninstall "$package_name" >/dev/null 2>&1 || true
+    ((failures+=1))
+    echo "::endgroup::"
+    continue
+  fi
+  echo "EXTENSION_METADATA|fixture=$filename|package=$package_name|version=$version_name"
   if ! adb shell am instrument -w -r -e class "$class#$method" \
       -e fixturePackageName "$package_name" -e fixtureVersionName "$version_name" \
       "$android_runner" > "$output" 2>&1; then
