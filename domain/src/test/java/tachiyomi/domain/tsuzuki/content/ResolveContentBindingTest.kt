@@ -1010,6 +1010,7 @@ class ResolveContentBindingTest {
         private val materializeHandler: (suspend (ReadingSourceCandidate) -> Result<MaterializedReadingSource>)? =
             null,
     ) : ReadingSourceGateway {
+        private val callLock = Any()
         var searchCalls = 0
         val searchedSourceIds = mutableListOf<Long>()
         val searchedQueries = mutableListOf<String>()
@@ -1019,9 +1020,11 @@ class ResolveContentBindingTest {
             installedByLanguage[language].orEmpty()
 
         override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
-            searchCalls += 1
-            searchedSourceIds += sourceId
-            searchedQueries += query
+            synchronized(callLock) {
+                searchCalls += 1
+                searchedSourceIds += sourceId
+                searchedQueries += query
+            }
             val handler = searchHandler
             if (handler != null) return handler(sourceId, query)
             searchFailure?.let { return Result.failure(it) }
@@ -1029,7 +1032,7 @@ class ResolveContentBindingTest {
         }
 
         override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
-            materializeCalls += 1
+            synchronized(callLock) { materializeCalls += 1 }
             val handler = materializeHandler
             if (handler != null) return handler(candidate)
             materializeFailure?.let { return Result.failure(it) }

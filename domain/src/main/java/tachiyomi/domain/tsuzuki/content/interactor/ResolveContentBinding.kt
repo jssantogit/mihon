@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
@@ -115,7 +117,8 @@ class ResolveContentBinding internal constructor(
     /**
      * Search one bounded batch of installed, enabled sources and emit results as each source
      * finishes. [ContentBindingSearchMode.BROADEN] is an explicit caller action; this resolver
-     * never fans out across every source unless the caller requests successive batches.
+     * never fans out across every source unless the caller requests successive batches. The cold
+     * upstream runs on IO because Mihon CatalogueSource calls may block despite the suspend gateway.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun searchProgress(request: ContentBindingSearchRequest): Flow<ContentBindingSearchProgress> = flow {
@@ -214,7 +217,7 @@ class ResolveContentBinding internal constructor(
                 remainingSourceCount = remainingCount,
             ),
         )
-    }
+    }.flowOn(Dispatchers.IO)
 
     private suspend fun resolveProgressiveSource(
         request: ContentBindingSearchRequest,
