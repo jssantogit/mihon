@@ -352,7 +352,7 @@ class ResolveContentBindingTest {
         }
         repository.snapshot().size shouldBe 1
         repository.snapshot().single().canonicalTitleId shouldBe "title"
-        repository.snapshot().single().providerTitleKey shouldBe "source-7:/dandadan"
+        repository.snapshot().single().providerTitleKey shouldBe "7:/dandadan"
     }
 
     @Test
