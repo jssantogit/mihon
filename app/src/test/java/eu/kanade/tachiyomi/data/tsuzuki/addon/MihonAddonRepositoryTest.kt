@@ -88,6 +88,42 @@ class MihonAddonRepositoryTest {
     }
 
     @Test
+    fun `no loaded runtime extension produces no installed addon`() = runTest {
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(emptyList()),
+            installedExtensionsSnapshot = { emptyList() },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+        )
+
+        repository.snapshot() shouldBe emptyList()
+    }
+
+    @Test
+    fun `removed extension disappears from installed addon snapshot`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.remove.after-uninstall",
+            name = "Example",
+            sources = listOf(FakeSource(id = 10L, lang = "en")),
+        )
+        var installed = listOf(extension)
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { installed },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+            uninstallExtension = { installed = emptyList() },
+        )
+
+        repository.snapshot().single().id shouldBe AddonId(extension.pkgName)
+        repository.uninstall(AddonId(extension.pkgName))
+
+        repository.snapshot() shouldBe emptyList()
+    }
+
+    @Test
     fun `uninstall delegates by addon package rather than source`() = runTest {
         val extension = installedExtension(
             pkgName = "pkg.remove",

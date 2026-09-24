@@ -128,6 +128,16 @@ class MihonReadingSourceGatewayTest {
     }
 
     @Test
+    fun `search rejects a loaded source that does not implement catalogue`() = runTest {
+        sourceManager.sourcesList += StubSource(404L, "en", "Unavailable catalogue")
+
+        val failure = gateway.search(404L, "query").exceptionOrNull() as ReadingSourceSearchFailure
+
+        failure.kind shouldBe ReadingSourceFailureKind.SOURCE_UNAVAILABLE
+        mangaRepository.insertedCount shouldBe 0
+    }
+
+    @Test
     fun `search wraps source failure but rethrows cancellation`() = runTest {
         sourceManager.sourcesList += TestCatalogueSource(
             10L,
