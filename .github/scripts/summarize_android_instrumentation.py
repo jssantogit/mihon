@@ -61,6 +61,19 @@ DB_PATH_PROBE_LINE = re.compile(
     r"\|parentWritable=(true|false|unknown)"
     r"\|cleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
 )
+SQLITE_CONTEXT_PROBE_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SQLITE_CONTEXT_PROBE"
+    r"\|instrumentationOpen=(PASS|FAILED)"
+    r"\|instrumentationError=(NONE|SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER)"
+    r"\|instrumentationClose=(PASS|NOT_OPENED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+    r"\|instrumentationDelete=(PASS|FAILED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+    r"\|instrumentationDirCleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)"
+    r"\|targetOpen=(PASS|FAILED)"
+    r"\|targetError=(NONE|SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER)"
+    r"\|targetClose=(PASS|NOT_OPENED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+    r"\|targetDelete=(PASS|FAILED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+    r"\|targetDirCleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
+)
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
     r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
@@ -181,6 +194,25 @@ def summarize(runner: str, crash: str) -> list[str]:
                 "|parentState=" + state +
                 "|parentWritable=" + writable +
                 "|cleanup=" + cleanup
+            )
+        sqlite_probe = SQLITE_CONTEXT_PROBE_LINE.fullmatch(raw_line.strip())
+        if sqlite_probe:
+            (
+                instrumentation_open, instrumentation_error, instrumentation_close,
+                instrumentation_delete, instrumentation_cleanup, target_open, target_error,
+                target_close, target_delete, target_cleanup,
+            ) = sqlite_probe.groups()
+            lines.append(
+                "DIAGNOSTIC|sqliteContextProbe|instrumentationOpen=" + instrumentation_open +
+                "|instrumentationError=" + instrumentation_error +
+                "|instrumentationClose=" + instrumentation_close +
+                "|instrumentationDelete=" + instrumentation_delete +
+                "|instrumentationDirCleanup=" + instrumentation_cleanup +
+                "|targetOpen=" + target_open +
+                "|targetError=" + target_error +
+                "|targetClose=" + target_close +
+                "|targetDelete=" + target_delete +
+                "|targetDirCleanup=" + target_cleanup
             )
         context = CONTEXT_LINE.fullmatch(raw_line.strip())
         if context:

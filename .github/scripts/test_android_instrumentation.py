@@ -91,6 +91,12 @@ DB_IDENTITY_GOOD = (
     "|targetDataDirWritable=true|targetDataDirExecutable=true|targetDataDirState=EXISTS\n"
     "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE|outcome=CREATED"
     "|parentState=EXISTS|parentWritable=true|cleanup=REMOVED\n"
+    "INSTRUMENTATION_STATUS: stream=RUNTIME_SQLITE_CONTEXT_PROBE"
+    "|instrumentationOpen=FAILED|instrumentationError=SQLITE"
+    "|instrumentationClose=NOT_OPENED|instrumentationDelete=PASS"
+    "|instrumentationDirCleanup=NOT_NEEDED"
+    "|targetOpen=PASS|targetError=NONE|targetClose=PASS|targetDelete=PASS"
+    "|targetDirCleanup=NOT_NEEDED\n"
     "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + DB_IDENTITY_METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
@@ -178,6 +184,19 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(unsafe, DB_IDENTITY_METHOD)
+
+    def test_database_identity_probe_requires_both_sqlite_results(self):
+        output = DB_IDENTITY_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SQLITE_CONTEXT_PROBE"
+            "|instrumentationOpen=FAILED|instrumentationError=SQLITE"
+            "|instrumentationClose=NOT_OPENED|instrumentationDelete=PASS"
+            "|instrumentationDirCleanup=NOT_NEEDED"
+            "|targetOpen=PASS|targetError=NONE|targetClose=PASS|targetDelete=PASS"
+            "|targetDirCleanup=NOT_NEEDED\n",
+            "",
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(output, DB_IDENTITY_METHOD)
 
     def test_isolated_context_database_diagnostic_rejects_missing_phase(self):
         output = CONTEXT_DB_GOOD.replace(

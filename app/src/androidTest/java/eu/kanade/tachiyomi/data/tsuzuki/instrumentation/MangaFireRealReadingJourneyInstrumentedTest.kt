@@ -3,6 +3,8 @@ package eu.kanade.tachiyomi.data.tsuzuki.instrumentation
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
@@ -112,6 +114,8 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val testDataDirectory = dataDirectoryObservation(testContext)
         val targetDataDirectory = dataDirectoryObservation(targetContext)
         val testDatabasePath = databasePathCreationProbe(testContext)
+        val instrumentationDatabase = sqliteContextDatabaseProbe(testContext)
+        val targetDatabase = sqliteContextDatabaseProbe(targetContext)
 
         val stream = buildString {
             append("RUNTIME_DB_IDENTITY|processIsTestUid=")
@@ -136,6 +140,22 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             append("|cleanup=").append(testDatabasePath.cleanup)
         }
         instrumentation.sendStatus(1, Bundle().apply { putString("stream", pathProbe) })
+        val sqliteProbe = buildString {
+            append("RUNTIME_SQLITE_CONTEXT_PROBE|instrumentationOpen=")
+                .append(instrumentationDatabase.openOutcome)
+            append("|instrumentationError=").append(instrumentationDatabase.openError)
+            append("|instrumentationClose=").append(instrumentationDatabase.closeOutcome)
+            append("|instrumentationDelete=").append(instrumentationDatabase.deleteOutcome)
+            append("|instrumentationDirCleanup=").append(instrumentationDatabase.directoryCleanup)
+            append("|targetOpen=").append(targetDatabase.openOutcome)
+            append("|targetError=").append(targetDatabase.openError)
+            append("|targetClose=").append(targetDatabase.closeOutcome)
+            append("|targetDelete=").append(targetDatabase.deleteOutcome)
+            append("|targetDirCleanup=").append(targetDatabase.directoryCleanup)
+        }
+        instrumentation.sendStatus(1, Bundle().apply { putString("stream", sqliteProbe) })
+        assertTrue("Instrumentation temporary database cleanup failed", instrumentationDatabase.cleaned)
+        assertTrue("Target temporary database cleanup failed", targetDatabase.cleaned)
     }
 
     @Test(timeout = 90_000L)
@@ -721,7 +741,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
     private inline fun <T> diagnosticSetupPhase(phase: String, block: () -> T): T =
         try {
             block().also { reportSetupPhase(phase, Outcome.PASS) }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             reportSetupPhase(
                 phase,
                 Outcome.FAIL,
@@ -904,6 +924,68 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val outcome: String,
         val parent: DatabaseParentObservation,
         val cleanup: String,
+    )
+
+    private fun sqliteContextDatabaseProbe(context: Context): SqliteContextProbeObservation {
+        val databaseName = "tsuzuki-probe-${UUID.randomUUID()}.db"
+        val dataDirectory = File(context.applicationInfo.dataDir)
+        val databaseParent = File(dataDirectory, "databases")
+        val dataDirectoryExistedBefore = dataDirectory.exists()
+        val databaseParentExistedBefore = databaseParent.exists()
+        var database: SQLiteDatabase? = null
+        val openError = try {
+            database = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
+            "NONE"
+        } catch (error: Throwable) {
+            sqliteProbeErrorCategory(error)
+        }
+        val openOutcome = if (database == null) "FAILED" else "PASS"
+        val closeOutcome = when {
+            database == null -> "NOT_OPENED"
+            else -> try {
+                database.close()
+                "PASS"
+            } catch (error: Exception) {
+                "ERROR_${sqliteProbeErrorCategory(error)}"
+            }
+        }
+        val deleteOutcome = try {
+            if (context.deleteDatabase(databaseName)) "PASS" else "FAILED"
+        } catch (error: Exception) {
+            "ERROR_${sqliteProbeErrorCategory(error)}"
+        }
+        val directoryCleanup = if (databaseParentExistedBefore) {
+            "NOT_NEEDED"
+        } else {
+            cleanupCreatedDatabaseDirectories(dataDirectory, databaseParent, dataDirectoryExistedBefore)
+        }
+        return SqliteContextProbeObservation(
+            openOutcome = openOutcome,
+            openError = openError,
+            closeOutcome = closeOutcome,
+            deleteOutcome = deleteOutcome,
+            directoryCleanup = directoryCleanup,
+            cleaned = closeOutcome in setOf("PASS", "NOT_OPENED") &&
+                deleteOutcome == "PASS" && directoryCleanup in setOf("REMOVED", "NOT_NEEDED"),
+        )
+    }
+
+    private fun sqliteProbeErrorCategory(error: Exception): String = when (error) {
+        is SQLiteException -> "SQLITE"
+        is SecurityException -> "SECURITY"
+        is IllegalArgumentException -> "ILLEGAL_ARGUMENT"
+        is IllegalStateException -> "ILLEGAL_STATE"
+        is java.io.IOException -> "IO"
+        else -> "OTHER"
+    }
+
+    private data class SqliteContextProbeObservation(
+        val openOutcome: String,
+        val openError: String,
+        val closeOutcome: String,
+        val deleteOutcome: String,
+        val directoryCleanup: String,
+        val cleaned: Boolean,
     )
 
     private fun diagnosticSchemaProbe(driver: app.cash.sqldelight.db.SqlDriver) {

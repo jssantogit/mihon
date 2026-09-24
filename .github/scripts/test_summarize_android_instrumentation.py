@@ -75,6 +75,33 @@ class SummaryTest(unittest.TestCase):
         self.assertNotIn("/private", result)
         self.assertNotIn("secret.db", result)
 
+    def test_framework_sqlite_context_results_use_only_fixed_categories(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SQLITE_CONTEXT_PROBE"
+            "|instrumentationOpen=FAILED|instrumentationError=SECURITY"
+            "|instrumentationClose=NOT_OPENED|instrumentationDelete=PASS"
+            "|instrumentationDirCleanup=REMOVED"
+            "|targetOpen=PASS|targetError=NONE|targetClose=PASS|targetDelete=PASS"
+            "|targetDirCleanup=NOT_NEEDED\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SQLITE_CONTEXT_PROBE"
+            "|instrumentationOpen=FAILED|instrumentationError=OTHER"
+            "|instrumentationClose=NOT_OPENED|instrumentationDelete=PASS"
+            "|instrumentationDirCleanup=REMOVED"
+            "|targetOpen=PASS|targetError=NONE|targetClose=PASS|targetDelete=PASS"
+            "|targetDirCleanup=NOT_NEEDED|path=/private|message=token-value\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "DIAGNOSTIC|sqliteContextProbe|instrumentationOpen=FAILED"
+            "|instrumentationError=SECURITY|instrumentationClose=NOT_OPENED"
+            "|instrumentationDelete=PASS|instrumentationDirCleanup=REMOVED"
+            "|targetOpen=PASS|targetError=NONE|targetClose=PASS|targetDelete=PASS"
+            "|targetDirCleanup=NOT_NEEDED",
+            result,
+        )
+        self.assertNotIn("/private", result)
+        self.assertNotIn("token-value", result)
+
     def test_startup_crash_is_classified_without_message_leaks(self):
         runner = ("INSTRUMENTATION_RESULT: shortMsg=Process crashed token=SECRET\n"
                   "INSTRUMENTATION_CODE: 0\n"

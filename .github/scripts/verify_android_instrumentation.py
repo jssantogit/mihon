@@ -107,6 +107,22 @@ def verify_database_identity_probe(output: str) -> None:
     path_events = [line for line in output.splitlines() if "RUNTIME_DB_PATH_PROBE|" in line]
     if len(path_events) != 1 or not path_probe.fullmatch(path_events[0]):
         raise AndroidTestVerificationError("Expected one sanitized database path creation observation")
+    sqlite_probe = re.compile(
+        r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SQLITE_CONTEXT_PROBE"
+        r"\|instrumentationOpen=(PASS|FAILED)"
+        r"\|instrumentationError=(NONE|SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER)"
+        r"\|instrumentationClose=(PASS|NOT_OPENED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+        r"\|instrumentationDelete=(PASS|FAILED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+        r"\|instrumentationDirCleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)"
+        r"\|targetOpen=(PASS|FAILED)"
+        r"\|targetError=(NONE|SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER)"
+        r"\|targetClose=(PASS|NOT_OPENED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+        r"\|targetDelete=(PASS|FAILED|ERROR_(?:SQLITE|SECURITY|ILLEGAL_ARGUMENT|ILLEGAL_STATE|IO|OTHER))"
+        r"\|targetDirCleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
+    )
+    sqlite_events = [line for line in output.splitlines() if "RUNTIME_SQLITE_CONTEXT_PROBE|" in line]
+    if len(sqlite_events) != 1 or not sqlite_probe.fullmatch(sqlite_events[0]):
+        raise AndroidTestVerificationError("Expected one sanitized framework SQLite probe observation")
 
 
 def verify_context_database_diagnostic(output: str) -> None:
