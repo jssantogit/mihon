@@ -80,6 +80,17 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_live_journey_requires_real_class_method_and_all_pass_stages(self):
         checker.verify(LIVE_GOOD, LIVE_METHOD)
 
+    def test_live_journey_accepts_the_real_long_source_id_on_registration(self):
+        registration = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=SOURCE_REGISTRATION|outcome=PASS"
+            "|sourceId=6084907896154116083|language=en"
+        )
+        output = LIVE_GOOD.replace(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=SOURCE_REGISTRATION|outcome=PASS",
+            registration,
+        )
+        checker.verify(output, LIVE_METHOD)
+
     def test_live_journey_wrong_class_is_rejected(self):
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(LIVE_GOOD.replace(E2E_CLASS, checker.CLASS), LIVE_METHOD)
@@ -99,6 +110,19 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
             for stage in E2E_STAGES
         )
         with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify_e2e_stages(output)
+
+    def test_source_registration_timeout_is_recognized_but_still_fails_closed(self):
+        output = "\n".join(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage +
+            ("|outcome=INCONCLUSIVE|category=SOURCE_REGISTRATION_TIMEOUT|sourceId=6084907896154116083"
+             "|language=en|elapsedMs=30000" if stage == "SOURCE_REGISTRATION" else "|outcome=PASS")
+            for stage in E2E_STAGES
+        )
+        with self.assertRaisesRegex(
+            checker.AndroidTestVerificationError,
+            "Runtime E2E includes a non-pass required stage",
+        ):
             checker.verify_e2e_stages(output)
 
     def test_passing_stage_cannot_carry_http_failure_category(self):

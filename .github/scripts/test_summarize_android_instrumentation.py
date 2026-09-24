@@ -80,6 +80,20 @@ class SummaryTest(unittest.TestCase):
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn("e2eStage=CHAPTER_PROBE|outcome=INCONCLUSIVE|category=SOURCE_DISABLED", result)
 
+    def test_source_registration_timeout_is_preserved_as_closed_diagnostic(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=SOURCE_REGISTRATION"
+            "|outcome=INCONCLUSIVE|category=SOURCE_REGISTRATION_TIMEOUT"
+            "|sourceId=6084907896154116083|language=en|elapsedMs=30000\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "e2eStage=SOURCE_REGISTRATION|outcome=INCONCLUSIVE"
+            "|category=SOURCE_REGISTRATION_TIMEOUT|sourceId=6084907896154116083"
+            "|language=en|elapsedMs=30000",
+            result,
+        )
+
     def test_binding_materialization_stage_is_retained(self):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=BINDING_MATERIALIZATION|outcome=FAIL"

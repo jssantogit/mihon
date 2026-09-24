@@ -218,3 +218,29 @@ This subsection supersedes the preceding transport/status snapshot for the later
 - The formatting correction in `c7498d130` was validated by CI v2.1 (`35991761957`): Change Planner, App — Tsuzuki, Format, and CI Gate passed; unrelated backend/release/package lanes were skipped by the planner. Its MangaFire workflow (`35991761905`) passed fixture verification and instrumentation compilation, but again skipped `Load real APK in isolated emulator`. All-source search shards and real-extension fixture emulator jobs were skipped in their respective workflows. Thus the source-code checks are green at `c7498d130`, but no real-extension Android journey or fresh provider request was executed.
 - The later APK Build workflow `35991976642`, triggered by the report-only commit `08b52cb6`, concluded `skipped`.
 - Therefore the transport blocker is operationally bypassed by SSH, but its underlying cause (mobile carrier/DNS vs. HTTPS route) is not proven. Real MangaFire binding, inventory, reconciliation, reading alternative, and `getPageList` remain unverified. No APK was generated, no merge/PR occurred, and no Gradle command was run locally.
+
+## E2E source-registration failure investigation (2026-09-24)
+
+### Latest baseline and observed failure
+
+- Branch remained `tsuzuki/runtime-e2e-tests`; remote and local were both `9104e9f7bf9405cbf640cfe4dd75c7b83cfccc95` at investigation start, with a clean tree. The branch had advanced beyond the user's stated `7221a9b` baseline; no existing work was discarded.
+- CI v2.1 `36001018797` passed Change Planner, App — Tsuzuki, Format and CI Gate. The real-extension workflow `36001018885` passed fixture byte verification and Android instrumentation compilation, then failed during the opt-in emulator journey. The separate eight-fixture and 222-source workflows completed accounting/compile jobs but their emulator/search jobs were skipped.
+- The sanitized artifact for `36001018885` records `EXTENSION_INSTALL=PASS`, `SOURCE_REGISTRATION=INCONCLUSIVE|category=INSTRUMENTATION`, and all later required stages `NOT_RUN`. It includes `exceptionType=java.lang.AssertionError`, but no `RUNTIME_SETUP` phase event and no MangaFire search event. The artifact's JUnit assertion is the downstream “all stages completed” guard after the journey stopped; it is not evidence of an Android database failure or an extension/provider failure.
+
+### Root-cause evidence and limits
+
+The failure occurs before the instrumentation-only database setup: `setupPhase` is set and a `RUNTIME_SETUP` event emitted only after source resolution and the `SOURCE_REGISTRATION=PASS` event. No setup-phase events were emitted. In the current test code, before that pass the only generic `INSTRUMENTATION` stop paths are (a) no unique English internal source on the installed extension object, or (b) an immediate `sourceManager.get(sourceId)` returning null/not a `CatalogueSource`.
+
+The fixture test in the same workflow validates MangaFire 1.6.34's English source ID `6084907896154116083` and waits for it to appear in `sourceManager.sources`. The E2E test instead called `sourceManager.get(sourceId)` immediately. `AndroidSourceManager` builds its map asynchronously from `installedExtensionsFlow`; `get()` waits for the map to become non-null, not for this exact source ID to be present. This makes the immediate E2E lookup a concrete race candidate. Because the failed artifact deliberately omitted the branch-specific source-resolution fact, it does not prove whether (a) or (b) was taken. No claim is made that the database or MangaFire caused the observed failure.
+
+### RED regressions and bounded correction
+
+- Added a summary-parser RED test for a safe `SOURCE_REGISTRATION_TIMEOUT` stage event; it failed because the category was not allowlisted.
+- Added a verifier RED test with the real 19-digit MangaFire source ID; it failed because the validator applied its 10-digit count/time bound to `sourceId` too. This was an independent, confirmed validation defect that would have blocked a successful source-registration event.
+- The test now waits on `SourceManager.sources` until the exact expected ID appears, matching the existing fixture test's condition-based registration check and reusing its 30-second bound. Non-timeout cancellation still propagates. Empty English-source and wrong source-type cases have distinct closed categories; a registration timeout carries the expected source ID/language and elapsed time. The real stage is emitted only after exact source resolution and eligibility checks.
+- The sanitizer and verifier now accept the three closed source-resolution categories. Source IDs use their own 20-digit numeric bound; count and elapsed-time values retain the 10-digit bound. No arbitrary throwable message, URL, response, or credential is emitted.
+- Local RED/GREEN evidence: before correction, `test_summarize_android_instrumentation.py` had one failure for the new timeout category; `test_android_instrumentation.py` then had the expected failures for the 19-digit ID and closed timeout category. After correction, extension fixture tests 6/6, Android instrumentation verifier tests 14/14, summary sanitizer tests 15/15, runner `bash -n`, pinned MangaFire fixture SHA verification, and `git diff --check` passed.
+
+### Next validation and status
+
+The source-registration wait and validator correction are instrumented/test changes, not a production runtime fix. No MangaFire search request has been made by the failed `36001018885` E2E. The next required experiment is one explicitly opted-in rerun of the same real English MangaFire/One-Punch Man journey; it must emit one ordered event for each of the 14 stages. A registration timeout, missing source, or wrong type will now be distinguishable from database composition. The CI_FIRST policy has `localHeavyAttempts=0`; no local Gradle command was run. Current correction is pending review/CI submission at the time of this report entry.

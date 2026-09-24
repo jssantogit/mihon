@@ -114,12 +114,35 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                 currentStage = "SOURCE_REGISTRATION"
-                val source = extension.sources.singleOrNull { it.lang.equals("en", ignoreCase = true) }
-                    ?: stop(Outcome.INCONCLUSIVE, "INSTRUMENTATION")
+                val englishSources = extension.sources.filter { it.lang.equals("en", ignoreCase = true) }
+                val source = englishSources.singleOrNull()
+                    ?: stop(Outcome.INCONCLUSIVE, "SOURCE_NOT_FOUND", count = englishSources.size)
                 val sourceId = source.id
                 if (sourceId != EXPECTED_ENGLISH_SOURCE_ID) stop(Outcome.INCONCLUSIVE, "IDENTITY")
-                val registered = app.graph.sourceManager.get(sourceId) as? CatalogueSource
-                    ?: stop(Outcome.INCONCLUSIVE, "INSTRUMENTATION")
+                val registrationStarted = SystemClock.elapsedRealtime()
+                val registeredSource = try {
+                    withTimeout(SOURCE_REGISTRATION_TIMEOUT_MS) {
+                        app.graph.sourceManager.sources
+                            .first { sources -> sources.any { it.id == sourceId } }
+                            .singleOrNull { it.id == sourceId }
+                    }
+                } catch (error: CancellationException) {
+                    if (error !is TimeoutCancellationException) throw error
+                    stop(
+                        Outcome.INCONCLUSIVE,
+                        "SOURCE_REGISTRATION_TIMEOUT",
+                        sourceId = sourceId,
+                        language = source.lang,
+                        elapsedMs = SystemClock.elapsedRealtime() - registrationStarted,
+                    )
+                }
+                val registered = registeredSource as? CatalogueSource
+                    ?: stop(
+                        Outcome.INCONCLUSIVE,
+                        "SOURCE_TYPE_MISMATCH",
+                        sourceId = sourceId,
+                        language = source.lang,
+                    )
                 val installedAddon = app.graph.addonRepository.snapshot()
                     .singleOrNull { it.id == AddonId(PACKAGE_NAME) }
                     ?: stop(Outcome.INCONCLUSIVE, "BINDING")
@@ -726,6 +749,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         const val EXPECTED_ENGLISH_SOURCE_ID = 6084907896154116083L
         const val EXPECTED_REFERENCE_SLUG = "729pj-one-punch-man"
         const val SEARCH_QUERY = "One Punch Man"
+        const val SOURCE_REGISTRATION_TIMEOUT_MS = 30_000L
         val STAGES = listOf(
             "EXTENSION_INSTALL",
             "SOURCE_REGISTRATION",

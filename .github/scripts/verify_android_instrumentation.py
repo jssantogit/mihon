@@ -41,7 +41,8 @@ E2E_CATEGORIES = frozenset((
     "HTTP_5XX", "HTTP_OTHER", "NETWORK", "TIMEOUT", "CAPTCHA", "MALFORMED",
     "EXTENSION", "BINDING", "IDENTITY", "INVENTORY_EMPTY", "RECONCILIATION",
     "CONTENT_UNAVAILABLE", "READER_PREPARATION", "INSTRUMENTATION", "CANCELLED", "MATERIALIZATION",
-    "UNIQUE_REFERENCE_MATCH", "EXACT_REFERENCE",
+    "UNIQUE_REFERENCE_MATCH", "EXACT_REFERENCE", "SOURCE_NOT_FOUND", "SOURCE_REGISTRATION_TIMEOUT",
+    "SOURCE_TYPE_MISMATCH",
 ))
 REPORTS = Path(".github/results/mangafire")
 
@@ -68,7 +69,8 @@ def verify_e2e_stages(output: str) -> None:
     marker = "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|"
     allowed_fields = frozenset(("stage", "outcome", "category", "count", "sourceId", "language", "elapsedMs"))
     safe_language = re.compile(r"^[A-Za-z0-9-]{1,16}$")
-    safe_number = re.compile(r"^\d{1,10}$")
+    safe_count_or_elapsed = re.compile(r"^\d{1,10}$")
+    safe_source_id = re.compile(r"^\d{1,20}$")
     for line in output.splitlines():
         if "RUNTIME_E2E|" not in line:
             continue
@@ -89,8 +91,12 @@ def verify_e2e_stages(output: str) -> None:
             raise AndroidTestVerificationError("Unrecognized runtime E2E stage event")
         if stage in seen:
             raise AndroidTestVerificationError("Duplicate runtime E2E stage event")
-        for key in ("count", "sourceId", "elapsedMs"):
-            if key in fields and not safe_number.fullmatch(fields[key]):
+        for key, pattern in (
+            ("count", safe_count_or_elapsed),
+            ("sourceId", safe_source_id),
+            ("elapsedMs", safe_count_or_elapsed),
+        ):
+            if key in fields and not pattern.fullmatch(fields[key]):
                 raise AndroidTestVerificationError("Invalid numeric runtime E2E field")
         if "language" in fields and not safe_language.fullmatch(fields["language"]):
             raise AndroidTestVerificationError("Invalid language runtime E2E field")
