@@ -37,7 +37,8 @@ SETUP_LINE = re.compile(
     r"UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|"
     r"ClassNotFoundException|NullPointerException|IOException|OTHER))?"
     r"(?:\|frame=(TITLE_REPOSITORY_INSERT|SQLDELIGHT_QUERY|SQLDELIGHT_NOTIFY_QUERIES|"
-    r"SQLDELIGHT_RUNTIME|ANDROIDX_SQLITE_DRIVER))?$"
+    r"SQLDELIGHT_DRIVER_AWAIT|SQLDELIGHT_RESULT_VALUE|SQLDELIGHT_RUNTIME|"
+    r"ANDROIDX_SQLITE_DRIVER))?$"
 )
 MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
 MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')

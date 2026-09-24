@@ -552,7 +552,12 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         frame.methodName == "insertTsuzukiTitle" -> "SQLDELIGHT_QUERY"
                     frame.className == "app.cash.sqldelight.BaseTransacterImpl" &&
                         frame.methodName == "notifyQueries" -> "SQLDELIGHT_NOTIFY_QUERIES"
+                    frame.className == "app.cash.sqldelight.async.coroutines.DriverExtensionsKt" &&
+                        frame.methodName.startsWith("await") -> "SQLDELIGHT_DRIVER_AWAIT"
+                    frame.className.startsWith("app.cash.sqldelight.db.QueryResult") -> "SQLDELIGHT_RESULT_VALUE"
                     frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
+                    frame.className.startsWith("com.eygraber.sqldelight.androidx.driver.") ->
+                        "ANDROIDX_SQLITE_DRIVER"
                     frame.className.startsWith("androidx.sqlite.") -> "ANDROIDX_SQLITE_DRIVER"
                     else -> null
                 }
