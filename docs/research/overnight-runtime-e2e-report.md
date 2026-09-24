@@ -21,7 +21,7 @@ The verified total is 213/222 source observations. By extension: MangaBall 42/42
 
 The workflow's failure annotations confirm that the three incomplete batches were rejected because the runner did not end with the required single passing JUnit test; they do not report the underlying runner outcome. Sanitized shard-0 logs show each of the two failures occurred about 34 seconds after the fixture began, but the temporary runner output was deleted and no test/search stage was retained. Offline extension installation/registration passed for those fixtures. Shard-3 logs identify MangaFire's installed package/version as `eu.kanade.tachiyomi.extension.all.mangafire` / `1.6.34`; its actual search outcome remains unknown. This is a confirmed observability gap, not a confirmed provider/runtime defect. RED/GREEN Python regressions now cover a bounded allowlisted batch summary preserving valid source events and safe stage markers when JUnit completion is absent, while never converting missing events to `EMPTY`.
 
-Focused local checks passed: CI planner tests (34, including RED/GREEN proving research CSV no longer selects full/release lanes), extension live report tests (7), existing Android instrumentation sanitizer tests (6), new live batch summary tests (7, including unknown-versus-empty, privacy, size bounds, rejected oversize input, and non-allowlisted/wrong-shard targets), fixture contracts (3), package detection tests (5), fixture integrity for all eight APKs, `bash -n` for the live runner, workflow YAML syntax parsing, and `git diff --check`. The affected-mode planner selected `App — Tsuzuki` plus Format; it did not select Domain, Database, Supabase, or Release. No Gradle command was run locally.
+Focused local checks passed: CI planner tests (34, including RED/GREEN proving research CSV no longer selects full/release lanes), extension live report tests (7), existing Android instrumentation sanitizer tests (6), new live batch summary tests (7, including unknown-versus-empty, privacy, size bounds, rejected oversize input, and non-allowlisted/wrong-shard targets), fixture contracts (3), package detection tests (5), fixture integrity for all eight APKs, `bash -n` for the live runner, `actionlint` v1.7.12, workflow YAML syntax parsing, and `git diff --check`. The affected-mode planner selected `App — Tsuzuki` plus Format; it did not select Domain, Database, Supabase, or Release. No Gradle command was run locally.
 
 ## Architectural constraints reviewed
 
@@ -33,9 +33,11 @@ The Android probe wraps a gateway search in coroutine `withTimeout`, but an exte
 
 1. All current shard artifacts have been preserved; do not rerun the full matrix.
 2. The available logs do not reveal why JUnit did not pass; no provider/runtime/timeout/HTTP root cause is established. The focused diagnostic-observability change, safe stage events, and targeted-dispatch option are local only.
-3. Validate the changes through Fast CI plus the workflow's contract/compile-only jobs; ensure this push does not launch provider searches. The planner regression confirms that documentation/CSV handoffs cannot force a full release build.
-4. Manually dispatch only the three incomplete batches (`animexnovel`, `mangalivreto`, then `mangafire`) sequentially, review each sanitized artifact, and stop additional requests on CAPTCHA/429. These are at most nine internal-source attempts; do not rerun the full matrix.
-5. Use the new stage events to identify the last confirmed boundary. Implement a runtime correction only if a reproducible runtime cause is demonstrated; otherwise fix instrumentation or document uncertainty.
+3. Push `3d6189c5` Fast CI completed successfully (App Tsuzuki tests + Format; all other release/database/compile lanes skipped by the affected-mode plan). The MangaFire instrumentation compile passed; the general fixture workflow's byte checks and compile passed, while its emulator run was skipped. APK Build was skipped.
+4. The live workflow itself failed before creating jobs on `3d6189c5`. Local actionlint v1.7.12 identified the precise error: job-level `if` referenced `matrix.shard`, a context unavailable at that key. No provider searches ran in this failed workflow. The workflow now derives a dynamic shard matrix from its input and avoids `matrix` in the job condition; this correction is still unpushed.
+5. Validate the correction through Fast CI and the workflow's contract/compile-only jobs; ensure this push does not launch provider searches. The planner regression confirms that documentation/CSV handoffs cannot force a full release build.
+6. Manually dispatch only the three incomplete batches (`animexnovel`, `mangalivreto`, then `mangafire`) sequentially, review each sanitized artifact, and stop additional requests on CAPTCHA/429. These are at most nine internal-source attempts; do not rerun the full matrix.
+7. Use the new stage events to identify the last confirmed boundary. Implement a runtime correction only if a reproducible runtime cause is demonstrated; otherwise fix instrumentation or document uncertainty.
 
 ## Current status
 
@@ -43,5 +45,6 @@ The Android probe wraps a gateway search in coroutine `withTimeout`, but an exte
 - Current live run `35944402938`: shard 0 54/56 accepted; shard 1 56/56; shard 2 56/56; shard 3 47/54. Total 213 accepted source observations: 212 results, one HTTP 403; nine outcomes unknown.
 - Root cause for AnimeXNovel, Manga Livre.to, and MangaFire: **unknown**. Their JUnit failures do not prove provider, runtime, timeout, network, HTTP, CAPTCHA, or extension causes.
 - Mangas Brasuka HTTP 403 is a confirmed response category only, not evidence of CAPTCHA or Tsuzuki defect.
-- Diagnostic instrumentation and targeted dispatch changes remain unpushed; Fast CI is pending.
+- Push `3d6189c5` contains the diagnostics, CSV report, and targeted dispatch, but its live workflow parse failed as detailed above. A corrected dynamic-matrix version is local and actionlint + YAML parsing pass; it is not yet on the remote branch.
+- No regression has yet established whether the failing provider batches block during extension lookup or a specific source query. Do not infer MangaFire root cause from the workflow parse error.
 - MangaFire/chapter inventory/fallback on these actual extensions are not proven by this search matrix.
