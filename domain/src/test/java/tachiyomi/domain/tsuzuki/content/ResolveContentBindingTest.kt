@@ -299,6 +299,60 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `stale binding is informational and initial search verifies currently enabled sibling source`() = runTest {
+        val stale = binding("opaque-provider-title-key", ContentBindingAvailability.AVAILABLE)
+        val repository = FakeContentBindingRepository(stale)
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                8L to listOf(candidate(8L, "/dandadan", "Dandadan")),
+            ),
+            materializedBySource = mapOf(
+                8L to materialized(8L, "/dandadan", "en"),
+            ),
+        )
+
+        val events = resolver(
+            repository,
+            gateway,
+            addonSourceIds = listOf(8L),
+        ).searchProgress(request()).toList()
+
+        events.filterIsInstance<ContentBindingSearchProgress.BindingReused>() shouldBe emptyList()
+        gateway.searchedSourceIds shouldBe listOf(8L)
+        events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+            .single { it.sourceId == 8L }.outcome shouldBe ContentBindingSourceOutcome.BOUND
+        repository.getByTitle("title").size shouldBe 2
+    }
+
+    @Test
+    fun `concurrent collectors recover the same canonical binding after unique insert race`() = runTest {
+        val repository = ConcurrentUniqueContentBindingRepository()
+        val gateway = FakeReadingSourceGateway(
+            searchResults = mapOf(
+                7L to listOf(candidate(7L, "/dandadan", "Dandadan")),
+            ),
+            materializedBySource = mapOf(
+                7L to materialized(7L, "/dandadan", "en"),
+            ),
+        )
+        val firstResolver = resolver(repository, gateway, bindingIdPrefix = "first")
+        val secondResolver = resolver(repository, gateway, bindingIdPrefix = "second")
+
+        val first = async { firstResolver.searchProgress(request()).toList() }
+        val second = async { secondResolver.searchProgress(request()).toList() }
+        val eventLists = listOf(first.await(), second.await())
+
+        eventLists.forEach { events ->
+            val result = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>().single()
+            result.outcome shouldBe ContentBindingSourceOutcome.BOUND
+            result.bindings.single().canonicalTitleId shouldBe "title"
+        }
+        repository.snapshot().size shouldBe 1
+        repository.snapshot().single().canonicalTitleId shouldBe "title"
+        repository.snapshot().single().providerTitleKey shouldBe "source-7:/dandadan"
+    }
+
+    @Test
     fun `disabled addon produces a classified result without querying its sources`() = runTest {
         val gateway = FakeReadingSourceGateway()
         val events = resolver(
@@ -813,10 +867,11 @@ class ResolveContentBindingTest {
     }
 
     private fun resolver(
-        repository: FakeContentBindingRepository,
+        repository: ContentBindingRepository,
         gateway: FakeReadingSourceGateway,
         addonSourceIds: List<Long> = listOf(7L),
         title: String = "Dandadan",
+        bindingIdPrefix: String = "new-binding",
         diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
         addonSources: List<AddonSourceEligibility> = emptyList(),
         addonSourceEligibilityRepository: AddonSourceEligibilityRepository? = null,
@@ -829,7 +884,7 @@ class ResolveContentBindingTest {
             addonRepository = FakeAddonRepository(addonSourceIds, enabled = addonEnabled),
             readingSourceGateway = gateway,
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
-            idFactory = { "new-binding-${nextId++}" },
+            idFactory = { "$bindingIdPrefix-${nextId++}" },
             clock = { 200L },
             diagnostics = diagnostics,
             addonSourceEligibilityRepository = addonSourceEligibilityRepository
@@ -928,6 +983,63 @@ class ResolveContentBindingTest {
                 )
             }
         }
+    }
+
+    /** A small SQL unique-index analogue with two controlled read races for separate collectors. */
+    private class ConcurrentUniqueContentBindingRepository : ContentBindingRepository {
+        private val lock = Any()
+        private val values = mutableListOf<ContentBinding>()
+        private val pairedReadGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
+        private var getByTitleCalls = 0
+
+        override suspend fun get(canonicalTitleId: String, addonId: AddonId): ContentBinding? =
+            synchronized(lock) {
+                values.lastOrNull { it.canonicalTitleId == canonicalTitleId && it.addonId == addonId }
+            }
+
+        override suspend fun getByTitle(canonicalTitleId: String): List<ContentBinding> {
+            val (gate, snapshot) = synchronized(lock) {
+                val callIndex = getByTitleCalls++
+                val gate = if (callIndex < 4) {
+                    val pair = callIndex / 2
+                    pairedReadGates.getOrPut(pair) { CompletableDeferred() }.also {
+                        if (callIndex % 2 == 1) it.complete(Unit)
+                    }
+                } else {
+                    null
+                }
+                gate to values.filter { it.canonicalTitleId == canonicalTitleId }
+            }
+            gate?.await()
+            return snapshot
+        }
+
+        override suspend fun upsert(binding: ContentBinding) {
+            synchronized(lock) {
+                val conflictingBinding = values.firstOrNull {
+                    it.addonId == binding.addonId &&
+                        it.providerTitleKey == binding.providerTitleKey &&
+                        it.id != binding.id
+                }
+                check(conflictingBinding == null) { "UNIQUE(addon_id, provider_title_key)" }
+                values.removeAll { it.id == binding.id }
+                values += binding
+            }
+        }
+
+        override suspend fun markUnavailable(bindingId: String, updatedAt: Long) {
+            synchronized(lock) {
+                val index = values.indexOfFirst { it.id == bindingId }
+                if (index >= 0) {
+                    values[index] = values[index].copy(
+                        availability = ContentBindingAvailability.UNAVAILABLE,
+                        updatedAt = updatedAt,
+                    )
+                }
+            }
+        }
+
+        fun snapshot(): List<ContentBinding> = synchronized(lock) { values.toList() }
     }
 
     private class FakeCanonicalTitleRepository(displayTitle: String) : CanonicalTitleRepository {
