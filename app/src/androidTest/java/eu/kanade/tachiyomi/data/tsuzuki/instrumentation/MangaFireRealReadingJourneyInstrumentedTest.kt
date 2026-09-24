@@ -936,7 +936,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val openError = try {
             database = context.openOrCreateDatabase(databaseName, Context.MODE_PRIVATE, null)
             "NONE"
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             sqliteProbeErrorCategory(error)
         }
         val openOutcome = if (database == null) "FAILED" else "PASS"
