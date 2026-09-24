@@ -14,6 +14,18 @@ LIVE_RESULT = re.compile(
     r"MANGAFIRE_LIVE\|outcome=(CAPTCHA_REQUIRED|HTTP_RESPONSE|NETWORK_FAILURE|TIMEOUT|INDETERMINATE|EMPTY)"
     r"(?:\|httpStatus=(\d{3}|unknown))?\|elapsedMs=(\d{1,7})"
 )
+E2E_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_E2E\|stage="
+    r"(EXTENSION_INSTALL|SOURCE_REGISTRATION|LIVE_SEARCH|CANDIDATE_IDENTIFICATION|MATCH_DECISION|"
+    r"BINDING_MATERIALIZATION|BINDING_CREATE|BINDING_PERSISTENCE|INVENTORY|CHAPTER_PROBE|RECONCILIATION|CONTENT_RESOLUTION|"
+    r"READER_PREPARATION|GET_PAGE_LIST)\|outcome=(PASS|FAIL|INCONCLUSIVE|NOT_RUN)"
+    r"(?:\|category=(NONE|NO_RESULTS|AMBIGUOUS|LOW_CONFIDENCE|HTTP_403|HTTP_429|HTTP_5XX|"
+    r"HTTP_OTHER|NETWORK|TIMEOUT|CAPTCHA|MALFORMED|EXTENSION|BINDING|IDENTITY|SOURCE_DISABLED|INVENTORY_EMPTY|"
+    r"RECONCILIATION|CONTENT_UNAVAILABLE|READER_PREPARATION|INSTRUMENTATION|CANCELLED|"
+    r"UNIQUE_REFERENCE_MATCH|EXACT_REFERENCE|MATERIALIZATION))?"
+    r"(?:\|count=(\d{1,10}))?(?:\|sourceId=(\d{1,20}))?"
+    r"(?:\|language=([A-Za-z0-9-]{1,16}))?(?:\|elapsedMs=(\d{1,10}))?$"
+)
 MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
 MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')
 PUBLIC_CLASS_PREFIXES = ("androidx.test.", "eu.kanade.tachiyomi.", "mihon.", "org.junit.", "kotlin.")
@@ -32,9 +44,13 @@ def summarize(runner: str, crash: str) -> list[str]:
             if key == 'numtests' and value.isdigit():
                 lines.append("DIAGNOSTIC|numtests=" + value)
             elif key == 'class':
-                lines.append("DIAGNOSTIC|classMatchesFixture=" + str(value.endswith(".MangaFireFixtureInstrumentedTest")))
+                is_fixture = value.endswith((
+                    ".MangaFireFixtureInstrumentedTest",
+                    ".MangaFireRealReadingJourneyInstrumentedTest",
+                ))
+                lines.append("DIAGNOSTIC|classMatchesFixture=" + str(is_fixture))
             elif key == 'test':
-                lines.append("DIAGNOSTIC|testMatchesFixture=" + str(value in ("loadsRealExtensionAndRegistersInternalSources", "optionalLiveEnglishSearch")))
+                lines.append("DIAGNOSTIC|testMatchesFixture=" + str(value in ("loadsRealExtensionAndRegistersInternalSources", "optionalLiveEnglishSearch", "optionalRealEnglishReadingJourney")))
         if line.startswith('INSTRUMENTATION_RESULT: shortMsg='):
             # The short message can include arbitrary values: never echo it.
             lines.append("DIAGNOSTIC|hasShortMsg=true")
@@ -54,6 +70,23 @@ def summarize(runner: str, crash: str) -> list[str]:
             "|httpStatus=" + (status or "unknown") +
             "|elapsedMs=" + elapsed
         )
+    for raw_line in runner.splitlines():
+        parsed = E2E_LINE.fullmatch(raw_line.strip())
+        if not parsed:
+            continue
+        stage, outcome, category, count, source_id, language, elapsed = parsed.groups()
+        summary = "DIAGNOSTIC|e2eStage=" + stage + "|outcome=" + outcome
+        if category:
+            summary += "|category=" + category
+        if count:
+            summary += "|count=" + count
+        if source_id:
+            summary += "|sourceId=" + source_id
+        if language:
+            summary += "|language=" + language
+        if elapsed:
+            summary += "|elapsedMs=" + elapsed
+        lines.append(summary)
     missing_source = runner + "\n" + crash
     missing = set(MISSING_QUOTED_CLASS.findall(missing_source))
     missing.update(MISSING_DIRECT_CLASS.findall(missing_source))

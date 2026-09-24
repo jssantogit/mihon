@@ -26,27 +26,43 @@ available="$(adb shell pm list instrumentation | tr -d '\r')"
 runner="$(printf '%s\n' "$available" | sed -n '/target=app\.mihon\.dev/ s/^instrumentation:\([^ ]*\).*/\1/p' | grep '/androidx.test.runner.AndroidJUnitRunner$' | head -n 1)"
 if [[ -z "$runner" ]]; then echo "::error::Test runner app.mihon.dev unavailable"; exit 1; fi
 
-test_class="eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest"
 output="$(mktemp)"
 trap 'rm -f "$output"' EXIT
 run_one() {
-  local method="$1"
-  shift
-  if ! adb shell am instrument -w -r -e class "${test_class}#${method}" "$@" "$runner" > "$output" 2>&1; then
-    echo "::error::AndroidJUnitRunner failed to start"; exit 1
+  local test_class="$1"
+  local method="$2"
+  shift 2
+  local report_dir='.github/results/mangafire'
+  local report_file="${report_dir}/${method}.txt"
+  mkdir -p "$report_dir"
+  local runner_exit=0
+  timeout --foreground 300s adb shell am instrument -w -r -e class "${test_class}#${method}" "$@" "$runner" > "$output" 2>&1 || runner_exit=$?
+  if (( runner_exit != 0 )); then
+    local crash
+    crash="$(mktemp)"
+    adb logcat -d -b crash -v brief > "$crash" 2>/dev/null || true
+    python3 .github/scripts/summarize_android_instrumentation.py "$output" "$crash" > "$report_file"
+    rm -f "$crash"
+    cat "$report_file"
+    echo "::error::Android instrumentation failed or exceeded its 300 second process deadline (exit ${runner_exit})"; exit 1
   fi
   if ! python3 .github/scripts/verify_android_instrumentation.py "$output" "$method"; then
     # This run failed before or during AndroidJUnitRunner. Emit closed, sanitized
     # diagnostic categories without exception messages, request URLs, or headers.
     crash="$(mktemp)"
     adb logcat -d -b crash -v brief > "$crash" 2>/dev/null || true
-    python3 .github/scripts/summarize_android_instrumentation.py "$output" "$crash"
+    python3 .github/scripts/summarize_android_instrumentation.py "$output" "$crash" > "$report_file"
     rm -f "$crash"
+    cat "$report_file"
     exit 1
   fi
+  python3 .github/scripts/summarize_android_instrumentation.py "$output" "" > "$report_file"
+  cat "$report_file"
 }
-run_one loadsRealExtensionAndRegistersInternalSources
+fixture_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest'
+journey_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireRealReadingJourneyInstrumentedTest'
+run_one "$fixture_class" loadsRealExtensionAndRegistersInternalSources
 if [[ "$live_probe" == "true" ]]; then
-  # Explicit manual opt-in only. No CAPTCHA circumvention.
-  run_one optionalLiveEnglishSearch -e allowLiveProvider true
+  # Explicit manual opt-in only. One work and one internal source; no CAPTCHA circumvention.
+  run_one "$journey_class" optionalRealEnglishReadingJourney -e allowLiveProvider true
 fi

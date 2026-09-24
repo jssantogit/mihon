@@ -52,6 +52,51 @@ class SummaryTest(unittest.TestCase):
         self.assertNotIn("HIDDEN", result)
         self.assertNotIn("https://", result)
 
+    def test_runtime_e2e_stages_are_sanitized_and_retained(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=LIVE_SEARCH|outcome=INCONCLUSIVE"
+            "|category=HTTP_403|sourceId=6084907896154116083|language=en|elapsedMs=19897\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=LIVE_SEARCH|outcome=PASS"
+            "|title=PRIVATE|url=https://private.example/path|cookie=SECRET\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "e2eStage=LIVE_SEARCH|outcome=INCONCLUSIVE|category=HTTP_403"
+            "|sourceId=6084907896154116083|language=en|elapsedMs=19897",
+            result,
+        )
+        self.assertNotIn("PRIVATE", result)
+        self.assertNotIn("private.example", result)
+        self.assertNotIn("SECRET", result)
+
+    def test_probe_stage_and_closed_categories_are_retained(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=CHAPTER_PROBE|outcome=INCONCLUSIVE"
+            "|category=SOURCE_DISABLED|sourceId=6084907896154116083|language=en\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn("e2eStage=CHAPTER_PROBE|outcome=INCONCLUSIVE|category=SOURCE_DISABLED", result)
+
+    def test_binding_materialization_stage_is_retained(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=BINDING_MATERIALIZATION|outcome=FAIL"
+            "|category=MATERIALIZATION|elapsedMs=12\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "e2eStage=BINDING_MATERIALIZATION|outcome=FAIL|category=MATERIALIZATION|elapsedMs=12",
+            result,
+        )
+
+    def test_real_journey_class_is_reported_as_expected_without_name_leak(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: class="
+            "eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireRealReadingJourneyInstrumentedTest\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn("classMatchesFixture=True", result)
+        self.assertNotIn("MangaFireRealReadingJourneyInstrumentedTest", result)
+
     def test_absent_class_and_zero_test_are_observable(self):
         result = "\n".join(diagnostic.summarize("INSTRUMENTATION_STATUS: numtests=0\n", ""))
         self.assertIn("numtests=0", result)

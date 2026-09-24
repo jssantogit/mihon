@@ -12,6 +12,24 @@ assert SPEC is not None and SPEC.loader is not None
 checker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(checker)
 METHOD = "loadsRealExtensionAndRegistersInternalSources"
+LIVE_METHOD = "optionalRealEnglishReadingJourney"
+E2E_CLASS = checker.E2E_CLASS
+E2E_STAGES = (
+    "EXTENSION_INSTALL",
+    "SOURCE_REGISTRATION",
+    "LIVE_SEARCH",
+    "CANDIDATE_IDENTIFICATION",
+    "MATCH_DECISION",
+    "BINDING_MATERIALIZATION",
+    "BINDING_CREATE",
+    "BINDING_PERSISTENCE",
+    "INVENTORY",
+    "CHAPTER_PROBE",
+    "RECONCILIATION",
+    "CONTENT_RESOLUTION",
+    "READER_PREPARATION",
+    "GET_PAGE_LIST",
+)
 GOOD = (
     "INSTRUMENTATION_STATUS: numtests=1\n"
     "INSTRUMENTATION_STATUS: class=" + checker.CLASS + "\n"
@@ -20,6 +38,21 @@ GOOD = (
     "INSTRUMENTATION_STATUS: class=" + checker.CLASS + "\n"
     "INSTRUMENTATION_STATUS: test=" + METHOD + "\n"
     "INSTRUMENTATION_STATUS_CODE: 0\n"
+    "INSTRUMENTATION_RESULT: stream=\nTime: 2.0\n\nOK (1 test)\n"
+    "INSTRUMENTATION_CODE: -1\n"
+)
+LIVE_GOOD = (
+    "INSTRUMENTATION_STATUS: numtests=1\n"
+    "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
+    "INSTRUMENTATION_STATUS: test=" + LIVE_METHOD + "\n"
+    "INSTRUMENTATION_STATUS_CODE: 1\n"
+    "INSTRUMENTATION_STATUS: class=" + E2E_CLASS + "\n"
+    "INSTRUMENTATION_STATUS: test=" + LIVE_METHOD + "\n"
+    "INSTRUMENTATION_STATUS_CODE: 0\n"
+    + "\n".join(
+        "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage + "|outcome=PASS"
+        for stage in E2E_STAGES
+    ) + "\n"
     "INSTRUMENTATION_RESULT: stream=\nTime: 2.0\n\nOK (1 test)\n"
     "INSTRUMENTATION_CODE: -1\n"
 )
@@ -36,6 +69,54 @@ class VerifyAndroidInstrumentationTest(unittest.TestCase):
     def test_wrong_method_is_rejected(self):
         with self.assertRaises(checker.AndroidTestVerificationError):
             checker.verify(GOOD, "optionalLiveEnglishSearch")
+
+    def test_live_journey_requires_one_pass_event_for_every_stage(self):
+        output = "\n".join(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage + "|outcome=PASS"
+            for stage in E2E_STAGES
+        )
+        checker.verify_e2e_stages(output)
+
+    def test_live_journey_requires_real_class_method_and_all_pass_stages(self):
+        checker.verify(LIVE_GOOD, LIVE_METHOD)
+
+    def test_live_journey_wrong_class_is_rejected(self):
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify(LIVE_GOOD.replace(E2E_CLASS, checker.CLASS), LIVE_METHOD)
+
+    def test_missing_stage_is_not_a_green_live_journey(self):
+        output = "\n".join(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage + "|outcome=PASS"
+            for stage in E2E_STAGES[:-1]
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify_e2e_stages(output)
+
+    def test_inconclusive_stage_is_not_a_green_live_journey(self):
+        output = "\n".join(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage + "|outcome=" +
+            ("INCONCLUSIVE" if stage == "CANDIDATE_IDENTIFICATION" else "PASS")
+            for stage in E2E_STAGES
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify_e2e_stages(output)
+
+    def test_passing_stage_cannot_carry_http_failure_category(self):
+        output = "\n".join(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage + "|outcome=PASS" +
+            ("|category=HTTP_403" if stage == "LIVE_SEARCH" else "")
+            for stage in E2E_STAGES
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify_e2e_stages(output)
+
+    def test_duplicate_and_unrecognized_stage_events_are_rejected(self):
+        output = "\n".join(
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_E2E|stage=" + stage + "|outcome=PASS"
+            for stage in (*E2E_STAGES, E2E_STAGES[0], "PROVIDER_RAW_RESPONSE")
+        )
+        with self.assertRaises(checker.AndroidTestVerificationError):
+            checker.verify_e2e_stages(output)
 
     def test_failed_test_is_rejected(self):
         with self.assertRaises(checker.AndroidTestVerificationError):

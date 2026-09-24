@@ -63,14 +63,19 @@ jobs:
       - name: Verify JUnit methods have JVM void signatures
         run: |
           set -euo pipefail
-          class_file="$(find app/build -type f -name 'MangaFireFixtureInstrumentedTest.class' -print -quit)"
-          test -n "$class_file"
-          suffix='/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/MangaFireFixtureInstrumentedTest.class'
-          class_dir="${class_file%$suffix}"
-          class="eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest"
-          javap -classpath "$class_dir" "$class" > junit-signatures.txt
-          grep -F 'public final void loadsRealExtensionAndRegistersInternalSources();' junit-signatures.txt
-          grep -F 'public final void optionalLiveEnglishSearch();' junit-signatures.txt
+          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest; do
+            class_file="$(find app/build -type f -name "${class}.class" -print -quit)"
+            test -n "$class_file"
+            suffix="/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/${class}.class"
+            class_dir="${class_file%$suffix}"
+            fqcn="eu.kanade.tachiyomi.data.tsuzuki.instrumentation.${class}"
+            javap -classpath "$class_dir" "$fqcn" > junit-signatures.txt
+            if [[ "$class" == 'MangaFireFixtureInstrumentedTest' ]]; then
+              grep -F 'public final void loadsRealExtensionAndRegistersInternalSources();' junit-signatures.txt
+            else
+              grep -F 'public final void optionalRealEnglishReadingJourney();' junit-signatures.txt
+            fi
+          done
 
   emulator:
     name: Load real APK in isolated emulator
