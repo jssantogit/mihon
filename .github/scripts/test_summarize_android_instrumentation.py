@@ -57,6 +57,24 @@ class SummaryTest(unittest.TestCase):
         result = "\n".join(diagnostic.summarize(runner, ""))
         self.assertIn("testDataDirWritable=false|testDataDirExecutable=false", result)
 
+    def test_database_path_creation_result_is_summarized_without_paths(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE"
+            "|outcome=PARENT_MISSING|parentState=MISSING|parentWritable=unknown"
+            "|parentExecutable=unknown|cleanup=NOT_NEEDED\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE"
+            "|outcome=CREATED|parentState=EXISTS|parentWritable=true"
+            "|parentExecutable=true|cleanup=REMOVED|path=/private|name=secret.db\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "DIAGNOSTIC|dbPathProbe|outcome=PARENT_MISSING|parentState=MISSING"
+            "|parentWritable=unknown|parentExecutable=unknown|cleanup=NOT_NEEDED",
+            result,
+        )
+        self.assertNotIn("/private", result)
+        self.assertNotIn("secret.db", result)
+
     def test_startup_crash_is_classified_without_message_leaks(self):
         runner = ("INSTRUMENTATION_RESULT: shortMsg=Process crashed token=SECRET\n"
                   "INSTRUMENTATION_CODE: 0\n"

@@ -97,6 +97,17 @@ def verify_database_identity_probe(output: str) -> None:
     events = [line for line in output.splitlines() if "RUNTIME_DB_IDENTITY|" in line]
     if len(events) != 1 or not pattern.fullmatch(events[0]):
         raise AndroidTestVerificationError("Expected one sanitized database identity observation")
+    path_probe = re.compile(
+        r"^INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE"
+        r"\|outcome=(PREEXISTING|CREATED|PARENT_MISSING|PARENT_NOT_DIRECTORY|SECURITY_ERROR|IO_ERROR|OTHER_ERROR)"
+        r"\|parentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+        r"\|parentWritable=(true|false|unknown)"
+        r"\|parentExecutable=(true|false|unknown)"
+        r"\|cleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
+    )
+    path_events = [line for line in output.splitlines() if "RUNTIME_DB_PATH_PROBE|" in line]
+    if len(path_events) != 1 or not path_probe.fullmatch(path_events[0]):
+        raise AndroidTestVerificationError("Expected one sanitized database path creation observation")
 
 
 def verify_context_database_diagnostic(output: str) -> None:

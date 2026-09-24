@@ -111,6 +111,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val targetDatabaseParent = databaseParentObservation(targetContext)
         val testDataDirectory = dataDirectoryObservation(testContext)
         val targetDataDirectory = dataDirectoryObservation(targetContext)
+        val testDatabasePath = databasePathCreationProbe(testContext)
 
         val stream = buildString {
             append("RUNTIME_DB_IDENTITY|processIsTestUid=")
@@ -128,6 +129,14 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             append("|targetDataDirState=").append(targetDataDirectory.state)
         }
         instrumentation.sendStatus(1, Bundle().apply { putString("stream", stream) })
+        val pathProbe = buildString {
+            append("RUNTIME_DB_PATH_PROBE|outcome=").append(testDatabasePath.outcome)
+            append("|parentState=").append(testDatabasePath.parent.state)
+            append("|parentWritable=").append(testDatabasePath.parent.writable)
+            append("|parentExecutable=").append(testDatabasePath.parent.executable)
+            append("|cleanup=").append(testDatabasePath.cleanup)
+        }
+        instrumentation.sendStatus(1, Bundle().apply { putString("stream", pathProbe) })
     }
 
     @Test(timeout = 90_000L)
@@ -814,6 +823,88 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val writable: String,
         val executable: String,
         val state: String,
+    )
+
+    private fun databasePathCreationProbe(context: Context): DatabasePathProbeObservation {
+        val dataDirectory = File(context.applicationInfo.dataDir)
+        val parent = File(dataDirectory, "databases")
+        val dataDirectoryExistedBefore = dataDirectory.exists()
+        val before = databaseParentObservation(context)
+        if (before.state != "MISSING") {
+            return DatabasePathProbeObservation(
+                outcome = "PREEXISTING",
+                parent = databaseParentObservation(context),
+                cleanup = "NOT_NEEDED",
+            )
+        }
+
+        val outcome = try {
+            // getDatabasePath is intentionally the only operation under test. Never open or create
+            // the returned database file; it may create the parent directory as a side effect.
+            context.getDatabasePath("tsuzuki-probe-${UUID.randomUUID()}.db")
+            when {
+                !parent.exists() -> "PARENT_MISSING"
+                !parent.isDirectory -> "PARENT_NOT_DIRECTORY"
+                else -> "CREATED"
+            }
+        } catch (_: SecurityException) {
+            "SECURITY_ERROR"
+        } catch (_: java.io.IOException) {
+            "IO_ERROR"
+        } catch (_: Exception) {
+            "OTHER_ERROR"
+        }
+
+        val observation = databaseParentObservation(parent)
+        val cleanup = cleanupCreatedDatabaseDirectories(
+            dataDirectory,
+            parent,
+            dataDirectoryExistedBefore,
+        )
+        return DatabasePathProbeObservation(outcome, observation, cleanup)
+    }
+
+    private fun databaseParentObservation(parent: File): DatabaseParentObservation = try {
+        when {
+            !parent.exists() -> DatabaseParentObservation("unknown", "MISSING")
+            !parent.isDirectory -> DatabaseParentObservation("unknown", "NOT_DIRECTORY")
+            else -> DatabaseParentObservation(parent.canWrite().toString(), "EXISTS")
+        }
+    } catch (_: Exception) {
+        DatabaseParentObservation("unknown", "ERROR")
+    }
+
+    private fun cleanupCreatedDatabaseDirectories(
+        dataDirectory: File,
+        parent: File,
+        dataDirectoryExistedBefore: Boolean,
+    ): String {
+        return try {
+            var removed = false
+            if (parent.exists()) {
+                if (!parent.isDirectory) return "NOT_REMOVED"
+                val parentContents = parent.list() ?: return "UNKNOWN"
+                if (parentContents.isNotEmpty()) return "NOT_EMPTY"
+                if (!parent.delete()) return "DELETE_FAILED"
+                removed = true
+            }
+            if (!dataDirectoryExistedBefore && dataDirectory.exists()) {
+                if (!dataDirectory.isDirectory) return "PARTIAL"
+                val dataDirectoryContents = dataDirectory.list() ?: return "PARTIAL"
+                if (dataDirectoryContents.isNotEmpty()) return "PARTIAL"
+                if (!dataDirectory.delete()) return "PARTIAL"
+                removed = true
+            }
+            if (removed) "REMOVED" else "NOT_NEEDED"
+        } catch (_: Exception) {
+            "UNKNOWN"
+        }
+    }
+
+    private data class DatabasePathProbeObservation(
+        val outcome: String,
+        val parent: DatabaseParentObservation,
+        val cleanup: String,
     )
 
     private fun diagnosticSchemaProbe(driver: app.cash.sqldelight.db.SqlDriver) {

@@ -54,6 +54,14 @@ DB_IDENTITY_LINE = re.compile(
     r"\|targetDataDirExecutable=(true|false|unknown)"
     r"\|targetDataDirState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)$"
 )
+DB_PATH_PROBE_LINE = re.compile(
+    r"^INSTRUMENTATION_STATUS: stream=RUNTIME_DB_PATH_PROBE"
+    r"\|outcome=(PREEXISTING|CREATED|PARENT_MISSING|PARENT_NOT_DIRECTORY|SECURITY_ERROR|IO_ERROR|OTHER_ERROR)"
+    r"\|parentState=(EXISTS|MISSING|NOT_DIRECTORY|ERROR)"
+    r"\|parentWritable=(true|false|unknown)"
+    r"\|parentExecutable=(true|false|unknown)"
+    r"\|cleanup=(NOT_NEEDED|REMOVED|NOT_REMOVED|NOT_EMPTY|DELETE_FAILED|PARTIAL|UNKNOWN)$"
+)
 SETUP_LINE = re.compile(
     r"^INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP\|phase="
     r"(CONTEXT_ISOLATION|DB_RESET|SQL_DRIVER|DATABASE_ADAPTERS|COMPOSITION|"
@@ -165,6 +173,16 @@ def summarize(runner: str, crash: str) -> list[str]:
                 "|targetDataDirWritable=" + target_data_writable +
                 "|targetDataDirExecutable=" + target_data_executable +
                 "|targetDataDirState=" + target_data_state
+            )
+        path_probe = DB_PATH_PROBE_LINE.fullmatch(raw_line.strip())
+        if path_probe:
+            outcome, state, writable, executable, cleanup = path_probe.groups()
+            lines.append(
+                "DIAGNOSTIC|dbPathProbe|outcome=" + outcome +
+                "|parentState=" + state +
+                "|parentWritable=" + writable +
+                "|parentExecutable=" + executable +
+                "|cleanup=" + cleanup
             )
         context = CONTEXT_LINE.fullmatch(raw_line.strip())
         if context:
