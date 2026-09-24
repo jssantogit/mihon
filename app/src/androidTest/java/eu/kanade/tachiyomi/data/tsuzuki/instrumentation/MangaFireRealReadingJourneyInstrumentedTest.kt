@@ -17,13 +17,13 @@ import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
 import eu.kanade.tachiyomi.data.tsuzuki.diagnosticHttpStatus
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.source.CatalogueSource
-import mihon.app.di.AppBindings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
+import mihon.app.di.AppBindings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -32,15 +32,16 @@ import org.junit.runner.RunWith
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.data.Database
 import tachiyomi.data.chapter.ChapterRepositoryImpl
-import tachiyomi.data.download.CanonicalDownloadRepositoryImpl
 import tachiyomi.data.manga.MangaRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
+import tachiyomi.data.tsuzuki.download.CanonicalDownloadRepositoryImpl
 import tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.domain.chapter.repository.ChapterRepository
+import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -131,7 +132,9 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                 val testContext = instrumentation.context.applicationContext
-                check(testContext.packageName != app.packageName) { "Instrumentation DB must not share the target package" }
+                check(testContext.packageName != app.packageName) {
+                    "Instrumentation DB must not share the target package"
+                }
                 check(
                     !testContext.databaseList().contains("tachiyomi.db") ||
                         testContext.deleteDatabase("tachiyomi.db"),
@@ -187,8 +190,14 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                             elapsedMs = SystemClock.elapsedRealtime() - searchStarted,
                         )
                     }
-                    report(currentStage, Outcome.PASS, count = candidates.size, sourceId = sourceId, language = source.lang,
-                        elapsedMs = SystemClock.elapsedRealtime() - searchStarted)
+                    report(
+                        currentStage,
+                        Outcome.PASS,
+                        count = candidates.size,
+                        sourceId = sourceId,
+                        language = source.lang,
+                        elapsedMs = SystemClock.elapsedRealtime() - searchStarted,
+                    )
                     terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                     currentStage = "CANDIDATE_IDENTIFICATION"
@@ -296,16 +305,23 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         stop(Outcome.INCONCLUSIVE, externalCategory(error))
                     }
                     if (evidence.isEmpty()) stop(Outcome.INCONCLUSIVE, "LOW_CONFIDENCE", count = 0)
-                    report(currentStage, Outcome.PASS, count = evidence.size, sourceId = sourceId, language = source.lang)
+                    report(
+                        currentStage,
+                        Outcome.PASS,
+                        count = evidence.size,
+                        sourceId = sourceId,
+                        language = source.lang,
+                    )
                     terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                     currentStage = "RECONCILIATION"
                     composition.reconcileChapterEvidence.execute(canonicalTitleId, evidence)
                     val chapters = composition.canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
-                        .filter {
-                            it.type == CanonicalChapterType.REGULAR &&
-                                it.baseNumber != null && it.baseNumber > 0 &&
-                                it.confirmation.name != "CONFLICTED"
+                        .filter { chapter ->
+                            val baseNumber = chapter.baseNumber
+                            chapter.type == CanonicalChapterType.REGULAR &&
+                                baseNumber != null && baseNumber > 0 &&
+                                chapter.confirmation.name != "CONFLICTED"
                         }
                     if (chapters.isEmpty()) stop(Outcome.INCONCLUSIVE, "RECONCILIATION", count = 0)
                     report(currentStage, Outcome.PASS, count = chapters.size)
@@ -333,7 +349,13 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                         )
                     }
                     val option = exactOptions.single()
-                    report(currentStage, Outcome.PASS, count = exactOptions.size, sourceId = sourceId, language = "en")
+                    report(
+                        currentStage,
+                        Outcome.PASS,
+                        count = exactOptions.size,
+                        sourceId = sourceId,
+                        language = "en",
+                    )
                     terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                     currentStage = "READER_PREPARATION"
