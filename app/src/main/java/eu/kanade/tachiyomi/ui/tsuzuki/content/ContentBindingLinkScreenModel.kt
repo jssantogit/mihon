@@ -70,6 +70,7 @@ class ContentBindingLinkScreenModel(
     val state: StateFlow<ContentBindingLinkState> = _state.asStateFlow()
 
     private val _bindingChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
     /** Signals title-detail refresh only; it does not change reading preferences or progress. */
     val bindingChanges: SharedFlow<Unit> = _bindingChanges.asSharedFlow()
 

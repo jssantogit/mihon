@@ -13,8 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -61,7 +61,9 @@ class ContentBindingLinkScreenModelTest {
     }
 
     @Test
-    fun `enabled installed add-ons are unique by package and disabled or source-less add-ons are hidden`() = runTest(dispatcher) {
+    fun `enabled installed add-ons are unique by package and disabled or source-less add-ons are hidden`() = runTest(
+        dispatcher,
+    ) {
         val packageAddon = addon("pkg.reader", "Reader", enabled = true, sourceIds = listOf(7L))
         val addons = listOf(
             packageAddon,
@@ -104,7 +106,9 @@ class ContentBindingLinkScreenModelTest {
     }
 
     @Test
-    fun `initial pass orders title and global preferred languages and returns progressive peer results`() = runTest(dispatcher) {
+    fun `initial pass orders title and global preferred languages and returns progressive peer results`() = runTest(
+        dispatcher,
+    ) {
         val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L, 9L))
         val preferences = mockk<ContentPreferenceRepository>()
         coEvery { preferences.get("canonical") } returns ContentPreference(
@@ -171,7 +175,9 @@ class ContentBindingLinkScreenModelTest {
     }
 
     @Test
-    fun `search more broadens only to unqueried enabled source ids and is hidden when complete`() = runTest(dispatcher) {
+    fun `search more broadens only to unqueried enabled source ids and is hidden when complete`() = runTest(
+        dispatcher,
+    ) {
         val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L, 9L, 10L))
         val resolver = mockk<ResolveContentBinding>()
         val requests = mutableListOf<ContentBindingSearchRequest>()
@@ -182,7 +188,11 @@ class ContentBindingLinkScreenModelTest {
                 ContentBindingSearchMode.INITIAL -> flowOf(
                     source(7L, ContentBindingSourceOutcome.EMPTY),
                     source(8L, ContentBindingSourceOutcome.NO_MATCH),
-                    source(9L, ContentBindingSourceOutcome.CONFIRMATION_REQUIRED, candidates = listOf(candidate(9L, "/one"))),
+                    source(
+                        9L,
+                        ContentBindingSourceOutcome.CONFIRMATION_REQUIRED,
+                        candidates = listOf(candidate(9L, "/one")),
+                    ),
                     ContentBindingSearchProgress.Completed(listOf(7L, 8L, 9L), remainingSourceCount = 1),
                 )
                 ContentBindingSearchMode.BROADEN -> flowOf(
