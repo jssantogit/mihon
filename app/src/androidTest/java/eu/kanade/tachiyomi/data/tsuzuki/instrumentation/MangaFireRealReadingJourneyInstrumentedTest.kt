@@ -448,7 +448,12 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 stopCategory = "INSTRUMENTATION"
                 val inSetup = setupPhase != null
                 if (inSetup) {
-                    reportSetupPhase(setupPhase, Outcome.FAIL, setupExceptionType(error))
+                    reportSetupPhase(
+                        setupPhase,
+                        Outcome.FAIL,
+                        setupExceptionType(error),
+                        setupFailureFrame(error),
+                    )
                 }
                 if (currentStage !in terminal) {
                     report(currentStage, Outcome.FAIL, category = stopCategory)
@@ -536,11 +541,33 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             .firstOrNull { it in allowed } ?: "OTHER"
     }
 
-    private fun reportSetupPhase(phase: String?, outcome: Outcome, exception: String? = null) {
+    private fun setupFailureFrame(error: Throwable): String? =
+        generateSequence(error) { it.cause }
+            .flatMap { it.stackTrace.asSequence() }
+            .mapNotNull { frame ->
+                when {
+                    frame.className == "tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl" &&
+                        frame.methodName == "insert" -> "TITLE_REPOSITORY_INSERT"
+                    frame.className == "tachiyomi.data.Tsuzuki_titlesQueries" &&
+                        frame.methodName == "insertTsuzukiTitle" -> "SQLDELIGHT_QUERY"
+                    frame.className.startsWith("app.cash.sqldelight.") -> "SQLDELIGHT_RUNTIME"
+                    frame.className.startsWith("androidx.sqlite.") -> "ANDROIDX_SQLITE_DRIVER"
+                    else -> null
+                }
+            }
+            .firstOrNull()
+
+    private fun reportSetupPhase(
+        phase: String?,
+        outcome: Outcome,
+        exception: String? = null,
+        frame: String? = null,
+    ) {
         if (phase == null) return
         val stream = buildString {
             append("RUNTIME_SETUP|phase=").append(phase).append("|outcome=").append(outcome.name)
             exception?.let { append("|exception=").append(it) }
+            frame?.let { append("|frame=").append(it) }
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,

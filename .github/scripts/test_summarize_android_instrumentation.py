@@ -183,6 +183,22 @@ class SummaryTest(unittest.TestCase):
         )
         self.assertNotIn("One-Punch Man", result)
 
+    def test_persistence_failure_frame_is_closed_and_sanitized(self):
+        runner = (
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
+            "outcome=FAIL|exception=NullPointerException|frame=SQLDELIGHT_QUERY\n"
+            "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=CANONICAL_TITLE_PERSIST|"
+            "outcome=FAIL|exception=NullPointerException|frame=private.Method|token=SECRET\n"
+        )
+        result = "\n".join(diagnostic.summarize(runner, ""))
+        self.assertIn(
+            "setupPhase=CANONICAL_TITLE_PERSIST|outcome=FAIL|"
+            "exception=NullPointerException|frame=SQLDELIGHT_QUERY",
+            result,
+        )
+        self.assertNotIn("SECRET", result)
+        self.assertNotIn("private.Method", result)
+
     def test_unknown_setup_diagnostics_are_dropped(self):
         runner = (
             "INSTRUMENTATION_STATUS: stream=RUNTIME_SETUP|phase=PRIVATE_PHASE"

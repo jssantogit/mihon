@@ -35,7 +35,8 @@ SETUP_LINE = re.compile(
     r"(?:\|exception=(IllegalStateException|IllegalArgumentException|SecurityException|"
     r"SQLiteException|SQLiteCantOpenDatabaseException|SQLiteReadOnlyDatabaseException|"
     r"UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|"
-    r"ClassNotFoundException|NullPointerException|IOException|OTHER))?$"
+    r"ClassNotFoundException|NullPointerException|IOException|OTHER))?"
+    r"(?:\|frame=(TITLE_REPOSITORY_INSERT|SQLDELIGHT_QUERY|SQLDELIGHT_RUNTIME|ANDROIDX_SQLITE_DRIVER))?$"
 )
 MISSING_QUOTED_CLASS = re.compile(r'Didn.t find class\s*"([A-Za-z_$][A-Za-z0-9_.$]+)"')
 MISSING_DIRECT_CLASS = re.compile(r'ClassNotFoundException:\s*(?!Didn.t)([A-Za-z_$][A-Za-z0-9_.$]+)')
@@ -101,10 +102,12 @@ def summarize(runner: str, crash: str) -> list[str]:
     for raw_line in runner.splitlines():
         parsed = SETUP_LINE.fullmatch(raw_line.strip())
         if parsed:
-            phase, outcome, exception = parsed.groups()
+            phase, outcome, exception, frame = parsed.groups()
             summary = "DIAGNOSTIC|setupPhase=" + phase + "|outcome=" + outcome
             if exception:
                 summary += "|exception=" + exception
+            if frame:
+                summary += "|frame=" + frame
             lines.append(summary)
     missing_source = runner + "\n" + crash
     missing = set(MISSING_QUOTED_CLASS.findall(missing_source))
