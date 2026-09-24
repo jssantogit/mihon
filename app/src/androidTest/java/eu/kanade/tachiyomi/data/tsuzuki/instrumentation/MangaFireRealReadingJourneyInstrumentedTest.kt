@@ -795,6 +795,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
     private data class DatabaseParentObservation(val writable: String, val state: String)
 
     private fun dataDirectoryObservation(context: Context): DataDirectoryObservation = try {
+        // Inspect only; unlike Context database helpers this never creates a directory or file.
         val directory = File(context.applicationInfo.dataDir)
         when {
             !directory.exists() -> DataDirectoryObservation("unknown", "unknown", "MISSING")
