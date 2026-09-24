@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.instrumentation
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
@@ -106,11 +107,24 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             applicationContext.getOrNull() == null -> "null"
             else -> "present"
         }
-        reportContextObservation(applicationContextStatus, packageIsolated, "raw")
+        val applicationContextValue = applicationContext.getOrNull()
+        val (databaseContext, wrapperApplied) = createInstrumentationDatabaseContext(
+            testContext,
+            applicationContextValue,
+        )
+        reportContextObservation(
+            applicationContextStatus,
+            packageIsolated,
+            if (wrapperApplied) "wrapped" else "raw",
+        )
         assertTrue("Persistence must use the instrumentation package database", packageIsolated)
         assertTrue("Instrumentation application context could not be inspected", applicationContext.isSuccess)
+        assertTrue(
+            "The isolated database context must expose an application context",
+            databaseContext.applicationContext != null,
+        )
 
-        resetInstrumentationDatabase(testContext)
+        resetInstrumentationDatabase(databaseContext)
         val canonicalTitle = CanonicalTitle(
             id = UUID.randomUUID().toString(),
             displayTitle = "Disposable instrumentation title",
@@ -119,7 +133,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             updatedAt = System.currentTimeMillis(),
         )
         val persistence = runCatching {
-            val driver = AppBindings.providesSqlDriver(testContext)
+            val driver = AppBindings.providesSqlDriver(databaseContext)
             try {
                 val repository = CanonicalTitleRepositoryImpl(AppBindings.providesDatabase(driver))
                 runBlocking {
@@ -206,18 +220,26 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 terminal[currentStage] = StageResult(Outcome.PASS, "NONE")
 
                 setupPhase = "CONTEXT_ISOLATION"
-                val testContext = instrumentation.context
+                val rawTestContext = instrumentation.context
+                val applicationContext = rawTestContext.applicationContext
+                val (testContext, wrapperApplied) = createInstrumentationDatabaseContext(
+                    rawTestContext,
+                    applicationContext,
+                )
                 check(testContext.packageName != app.packageName) {
                     "Instrumentation DB must not share the target package"
                 }
+                check(testContext.applicationContext != null) {
+                    "Instrumentation database context must provide an application context"
+                }
+                reportContextObservation(
+                    applicationContext = if (applicationContext == null) "null" else "present",
+                    packageIsolated = true,
+                    databaseContext = if (wrapperApplied) "wrapped" else "raw",
+                )
                 reportSetupPhase(setupPhase, Outcome.PASS)
                 setupPhase = "DB_RESET"
-                check(
-                    !testContext.databaseList().contains("tachiyomi.db") ||
-                        testContext.deleteDatabase("tachiyomi.db"),
-                ) {
-                    "Could not reset the instrumentation-only database"
-                }
+                resetInstrumentationDatabase(testContext)
                 reportSetupPhase(setupPhase, Outcome.PASS)
                 setupPhase = "SQL_DRIVER"
                 val driver = AppBindings.providesSqlDriver(testContext)
@@ -692,6 +714,17 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         ) {
             "Could not reset the instrumentation-only database"
         }
+    }
+
+    private fun createInstrumentationDatabaseContext(
+        context: Context,
+        applicationContext: Context?,
+    ): Pair<Context, Boolean> {
+        if (applicationContext != null) return context to false
+        val contextWithApplicationContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+        }
+        return contextWithApplicationContext to true
     }
 
     private fun report(
