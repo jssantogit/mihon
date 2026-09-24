@@ -99,6 +99,19 @@ class MihonChapterInventoryGateway(
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
+            if (manga.source != mapping.sourceId || manga.url != mapping.sourceUrl) {
+                val error = IllegalStateException("Materialized manga identity does not match source mapping")
+                recordInventoryFailure(
+                    canonicalTitleId = mapping.canonicalTitleId,
+                    sourceId = mapping.sourceId,
+                    language = mapping.language,
+                    addonId = null,
+                    error = error,
+                    elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
+                    reason = ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH,
+                )
+                return Result.failure(error)
+            }
             val source = sourceManager.get(mapping.sourceId)
                 ?: error("Source " + mapping.sourceId + " is unavailable")
             if (source is StubSource) throw SourceNotInstalledException()
