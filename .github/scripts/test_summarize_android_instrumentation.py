@@ -3,6 +3,9 @@
 from __future__ import annotations
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 MODULE = Path(__file__).with_name("summarize_android_instrumentation.py")
@@ -101,6 +104,33 @@ class SummaryTest(unittest.TestCase):
         result = "\n".join(diagnostic.summarize("INSTRUMENTATION_STATUS: numtests=0\n", ""))
         self.assertIn("numtests=0", result)
         self.assertNotIn("classMatchesFixture=true", result)
+
+    def test_cli_accepts_empty_crash_path(self):
+        # Reproduce run_mangafire_android.sh's successful-instrumentation call.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "runner.txt"
+            output.write_text("INSTRUMENTATION_STATUS: numtests=1\\n", encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(MODULE), str(output), ""],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("DIAGNOSTIC|numtests=1", completed.stdout)
+
+    def test_cli_accepts_omitted_crash_argument(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "runner.txt"
+            output.write_text("INSTRUMENTATION_STATUS: numtests=1\\n", encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(MODULE), str(output)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("DIAGNOSTIC|numtests=1", completed.stdout)
 
 if __name__ == "__main__":
     unittest.main()
