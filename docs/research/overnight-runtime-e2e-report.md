@@ -196,3 +196,11 @@ The branch at the start of this implementation was `tsuzuki/runtime-e2e-tests`, 
 ### Next required action
 
 Run the offline tests/format and Android test compilation in GitHub CI first. Then explicitly dispatch `.github/workflows/mangafire-real-extension.yml` with `live_probe=true` once only (or use the authorized `[android-live]` push marker). The live journey is considered a functional PASS only if the CI artifact contains exactly one test and all 14 stage events pass. A no-result, unsafe candidate identity, disabled source, provider challenge, network failure, timeout, missing inventory, reconciliation miss, empty option set, reader preparation error or empty page list must remain a sanitized failing/inconclusive run; it is not a green journey. After the first result, examine only the sanitized report. Do not extend to MangaBall/MangaDex or fallback until the MangaFire path has an identity-verified bound chapter.
+
+### Session delivery checkpoint
+
+- Local branch HEAD after the test/import correction: `825bcf3458bc9cf9f659fc0bce21c387b12fe79c`.
+- Commits added after the verified remote base: `e0ade119b76a695fce08bf7fbc11600f80df72fc` (prior blocker report), `9a1dd34d6` (journey, workflow, validators and report), and `825bcf345` (correct package imports and import order in the Kotlin harness). The latter two form the implementation change; the intermediate `9a1dd34d6` has not been pushed independently.
+- The only `git push` attempted for this work failed with DNS error `Could not resolve host: github.com`; no force push or retry occurred. At this checkpoint the local branch is three commits ahead of its last verified remote `523b514dc012b0e4f6b97335df2afa44d637b56a`. The final report/commit will record whether a later single push attempt succeeds.
+- No GitHub CI run was triggered or observed for these commits. In particular, Android test compilation, format, emulator instrumentation and the real provider journey are still unverified. The prior green CI links in this report belong to earlier commits only.
+- No production source, AppGraph, user database, APK artifact, merge or PR was changed/created. The opt-in emulator workflow is configured to install only the checksum-pinned MangaFire fixture and use the instrumentation package's disposable DB.
