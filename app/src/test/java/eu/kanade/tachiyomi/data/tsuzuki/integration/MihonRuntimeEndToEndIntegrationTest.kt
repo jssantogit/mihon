@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
+import eu.kanade.tachiyomi.data.tsuzuki.MihonCanonicalReaderGateway
+import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterContentPreparer
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import eu.kanade.tachiyomi.data.tsuzuki.addon.DefaultAddonRegistry
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
@@ -40,6 +42,7 @@ import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
@@ -48,6 +51,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -58,6 +62,10 @@ import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
+import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -94,6 +102,16 @@ class MihonRuntimeEndToEndIntegrationTest {
                     sourceId = harness.source.id,
                     mangaId = 9001L,
                     chapterId = journey.chapterRows.onlyRow().id,
+                )
+                journey.prepare(option) shouldBe CanonicalReaderPreparation.Ready(
+                    canonicalChapterId = reconciled.id,
+                    target = PreparedChapterContent.MihonOperational(
+                        mangaId = 9001L,
+                        chapterId = journey.chapterRows.onlyRow().id,
+                        sourceId = harness.source.id,
+                    ),
+                    usedFallback = false,
+                    selectedOption = option,
                 )
                 harness.server.requestCount shouldBe 2
             }
@@ -307,6 +325,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val bindingResolver: ResolveContentBinding
         private val refresh: RefreshChapterEvidence
         private val selector: ResolveChapterContent
+        private val readerPreparation: PrepareCanonicalChapterForReader
 
         init {
             diagnostics.start(canonicalTitleId)
@@ -364,6 +383,19 @@ class MihonRuntimeEndToEndIntegrationTest {
                 addonRepository = addons,
                 diagnostics = diagnostics,
             )
+            readerPreparation = PrepareCanonicalChapterForReader(
+                resolveChapterContent = selector,
+                canonicalChapterRepository = canonicalChapters,
+                canonicalReadingRepository = mockk<CanonicalReadingRepository> {
+                    coEvery { getProgress(any()) } returns null
+                },
+                canonicalDownloadRepository = mockk<CanonicalDownloadRepository> {
+                    coEvery { get(any()) } returns null
+                },
+                chapterContentPreparer = MihonChapterContentPreparer(
+                    MihonCanonicalReaderGateway(chapterRows.repository),
+                ),
+            )
         }
 
         private fun everyInsertAndReadManga() {
@@ -383,6 +415,8 @@ class MihonRuntimeEndToEndIntegrationTest {
         suspend fun refresh() = refresh.execute(canonicalTitleId).getOrThrow()
         suspend fun installedSources() = harness.gateway.listInstalled("en")
         suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
+        suspend fun prepare(option: ContentOption) =
+            readerPreparation.execute(option.canonicalChapterId, selectedOption = option)
     }
 
     private class RecordingDiagnostics(private val titleId: String) : ChapterInventoryDiagnostics {
