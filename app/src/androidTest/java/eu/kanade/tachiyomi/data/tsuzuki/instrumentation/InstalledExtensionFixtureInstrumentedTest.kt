@@ -157,9 +157,20 @@ class InstalledExtensionFixtureInstrumentedTest {
             val lookupStarted = SystemClock.elapsedRealtime()
             val extension = try {
                 withTimeout(30_000L) {
-                    app.graph.extensionManager.installedExtensionsFlow.first { installed ->
-                        installed.any { it.pkgName == packageName }
-                    }.single { it.pkgName == packageName }
+                    val manager = app.graph.extensionManager
+                    manager.getInstalledExtensions().firstOrNull { it.pkgName == packageName }
+                        ?: run {
+                            val untrusted = manager.untrustedExtensionsFlow.first { extensions ->
+                                extensions.any { it.pkgName == packageName }
+                            }.single { it.pkgName == packageName }
+                            sendStage("EXTENSION_LOOKUP_UNTRUSTED")
+                            // The fixture runner is disposable; trust only the exact APK supplied
+                            // and verified by the fixture job, matching the offline fixture test.
+                            manager.trust(untrusted)
+                            manager.installedExtensionsFlow.first { installed ->
+                                installed.any { it.pkgName == packageName }
+                            }.single { it.pkgName == packageName }
+                        }
                 }
             } catch (error: TimeoutCancellationException) {
                 sendStage(

@@ -64,3 +64,17 @@ This narrows the observed stopping point: the test method was discovered and emi
 A test-first follow-up now extends the allowlisted diagnostic format with terminal extension lookup stages (`TIMEOUT`, `CANCELLED`, `FAILURE`) and a bounded elapsed-time field. The Android test rethrows the original throwable after emitting only the closed stage category and elapsed time; it does not change extension or provider behavior. Python RED was observed before the parser update (the timeout stage was omitted), then the focused suite passed (8 tests) after the update; report-sanitizer tests also pass (7). `git diff --check` and Actionlint pass. No Gradle task was run locally. This code has not yet been pushed/compiled by CI.
 
 The upcoming ordinary push to the live-workflow paths is expected to trigger the workflow but **not** external provider requests because the commit will not carry `[android-live-matrix]`; its shard job is marker-gated. The next allowed external actions are sequential targeted dispatches only, first AnimeXNovel with the richer stage, then Manga Livre.to and MangaFire if the artifact leaves requests warranted. Stop on explicit rate-limit/CAPTCHA observations.
+
+### Targeted AnimeXNovel retry with explicit terminal stage
+
+The opt-in single-target retry (`35949995253`, SHA `803a5340`) compiled the Android instrumentation and then failed in the source-probe test phase. Its sanitized diagnostic shows:
+
+```text
+junitPass=false; probeEvents=0
+EXTENSION_LOOKUP_START
+EXTENSION_LOOKUP_TIMEOUT|elapsedMs=30002
+```
+
+Therefore this run stopped in the test's **trusted installed-extension lookup** after 30 seconds and did not issue an AnimeXNovel search. It is not evidence of an AnimeXNovel HTTP/provider failure. The preceding offline APK load/registration test passed in its own instrumentation invocation. The live-test method had only waited for the extension in `installedExtensionsFlow`; it did not repeat the offline test's explicit check for the untrusted-extension state and test-only trust path. The exact reason the fresh live-test invocation had no matching trusted-flow item is not distinguished by this event alone; it may be untrusted/not yet loaded. The probe harness is now being updated to check installed then untrusted state, trust only this pinned fixture in the disposable emulator, and keep the original 30-second total lookup deadline. A new allowlisted `EXTENSION_LOOKUP_UNTRUSTED` event has a regression test.
+
+Run `35949749740` for the preceding `803a5340` commit completed successfully (Change Planner, App Tsuzuki tests, Format, and CI gate green; release, compile, DB, native package and Supabase lanes skipped as planner-directed). Fixture byte verification, MangaFire diagnostic tests/compile, and live workflow contract/compile jobs also passed. The failed live job `35949995253` is separate and targeted to one fixture; no source attempt occurred.

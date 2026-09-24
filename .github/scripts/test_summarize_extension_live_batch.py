@@ -129,6 +129,17 @@ class ExtensionLiveBatchSummaryTest(unittest.TestCase):
         self.assertNotIn("private URL", report)
         self.assertNotIn("https://", report)
 
+    def test_retains_untrusted_extension_boundary_without_sensitive_fields(self):
+        raw = BASE + (
+            "INSTRUMENTATION_STATUS: stream=LIVE_STAGE|stage=EXTENSION_LOOKUP_UNTRUSTED\n"
+            "INSTRUMENTATION_STATUS: stream=LIVE_STAGE|stage=EXTENSION_READY|sourceCount=7\n"
+        )
+
+        report = "\n".join(summary.summarize(raw, process_exit=0))
+
+        self.assertIn("LIVE_STAGE|stage=EXTENSION_LOOKUP_UNTRUSTED", report)
+        self.assertIn("LIVE_STAGE|stage=EXTENSION_READY|sourceCount=7", report)
+
     def test_detail_output_is_bounded_for_repeated_or_malformed_events(self):
         valid = (
             "INSTRUMENTATION_STATUS: stream=SOURCE_PROBE|sourceId=123|lang=en"
