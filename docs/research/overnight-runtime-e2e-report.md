@@ -4,6 +4,7 @@
 
 - Branch: `tsuzuki/runtime-e2e-tests` (no branch switch or branch creation).
 - Baseline/remote HEAD at session start: `203b73e5a8454f2f8c48eb0993dd6357f33e40f8`.
+- HEAD before this report amendment: `9ae3bbbf9988bf38331fd4808f2376aa5dd1f345`.
 - Working tree was clean. No local edits existed to preserve.
 - The current opt-in external matrix is run `35944402938` for that exact SHA; it has completed. Artifacts from all four shards have been downloaded and preserved under `/tmp/tsuzuki-source-matrix` before any push.
 - The ordinary CI run `35944402927` for the same SHA completed successfully.
@@ -33,7 +34,7 @@ The **original full matrix** yielded 213/222 source observations. By extension: 
 | Mangas Brasuka | 1 | 0 | 0 | 1 × HTTP 403 | Original full matrix |
 | **Total unique sources** | **222** | **220** | **1** | **1 × HTTP 403** | Combined run-bound observations |
 
-The table combines distinct run observations; it is not a single 222-source execution. It describes whether the extension search gateway returned candidates, returned none, or surfaced an HTTP response error. It does not assert that any particular candidate is One-Punch Man, that a candidate is safe to bind, or that its chapters/content can be read.
+The table combines distinct run observations; it is not a single 222-source execution. The live test queried One-Punch Man using Japanese text for `ja`, Chinese text for `zh`, Korean text for `ko`, Russian text for `ru`, and `One Punch Man` for other languages. It describes whether the extension search gateway returned candidates, returned none, or surfaced an HTTP response error. It does not assert that any particular candidate is One-Punch Man, that a candidate is safe to bind, or that its chapters/content can be read.
 
 The workflow's failure annotations confirm that the three incomplete batches were rejected because the runner did not end with the required single passing JUnit test; they do not report the underlying runner outcome. Sanitized shard-0 logs show each of the two failures occurred about 34 seconds after the fixture began, but the temporary runner output was deleted and no test/search stage was retained. Offline extension installation/registration passed for those fixtures. Shard-3 logs identify MangaFire's installed package/version as `eu.kanade.tachiyomi.extension.all.mangafire` / `1.6.34`; its search outcome was unknown in the original run, and is now established by the separate targeted retry below. This was a confirmed observability gap, not a confirmed provider/runtime defect. RED/GREEN Python regressions cover a bounded allowlisted batch summary preserving valid source events and safe stage markers when JUnit completion is absent, while never converting missing events to `EMPTY`.
 
@@ -68,6 +69,7 @@ The Android probe wraps a gateway search in coroutine `withTimeout`, but an exte
 - Terminal lookup instrumentation compiled in live-workflow compile job `35951192811`; its opt-in Android shard completed and queried AnimeXNovel successfully as a test flow, with an `EMPTY` provider search response. The prior 30-second timeout was therefore at the test's lookup boundary, not in an AnimeXNovel provider request. The precise trusted/untrusted state at the first failure was not retained, so do not claim the untrusted branch specifically caused recovery.
 - Manga Livre.to returned one candidate in a separate one-source targeted probe. MangaFire returned candidates on all seven sources, but exact matching/binding/inventory/reader behavior is unverified.
 - MangaFire/chapter inventory/fallback on these actual extensions are not proven by this search matrix.
+- Documentation commit `9ae3bbbf` consolidated the 222-source outcome matrix and targeted observations. CI v2 run `35954184810` succeeded with Change Planner and CI Gate; app, Domain, Format, and release lanes were skipped because this commit changed research documentation only. APK Build run `35954184905` was skipped. No APK was generated.
 
 ## Targeted retry and follow-up instrumentation (2026-09-24)
 
@@ -103,4 +105,4 @@ Run `35949749740` for the preceding `803a5340` commit completed successfully (Ch
 - `35951908581` / SHA `16f0646f`: Manga Livre.to 1.6.57 source `1281902081932329042`, `pt-BR`, outcome `RESULTS`, one candidate, 2982 ms.
 - `35952770951` / SHA `16f0646f`: MangaFire 1.6.34 all seven sources returned `RESULTS`: `ja` 11; `pt`, `es-419`, `en`, `fr`, `pt-BR`, `es` each 50 candidates (capped page size). No CAPTCHA or 429 was observed. Exact candidate titles and URLs were not exported.
 
-Together with the original run these produce 222 unique source observations: 220 `RESULTS`, one `EMPTY`, one HTTP 403. This is full outcome accounting, not 222 successful canonical matches. The observed 403 remains generic HTTP status only; no CAPTCHA classification.
+Together with the original run these produce 222 unique source observations: 220 `RESULTS`, one `EMPTY`, one HTTP 403. This is full outcome accounting, not 222 successful canonical matches. The observed 403 remains generic HTTP status only; no CAPTCHA classification. Documentation commit `9ae3bbbf9988bf38331fd4808f2376aa5dd1f345` passed CI v2 `35954184810`'s planner/gate, with app, Domain, Format, and release work skipped as planner-directed. APK Build `35954184905` was skipped.
