@@ -21,11 +21,24 @@ on:
       - '.github/scripts/run_android_navigation.sh'
       - '.github/scripts/verify_android_navigation_instrumentation.py'
       - '.github/scripts/test_verify_android_navigation_instrumentation.py'
+      - '.github/scripts/verify_mangaball_fixture.py'
+      - '.github/scripts/test_mangaball_fixture.py'
+      - '.github/scripts/mangaball_android_report.py'
+      - '.github/scripts/test_mangaball_android.py'
+      - '.github/scripts/run_mangaball_android.sh'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
     inputs:
+      extension_profile:
+        description: 'Select the isolated real-extension profile'
+        required: true
+        default: mangafire
+        type: choice
+        options:
+          - mangafire
+          - mangaball
       live_probe:
-        description: 'Run the real MangaFire journey when true; false runs offline Android navigation tests'
+        description: 'Run one bounded provider journey when true; MangaBall false is fixture-only'
         required: true
         default: false
         type: boolean
@@ -51,10 +64,14 @@ jobs:
           python3 .github/scripts/test_summarize_android_instrumentation.py
           python3 .github/scripts/test_verify_android_navigation_instrumentation.py
           python3 .github/scripts/test_android_instrumentation_route.py
+          python3 .github/scripts/test_mangaball_android.py
+          python3 .github/scripts/test_mangaball_fixture.py
           bash -n .github/scripts/run_mangafire_android.sh
+          bash -n .github/scripts/run_mangaball_android.sh
           bash -n .github/scripts/run_android_instrumentation_route.sh
           bash -n .github/scripts/run_android_navigation.sh
           python3 .github/scripts/verify_extension_fixture.py
+          python3 .github/scripts/verify_mangaball_fixture.py
 
   compile-android-test:
     name: Compile real-extension instrumentation
@@ -73,7 +90,7 @@ jobs:
       - name: Verify JUnit methods have JVM void signatures
         run: |
           set -euo pipefail
-          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest CanonicalTitleSourceNavigationInstrumentedTest; do
+          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest MangaBallRealReadingJourneyInstrumentedTest CanonicalTitleSourceNavigationInstrumentedTest; do
             class_file="$(find app/build -type f -name "${class}.class" -print -quit)"
             test -n "$class_file"
             suffix="/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/${class}.class"
@@ -85,6 +102,9 @@ jobs:
             elif [[ "$class" == 'MangaFireRealReadingJourneyInstrumentedTest' ]]; then
               grep -F 'public final void optionalRealEnglishReadingJourney();' junit-signatures.txt
               grep -F 'public final void instrumentationContextDatabasePersistsCanonicalTitle();' junit-signatures.txt
+            elif [[ "$class" == 'MangaBallRealReadingJourneyInstrumentedTest' ]]; then
+              grep -F 'public final void loadsRealExtensionAndRegistersInternalSourcesAndDisabledPeerIsExcluded();' junit-signatures.txt
+              grep -F 'public final void optionalLivePtBrReadingJourney();' junit-signatures.txt
             else
               grep -F 'public final void coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
               grep -F 'public final void warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
@@ -108,7 +128,9 @@ jobs:
           distribution: temurin
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
       - name: Verify APK fixture
-        run: python3 .github/scripts/verify_extension_fixture.py
+        run: |
+          python3 .github/scripts/verify_extension_fixture.py
+          python3 .github/scripts/verify_mangaball_fixture.py
       - name: Enable KVM for Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -124,7 +146,7 @@ jobs:
           disable-animations: true
           # The emulator action runs individual YAML script lines in separate shells.
           # Keep setup and conditional logic within ONE invoked Bash script.
-          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]')) }}"
+          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]')) }}" false "${{ inputs.extension_profile || 'mangafire' }}"
       - name: Upload sanitized instrumentation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -133,5 +155,6 @@ jobs:
           path: |
             .github/results/android-navigation/**
             .github/results/mangafire/**
+            .github/results/mangaball/**
           if-no-files-found: ignore
           retention-days: 3

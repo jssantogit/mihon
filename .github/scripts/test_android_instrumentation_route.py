@@ -12,9 +12,9 @@ ROUTER = ROOT / ".github/scripts/run_android_instrumentation_route.sh"
 
 
 class AndroidInstrumentationRouteTest(unittest.TestCase):
-    def route(self, event: str, live: str, fixture_marker: str = "false") -> str:
+    def route(self, event: str, live: str, fixture_marker: str = "false", profile: str = "mangafire") -> str:
         result = subprocess.run(
-            ["bash", str(ROUTER), event, live, fixture_marker, "true"],
+            ["bash", str(ROUTER), event, live, fixture_marker, "true", profile],
             check=False,
             capture_output=True,
             text=True,
@@ -32,6 +32,18 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
         self.assertEqual(
             "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=MANGAFIRE_LIVE|liveProbe=true|providerCalls=1",
             self.route("workflow_dispatch", "true"),
+        )
+
+    def test_mangaball_dispatch_false_runs_fixture_only_without_provider_calls(self):
+        self.assertEqual(
+            "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=MANGABALL_FIXTURE_ONLY|liveProbe=false|providerCalls=0|extensionProfile=mangaball",
+            self.route("workflow_dispatch", "false", profile="mangaball"),
+        )
+
+    def test_mangaball_dispatch_true_is_explicitly_live(self):
+        self.assertEqual(
+            "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=MANGABALL_LIVE|liveProbe=true|providerCalls=1|extensionProfile=mangaball",
+            self.route("workflow_dispatch", "true", profile="mangaball"),
         )
 
     def test_fixture_push_marker_keeps_the_non_live_mangafire_fixture_route(self):
@@ -55,6 +67,17 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
         )
         self.assertEqual(2, result.returncode)
         self.assertIn("reason=PUSH_MARKER_REQUIRED", result.stderr)
+        self.assertNotIn("providerCalls=1", result.stdout)
+
+    def test_mangaball_profile_is_rejected_for_push(self):
+        result = subprocess.run(
+            ["bash", str(ROUTER), "push", "false", "true", "true", "mangaball"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("reason=PROFILE_UNSUPPORTED_FOR_PUSH", result.stderr)
         self.assertNotIn("providerCalls=1", result.stdout)
 
 

@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.instrumentation
 
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
@@ -13,13 +12,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import app.cash.sqldelight.db.QueryResult
 import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.tachiyomi.App
-import eu.kanade.tachiyomi.data.tsuzuki.MihonCanonicalReaderGateway
-import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterContentPreparer
-import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
-import eu.kanade.tachiyomi.data.tsuzuki.MihonReadingSourceGateway
-import eu.kanade.tachiyomi.data.tsuzuki.addon.DefaultAddonRegistry
-import eu.kanade.tachiyomi.data.tsuzuki.addon.LocalContentProvider
-import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
 import eu.kanade.tachiyomi.data.tsuzuki.diagnosticHttpStatus
 import eu.kanade.tachiyomi.extension.model.Extension
 import eu.kanade.tachiyomi.source.CatalogueSource
@@ -27,7 +19,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import mihon.app.di.AppBindings
 import org.junit.Assert.assertEquals
@@ -35,56 +26,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import tachiyomi.core.common.preference.InMemoryPreferenceStore
-import tachiyomi.data.Database
-import tachiyomi.data.chapter.ChapterRepositoryImpl
-import tachiyomi.data.manga.MangaRepositoryImpl
-import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
-import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
-import tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
-import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
-import tachiyomi.data.tsuzuki.download.CanonicalDownloadRepositoryImpl
-import tachiyomi.domain.chapter.repository.ChapterRepository
-import tachiyomi.domain.manga.interactor.NetworkToLocalManga
-import tachiyomi.domain.manga.repository.MangaRepository
-import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.addon.AddonId
-import tachiyomi.domain.tsuzuki.addon.AddonRegistry
-import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
-import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
-import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
-import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
-import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
-import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
-import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
-import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
-import tachiyomi.domain.tsuzuki.content.ContentOption
-import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
-import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
-import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
-import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.model.ContentResolution
-import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
-import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
-import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
-import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
-import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
-import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
-import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
-import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 import java.io.File
 import java.net.ConnectException
 import java.net.SocketException
@@ -163,7 +118,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val targetContext = instrumentation.targetContext
         val disposableDatabaseName = "tsuzuki-e2e-${UUID.randomUUID()}.db"
-        val databaseContext = DisposableTargetDatabaseContext(
+        val databaseContext = MihonJourneyDisposableDatabaseContext(
             targetContext = targetContext,
             disposableDatabaseName = disposableDatabaseName,
         )
@@ -241,7 +196,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             var currentStage = STAGES.first()
             var stopCategory = "INSTRUMENTATION"
             var setupPhase: String? = null
-            var disposableDatabaseContext: DisposableTargetDatabaseContext? = null
+            var disposableDatabaseContext: MihonJourneyDisposableDatabaseContext? = null
             var sqlDriver: app.cash.sqldelight.db.SqlDriver? = null
             try {
                 val app = instrumentation.targetContext.applicationContext as App
@@ -293,7 +248,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
 
                 setupPhase = "CONTEXT_ISOLATION"
                 val disposableDatabaseName = "tsuzuki-e2e-${UUID.randomUUID()}.db"
-                val databaseContext = DisposableTargetDatabaseContext(
+                val databaseContext = MihonJourneyDisposableDatabaseContext(
                     targetContext = instrumentation.targetContext,
                     disposableDatabaseName = disposableDatabaseName,
                 )
@@ -326,10 +281,11 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     var materializationOutcome: Outcome? = null
                     var materializationCategory = "NONE"
                     var materializationElapsedMs: Long? = null
-                    val composition = ProductionComposition(
+                    val composition = ProductionMihonJourneyComposition(
                         app = app,
                         database = database,
                         sourceManager = app.graph.sourceManager,
+                        addonId = AddonId(PACKAGE_NAME),
                     ) { result, elapsedMs ->
                         materializationOutcome = if (result.isSuccess) Outcome.PASS else Outcome.FAIL
                         materializationCategory = if (result.isSuccess) "NONE" else "MATERIALIZATION"
@@ -354,7 +310,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     currentStage = "LIVE_SEARCH"
                     val searchStarted = SystemClock.elapsedRealtime()
                     val search = try {
-                        runBounded(45_000L) { composition.readingSourceGateway.search(sourceId, SEARCH_QUERY) }
+                        runMihonJourneyBounded(45_000L) { composition.readingSourceGateway.search(sourceId, SEARCH_QUERY) }
                     } catch (error: CancellationException) {
                         if (error !is TimeoutCancellationException) throw error
                         stop(Outcome.INCONCLUSIVE, "TIMEOUT", elapsedMs = SystemClock.elapsedRealtime() - searchStarted)
@@ -447,7 +403,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     currentStage = "INVENTORY"
                     composition.diagnostics.start(canonicalTitleId)
                     val probeResult = try {
-                        runBounded(60_000L) { composition.chapterProbeProvider.probe(canonicalTitleId) }
+                        runMihonJourneyBounded(60_000L) { composition.chapterProbeProvider.probe(canonicalTitleId) }
                     } catch (error: CancellationException) {
                         if (error !is TimeoutCancellationException) throw error
                         stop(Outcome.INCONCLUSIVE, "TIMEOUT")
@@ -557,7 +513,7 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     val operationalChapter = composition.chapterRepository.getChapterById(target.chapterId)
                         ?: stop(Outcome.FAIL, "READER_PREPARATION")
                     val pageList = try {
-                        runBounded(60_000L) { registered.getPageList(operationalChapter.toSChapter()) }
+                        runMihonJourneyBounded(60_000L) { registered.getPageList(operationalChapter.toSChapter()) }
                     } catch (error: CancellationException) {
                         if (error !is TimeoutCancellationException) throw error
                         stop(Outcome.INCONCLUSIVE, "TIMEOUT")
@@ -659,26 +615,6 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                 .single { it.pkgName == PACKAGE_NAME }
         }
     }
-
-    /**
-     * Mihon extension APIs can block in Java, outside cancellable coroutine suspension points.
-     * Run each external call on a daemon worker so the stage deadline can return even if the
-     * extension ignores interruption. The worker is interrupted on timeout/cancellation.
-     */
-    private suspend fun <T> runBounded(timeoutMillis: Long, block: suspend () -> T): T =
-        withTimeout(timeoutMillis) {
-            suspendCancellableCoroutine { continuation ->
-                val worker = Thread {
-                    val outcome = runCatching { runBlocking { block() } }
-                    if (continuation.isActive) continuation.resumeWith(outcome)
-                }.apply {
-                    name = "Tsuzuki-MangaFire-E2E"
-                    isDaemon = true
-                }
-                continuation.invokeOnCancellation { worker.interrupt() }
-                worker.start()
-            }
-        }
 
     private fun matchesReference(sourceUrl: String): Boolean = try {
         val uri = URI(sourceUrl)
@@ -815,27 +751,6 @@ class MangaFireRealReadingJourneyInstrumentedTest {
             1,
             Bundle().apply { putString("stream", stream) },
         )
-    }
-
-    private class DisposableTargetDatabaseContext(
-        private val targetContext: Context,
-        private val disposableDatabaseName: String,
-    ) : ContextWrapper(targetContext) {
-        override fun getApplicationContext(): Context = this
-
-        override fun getDatabasePath(name: String): File {
-            check(name == TARGET_DATABASE_NAME) {
-                "Unexpected database name requested by test composition"
-            }
-            return targetContext.getDatabasePath(disposableDatabaseName)
-        }
-
-        override fun deleteDatabase(name: String): Boolean {
-            check(name == TARGET_DATABASE_NAME) {
-                "Unexpected database name deleted by test composition"
-            }
-            return targetContext.deleteDatabase(disposableDatabaseName)
-        }
     }
 
     private fun packageUid(context: Context): Int? = try {
@@ -1177,129 +1092,6 @@ class MangaFireRealReadingJourneyInstrumentedTest {
         val elapsedMs: Long? = null,
         val stage: String? = null,
     ) : RuntimeException()
-
-    private class RecordingDiagnostics : ChapterInventoryDiagnostics {
-        private var activeTitleId: String? = null
-        private val collected = mutableListOf<ChapterInventoryDiagnosticEvent>()
-
-        @Synchronized
-        override fun start(canonicalTitleId: String): String {
-            activeTitleId = canonicalTitleId
-            collected.clear()
-            return UUID.randomUUID().toString()
-        }
-
-        @Synchronized
-        override fun stop() {
-            activeTitleId = null
-        }
-
-        @Synchronized
-        override fun clear() {
-            activeTitleId = null
-            collected.clear()
-        }
-
-        @Synchronized
-        override fun isRecording(canonicalTitleId: String): Boolean = activeTitleId == canonicalTitleId
-
-        @Synchronized
-        override fun record(event: ChapterInventoryDiagnosticEvent) {
-            if (activeTitleId != null) collected += event
-        }
-
-        @Synchronized
-        override fun report(): String = ""
-
-        @Synchronized
-        fun events(): List<ChapterInventoryDiagnosticEvent> = collected.toList()
-    }
-
-    private class ProductionComposition(
-        private val app: App,
-        database: Database,
-        sourceManager: SourceManager,
-        onMaterialization: (Result<MaterializedReadingSource>, Long) -> Unit,
-    ) {
-        private val mangaRepository: MangaRepository = MangaRepositoryImpl(database)
-        val chapterRepository: ChapterRepository = ChapterRepositoryImpl(database)
-        val canonicalTitleRepository: CanonicalTitleRepository = CanonicalTitleRepositoryImpl(database)
-        val contentBindingRepository: ContentBindingRepository = ContentBindingRepositoryImpl(database)
-        val canonicalChapterRepository: CanonicalChapterRepository = CanonicalChapterRepositoryImpl(database)
-        private val chapterEvidenceRepository: ChapterEvidenceRepository = ChapterEvidenceRepositoryImpl(database)
-        private val contentPreferenceRepository: ContentPreferenceRepository = ContentPreferenceRepositoryImpl(database)
-        val diagnostics = RecordingDiagnostics()
-        private val parser = ParseCanonicalChapterLabel()
-        private val chapterInventoryGateway = MihonChapterInventoryGateway(
-            mangaRepository = mangaRepository,
-            chapterRepository = chapterRepository,
-            sourceManager = sourceManager,
-            diagnostics = diagnostics,
-            chapterLabelParser = parser,
-        )
-        private val mihonReadingSourceGateway: ReadingSourceGateway = MihonReadingSourceGateway(
-            sourceManager = sourceManager,
-            sourcePreferences = app.graph.sourcePreferences,
-            networkToLocalManga = NetworkToLocalManga(mangaRepository),
-        )
-        val readingSourceGateway: ReadingSourceGateway = object : ReadingSourceGateway by mihonReadingSourceGateway {
-            override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
-                val started = SystemClock.elapsedRealtime()
-                val result = mihonReadingSourceGateway.materialize(candidate)
-                onMaterialization(result, SystemClock.elapsedRealtime() - started)
-                return result
-            }
-        }
-        private val addonId = AddonId(PACKAGE_NAME)
-        private val providerFactory = MihonAddonProviderFactory(
-            contentBindingRepository = contentBindingRepository,
-            canonicalChapterRepository = canonicalChapterRepository,
-            chapterEvidenceRepository = chapterEvidenceRepository,
-            parser = parser,
-            chapterInventoryGateway = chapterInventoryGateway,
-            chapterInventoryDiagnostics = diagnostics,
-        )
-        val chapterProbeProvider: ChapterProbeProvider = providerFactory.chapterProbeProvider(addonId)
-        private val chapterReconciliation = ReconcileChapterEvidence(
-            parser = parser,
-            canonicalChapterRepository = canonicalChapterRepository,
-            evidenceRepository = chapterEvidenceRepository,
-        )
-        val reconcileChapterEvidence: ReconcileChapterEvidence
-            get() = chapterReconciliation
-        private val addonRegistry: AddonRegistry = DefaultAddonRegistry(
-            addonRepository = app.graph.addonRepository,
-            providerFactory = providerFactory,
-            localContentProvider = LocalContentProvider(CanonicalDownloadRepositoryImpl(database)),
-        )
-        val resolveChapterContent = ResolveChapterContent(
-            addonRegistry = addonRegistry,
-            contentPreferenceRepository = contentPreferenceRepository,
-            readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore()),
-            rankContentOptions = RankContentOptions(),
-            contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
-            addonRepository = app.graph.addonRepository,
-        )
-        val confirmContentBinding = tachiyomi.domain.tsuzuki.content.interactor.ConfirmContentBinding(
-            contentBindingRepository = contentBindingRepository,
-            canonicalTitleRepository = canonicalTitleRepository,
-            addonRepository = app.graph.addonRepository,
-            readingSourceGateway = readingSourceGateway,
-            scoreSourceTitleMatch = ScoreSourceTitleMatch(),
-        )
-        val scoreTitleMatch = ScoreSourceTitleMatch()
-        val prepareCanonicalChapterForReader = PrepareCanonicalChapterForReader(
-            resolveChapterContent = resolveChapterContent,
-            canonicalChapterRepository = canonicalChapterRepository,
-            canonicalReadingRepository = CanonicalReadingRepositoryImpl(database),
-            canonicalDownloadRepository = CanonicalDownloadRepositoryImpl(database),
-            chapterContentPreparer = MihonChapterContentPreparer(
-                canonicalReaderGateway = MihonCanonicalReaderGateway(chapterRepository),
-                canonicalDownloadRepository = CanonicalDownloadRepositoryImpl(database),
-            ),
-        )
-    }
 
     private companion object {
         const val TARGET_DATABASE_NAME = "tachiyomi.db"
