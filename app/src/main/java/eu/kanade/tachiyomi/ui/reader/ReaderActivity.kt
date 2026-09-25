@@ -30,9 +30,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -56,6 +60,7 @@ import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
+import eu.kanade.presentation.tsuzuki.content.ContentBindingLinkSheet
 import eu.kanade.presentation.tsuzuki.content.ContentOptionSelectorSheet
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
@@ -78,6 +83,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.openInBrowser
@@ -86,6 +92,7 @@ import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
@@ -140,6 +147,7 @@ class ReaderActivity : BaseActivity() {
 
     val viewModel by viewModels<ReaderViewModel> { graph.viewModelFactory }
     private val contentSelectorViewModel by viewModels<ContentSelectorScreenModel> { graph.viewModelFactory }
+    private val contentBindingLinkViewModel by viewModels<ContentBindingLinkScreenModel> { graph.viewModelFactory }
     private var assistUrl: String? = null
 
     /**
@@ -280,7 +288,17 @@ class ReaderActivity : BaseActivity() {
     private fun ReaderActivityBinding.setComposeOverlay(): Unit = composeOverlay.setComposeContent {
         val state by viewModel.state.collectAsState()
         val selectorState by contentSelectorViewModel.state.collectAsState()
+        val bindingLinkState by contentBindingLinkViewModel.state.collectAsState()
+        var bindingLinkTitleId by rememberSaveable { mutableStateOf<String?>(null) }
         val showPageNumber by readerPreferences.showPageNumber.collectAsState()
+        LaunchedEffect(bindingLinkTitleId) {
+            bindingLinkTitleId?.let(contentBindingLinkViewModel::start)
+        }
+        LaunchedEffect(contentBindingLinkViewModel) {
+            contentBindingLinkViewModel.bindingChanges.collect {
+                contentSelectorViewModel.retry()
+            }
+        }
         val settingsviewModel = remember {
             ReaderSettingsViewModel(
                 readerState = viewModel.state,
@@ -363,7 +381,7 @@ class ReaderActivity : BaseActivity() {
             }
             is ReaderViewModel.Dialog.ContentSelector -> {
                 val selector = state.dialog as ReaderViewModel.Dialog.ContentSelector
-                androidx.compose.runtime.LaunchedEffect(
+                LaunchedEffect(
                     selector.canonicalTitleId,
                     selector.canonicalChapterId,
                 ) {
@@ -372,33 +390,43 @@ class ReaderActivity : BaseActivity() {
                         canonicalChapterId = selector.canonicalChapterId,
                     )
                 }
-                ContentOptionSelectorSheet(
-                    state = selectorState,
-                    activeOptionKey = state.activeContentOptionKey,
-                    activeContentLabel = state.activeContentLabel,
-                    onSelect = { item ->
-                        viewModel.selectCanonicalContent(contentSelectorViewModel.select(item))
-                    },
-                    onRetry = { contentSelectorViewModel.retry() },
-                    onOpenAddonsSettings = {
-                        startActivity(
-                            Intent(this@ReaderActivity, MainActivity::class.java)
-                                .setAction(Intent.ACTION_APPLICATION_PREFERENCES)
-                                .putExtra(
-                                    SettingsScreen.EXTRA_DESTINATION,
-                                    SettingsScreen.Destination.TsuzukiAddons.id,
-                                ),
-                        )
-                    },
-                    onFindOrAddSource = { canonicalTitleId ->
-                        MainActivity.findOrAddReadingSourceIntent(this@ReaderActivity, canonicalTitleId)
-                            ?.let { discoveryIntent ->
-                                viewModel.dismissContentSelector()
-                                startActivity(discoveryIntent)
-                            }
-                    },
-                    onDismissRequest = viewModel::dismissContentSelector,
-                )
+                if (bindingLinkTitleId == selector.canonicalTitleId) {
+                    ContentBindingLinkSheet(
+                        state = bindingLinkState,
+                        onSelectAddon = contentBindingLinkViewModel::selectAddon,
+                        onConfirmCandidate = contentBindingLinkViewModel::confirm,
+                        onSearchMore = contentBindingLinkViewModel::searchMore,
+                        onBack = contentBindingLinkViewModel::backToAddons,
+                        onDismiss = {
+                            contentBindingLinkViewModel.close()
+                            bindingLinkTitleId = null
+                        },
+                    )
+                } else {
+                    ContentOptionSelectorSheet(
+                        state = selectorState,
+                        activeOptionKey = state.activeContentOptionKey,
+                        activeContentLabel = state.activeContentLabel,
+                        onSelect = { item ->
+                            viewModel.selectCanonicalContent(contentSelectorViewModel.select(item))
+                        },
+                        onRetry = { contentSelectorViewModel.retry() },
+                        onOpenAddonsSettings = {
+                            startActivity(
+                                Intent(this@ReaderActivity, MainActivity::class.java)
+                                    .setAction(Intent.ACTION_APPLICATION_PREFERENCES)
+                                    .putExtra(
+                                        SettingsScreen.EXTRA_DESTINATION,
+                                        SettingsScreen.Destination.TsuzukiAddons.id,
+                                    ),
+                            )
+                        },
+                        onFindOrAddSource = { canonicalTitleId ->
+                            bindingLinkTitleId = canonicalTitleId
+                        },
+                        onDismissRequest = viewModel::dismissContentSelector,
+                    )
+                }
             }
             is ReaderViewModel.Dialog.SetPreferredAddon -> {
                 val preference = state.dialog as ReaderViewModel.Dialog.SetPreferredAddon

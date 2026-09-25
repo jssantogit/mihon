@@ -13,11 +13,11 @@ TEST_CLASS = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation.CanonicalTitleSou
 METHOD_SCENARIOS = {
     "coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce": (
         "COLD_READER",
-        "CREATED",
+        "SAME_INSTANCE",
     ),
     "warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce": (
         "WARM_READER",
-        "REUSED",
+        "SAME_INSTANCE",
     ),
     "invalidDiscoveryIntentDoesNotOpenTitleOrMutateProgressAndPreferences": (
         "INVALID_INTENT",
@@ -26,20 +26,40 @@ METHOD_SCENARIOS = {
 }
 OBSERVATION_FIELDS = {
     "COLD_READER": {
-        "MAIN_ACTIVITY": {"CREATED", "MISSING"},
-        "ROUTE_INTENT": {"PASS", "ACTION_MISSING", "IDENTITY_MISMATCH"},
-        "CANONICAL_TITLE": {"VISIBLE", "MISSING"},
         "BINDING_SHEET": {"ONE", "MISSING", "DUPLICATE"},
-        "READER_ACTIVITY": {"ORIGINAL", "RECREATED", "MISSING"},
+        "CONTENT_SELECTOR": {"REVEALED", "MISSING"},
+        "READER_ACTIVITY": {"SAME_INSTANCE", "REPLACED", "MISSING"},
         "READER_CHAPTER": {"MATCH", "MISMATCH"},
+        "READER_CHAPTER_ACTIVE": {"MATCH", "MISMATCH"},
+        "READER_CHAPTER_RESTORED": {"MATCH", "MISMATCH"},
+        "READER_CHAPTER_RETURNED": {"MATCH", "MISMATCH"},
+        "READER_INSTANCE": {"PRESERVED", "REPLACED"},
+        "READER_LIFECYCLE": {"CREATED", "DESTROYED", "INITIALIZED", "RESUMED", "STARTED"},
+        "READER_TASK_ACTIVE": {"SAME", "DIFFERENT"},
+        "READER_TASK_RETURNED": {"SAME", "DIFFERENT"},
+        "RECREATE_RESULT": {"PRESERVED", "REPLACED"},
+        "READER_POSITION_INITIAL": {"OBSERVABLE", "POSITION_NOT_OBSERVABLE"},
+        "READER_POSITION_ACTIVE": {"PRESERVED", "CHANGED", "POSITION_NOT_OBSERVABLE"},
+        "READER_POSITION_RESTORED": {"PRESERVED", "CHANGED", "POSITION_NOT_OBSERVABLE"},
+        "READER_POSITION_RETURNED": {"PRESERVED", "CHANGED", "POSITION_NOT_OBSERVABLE"},
     },
     "WARM_READER": {
-        "MAIN_ACTIVITY": {"REUSED", "REPLACED"},
-        "ROUTE_INTENT": {"PASS", "ACTION_MISSING", "IDENTITY_MISMATCH"},
-        "CANONICAL_TITLE": {"VISIBLE", "MISSING"},
         "BINDING_SHEET": {"ONE", "MISSING", "DUPLICATE"},
-        "READER_ACTIVITY": {"ORIGINAL", "RECREATED", "MISSING"},
+        "CONTENT_SELECTOR": {"REVEALED", "MISSING"},
+        "READER_ACTIVITY": {"SAME_INSTANCE", "REPLACED", "MISSING"},
         "READER_CHAPTER": {"MATCH", "MISMATCH"},
+        "READER_CHAPTER_ACTIVE": {"MATCH", "MISMATCH"},
+        "READER_CHAPTER_RESTORED": {"MATCH", "MISMATCH"},
+        "READER_CHAPTER_RETURNED": {"MATCH", "MISMATCH"},
+        "READER_INSTANCE": {"PRESERVED", "REPLACED"},
+        "READER_LIFECYCLE": {"CREATED", "DESTROYED", "INITIALIZED", "RESUMED", "STARTED"},
+        "READER_TASK_ACTIVE": {"SAME", "DIFFERENT"},
+        "READER_TASK_RETURNED": {"SAME", "DIFFERENT"},
+        "RECREATE_RESULT": {"PRESERVED", "REPLACED"},
+        "READER_POSITION_INITIAL": {"OBSERVABLE", "POSITION_NOT_OBSERVABLE"},
+        "READER_POSITION_ACTIVE": {"PRESERVED", "CHANGED", "POSITION_NOT_OBSERVABLE"},
+        "READER_POSITION_RESTORED": {"PRESERVED", "CHANGED", "POSITION_NOT_OBSERVABLE"},
+        "READER_POSITION_RETURNED": {"PRESERVED", "CHANGED", "POSITION_NOT_OBSERVABLE"},
     },
     "INVALID_INTENT": {
         "CANONICAL_TITLE": {"HIDDEN", "VISIBLE"},
@@ -83,15 +103,16 @@ def verify(output: str, method: str) -> None:
     if len(cleanup_events) != 1:
         raise AndroidNavigationVerificationError("Disposable database fixture cleanup was not proven exactly once")
 
-    scenario, main_activity = METHOD_SCENARIOS[method]
+    scenario, reader_activity = METHOD_SCENARIOS[method]
     event = (
         r"^INSTRUMENTATION_STATUS: stream=ANDROID_NAVIGATION\|scenario="
         + re.escape(scenario)
         + r"\|outcome=PASS\|"
         + (
-            r"mainActivity=" + re.escape(main_activity)
-            + r"\|identity=CANONICAL\|sheetCount=1\|recreation=PASS\|closed=PASS"
-            + r"\|return=READER\|readerActivity=ORIGINAL\|readerChapter=CANONICAL"
+            r"identity=CANONICAL\|sheetCount=1\|recreation=PASS\|closed=PASS"
+            + r"\|return=READER\|readerActivity=" + re.escape(reader_activity)
+            + r"\|readerChapter=CANONICAL\|task=UNCHANGED"
+            + r"\|position=(?:PRESERVED|POSITION_NOT_OBSERVABLE)"
             + r"\|progress=UNCHANGED\|preferences=UNCHANGED"
             if scenario != "INVALID_INTENT"
             else r"route=REJECTED\|sheetCount=0\|progress=UNCHANGED\|preferences=UNCHANGED"
@@ -140,17 +161,18 @@ def sanitized_summary(output: str, method: str, passed: bool) -> str:
         lines.extend(observations)
         return "\n".join(lines) + "\n"
 
-    scenario, _ = METHOD_SCENARIOS[method]
+    scenario, reader_activity = METHOD_SCENARIOS[method]
     lines.append("ANDROID_NAVIGATION_RESULT|scenario=" + scenario + "|junitTests=1|junitFailures=0")
     lines.append("ANDROID_NAVIGATION_RESULT|fixtureRows=DELETED")
-    lines.append("ANDROID_NAVIGATION_RESULT|activityTransition=PASS|canonicalIdentity=PASS")
+    lines.append("ANDROID_NAVIGATION_RESULT|readerContinuity=PASS|canonicalIdentity=PASS")
     if scenario == "INVALID_INTENT":
         lines.append("ANDROID_NAVIGATION_RESULT|invalidIntent=REJECTED|progress=UNCHANGED|preferences=UNCHANGED")
     else:
+        position = "PRESERVED" if "|position=PRESERVED|" in output else "POSITION_NOT_OBSERVABLE"
         lines.append(
             "ANDROID_NAVIGATION_RESULT|sheet=OPENED_ONCE|recreation=PASS|close=PASS"
-            "|return=READER|readerActivity=ORIGINAL|readerChapter=CANONICAL"
-            "|progress=UNCHANGED|preferences=UNCHANGED"
+            "|return=READER|readerActivity=" + reader_activity + "|readerChapter=CANONICAL|task=UNCHANGED"
+            "|position=" + position + "|progress=UNCHANGED|preferences=UNCHANGED"
         )
     return "\n".join(lines) + "\n"
 

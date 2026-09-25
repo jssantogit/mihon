@@ -15,8 +15,8 @@ verifier = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verifier)
 
 
-def output_for(method: str) -> str:
-    scenario, main_activity = verifier.METHOD_SCENARIOS[method]
+def output_for(method: str, position: str = "POSITION_NOT_OBSERVABLE") -> str:
+    scenario, reader_activity = verifier.METHOD_SCENARIOS[method]
     if scenario == "INVALID_INTENT":
         event = (
             "ANDROID_NAVIGATION|scenario=INVALID_INTENT|outcome=PASS"
@@ -25,9 +25,10 @@ def output_for(method: str) -> str:
     else:
         event = (
             "ANDROID_NAVIGATION|scenario=" + scenario + "|outcome=PASS"
-            + "|mainActivity=" + main_activity + "|identity=CANONICAL"
+            + "|identity=CANONICAL"
             + "|sheetCount=1|recreation=PASS|closed=PASS"
-            + "|return=READER|readerActivity=ORIGINAL|readerChapter=CANONICAL"
+            + "|return=READER|readerActivity=" + reader_activity
+            + "|readerChapter=CANONICAL|task=UNCHANGED|position=" + position
             + "|progress=UNCHANGED|preferences=UNCHANGED"
         )
     return (
@@ -50,6 +51,12 @@ class VerifyAndroidNavigationTest(unittest.TestCase):
         for method in verifier.METHOD_SCENARIOS:
             with self.subTest(method=method):
                 verifier.verify(output_for(method), method)
+                if method != "invalidDiscoveryIntentDoesNotOpenTitleOrMutateProgressAndPreferences":
+                    verifier.verify(output_for(method, "PRESERVED"), method)
+                    summary = verifier.sanitized_summary(output_for(method), method, passed=True)
+                    self.assertIn("readerContinuity=PASS", summary)
+                    self.assertNotIn("activityTransition=PASS", summary)
+                    self.assertIn("position=POSITION_NOT_OBSERVABLE", summary)
 
     def test_zero_or_skipped_junit_is_not_green(self):
         output = output_for("coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce")
@@ -84,6 +91,39 @@ class VerifyAndroidNavigationTest(unittest.TestCase):
             verifier.verify(output + duplicate_event + "\n", method)
         with self.assertRaises(verifier.AndroidNavigationVerificationError):
             verifier.verify(output.replace("sheetCount=1", "sheetCount=2"), method)
+
+    def test_activity_task_and_same_reader_return_are_required(self):
+        method = "coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce"
+        output = output_for(method)
+        for invalid in (
+            output.replace("readerActivity=SAME_INSTANCE", "readerActivity=REPLACED"),
+            output.replace("task=UNCHANGED", "task=CHANGED"),
+            output.replace("position=POSITION_NOT_OBSERVABLE", "position=CHANGED"),
+            output.replace("readerChapter=CANONICAL", "readerChapter=UNKNOWN"),
+        ):
+            with self.subTest(invalid=invalid[-180:]):
+                with self.assertRaises(verifier.AndroidNavigationVerificationError):
+                    verifier.verify(invalid, method)
+
+    def test_old_activity_transition_contract_is_not_accepted(self):
+        method = "coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce"
+        output = output_for(method).replace(
+            "identity=CANONICAL",
+            "mainActivity=CREATED|identity=CANONICAL",
+        )
+        with self.assertRaises(verifier.AndroidNavigationVerificationError):
+            verifier.verify(output, method)
+
+    def test_reader_position_change_or_missing_position_is_not_green(self):
+        method = "warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce"
+        output = output_for(method, "PRESERVED")
+        for invalid in (
+            output.replace("position=PRESERVED", "position=CHANGED"),
+            output.replace("|position=PRESERVED", ""),
+        ):
+            with self.subTest(invalid=invalid[-180:]):
+                with self.assertRaises(verifier.AndroidNavigationVerificationError):
+                    verifier.verify(invalid, method)
 
     def test_failure_report_never_copies_raw_runner_diagnostics(self):
         method = "coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce"

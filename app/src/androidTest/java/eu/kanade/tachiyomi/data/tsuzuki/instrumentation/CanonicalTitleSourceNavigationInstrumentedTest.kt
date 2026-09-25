@@ -38,9 +38,8 @@ import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreference
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
 
-/** Exercises the real Reader selector and MainActivity title/binding-sheet navigation offline. */
+/** Exercises the temporary, in-Reader source-discovery flow against an isolated database. */
 @RunWith(AndroidJUnit4::class)
 class CanonicalTitleSourceNavigationInstrumentedTest {
 
@@ -53,22 +52,24 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             fixture.launchReader(clearTask = true)
             val originalReader = awaitActivity(ReaderActivity::class.java)
             assertReaderChapter(originalReader, fixture, "COLD_READER")
+            val readingPosition = captureReaderPosition(originalReader, "COLD_READER")
             tapFindOrAddSource(device)
-            val main = awaitMainActivity("COLD_READER")
-            assertCanonicalRoute(main.intent, fixture, "COLD_READER")
+            val readerWithBindingSheet = awaitActivity(ReaderActivity::class.java)
+            assertReaderRetained(originalReader, readerWithBindingSheet, fixture, "COLD_READER", readingPosition)
             assertSingleBindingSheet(device, "COLD_READER")
 
-            val recreated = recreate(main)
-            assertNotSame(main, recreated)
+            val recreated = recreate(readerWithBindingSheet)
+            assertNotSame(readerWithBindingSheet, recreated)
+            reportObservation("COLD_READER", "RECREATE_RESULT", "REPLACED")
+            assertReaderChapter(recreated, fixture, "COLD_READER", "READER_CHAPTER_RESTORED")
+            assertReaderPosition(recreated, readingPosition, "COLD_READER", "READER_POSITION_RESTORED")
             assertSingleBindingSheet(device, "COLD_READER")
 
-            closeBindingSheet(device, fixture, "COLD_READER")
-            val afterClose = recreate(recreated)
-            assertNotSame(recreated, afterClose)
-            assertNoBindingSheet(device, fixture)
-            returnToReader(device, originalReader, fixture, "COLD_READER")
+            closeBindingSheet(device)
+            assertSourceSelectorVisible(device, "COLD_READER")
+            returnToReader(device, recreated, fixture, "COLD_READER", readingPosition)
             fixture.assertUnchanged()
-            report("COLD_READER", "CREATED")
+            report("COLD_READER", positionOutcome(readingPosition))
         }
     }
 
@@ -78,37 +79,29 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         withFixture { fixture ->
             val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
             fixture.launchMainRoot()
-            val originalMain = awaitActivity(MainActivity::class.java)
-            val incomingIntent = AtomicReference<Intent>()
-            originalMain.addOnNewIntentListener { intent -> incomingIntent.set(intent) }
+            awaitActivity(MainActivity::class.java)
 
             fixture.launchReader(clearTask = false)
             val originalReader = awaitActivity(ReaderActivity::class.java)
             assertReaderChapter(originalReader, fixture, "WARM_READER")
+            val readingPosition = captureReaderPosition(originalReader, "WARM_READER")
             tapFindOrAddSource(device)
-            val main = awaitActivity(MainActivity::class.java)
-            reportObservation("WARM_READER", "MAIN_ACTIVITY", if (main === originalMain) "REUSED" else "REPLACED")
-            assertSame("The existing MainActivity should be reused", originalMain, main)
-            val routeIntent = try {
-                awaitValue("MainActivity discovery intent") { incomingIntent.get() }
-            } catch (error: AssertionError) {
-                reportObservation("WARM_READER", "ROUTE_INTENT", "ACTION_MISSING")
-                throw error
-            }
-            assertCanonicalRoute(routeIntent, fixture, "WARM_READER")
+            val readerWithBindingSheet = awaitActivity(ReaderActivity::class.java)
+            assertReaderRetained(originalReader, readerWithBindingSheet, fixture, "WARM_READER", readingPosition)
             assertSingleBindingSheet(device, "WARM_READER")
 
-            val recreated = recreate(main)
-            assertNotSame(main, recreated)
+            val recreated = recreate(readerWithBindingSheet)
+            assertNotSame(readerWithBindingSheet, recreated)
+            reportObservation("WARM_READER", "RECREATE_RESULT", "REPLACED")
+            assertReaderChapter(recreated, fixture, "WARM_READER", "READER_CHAPTER_RESTORED")
+            assertReaderPosition(recreated, readingPosition, "WARM_READER", "READER_POSITION_RESTORED")
             assertSingleBindingSheet(device, "WARM_READER")
 
-            closeBindingSheet(device, fixture, "WARM_READER")
-            val afterClose = recreate(recreated)
-            assertNotSame(recreated, afterClose)
-            assertNoBindingSheet(device, fixture)
-            returnToReader(device, originalReader, fixture, "WARM_READER")
+            closeBindingSheet(device)
+            assertSourceSelectorVisible(device, "WARM_READER")
+            returnToReader(device, recreated, fixture, "WARM_READER", readingPosition)
             fixture.assertUnchanged()
-            report("WARM_READER", "REUSED")
+            report("WARM_READER", positionOutcome(readingPosition))
         }
     }
 
@@ -177,28 +170,6 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         findSource.click()
     }
 
-    private fun awaitMainActivity(scenario: String): MainActivity = try {
-        awaitActivity(MainActivity::class.java).also {
-            reportObservation(scenario, "MAIN_ACTIVITY", if (scenario == "COLD_READER") "CREATED" else "REUSED")
-        }
-    } catch (error: AssertionError) {
-        reportObservation(scenario, "MAIN_ACTIVITY", "MISSING")
-        throw error
-    }
-
-    private fun assertCanonicalRoute(intent: Intent, fixture: NavigationFixture, scenario: String) {
-        val action = intent.action
-        val canonicalTitleId = intent.getStringExtra(EXTRA_CANONICAL_TITLE_ID)
-        val outcome = when {
-            action != ACTION_FIND_OR_ADD_READING_SOURCE -> "ACTION_MISSING"
-            canonicalTitleId != fixture.title.id -> "IDENTITY_MISMATCH"
-            else -> "PASS"
-        }
-        reportObservation(scenario, "ROUTE_INTENT", outcome)
-        assertEquals(ACTION_FIND_OR_ADD_READING_SOURCE, action)
-        assertEquals(fixture.title.id, canonicalTitleId)
-    }
-
     private fun assertSingleBindingSheet(device: UiDevice, scenario: String) {
         val closeButton = device.wait(Until.hasObject(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS)
         val closeButtonCount = if (closeButton) device.findObjects(By.text(BINDING_SHEET_CLOSE_LABEL)).size else 0
@@ -211,39 +182,39 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         assertEquals(1, closeButtonCount)
     }
 
-    private fun closeBindingSheet(device: UiDevice, fixture: NavigationFixture, scenario: String) {
+    private fun closeBindingSheet(device: UiDevice) {
         waitForObject(device, BINDING_SHEET_CLOSE_LABEL).click()
-        val titleVisible = device.wait(Until.hasObject(By.text(fixture.title.displayTitle)), UI_TIMEOUT_MS)
-        reportObservation(scenario, "CANONICAL_TITLE", if (titleVisible) "VISIBLE" else "MISSING")
         assertTrue(
-            "The canonical title screen must show the seeded identity after closing the binding sheet",
-            titleVisible,
-        )
-        assertTrue(
-            "The binding sheet should close and leave the canonical title visible",
+            "The binding sheet should close without leaving the Reader task",
             device.wait(Until.gone(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS),
         )
     }
 
-    private fun assertNoBindingSheet(device: UiDevice, fixture: NavigationFixture) {
-        waitForObject(device, fixture.title.displayTitle)
+    private fun assertSourceSelectorVisible(device: UiDevice, scenario: String) {
         assertTrue(
-            "Activity recreation must not reopen the dismissed binding sheet",
-            device.wait(Until.gone(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS),
+            "Closing the binding sheet should reveal the Reader's existing content selector",
+            device.wait(Until.hasObject(By.text(FIND_OR_ADD_SOURCE_LABEL)), UI_TIMEOUT_MS),
         )
+        reportObservation(scenario, "CONTENT_SELECTOR", "REVEALED")
     }
 
-    private fun assertReaderChapter(reader: ReaderActivity, fixture: NavigationFixture, scenario: String) {
+    private fun assertReaderChapter(
+        reader: ReaderActivity,
+        fixture: NavigationFixture,
+        scenario: String,
+        checkpoint: String = "READER_CHAPTER",
+    ) {
         val chapterId = reader.intent.getStringExtra("canonical_chapter")
-        reportObservation(scenario, "READER_CHAPTER", if (chapterId == fixture.chapter.id) "MATCH" else "MISMATCH")
+        reportObservation(scenario, checkpoint, if (chapterId == fixture.chapter.id) "MATCH" else "MISMATCH")
         assertEquals("Reader must retain the canonical chapter identity", fixture.chapter.id, chapterId)
     }
 
     private fun returnToReader(
         device: UiDevice,
-        originalReader: ReaderActivity,
+        expectedReader: ReaderActivity,
         fixture: NavigationFixture,
         scenario: String,
+        readingPosition: Int?,
     ) {
         device.pressBack()
         val reader = try {
@@ -252,10 +223,66 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             reportObservation(scenario, "READER_ACTIVITY", "MISSING")
             throw error
         }
-        reportObservation(scenario, "READER_ACTIVITY", if (reader === originalReader) "ORIGINAL" else "RECREATED")
-        assertSame("System Back should resume the original Reader activity instance", originalReader, reader)
-        assertReaderChapter(reader, fixture, scenario)
+        reportObservation(scenario, "READER_ACTIVITY", if (reader === expectedReader) "SAME_INSTANCE" else "REPLACED")
+        assertSame("System Back should dismiss discovery and resume the Reader instance", expectedReader, reader)
+        val sameTask = reader.taskId == expectedReader.taskId
+        reportObservation(scenario, "READER_TASK_RETURNED", if (sameTask) "SAME" else "DIFFERENT")
+        assertEquals("Returning from discovery should remain in the Reader task", expectedReader.taskId, reader.taskId)
+        assertReaderChapter(reader, fixture, scenario, "READER_CHAPTER_RETURNED")
+        assertReaderPosition(reader, readingPosition, scenario, "READER_POSITION_RETURNED")
     }
+
+    private fun assertReaderRetained(
+        expectedReader: ReaderActivity,
+        actualReader: ReaderActivity,
+        fixture: NavigationFixture,
+        scenario: String,
+        readingPosition: Int?,
+    ) {
+        val sameTask = expectedReader.taskId == actualReader.taskId
+        reportObservation(scenario, "READER_TASK_ACTIVE", if (sameTask) "SAME" else "DIFFERENT")
+        assertEquals("Source discovery should not create another Android task", expectedReader.taskId, actualReader.taskId)
+        reportObservation(
+            scenario,
+            "READER_LIFECYCLE",
+            actualReader.lifecycle.currentState.toString(),
+        )
+        reportObservation(scenario, "READER_INSTANCE", if (expectedReader === actualReader) "PRESERVED" else "REPLACED")
+        assertSame("Discovery should remain in the existing Reader activity", expectedReader, actualReader)
+        assertReaderChapter(actualReader, fixture, scenario, "READER_CHAPTER_ACTIVE")
+        assertReaderPosition(actualReader, readingPosition, scenario, "READER_POSITION_ACTIVE")
+    }
+
+    private fun captureReaderPosition(reader: ReaderActivity, scenario: String): Int? {
+        val currentPage = reader.viewModel.state.value.currentPage
+        reportObservation(
+            scenario,
+            "READER_POSITION_INITIAL",
+            if (currentPage >= 0) "OBSERVABLE" else "POSITION_NOT_OBSERVABLE",
+        )
+        return currentPage.takeIf { it >= 0 }
+    }
+
+    private fun assertReaderPosition(
+        reader: ReaderActivity,
+        expectedPage: Int?,
+        scenario: String,
+        checkpoint: String,
+    ) {
+        val currentPage = reader.viewModel.state.value.currentPage
+        val result = when {
+            expectedPage == null -> "POSITION_NOT_OBSERVABLE"
+            currentPage == expectedPage -> "PRESERVED"
+            else -> "CHANGED"
+        }
+        reportObservation(scenario, checkpoint, result)
+        if (expectedPage != null) {
+            assertEquals("The Reader page position should remain stable during discovery", expectedPage, currentPage)
+        }
+    }
+
+    private fun positionOutcome(initialPage: Int?): String =
+        if (initialPage == null) "POSITION_NOT_OBSERVABLE" else "PRESERVED"
 
     private fun <T : Activity> recreate(activity: T): T {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::recreate)
@@ -287,16 +314,17 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         SystemClock.sleep(250L)
     }
 
-    private fun report(scenario: String, mainActivity: String) {
+    private fun report(scenario: String, position: String) {
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,
             Bundle().apply {
                 putString(
                     "stream",
                     "ANDROID_NAVIGATION|scenario=$scenario|outcome=PASS" +
-                        "|mainActivity=$mainActivity|identity=CANONICAL" +
+                        "|identity=CANONICAL" +
                         "|sheetCount=1|recreation=PASS|closed=PASS" +
-                        "|return=READER|readerActivity=ORIGINAL|readerChapter=CANONICAL" +
+                        "|return=READER|readerActivity=SAME_INSTANCE|readerChapter=CANONICAL" +
+                        "|task=UNCHANGED|position=$position" +
                         "|progress=UNCHANGED|preferences=UNCHANGED",
                 )
             },
