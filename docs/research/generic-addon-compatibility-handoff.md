@@ -41,3 +41,19 @@ The deterministic tests use a synthetic Mihon `HttpSource` and MockWebServer; th
 - Treat HTTP/network/CAPTCHA failures as provider/integration observations, not as empty chapter inventories.
 
 No merge, PR, provider mass query, local Gradle, or distribution APK was performed for this branch.
+
+## Pré-merge: checkpoint Android posterior
+
+As instruções atuais em `AGENTS.md` e `docs/AI-WORKFLOW.md` exigem aceite manual no telefone e proíbem emuladores e automação de dispositivos. Portanto, os testes Android abaixo **não** foram executados novamente após essa mudança de política. Compilar `androidTest` não equivale a executar seus testes.
+
+| Frente | Evidência observada | Estado |
+| --- | --- | --- |
+| MangaFire 1.6.34, One-Punch Man, fonte inglesa | [Execução real 36084563918](https://github.com/jssantogit/mihon/actions/runs/36084563918), SHA `491c2bbe`: um `PASS` para cada uma das 14 etapas, de `EXTENSION_INSTALL` a `GET_PAGE_LIST` (23 páginas); JUnit 1 teste, 0 falhas/erros/ignorados; isolamento e limpeza do banco `PASS`. | **PASS histórico**, não reexecutado no HEAD atual. Não prova disponibilidade permanente do provedor. |
+| Navegação Reader → título canônico → binding sheet | A primeira instrumentação adicionada falhou na compilação do [run 36088072415](https://github.com/jssantogit/mihon/actions/runs/36088072415): helper de instância inacessível à fixture aninhada. O commit `19076688f` moveu helpers sem estado para o companion object e corrigiu a formatação. [CI v2 36090521925](https://github.com/jssantogit/mihon/actions/runs/36090521925) passou App, Format e CI Gate. [Execução 36090964655](https://github.com/jssantogit/mihon/actions/runs/36090964655) no commit `ffd1256df` passou fixture, compilação de `androidTest` e verificação de assinaturas JUnit; o job de emulador foi **ignorado**. | **Compila; comportamento Android não comprovado.** |
+| MangaBall 1.6.1 multifuente, pt-BR | Fixture conhecido com SHA-256 `c2212a46d201034c15717873183b1b1261a00fbc5db52ab5eae6976f386d6739`; fonte pt-BR `35546023386335815`. A matriz histórica comprovou candidatos de busca, não edição, binding, inventário ou leitura. | **INCONCLUSIVE** no fluxo E2E. Nenhuma nova consulta externa. |
+
+O commit `ffd1256df` incluiu a branch de compatibilidade no gatilho de **compilação** do workflow Android. Um push sem `[android-fixture]`/`[android-live]` mantém o job de emulador ignorado. [CI v2 36090964648](https://github.com/jssantogit/mihon/actions/runs/36090964648) passou Change Planner e CI Gate; os demais jobs foram ignorados pela política de roteamento, logo não são evidência de testes executados.
+
+**Aceite pendente no telefone, sem automação:** em um APK de teste aprovado e identificado por SHA, abrir One-Punch Man com a extensão instalada; acionar “Find/Add Reading Source” a partir do Reader tanto com MainActivity aberta quanto após inicialização fria; confirmar o título canônico correto e uma única abertura do binding sheet; fechar e repetir após recriação do app; confirmar que progresso e preferência não mudam sem preparar leitura. Para MangaBall, habilitar apenas a fonte pt-BR desejada e desabilitar outra fonte interna; verificar que a desabilitada não é pesquisada, escolher explicitamente a edição correta entre candidatos, confirmar persistência do binding, observar capítulos e uma alternativa correspondente, e abrir o Reader. Registrar `PASS`, `FAIL` ou `NOT_RUN` por etapa, aparelho/Android, versão do APK, SHA e data. Não inferir identidade por título parecido nem disponibilidade pela mera presença de candidatos.
+
+**Decisão de integração:** a branch ainda não está pronta para declarar o checkpoint Android completo. A compilação foi recuperada e a regressão histórica do MangaFire é positiva; navegação física e MangaBall real permanecem sem validação atual. Nenhum merge ou APK de distribuição foi realizado.
