@@ -42,8 +42,8 @@ import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import java.net.ConnectException
@@ -276,7 +276,8 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                         "TIMEOUT",
                         sourceId = source.id,
                         language = source.lang,
-                        elapsedMs = SystemClock.elapsedRealtime() - searchStarted)
+                        elapsedMs = SystemClock.elapsedRealtime() - searchStarted,
+                    )
                 }
                 val completion = progressEvents
                     .filterIsInstance<ContentBindingSearchProgress.Completed>()
@@ -731,7 +732,7 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                             chapter.type == CanonicalChapterType.REGULAR &&
                             chapter.baseNumber?.let { it > 0 } == true &&
                             chapter.confirmation.name != "CONFLICTED"
-                }
+                    }
                 if (chapters.isEmpty()) {
                     stop(
                         currentStage,
@@ -806,9 +807,14 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                         option.language.equals("pt-BR", ignoreCase = true) && delivery.sourceId == source.id
                 }
                 if (exactOptions.size != 1) {
-                    stop(currentStage, Outcome.INCONCLUSIVE,
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
                         if (exactOptions.isEmpty()) "CONTENT_UNAVAILABLE" else "AMBIGUOUS",
-                        count = exactOptions.size, sourceId = source.id, language = source.lang)
+                        count = exactOptions.size,
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val option = exactOptions.single()
                 val mihonDelivery = option.delivery as ContentDelivery.Mihon
@@ -1036,7 +1042,8 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 ContentBindingSearchFailureKind.INDETERMINATE -> "INSTRUMENTATION"
                 ContentBindingSearchFailureKind.ADDON_NOT_INSTALLED,
                 ContentBindingSearchFailureKind.ADDON_DISABLED,
-                ContentBindingSearchFailureKind.NO_ENABLED_SOURCES -> "SOURCE_NOT_FOUND"
+                ContentBindingSearchFailureKind.NO_ENABLED_SOURCES,
+                -> "SOURCE_NOT_FOUND"
             }
         }
 
