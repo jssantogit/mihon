@@ -210,9 +210,9 @@ class MihonRuntimeEndToEndIntegrationTest {
             requireNotNull(initialBySource[english.id]).outcome shouldBe ContentBindingSourceOutcome.BOUND
             journey.bindings.getByTitle(journey.canonicalTitleId)
                 .map { it.providerTitleKey }.toSet() shouldBe setOf(
-                    informationalBinding.providerTitleKey,
-                    "${english.id}:/manga/one-punch-man",
-                )
+                informationalBinding.providerTitleKey,
+                "${english.id}:/manga/one-punch-man",
+            )
             // A stored binding count and live search candidates do not become readable options.
             journey.options("chapter-not-yet-observed") shouldBe emptyList()
 
