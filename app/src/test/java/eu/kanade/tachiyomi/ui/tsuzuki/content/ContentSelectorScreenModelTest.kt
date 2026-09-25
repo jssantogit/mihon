@@ -157,11 +157,13 @@ class ContentSelectorScreenModelTest {
                 canonicalTitleId: String,
                 canonicalChapterId: String,
             ): Result<List<ContentOption>> = Result.success(
-                    if (canonicalChapterId == "chapter-2") listOf(secondOption) else {
-                        firstChapterCalls++
-                        emptyList()
-                    },
-                )
+                if (canonicalChapterId == "chapter-2") {
+                    listOf(secondOption)
+                } else {
+                    firstChapterCalls++
+                    emptyList()
+                },
+            )
         }
         val model = model(
             providers = listOf(provider),
