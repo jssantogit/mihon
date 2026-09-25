@@ -47,9 +47,9 @@
 
 **Domain:** UI. **Files:** `app/src/main/java/eu/kanade/tachiyomi/ui/tsuzuki/content/ContentBindingLinkScreenModel.kt`, `app/src/main/java/eu/kanade/presentation/tsuzuki/content/ContentBindingLinkSheet.kt`, their tests; title-detail wiring only if required.
 
-- [ ] RED tests for installed/enabled Add-ons, existing binding status, preferred-language first pass, explicit “search more”, progressive candidates/errors, explicit ambiguous-edition confirmation, and stale/cancelled search not overwriting a newer state.
-- [ ] Consume Task 2's resolver contract. Do not search all device Add-ons or duplicate title scoring in the ViewModel. Retain one visible Add-on per extension and show internal source/language only as candidate provenance.
-- [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
+- [x] RED screen-model tests for installed/enabled Add-ons, existing binding status, preferred-language first pass, explicit “search more”, progressive candidates/errors, confirmation, and stale/cancelled search. The test-only commit `b2632cff3` failed App CI `36068922232` before implementation.
+- [x] Consume Task 2's resolver contract without duplicate scoring or all-device search. One package remains one visible Add-on; internal source/language stays candidate provenance. UI implementation `2544fcbdb` and suspend-test correction `60ff51cfb` passed App and Domain in `36070093569`.
+- [x] Full CI `36075917262` passed App, Domain, Format, release compilation, and CI Gate after scoped formatter corrections. No local Gradle was run.
 
 ## Task 4 — Chapter-selector discovery path
 
@@ -63,9 +63,9 @@
 
 **Domain:** Test infrastructure. **Files:** `app/src/test/java/eu/kanade/tachiyomi/data/tsuzuki/integration/LocalMihonSourceHarness.kt`, focused contract tests, `.github/scripts` routing tests if needed, `docs/research/` handoff.
 
-- [ ] Reuse controlled HTTP/fake Mihon source harness for two independent synthetic profiles (single-source and multi-source/multi-language). Assert search → explicit/safe binding → inventory → reconciliation → selector option → Reader preparation on the same canonical title/store. Cover empty/partial inventory, disabled/removal, failure isolation, identity mismatch, fallback on/off, and unchanged progress/history.
-- [ ] Keep the existing MangaFire real E2E as a separate opt-in regression. Do not run the 222-source matrix. If a second real extension is exercised, use a single explicitly authorized source/title probe and classify the evidence separately from deterministic tests.
-- [ ] Check CI change-planner routing for adapter/binding/selector/test paths. Run selected Fast CI jobs; request one `[ci-full]` checkpoint only if the final code actually spans domain + adapter + UI. Review final diff, document proven vs unproven behavior, commit/push on `tsuzuki/generic-addon-compatibility` only. No merge/PR/APK.
+- [x] Reuse controlled HTTP/fake Mihon source harness for single-source and four-language multi-source profiles. The new progressive journey on the same canonical state covers bounded search, ambiguous confirmation, partial failure, mapped evidence, actual selector options, Reader preparation, and `getPageList`; CI `36079178929` passed App, Format, and CI Gate. Existing focused tests cover empty/partial inventory, disabled/removal, identity mismatch, fallback on/off, and progress preservation separately. Those latter behaviors are **not** newly proven as one real-extension journey.
+- [x] Keep the existing MangaFire real E2E separate and opt-in. It was not rerun for this branch; the earlier one-title/one-language run `36050812440` remains regression evidence only. No 222-source matrix or second live extension probe was run.
+- [x] Check affected-mode routing (`python3 .github/scripts/test_ci_v2_plan.py`: 34 tests passed) and run the final full checkpoint because this diff spans domain and UI. Full CI `36080952197` passed Format, App/Domain/Data/Core tests, SQLDelight migrations, Supabase backend, release compilation, and CI Gate at code HEAD `efac6d86e`. Native Package Gate was skipped by policy; it is not claimed as passing. No merge, PR, external probe, or distribution APK.
 
 ## Stop conditions
 
