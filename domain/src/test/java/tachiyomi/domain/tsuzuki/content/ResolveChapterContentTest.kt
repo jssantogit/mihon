@@ -267,6 +267,42 @@ class ResolveChapterContentTest {
     }
 
     @Test
+    fun `cached mihon option disappears after its internal source is disabled`() = runTest {
+        var enabledSources = listOf(7L, 8L)
+        val repository = object : AddonRepository {
+            override fun observeInstalled(): Flow<List<InstalledAddon>> = MutableStateFlow(emptyList())
+            override suspend fun snapshot(): List<InstalledAddon> = listOf(
+                InstalledAddon(
+                    id = AddonId("mangadex"),
+                    displayName = "Multi-source",
+                    enabled = true,
+                    versionName = "1.0",
+                    mihonSourceIds = enabledSources,
+                    hasSettings = false,
+                ),
+            )
+            override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
+        }
+        val english = option("mangadex", "en").copy(
+            delivery = ContentDelivery.Mihon(sourceId = 7L, mangaId = 70L, chapterId = 700L),
+        )
+        val portuguese = option("mangadex", "pt-BR").copy(
+            delivery = ContentDelivery.Mihon(sourceId = 8L, mangaId = 80L, chapterId = 800L),
+        )
+        val resolver = fixture(
+            preference = null,
+            automaticFallback = false,
+            providers = listOf(provider("mangadex", english, portuguese)),
+            addonRepository = repository,
+        )
+
+        resolver.lookupOptions("title", "chapter-37").options.size shouldBe 2
+        enabledSources = listOf(8L)
+
+        resolver.lookupOptions("title", "chapter-37").options shouldBe listOf(portuguese)
+    }
+
+    @Test
     fun `switching provider preserves canonical chapter identity used by progress`() = runTest {
         val preferenceRepository = FakeContentPreferenceRepository(
             ContentPreference("title", AddonId("mangadex"), 1L),

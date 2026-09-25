@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import eu.kanade.tachiyomi.extension.model.Extension
+import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -66,6 +67,27 @@ class MihonAddonRepositoryTest {
 
         addon.enabled shouldBe true
         addon.mihonSourceIds.shouldContainExactlyInAnyOrder(20L)
+    }
+
+    @Test
+    fun `non catalogue internal source is never offered as reading source`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.mixed",
+            name = "Mixed",
+            sources = listOf(
+                FakeSource(id = 11L, lang = "en"),
+                FakeCatalogueSource(id = 12L, lang = "pt-BR"),
+            ),
+        )
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+        )
+
+        repository.snapshot().single().mihonSourceIds.shouldContainExactlyInAnyOrder(12L)
     }
 
     @Test
@@ -193,7 +215,9 @@ class MihonAddonRepositoryTest {
         isShared = false,
     )
 
-    private class FakeSource(
+    private class FakeCatalogueSource(id: Long, lang: String) : FakeSource(id, lang), CatalogueSource
+
+    private open class FakeSource(
         override val id: Long,
         override val lang: String,
     ) : Source {

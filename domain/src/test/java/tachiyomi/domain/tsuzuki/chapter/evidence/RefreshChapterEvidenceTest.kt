@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -270,6 +271,24 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `refresh without existing bindings never starts implicit addon search`() = runTest {
+        val addonId = AddonId("multisource")
+        var observedResolver: ResolveContentBinding? = null
+        val refresh = refreshWithProbe(
+            diagnostics = RecordingDiagnostics(),
+            addonId = addonId,
+            bindingAvailable = false,
+            result = Result.success(emptyList()),
+            onResolver = { observedResolver = it },
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        coVerify(exactly = 0) {
+            requireNotNull(observedResolver).executeAll("canonical-title", addonId)
+        }
+    }
+
+    @Test
     fun `editorial refresh bounds simultaneous provider requests`() = runTest {
         val unblock = CompletableDeferred<Unit>()
         var concurrent = 0
@@ -398,6 +417,7 @@ class RefreshChapterEvidenceTest {
         bindingAvailable: Boolean,
         result: Result<List<ChapterEvidence>>,
         bindingError: Throwable? = null,
+        onResolver: (ResolveContentBinding) -> Unit = {},
     ): RefreshChapterEvidence {
         val probe = object : ChapterProbeProvider {
             override val addonId: AddonId = addonId
@@ -409,6 +429,7 @@ class RefreshChapterEvidenceTest {
             override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
         }
         val resolver = mockk<ResolveContentBinding>()
+        onResolver(resolver)
         val bindingResult: Result<List<ContentBinding>> = bindingError?.let { Result.failure(it) }
             ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
         coEvery { resolver.executeAll("canonical-title", addonId) } returns bindingResult
