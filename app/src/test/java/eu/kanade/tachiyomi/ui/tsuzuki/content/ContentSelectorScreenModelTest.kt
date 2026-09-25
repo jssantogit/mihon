@@ -3,13 +3,18 @@ package eu.kanade.tachiyomi.ui.tsuzuki.content
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.coEvery
+import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
@@ -22,6 +27,7 @@ import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
@@ -45,6 +51,127 @@ class ContentSelectorScreenModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `binding refresh waits for reconciliation before showing newly available chapter options`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val linkedOption = option("reader", "en", null, 1L)
+        var reconciled = false
+        var resolutions = 0
+        val provider = object : ContentProvider {
+            override val addonId = AddonId("reader")
+            override suspend fun resolve(canonicalTitleId: String, canonicalChapterId: String): Result<List<ContentOption>> {
+                resolutions++
+                return Result.success(if (reconciled) listOf(linkedOption) else emptyList())
+            }
+        }
+        val refresh = mockk<RefreshChapterEvidence>()
+        coEvery { refresh.execute("title-1") } coAnswers {
+            started.complete(Unit)
+            gate.await()
+            reconciled = true
+            Result.success(Unit)
+        }
+        val model = model(
+            providers = listOf(provider),
+            addons = listOf(addon("reader", "Reader")),
+            bindingRefresh = refresh,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+        resolutions shouldBe 1
+
+        val refreshJob = async { model.refreshAfterBinding("title-1") }
+        runCurrent()
+        started.isCompleted shouldBe true
+        resolutions shouldBe 1
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Loading>()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        refreshJob.await().isSuccess shouldBe true
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+            .options.single().option.key shouldBe linkedOption.key
+        resolutions shouldBe 2
+    }
+
+    @Test
+    fun `failed binding evidence refresh never turns a missing chapter into a false reading option`() = runTest(dispatcher) {
+        val refresh = mockk<RefreshChapterEvidence>()
+        coEvery { refresh.execute("title-1") } returns Result.failure(IllegalStateException("evidence unavailable"))
+        var resolutions = 0
+        val provider = object : ContentProvider {
+            override val addonId = AddonId("reader")
+            override suspend fun resolve(canonicalTitleId: String, canonicalChapterId: String): Result<List<ContentOption>> {
+                resolutions++
+                return Result.success(emptyList())
+            }
+        }
+        val model = model(
+            providers = listOf(provider),
+            addons = listOf(addon("reader", "Reader")),
+            bindingRefresh = refresh,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        val outcome = model.refreshAfterBinding("title-1")
+        advanceUntilIdle()
+
+        outcome.isFailure shouldBe true
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Error>()
+            .error.message shouldBe "evidence unavailable"
+        resolutions shouldBe 1
+    }
+
+    @Test
+    fun `late binding refresh cannot replace the selector of a different chapter`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val refresh = mockk<RefreshChapterEvidence>()
+        coEvery { refresh.execute("title-1") } coAnswers {
+            started.complete(Unit)
+            gate.await()
+            Result.success(Unit)
+        }
+        val secondOption = option("reader", "en", null, 1L).copy(
+            key = "reader:chapter-2",
+            canonicalChapterId = "chapter-2",
+        )
+        var firstChapterCalls = 0
+        val provider = object : ContentProvider {
+            override val addonId = AddonId("reader")
+            override suspend fun resolve(canonicalTitleId: String, canonicalChapterId: String): Result<List<ContentOption>> =
+                Result.success(
+                    if (canonicalChapterId == "chapter-2") listOf(secondOption) else {
+                        firstChapterCalls++
+                        emptyList()
+                    },
+                )
+        }
+        val model = model(
+            providers = listOf(provider),
+            addons = listOf(addon("reader", "Reader")),
+            bindingRefresh = refresh,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        val pending = async { model.refreshAfterBinding("title-1") }
+        runCurrent()
+        started.isCompleted shouldBe true
+        model.start("title-1", "chapter-2")
+        advanceUntilIdle()
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>().canonicalChapterId shouldBe "chapter-2"
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        pending.await().isSuccess shouldBe true
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.canonicalChapterId shouldBe "chapter-2"
+        ready.options.single().option.key shouldBe secondOption.key
+        firstChapterCalls shouldBe 1
     }
 
     @Test
@@ -372,6 +499,7 @@ class ContentSelectorScreenModelTest {
         addons: List<InstalledAddon>,
         preferenceRepository: FakeContentPreferenceRepository = FakeContentPreferenceRepository(null),
         addonRepository: AddonRepository = FakeAddonRepository(addons),
+        bindingRefresh: RefreshChapterEvidence? = null,
     ): ContentSelectorScreenModel {
         val readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
         val resolver = ResolveChapterContent(
@@ -387,6 +515,7 @@ class ContentSelectorScreenModelTest {
             contentPreferenceRepository = preferenceRepository,
             addonRepository = addonRepository,
             clock = { 500L },
+            refreshChapterEvidence = bindingRefresh,
         )
     }
 

@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.RecordingChapterInventoryDia
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +80,58 @@ class CanonicalTitleScreenModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `post-binding local reload exposes reconciled chapters without probing providers again`() = runTest(dispatcher) {
+        val chapters = FakeChapterRepository(emptyList())
+        val evidence = FakeEvidenceRepository()
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getAll() } returns emptyList()
+        val refresh = mockk<RefreshChapterEvidence>()
+        coEvery { refresh.execute("title") } returns Result.success(Unit)
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
+            chapterEvidenceRepository = evidence,
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = refresh,
+        )
+        model.start("title")
+        advanceUntilIdle()
+        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>().chapters shouldBe emptyList()
+
+        chapters.upsert(
+            CanonicalChapter(
+                id = "chapter-after-binding",
+                canonicalTitleId = "title",
+                displayNumber = "1",
+                baseNumber = 1,
+                confidence = 1.0,
+                createdAt = 1L,
+                updatedAt = 1L,
+                confirmation = CanonicalChapterConfirmation.CONFIRMED,
+            ),
+        )
+        model.reloadReconciledChapters()
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+            .chapters.single().chapter.id shouldBe "chapter-after-binding"
+        coVerify(exactly = 1) { refresh.execute("title") }
     }
 
     @Test
