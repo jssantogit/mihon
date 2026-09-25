@@ -1,3 +1,3 @@
-Tsuzuki generic Add-on compatibility — pre-merge integration review.
-Full CI v2.1 requested against code baseline 57939eefb332e318fd34f29fba8de5ad3066f4e3.
-No provider live probes, merge, PR, or distribution APK authorized by this request.
+Tsuzuki Generic Test — isolated ARM64 phone-smoke APK requested on 2026-09-25.
+Verified source code: c174a6cc23927dccb184c7bd49b5671f4f7a0585 (full CI 36186318537 GREEN).
+Build only the generic APK lane from this branch. No merge, PR, live provider probes, or distribution release.
