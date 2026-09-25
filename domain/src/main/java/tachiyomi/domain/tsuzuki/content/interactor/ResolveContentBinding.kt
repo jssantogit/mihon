@@ -545,8 +545,10 @@ class ResolveContentBinding internal constructor(
         preferredLanguages: List<String>,
     ): Pair<List<Long>, Map<Long, String>> {
         val allowed = enabledSourceIds.toSet()
-        val preferredIds = linkedMapOf<Long, String>()
-        for (language in preferredLanguages.distinct().filter(String::isNotBlank)) {
+        // Give each preferred language a slot before consuming its second or third
+        // internal source. Otherwise a multi-source pt-BR package may push English
+        // beyond the initial three-source discovery budget.
+        val preferenceGroups = preferredLanguages.distinct().filter(String::isNotBlank).map { language ->
             val installed = try {
                 readingSourceGateway.listInstalled(language)
             } catch (error: CancellationException) {
@@ -554,8 +556,15 @@ class ResolveContentBinding internal constructor(
             } catch (_: Exception) {
                 emptyList()
             }
-            installed.filter { it.sourceId in allowed }.forEach { descriptor ->
-                preferredIds.putIfAbsent(descriptor.sourceId, descriptor.language)
+            installed.filter { it.sourceId in allowed }.distinctBy { it.sourceId }
+        }
+        val preferredIds = linkedMapOf<Long, String>()
+        val maxDepth = preferenceGroups.maxOfOrNull { it.size } ?: 0
+        for (index in 0 until maxDepth) {
+            preferenceGroups.forEach { group ->
+                group.getOrNull(index)?.let { descriptor ->
+                    preferredIds.putIfAbsent(descriptor.sourceId, descriptor.language)
+                }
             }
         }
         val ordered = preferredIds.keys.toList() + enabledSourceIds.filterNot { it in preferredIds }
