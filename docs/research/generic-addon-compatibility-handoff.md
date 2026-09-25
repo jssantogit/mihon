@@ -154,3 +154,22 @@ As propriedades revisadas de identidade canônica continuam estruturalmente pres
 
 **Decisão de revisão:** a CI completa está aprovada, porém as lacunas R1/R2 exigem regressões e uma decisão técnica antes do merge. R3 é um ajuste menor de contrato. A execução real MangaBall [36167100902](https://github.com/jssantogit/mihon/actions/runs/36167100902) permanece INCONCLUSIVE em SEARCH; isso não demonstra defeito específico de produção. O aceite de página carregada/posição no telefone continua manual e pendente. Nenhum merge/PR/APK de distribuição foi realizado.
 
+## Correções pós-revisão R1/R2/R3 — 2026-09-25
+
+As três lacunas identificadas na revisão pré-merge foram cobertas por commits publicados na própria branch, sem merge nem APK:
+
+- `ff5e95932845c4c01fbc7535b87cd26dd6050f5e`: novas regressões RED para binding de fonte interna desabilitada, cache de opções, preparação do Reader, refresh passivo sem varredura e fontes não-CatalogueSource. A [CI 36172376873](https://github.com/jssantogit/mihon/actions/runs/36172376873) ficou vermelha; o shard Domain comprovou falhas em `RefreshChapterEvidenceTest` e `ResolveChapterContentTest`, e o shard App falhou ao compilar testes ainda não suportados pela implementação. O RED do App é um erro de compilação de teste, **não** uma asserção executada.
+- `d6eae7cdd3916918cb1e240982cd4fd5a7cec429`: passou a conectar elegibilidade operacional de IDs internos à resolução de capítulos e sondagem, protegeu a cache e a preparação do Reader contra opções desabilitadas e substituiu a pesquisa implícita `executeAll` por `existingBindingsForRefresh` durante refresh passivo.
+- `dd08a3bdaa0d876786388aa05585262f2999d0e6`: correções de Spotless e DI da fixture E2E.
+- `0e4e13745d4b5743a712c0807ed09567dfc707d1`: contrato de smoke para link explícito e delta exato do formatter.
+
+**Aceite CI:** [execução completa 36174272594](https://github.com/jssantogit/mihon/actions/runs/36174272594) no último HEAD de código `0e4e1374` terminou GREEN: Change Planner, Format, Core Common, Domain, Data, App, SQLDelight Migrations, Supabase Backend, Release Compile e CI Gate. A lane Compile separada e Native Package Gate foram ignorados por contrato e não são evidência executada. O APK Build correspondente foi ignorado.
+
+**R1 — remediado e coberto:** `MihonAddonProviderFactory` injeta um conjunto vivo de IDs de `AddonSourceEligibilityRepository` em `MihonContentProvider` e `MihonChapterProbeProvider`. O selector revalida opções cacheadas, e `PrepareCanonicalChapterForReader` rejeita opção Mihon cujo ID foi desabilitado desde a apresentação. A regressão cobre extensão com dois IDs e um peer desabilitado.
+
+**R2 — remediado e coberto:** refresh passivo de capítulos reaproveita somente bindings existentes e elegíveis via `ResolveContentBinding.existingBindingsForRefresh`; não inicia busca de todas as 42 fontes de Add-ons sem vínculo. A busca progressiva explícita conserva INITIAL e BROADEN. Consequência deliberada: uma obra sem binding não obtém inventário de novas fontes por refresh passivo; o usuário deve iniciar o vínculo.
+
+**R3 — remediado e coberto:** `MihonAddonRepository` e a fonte de elegibilidade operacional filtram `CatalogueSource` carregadas; fontes somente `Source` não são anunciadas como pesquisáveis.
+
+**Limites remanescentes:** esta CI completa é evidência determinística/build, não comprova um novo E2E Android no código `0e4e1374`. O MangaBall real permaneceu inconclusivo na busca no run `36167100902`; não foi consultado novamente. A persistência da posição real da página e a UX no aparelho ainda exigem smoke manual com APK de teste identificado por SHA. Verificar estes checkpoints separadamente antes da aprovação final de UX. Sem merge, PR ou APK de distribuição neste trabalho.
+
