@@ -81,6 +81,42 @@ class MangaBallReportTests(unittest.TestCase):
                 summary = report.verify_and_summarize(output, report.LIVE_METHOD)
                 self.assertIn("category=" + category, summary[3])
 
+    def test_indeterminate_search_requires_bounded_failure_diagnostic(self):
+        output = junit(
+            report.LIVE_METHOD,
+            journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE"), category="INSTRUMENTATION"),
+        )
+        with self.assertRaises(report.MangaBallReportError):
+            report.verify_and_summarize(output, report.LIVE_METHOD)
+
+    def test_sanitized_search_failure_separates_stage_kind_source_and_root_cause(self):
+        output = junit(
+            report.LIVE_METHOD,
+            journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE"), category="INSTRUMENTATION")
+            + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
+            + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
+            + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION\\n",
+        )
+        summary = report.verify_and_summarize(output, report.LIVE_METHOD)
+        self.assertIn(
+            "DIAGNOSTIC|searchFailureStage=SEARCH|searchFailureKind=INDETERMINATE"
+            "|httpStatus=NONE|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION",
+            summary,
+        )
+        self.assertIn("DIAGNOSTIC|journey=INCONCLUSIVE", summary)
+
+    def test_unallowlisted_diagnostic_field_and_exception_text_cannot_escape(self):
+        output = junit(
+            report.LIVE_METHOD,
+            journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE"), category="INSTRUMENTATION")
+            + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
+            + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
+            + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION"
+            + "|message=https://secret.example/token\\n",
+        )
+        with self.assertRaises(report.MangaBallReportError):
+            report.verify_and_summarize(output, report.LIVE_METHOD)
+
     def test_pass_after_external_blocker_is_rejected(self):
         output = junit(report.LIVE_METHOD, journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE")))
         output = output.replace(
