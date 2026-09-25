@@ -109,6 +109,35 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `automatic allowed source IDs narrow a multilingual package without changing manual search`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            installedByLanguage = mapOf(
+                "pt-BR" to listOf(descriptor(7L, "pt-BR")),
+                "en" to listOf(descriptor(8L, "en"), descriptor(9L, "en")),
+            ),
+        )
+        val resolver = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(7L, 8L, 9L),
+        )
+
+        val events = resolver.searchProgress(
+            ContentBindingSearchRequest(
+                canonicalTitleId = "title",
+                addonId = AddonId("mangadex"),
+                preferredLanguages = listOf("pt-BR", "en"),
+                allowedSourceIds = setOf(7L, 8L),
+                batchSize = 3,
+            ),
+        ).toList()
+
+        events.filterIsInstance<ContentBindingSearchProgress.Completed>()
+            .single().queriedSourceIds shouldBe listOf(7L, 8L)
+        gateway.searchedSourceIds.toSet() shouldBe setOf(7L, 8L)
+    }
+
+    @Test
     fun `initial search without language preferences uses only a small source batch`() = runTest {
         val gateway = FakeReadingSourceGateway()
 

@@ -15,6 +15,8 @@ data class ContentBindingSearchRequest(
     val batchSize: Int = DEFAULT_BATCH_SIZE,
     /** Cooperative per-source deadline; blocking Java extension calls may outlive it. */
     val sourceTimeoutMillis: Long = DEFAULT_SOURCE_TIMEOUT_MILLIS,
+    /** Optional narrowing for automatic discovery; manual search keeps all enabled IDs. */
+    val allowedSourceIds: Set<Long>? = null,
 ) {
     init {
         require(batchSize in 1..MAX_BATCH_SIZE) {

@@ -156,7 +156,9 @@ class ResolveContentBinding internal constructor(
             return@flow
         }
 
-        val enabledSourceIds = addon.mihonSourceIds.distinct()
+        val enabledSourceIds = addon.mihonSourceIds.distinct().filter { sourceId ->
+            request.allowedSourceIds == null || sourceId in request.allowedSourceIds
+        }
         if (!addon.enabled || enabledSourceIds.isEmpty()) {
             emitFailure(
                 sourceId = null,
