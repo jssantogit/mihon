@@ -35,9 +35,9 @@ class MangaFireFixtureTest(unittest.TestCase):
     def test_emulator_runner_keeps_shell_state_in_one_script(self):
         import subprocess
 
-        script = verifier.ROOT / ".github/scripts/run_mangafire_android.sh"
+        script = verifier.ROOT / ".github/scripts/run_android_instrumentation_route.sh"
         workflow = (verifier.ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
-        self.assertIn("script: bash .github/scripts/run_mangafire_android.sh", workflow)
+        self.assertIn("script: bash .github/scripts/run_android_instrumentation_route.sh", workflow)
         result = subprocess.run(["bash", "-n", str(script)], check=False, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

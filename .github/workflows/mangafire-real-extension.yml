@@ -15,11 +15,16 @@ on:
       - '.github/scripts/summarize_android_instrumentation.py'
       - '.github/scripts/test_summarize_android_instrumentation.py'
       - '.github/scripts/test_extension_fixture.py'
+      - '.github/scripts/run_android_instrumentation_route.sh'
+      - '.github/scripts/test_android_instrumentation_route.py'
+      - '.github/scripts/run_android_navigation.sh'
+      - '.github/scripts/verify_android_navigation_instrumentation.py'
+      - '.github/scripts/test_verify_android_navigation_instrumentation.py'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
     inputs:
       live_probe:
-        description: 'Explicitly permit one real One Punch Man search against MangaFire (not deterministic)'
+        description: 'Run the real MangaFire journey when true; false runs offline Android navigation tests'
         required: true
         default: false
         type: boolean
@@ -43,7 +48,11 @@ jobs:
           python3 .github/scripts/test_extension_fixture.py
           python3 .github/scripts/test_android_instrumentation.py
           python3 .github/scripts/test_summarize_android_instrumentation.py
+          python3 .github/scripts/test_verify_android_navigation_instrumentation.py
+          python3 .github/scripts/test_android_instrumentation_route.py
           bash -n .github/scripts/run_mangafire_android.sh
+          bash -n .github/scripts/run_android_instrumentation_route.sh
+          bash -n .github/scripts/run_android_navigation.sh
           python3 .github/scripts/verify_extension_fixture.py
 
   compile-android-test:
@@ -63,7 +72,7 @@ jobs:
       - name: Verify JUnit methods have JVM void signatures
         run: |
           set -euo pipefail
-          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest; do
+          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest CanonicalTitleSourceNavigationInstrumentedTest; do
             class_file="$(find app/build -type f -name "${class}.class" -print -quit)"
             test -n "$class_file"
             suffix="/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/${class}.class"
@@ -72,17 +81,20 @@ jobs:
             javap -classpath "$class_dir" "$fqcn" > junit-signatures.txt
             if [[ "$class" == 'MangaFireFixtureInstrumentedTest' ]]; then
               grep -F 'public final void loadsRealExtensionAndRegistersInternalSources();' junit-signatures.txt
-            else
+            elif [[ "$class" == 'MangaFireRealReadingJourneyInstrumentedTest' ]]; then
               grep -F 'public final void optionalRealEnglishReadingJourney();' junit-signatures.txt
               grep -F 'public final void instrumentationContextDatabasePersistsCanonicalTitle();' junit-signatures.txt
+            else
+              grep -F 'public final void coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
+              grep -F 'public final void warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
+              grep -F 'public final void invalidDiscoveryIntentDoesNotOpenTitleOrMutateProgressAndPreferences();' junit-signatures.txt
             fi
           done
 
   emulator:
-    name: Load real APK in isolated emulator
-    # One-shot opt-in for branch-only workflows: the [android-live] marker runs
-    # the exact pinned MangaFire English/One-Punch-Man E2E once on this branch.
-    # Require all 14 sanitized stage events to PASS; no site-wide retry.
+    name: Run navigation or real MangaFire test on isolated emulator
+    # The default explicit dispatch mode runs only offline navigation. Live
+    # MangaFire remains opt-in; existing push markers retain their old routing.
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]')))
     needs: compile-android-test
     runs-on: ubuntu-24.04
@@ -111,12 +123,14 @@ jobs:
           disable-animations: true
           # The emulator action runs individual YAML script lines in separate shells.
           # Keep setup and conditional logic within ONE invoked Bash script.
-          script: bash .github/scripts/run_mangafire_android.sh "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') }}"
+          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]')) }}"
       - name: Upload sanitized instrumentation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mangafire-instrumentation-${{ github.sha }}
-          path: .github/results/mangafire/**
+          name: android-navigation-or-mangafire-${{ github.sha }}
+          path: |
+            .github/results/android-navigation/**
+            .github/results/mangafire/**
           if-no-files-found: ignore
           retention-days: 3
