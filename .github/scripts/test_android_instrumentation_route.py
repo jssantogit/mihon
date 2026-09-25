@@ -12,9 +12,16 @@ ROUTER = ROOT / ".github/scripts/run_android_instrumentation_route.sh"
 
 
 class AndroidInstrumentationRouteTest(unittest.TestCase):
-    def route(self, event: str, live: str, fixture_marker: str = "false", profile: str = "mangafire") -> str:
+    def route(
+        self,
+        event: str,
+        live: str,
+        fixture_marker: str = "false",
+        profile: str = "mangafire",
+        mangaball_marker: str = "false",
+    ) -> str:
         result = subprocess.run(
-            ["bash", str(ROUTER), event, live, fixture_marker, "true", profile],
+            ["bash", str(ROUTER), event, live, fixture_marker, "true", profile, mangaball_marker],
             check=False,
             capture_output=True,
             text=True,
@@ -67,6 +74,35 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
         )
         self.assertEqual(2, result.returncode)
         self.assertIn("reason=PUSH_MARKER_REQUIRED", result.stderr)
+        self.assertNotIn("providerCalls=1", result.stdout)
+
+    def test_explicit_mangaball_push_marker_runs_only_bounded_live_profile(self):
+        self.assertEqual(
+            "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=MANGABALL_LIVE"
+            "|liveProbe=true|providerCalls=1|extensionProfile=mangaball",
+            self.route("push", "true", "true", profile="mangaball", mangaball_marker="true"),
+        )
+
+    def test_mangaball_push_marker_refuses_non_live_probe(self):
+        result = subprocess.run(
+            ["bash", str(ROUTER), "push", "false", "true", "true", "mangaball", "true"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("reason=MANGABALL_LIVE_MARKER_REQUIRED", result.stderr)
+        self.assertNotIn("providerCalls=1", result.stdout)
+
+    def test_mangaball_push_marker_refuses_mismatched_profile(self):
+        result = subprocess.run(
+            ["bash", str(ROUTER), "push", "true", "true", "true", "mangafire", "true"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("reason=MANGABALL_LIVE_MARKER_REQUIRED", result.stderr)
         self.assertNotIn("providerCalls=1", result.stdout)
 
     def test_mangaball_profile_is_rejected_for_push(self):
