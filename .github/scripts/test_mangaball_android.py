@@ -95,15 +95,38 @@ class MangaBallReportTests(unittest.TestCase):
             journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE"), category="INSTRUMENTATION")
             + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
             + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
-            + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION\n",
+            + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION"
+            + "|causeChain=READING_SOURCE_FAILURE,IO_EXCEPTION\n",
         )
         summary = report.verify_and_summarize(output, report.LIVE_METHOD)
         self.assertIn(
             "DIAGNOSTIC|searchFailureStage=SEARCH|searchFailureKind=INDETERMINATE"
-            "|httpStatus=NONE|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION",
+            "|httpStatus=NONE|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION"
+            "|causeChain=READING_SOURCE_FAILURE,IO_EXCEPTION",
             summary,
         )
         self.assertIn("DIAGNOSTIC|journey=INCONCLUSIVE", summary)
+
+    def test_sanitized_search_failure_rejects_unknown_or_overlong_cause_chain(self):
+        base = (
+            journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE"), category="INSTRUMENTATION")
+            + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
+            + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
+            + "|sourceKind=INDETERMINATE|causeClass=OTHER"
+        )
+        unknown = junit(
+            report.LIVE_METHOD,
+            base + "|causeChain=READING_SOURCE_FAILURE,com.example.SecretException\n",
+        )
+        with self.assertRaises(report.MangaBallReportError):
+            report.verify_and_summarize(unknown, report.LIVE_METHOD)
+
+        too_deep = junit(
+            report.LIVE_METHOD,
+            base + "|causeChain=" + ",".join(["OTHER"] * 9) + "\n",
+        )
+        with self.assertRaises(report.MangaBallReportError):
+            report.verify_and_summarize(too_deep, report.LIVE_METHOD)
 
     def test_unallowlisted_diagnostic_field_and_exception_text_cannot_escape(self):
         output = junit(
@@ -112,6 +135,7 @@ class MangaBallReportTests(unittest.TestCase):
             + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
             + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
             + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION"
+            + "|causeChain=READING_SOURCE_FAILURE,IO_EXCEPTION"
             + "|message=https://secret.example/token\n",
         )
         with self.assertRaises(report.MangaBallReportError):
