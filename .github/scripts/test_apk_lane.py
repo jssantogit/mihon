@@ -41,6 +41,17 @@ class ApkLaneTest(unittest.TestCase):
         self.assertEqual(diagnostic["task"], "assembleRelease")
         self.assertEqual(diagnostic["apk"], "app/build/outputs/apk/release/app-arm64-v8a-release.apk")
 
+    def test_generic_addon_branch_uses_isolated_signed_preview(self):
+        preview = resolve_lane("tsuzuki/generic-addon-compatibility")
+        self.assertEqual(preview["lane"], "generic")
+        self.assertEqual(preview["task"], "assembleGeneric")
+        self.assertEqual(
+            preview["apk"],
+            "app/build/outputs/apk/generic/app-arm64-v8a-generic.apk",
+        )
+        self.assertEqual(preview["mapping"], "app/build/outputs/mapping/generic")
+        self.assertEqual(preview["flags"], "")
+
     def test_unsupported_branch_is_rejected(self):
         with self.assertRaises(ValueError):
             resolve_lane("tsuzuki/random-experiment")

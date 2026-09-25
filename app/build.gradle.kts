@@ -156,6 +156,16 @@ android {
 
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
+        create("generic") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.generic"
+            versionNameSuffix = "-generic-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
         create("benchmark") {
             initWith(release)
 

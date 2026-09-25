@@ -33,7 +33,16 @@ DEV_C = {
     "flags": "",
 }
 
+GENERIC = {
+    "lane": "generic",
+    "task": "assembleGeneric",
+    "apk": "app/build/outputs/apk/generic/app-arm64-v8a-generic.apk",
+    "mapping": "app/build/outputs/mapping/generic",
+    "flags": "",
+}
+
 RULES = (
+    (("tsuzuki/generic-addon-compatibility",), GENERIC),
     (
         (
             "main",
