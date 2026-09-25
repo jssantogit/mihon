@@ -5,8 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.collect
 
 data class CanonicalTitleScreen(
     val canonicalTitleId: String,
+    val openSourceBindingFlow: Boolean = false,
 ) : Screen() {
 
     @Composable
@@ -38,7 +39,8 @@ data class CanonicalTitleScreen(
         val contentSelectorViewModel = metroViewModel<ContentSelectorScreenModel>()
         val linkViewModel = metroViewModel<ContentBindingLinkScreenModel>()
         val linkState by linkViewModel.state.collectAsStateWithLifecycle()
-        var linkSheetOpen by remember { mutableStateOf(false) }
+        var linkSheetOpen by rememberSaveable(canonicalTitleId) { mutableStateOf(false) }
+        var initialLinkFlowOpened by rememberSaveable(canonicalTitleId) { mutableStateOf(false) }
         val state by screenModel.state.collectAsStateWithLifecycle()
         val contentSelectorState by contentSelectorViewModel.state.collectAsStateWithLifecycle()
         val loaded = (state as? CanonicalTitleScreenState.Loaded)
@@ -46,8 +48,19 @@ data class CanonicalTitleScreen(
         val downloadSelectionChapterId = loaded?.downloadSelectionChapterId
         val currentDownloadSelectionChapterId = rememberUpdatedState(downloadSelectionChapterId)
 
-        LaunchedEffect(canonicalTitleId) {
+        LaunchedEffect(canonicalTitleId, openSourceBindingFlow) {
             screenModel.start(canonicalTitleId)
+            if (
+                shouldAutoOpenSourceBindingFlow(
+                    canonicalTitleId,
+                    openSourceBindingFlow,
+                    initialLinkFlowOpened,
+                )
+            ) {
+                initialLinkFlowOpened = true
+                linkViewModel.start(canonicalTitleId)
+                linkSheetOpen = true
+            }
         }
 
         CanonicalTitleDetailScreen(
@@ -148,3 +161,9 @@ data class CanonicalTitleScreen(
         }
     }
 }
+
+internal fun shouldAutoOpenSourceBindingFlow(
+    canonicalTitleId: String,
+    requested: Boolean,
+    alreadyOpened: Boolean,
+): Boolean = canonicalTitleId.isNotBlank() && requested && !alreadyOpened

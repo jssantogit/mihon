@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.detail
 
-import eu.kanade.tachiyomi.ui.tsuzuki.detail.shouldAutoOpenSourceBindingFlow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 

@@ -89,6 +89,7 @@ import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.ui.more.OnboardingScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
 import eu.kanade.tachiyomi.util.system.dpToPx
 import eu.kanade.tachiyomi.util.system.isBenchmarkBuildType
 import eu.kanade.tachiyomi.util.system.isNavigationBarNeedsScrim
@@ -522,6 +523,32 @@ class MainActivity : BaseActivity() {
     }
 
     private fun handleIntentAction(intent: Intent, navigator: Navigator): Boolean {
+        when (
+            val sourceDiscovery = parseCanonicalTitleSourceDiscoveryRoute(
+                intent.action,
+                intent.getStringExtra(EXTRA_CANONICAL_TITLE_ID),
+            )
+        ) {
+            is MainActivityIntentRoute.DiscoverCanonicalTitleSources -> {
+                navigator.popUntilRoot()
+                navigator.push(
+                    CanonicalTitleScreen(
+                        canonicalTitleId = sourceDiscovery.canonicalTitleId,
+                        openSourceBindingFlow = true,
+                    ),
+                )
+                ready = true
+                return true
+            }
+
+            MainActivityIntentRoute.IgnoreInvalidCanonicalTitleDiscovery -> {
+                ready = true
+                return true
+            }
+
+            null -> Unit
+        }
+
         val notificationId = intent.getIntExtra("notificationId", -1)
         if (notificationId > -1) {
             NotificationReceiver.dismissNotification(
@@ -610,7 +637,46 @@ class MainActivity : BaseActivity() {
         const val INTENT_SEARCH = "eu.kanade.tachiyomi.SEARCH"
         const val INTENT_SEARCH_QUERY = "query"
         const val INTENT_SEARCH_FILTER = "filter"
+
+        internal const val ACTION_FIND_OR_ADD_READING_SOURCE =
+            "eu.kanade.tachiyomi.internal.FIND_OR_ADD_READING_SOURCE"
+        internal const val EXTRA_CANONICAL_TITLE_ID =
+            "eu.kanade.tachiyomi.internal.CANONICAL_TITLE_ID"
+
+        internal fun findOrAddReadingSourceIntent(
+            context: Context,
+            canonicalTitleId: String,
+        ): Intent? {
+            val route = parseCanonicalTitleSourceDiscoveryRoute(
+                action = ACTION_FIND_OR_ADD_READING_SOURCE,
+                canonicalTitleId = canonicalTitleId,
+            )
+            if (route !is MainActivityIntentRoute.DiscoverCanonicalTitleSources) return null
+
+            return Intent(context, MainActivity::class.java)
+                .setAction(ACTION_FIND_OR_ADD_READING_SOURCE)
+                .putExtra(EXTRA_CANONICAL_TITLE_ID, route.canonicalTitleId)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
     }
+}
+
+internal sealed interface MainActivityIntentRoute {
+    data class DiscoverCanonicalTitleSources(val canonicalTitleId: String) : MainActivityIntentRoute
+
+    data object IgnoreInvalidCanonicalTitleDiscovery : MainActivityIntentRoute
+}
+
+internal fun parseCanonicalTitleSourceDiscoveryRoute(
+    action: String?,
+    canonicalTitleId: String?,
+): MainActivityIntentRoute? {
+    if (action != MainActivity.ACTION_FIND_OR_ADD_READING_SOURCE) return null
+
+    return canonicalTitleId
+        ?.takeIf(String::isNotBlank)
+        ?.let { MainActivityIntentRoute.DiscoverCanonicalTitleSources(it) }
+        ?: MainActivityIntentRoute.IgnoreInvalidCanonicalTitleDiscovery
 }
 
 // Splash screen

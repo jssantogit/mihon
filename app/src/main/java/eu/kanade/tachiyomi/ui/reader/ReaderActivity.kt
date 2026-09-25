@@ -390,6 +390,13 @@ class ReaderActivity : BaseActivity() {
                                 ),
                         )
                     },
+                    onFindOrAddSource = { canonicalTitleId ->
+                        MainActivity.findOrAddReadingSourceIntent(this@ReaderActivity, canonicalTitleId)
+                            ?.let { discoveryIntent ->
+                                viewModel.dismissContentSelector()
+                                startActivity(discoveryIntent)
+                            }
+                    },
                     onDismissRequest = viewModel::dismissContentSelector,
                 )
             }
