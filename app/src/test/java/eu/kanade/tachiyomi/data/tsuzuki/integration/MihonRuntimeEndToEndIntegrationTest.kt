@@ -256,6 +256,43 @@ class MihonRuntimeEndToEndIntegrationTest {
                 .filter { it.providerTitleKey.startsWith("${portuguese.id}:") }
                 .map { it.providerTitleKey } shouldBe listOf(confirmed.providerTitleKey)
             journey.options("chapter-not-yet-observed") shouldBe emptyList()
+
+            harness.enqueue(
+                body = "/chapter/1\tChapter 1\t1\tEnglish Group",
+                language = "en",
+            )
+            harness.enqueue(
+                body = "/chapter/1\tChapter 1\t1\tPortuguese Group",
+                language = "pt-BR",
+            )
+            harness.enqueue(body = "", language = "ja")
+            journey.refresh()
+
+            val reconciledChapters = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
+            reconciledChapters.size shouldBe 1
+            val chapter = reconciledChapters.single()
+            chapter.canonicalTitleId shouldBe journey.canonicalTitleId
+            chapter.displayNumber shouldBe "1"
+            journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).size shouldBe 2
+            journey.canonicalChapters.getVariantsByCanonicalChapterId(chapter.id).size shouldBe 2
+
+            val chapterOptions = journey.options(chapter.id)
+            chapterOptions.map { it.language }.toSet() shouldBe setOf("en", "pt-BR")
+            chapterOptions.all { it.canonicalChapterId == chapter.id } shouldBe true
+            journey.options("canonical-chapter-not-observed") shouldBe emptyList()
+            val portugueseOption = chapterOptions.single { it.language == "pt-BR" }
+            harness.enqueue(body = "/page/pt-1", language = "pt-BR")
+            val prepared = journey.prepare(portugueseOption) as CanonicalReaderPreparation.Ready
+            prepared.canonicalChapterId shouldBe chapter.id
+            prepared.selectedOption shouldBe portugueseOption
+            prepared.usedFallback shouldBe false
+            val readerTarget = prepared.target as PreparedChapterContent.MihonOperational
+            readerTarget.sourceId shouldBe portuguese.id
+            readerTarget.mangaId shouldBe
+                MihonContentBindingPayloadCodec.decode(confirmed.runtimePayload).mihonMangaId
+            journey.fetchReaderPages(readerTarget).map { it.url } shouldBe listOf("/page/pt-1")
+            journey.bindings.getByTitle(journey.canonicalTitleId)
+                .all { it.canonicalTitleId == journey.canonicalTitleId } shouldBe true
         }
     }
 
