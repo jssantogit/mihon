@@ -58,16 +58,10 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             assertReaderRetained(originalReader, readerWithBindingSheet, fixture, "COLD_READER", readingPosition)
             assertSingleBindingSheet(device, "COLD_READER")
 
-            val recreated = recreate(readerWithBindingSheet)
-            assertNotSame(readerWithBindingSheet, recreated)
-            reportObservation("COLD_READER", "RECREATE_RESULT", "REPLACED")
-            assertReaderChapter(recreated, fixture, "COLD_READER", "READER_CHAPTER_RESTORED")
-            assertReaderPosition(recreated, readingPosition, "COLD_READER", "READER_POSITION_RESTORED")
-            assertSingleBindingSheet(device, "COLD_READER")
-
             closeBindingSheet(device)
             assertSourceSelectorVisible(device, "COLD_READER")
-            returnToReader(device, recreated, fixture, "COLD_READER", readingPosition)
+            val returnedReader = returnToReader(device, originalReader, fixture, "COLD_READER", readingPosition)
+            assertReaderRestoredAfterRecreation(returnedReader, fixture, device, "COLD_READER", readingPosition)
             fixture.assertUnchanged()
             report("COLD_READER", positionOutcome(readingPosition))
         }
@@ -90,16 +84,10 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             assertReaderRetained(originalReader, readerWithBindingSheet, fixture, "WARM_READER", readingPosition)
             assertSingleBindingSheet(device, "WARM_READER")
 
-            val recreated = recreate(readerWithBindingSheet)
-            assertNotSame(readerWithBindingSheet, recreated)
-            reportObservation("WARM_READER", "RECREATE_RESULT", "REPLACED")
-            assertReaderChapter(recreated, fixture, "WARM_READER", "READER_CHAPTER_RESTORED")
-            assertReaderPosition(recreated, readingPosition, "WARM_READER", "READER_POSITION_RESTORED")
-            assertSingleBindingSheet(device, "WARM_READER")
-
             closeBindingSheet(device)
             assertSourceSelectorVisible(device, "WARM_READER")
-            returnToReader(device, recreated, fixture, "WARM_READER", readingPosition)
+            val returnedReader = returnToReader(device, originalReader, fixture, "WARM_READER", readingPosition)
+            assertReaderRestoredAfterRecreation(returnedReader, fixture, device, "WARM_READER", readingPosition)
             fixture.assertUnchanged()
             report("WARM_READER", positionOutcome(readingPosition))
         }
@@ -119,9 +107,13 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             val main = awaitActivity(MainActivity::class.java)
             assertEquals(ACTION_FIND_OR_ADD_READING_SOURCE, main.intent.action)
             assertEquals(" \t ", main.intent.getStringExtra(EXTRA_CANONICAL_TITLE_ID))
-            val titleHidden = device.wait(Until.gone(By.text(fixture.title.displayTitle)), UI_TIMEOUT_MS)
-            reportObservation("INVALID_INTENT", "CANONICAL_TITLE", if (titleHidden) "HIDDEN" else "VISIBLE")
-            assertTrue("Invalid canonical discovery must not navigate to its seeded title", titleHidden)
+            val titleDetailsHidden = device.wait(Until.gone(By.text(CANONICAL_DETAIL_SCREEN_LABEL)), UI_TIMEOUT_MS)
+            reportObservation(
+                "INVALID_INTENT",
+                "CANONICAL_DETAIL_SCREEN",
+                if (titleDetailsHidden) "HIDDEN" else "VISIBLE",
+            )
+            assertTrue("Invalid canonical discovery must not open title details", titleDetailsHidden)
             val sheetHidden = device.wait(Until.gone(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS)
             reportObservation("INVALID_INTENT", "BINDING_SHEET", if (sheetHidden) "CLOSED" else "OPEN")
             assertTrue("Invalid canonical discovery must not open a binding sheet", sheetHidden)
@@ -215,7 +207,7 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         fixture: NavigationFixture,
         scenario: String,
         readingPosition: Int?,
-    ) {
+    ): ReaderActivity {
         device.pressBack()
         val reader = try {
             awaitActivity(ReaderActivity::class.java)
@@ -230,6 +222,28 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         assertEquals("Returning from discovery should remain in the Reader task", expectedReader.taskId, reader.taskId)
         assertReaderChapter(reader, fixture, scenario, "READER_CHAPTER_RETURNED")
         assertReaderPosition(reader, readingPosition, scenario, "READER_POSITION_RETURNED")
+        return reader
+    }
+
+    private fun assertReaderRestoredAfterRecreation(
+        reader: ReaderActivity,
+        fixture: NavigationFixture,
+        device: UiDevice,
+        scenario: String,
+        readingPosition: Int?,
+    ) {
+        val recreated = recreate(reader)
+        assertNotSame(reader, recreated)
+        reportObservation(scenario, "RECREATE_RESULT", "REPLACED")
+        assertReaderChapter(recreated, fixture, scenario, "READER_CHAPTER_RESTORED")
+        assertReaderPosition(recreated, readingPosition, scenario, "READER_POSITION_RESTORED")
+        val bindingSheetClosed = device.wait(Until.gone(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS)
+        reportObservation(
+            scenario,
+            "BINDING_SHEET_AFTER_RECREATE",
+            if (bindingSheetClosed) "CLOSED" else "REOPENED",
+        )
+        assertTrue("Activity recreation must not reopen the binding sheet", bindingSheetClosed)
     }
 
     private fun assertReaderRetained(
@@ -241,7 +255,11 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
     ) {
         val sameTask = expectedReader.taskId == actualReader.taskId
         reportObservation(scenario, "READER_TASK_ACTIVE", if (sameTask) "SAME" else "DIFFERENT")
-        assertEquals("Source discovery should not create another Android task", expectedReader.taskId, actualReader.taskId)
+        assertEquals(
+            "Source discovery should not create another Android task",
+            expectedReader.taskId,
+            actualReader.taskId,
+        )
         reportObservation(
             scenario,
             "READER_LIFECYCLE",
@@ -573,6 +591,7 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             "eu.kanade.tachiyomi.internal.FIND_OR_ADD_READING_SOURCE"
         const val EXTRA_CANONICAL_TITLE_ID = "eu.kanade.tachiyomi.internal.CANONICAL_TITLE_ID"
         const val FIND_OR_ADD_SOURCE_LABEL = "Find or add reading source"
+        const val CANONICAL_DETAIL_SCREEN_LABEL = "Title details"
         const val BINDING_SHEET_CLOSE_LABEL = "Done"
         const val UI_TIMEOUT_MS = 60_000L
     }
