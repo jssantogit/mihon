@@ -73,6 +73,9 @@ internal class LocalMihonSourceHarness(
         )
     }
 
+    fun requestCount(language: String): Int =
+        requireNotNull(serversByLanguage[language]) { "No fixture server for language $language" }.requestCount
+
     override fun close() {
         serversByLanguage.values.forEach(MockWebServer::close)
     }

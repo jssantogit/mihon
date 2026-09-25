@@ -6,12 +6,14 @@ import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterContentPreparer
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import eu.kanade.tachiyomi.data.tsuzuki.addon.DefaultAddonRegistry
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
@@ -47,6 +49,12 @@ import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
+import tachiyomi.domain.tsuzuki.content.interactor.ConfirmContentBinding
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureKind
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchMode
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchProgress
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchRequest
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceOutcome
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -72,6 +80,7 @@ import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
+import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import java.util.concurrent.atomic.AtomicLong
 
 class MihonRuntimeEndToEndIntegrationTest {
@@ -148,6 +157,105 @@ class MihonRuntimeEndToEndIntegrationTest {
             options.map { it.language }.toSet() shouldBe setOf("en", "pt-BR")
             journey.bindings.getByTitle(journey.canonicalTitleId).map { it.canonicalTitleId }.toSet() shouldBe
                 setOf(journey.canonicalTitleId)
+        }
+    }
+
+    @Test
+    fun `progressive search broadens only unqueried sources and requires explicit ambiguous binding`() = runTest {
+        LocalMihonSourceHarness(languages = listOf("en", "pt-BR", "ja", "es")).use { harness ->
+            val sourcesByLanguage = harness.sources.associateBy { it.lang }
+            val portuguese = requireNotNull(sourcesByLanguage["pt-BR"])
+            val english = requireNotNull(sourcesByLanguage["en"])
+            val japanese = requireNotNull(sourcesByLanguage["ja"])
+            val spanish = requireNotNull(sourcesByLanguage["es"])
+            val ambiguousResults = listOf(
+                "/manga/one-punch-man-volume-a\tOne-Punch Man",
+                "/manga/one-punch-man-volume-b\tOne-Punch Man",
+            ).joinToString("\n")
+            repeat(3) { harness.enqueue(body = ambiguousResults, language = "pt-BR") }
+            harness.enqueue(
+                body = "/manga/one-punch-man\tOne-Punch Man",
+                language = "en",
+            )
+            repeat(3) { harness.enqueue(body = "", language = "ja") }
+            harness.enqueue(status = 503, body = "upstream unavailable", language = "es")
+
+            val journey = RuntimeJourney(harness, "canonical-opm-progressive")
+            val informationalBinding = journey.seedInformationalBinding(japanese)
+            val initialEvents = journey.searchProgress(
+                ContentBindingSearchRequest(
+                    canonicalTitleId = journey.canonicalTitleId,
+                    addonId = journey.addonId,
+                    preferredLanguages = listOf("pt-BR", "en"),
+                    mode = ContentBindingSearchMode.INITIAL,
+                    batchSize = 2,
+                ),
+            )
+            val initialCompletion = initialEvents.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
+            initialCompletion.queriedSourceIds shouldBe listOf(portuguese.id, english.id)
+            initialCompletion.remainingSourceCount shouldBe 2
+            initialEvents.filterIsInstance<ContentBindingSearchProgress.ExistingBindingsObserved>()
+                .single().bindingCount shouldBe 1
+
+            val initialBySource = initialEvents
+                .filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+                .associateBy { it.sourceId }
+            val portugueseResult = requireNotNull(initialBySource[portuguese.id])
+            portugueseResult.outcome shouldBe ContentBindingSourceOutcome.CONFIRMATION_REQUIRED
+            portugueseResult.candidates.map { it.candidate.sourceUrl }.toSet() shouldBe setOf(
+                "/manga/one-punch-man-volume-a",
+                "/manga/one-punch-man-volume-b",
+            )
+            portugueseResult.bindings shouldBe emptyList()
+            requireNotNull(initialBySource[english.id]).outcome shouldBe ContentBindingSourceOutcome.BOUND
+            journey.bindings.getByTitle(journey.canonicalTitleId)
+                .map { it.providerTitleKey }.toSet() shouldBe setOf(
+                    informationalBinding.providerTitleKey,
+                    "${english.id}:/manga/one-punch-man",
+                )
+            // A stored binding count and live search candidates do not become readable options.
+            journey.options("chapter-not-yet-observed") shouldBe emptyList()
+
+            val broadenedEvents = journey.searchProgress(
+                ContentBindingSearchRequest(
+                    canonicalTitleId = journey.canonicalTitleId,
+                    addonId = journey.addonId,
+                    preferredLanguages = listOf("pt-BR", "en"),
+                    mode = ContentBindingSearchMode.BROADEN,
+                    alreadyQueriedSourceIds = initialCompletion.queriedSourceIds.toSet(),
+                    batchSize = 2,
+                ),
+            )
+            val broadenedCompletion = broadenedEvents
+                .filterIsInstance<ContentBindingSearchProgress.Completed>().single()
+            broadenedCompletion.queriedSourceIds shouldBe listOf(japanese.id, spanish.id)
+            broadenedCompletion.remainingSourceCount shouldBe 0
+            (initialCompletion.queriedSourceIds + broadenedCompletion.queriedSourceIds).distinct().size shouldBe 4
+
+            val broadenedBySource = broadenedEvents
+                .filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+                .associateBy { it.sourceId }
+            requireNotNull(broadenedBySource[japanese.id]).outcome shouldBe ContentBindingSourceOutcome.EMPTY
+            requireNotNull(broadenedBySource[spanish.id]).let { result ->
+                result.outcome shouldBe ContentBindingSourceOutcome.FAILURE
+                result.failure?.kind shouldBe ContentBindingSearchFailureKind.HTTP_RESPONSE
+                result.failure?.httpStatus shouldBe 503
+            }
+            harness.requestCount("pt-BR") shouldBe 3
+            harness.requestCount("en") shouldBe 1
+            harness.requestCount("ja") shouldBe 3
+            harness.requestCount("es") shouldBe 1
+            journey.bindings.getByTitle(journey.canonicalTitleId).size shouldBe 2
+
+            val explicitlySelected = portugueseResult.candidates.first()
+            val confirmed = journey.confirmBinding(explicitlySelected)
+            confirmed.verifiedByUser shouldBe true
+            confirmed.canonicalTitleId shouldBe journey.canonicalTitleId
+            confirmed.providerTitleKey shouldBe "${portuguese.id}:${explicitlySelected.candidate.sourceUrl}"
+            journey.bindings.getByTitle(journey.canonicalTitleId)
+                .filter { it.providerTitleKey.startsWith("${portuguese.id}:") }
+                .map { it.providerTitleKey } shouldBe listOf(confirmed.providerTitleKey)
+            journey.options("chapter-not-yet-observed") shouldBe emptyList()
         }
     }
 
@@ -331,6 +439,13 @@ class MihonRuntimeEndToEndIntegrationTest {
         }
 
         private val parser = ParseCanonicalChapterLabel()
+        private val confirmContentBinding = ConfirmContentBinding(
+            contentBindingRepository = bindings,
+            canonicalTitleRepository = titleRepository,
+            addonRepository = addons,
+            readingSourceGateway = harness.gateway,
+            scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+        )
         private val registry: DefaultAddonRegistry
         private val bindingResolver: ResolveContentBinding
         private val refresh: RefreshChapterEvidence
@@ -418,6 +533,38 @@ class MihonRuntimeEndToEndIntegrationTest {
 
         suspend fun bind() = bindingResolver.executeAll(canonicalTitleId, addonId).getOrThrow()
         suspend fun bindResult() = bindingResolver.executeAll(canonicalTitleId, addonId)
+        suspend fun searchProgress(request: ContentBindingSearchRequest) =
+            bindingResolver.searchProgress(request).toList()
+        suspend fun confirmBinding(candidate: ScoredSourceCandidate) =
+            confirmContentBinding.execute(canonicalTitleId, addonId, candidate).getOrThrow()
+        suspend fun seedInformationalBinding(source: FixtureHttpSource): ContentBinding {
+            val mangaId = 8000L
+            persistedManga[mangaId] = Manga.create().copy(
+                id = mangaId,
+                source = source.id,
+                url = "/manga/already-linked",
+                title = "One-Punch Man",
+            )
+            return ContentBinding(
+                id = "existing-informational-${source.id}",
+                canonicalTitleId = canonicalTitleId,
+                addonId = addonId,
+                providerTitleKey = "${source.id}:/manga/already-linked",
+                matchConfidence = 1.0,
+                verifiedByUser = true,
+                availability = ContentBindingAvailability.AVAILABLE,
+                runtimePayload = MihonContentBindingPayloadCodec.encode(
+                    MihonContentBindingPayload(
+                        sourceId = source.id,
+                        mihonMangaId = mangaId,
+                        sourceUrl = "/manga/already-linked",
+                        language = source.lang,
+                    ),
+                ),
+                createdAt = 1L,
+                updatedAt = 1L,
+            ).also { bindings.upsert(it) }
+        }
         suspend fun refresh() = refresh.execute(canonicalTitleId).getOrThrow()
         suspend fun installedSources() = harness.gateway.listInstalled("en")
         suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
