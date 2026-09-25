@@ -1,1 +1,3 @@
-MangaFire diagnostic v2 full verification.
+Tsuzuki generic Add-on compatibility — pre-merge integration review.
+Full CI v2.1 requested against code baseline 57939eefb332e318fd34f29fba8de5ad3066f4e3.
+No provider live probes, merge, PR, or distribution APK authorized by this request.
