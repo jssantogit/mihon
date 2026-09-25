@@ -56,13 +56,13 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             tapFindOrAddSource(device)
             val main = awaitMainActivity("COLD_READER")
             assertCanonicalRoute(main.intent, fixture, "COLD_READER")
-            assertTitleAndSingleBindingSheet(device, fixture, "COLD_READER")
+            assertSingleBindingSheet(device, "COLD_READER")
 
             val recreated = recreate(main)
             assertNotSame(main, recreated)
-            assertTitleAndSingleBindingSheet(device, fixture, "COLD_READER")
+            assertSingleBindingSheet(device, "COLD_READER")
 
-            closeBindingSheet(device, fixture)
+            closeBindingSheet(device, fixture, "COLD_READER")
             val afterClose = recreate(recreated)
             assertNotSame(recreated, afterClose)
             assertNoBindingSheet(device, fixture)
@@ -96,13 +96,13 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
                 throw error
             }
             assertCanonicalRoute(routeIntent, fixture, "WARM_READER")
-            assertTitleAndSingleBindingSheet(device, fixture, "WARM_READER")
+            assertSingleBindingSheet(device, "WARM_READER")
 
             val recreated = recreate(main)
             assertNotSame(main, recreated)
-            assertTitleAndSingleBindingSheet(device, fixture, "WARM_READER")
+            assertSingleBindingSheet(device, "WARM_READER")
 
-            closeBindingSheet(device, fixture)
+            closeBindingSheet(device, fixture, "WARM_READER")
             val afterClose = recreate(recreated)
             assertNotSame(recreated, afterClose)
             assertNoBindingSheet(device, fixture)
@@ -199,10 +199,7 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         assertEquals(fixture.title.id, canonicalTitleId)
     }
 
-    private fun assertTitleAndSingleBindingSheet(device: UiDevice, fixture: NavigationFixture, scenario: String) {
-        val titleVisible = device.wait(Until.hasObject(By.text(fixture.title.displayTitle)), UI_TIMEOUT_MS)
-        reportObservation(scenario, "CANONICAL_TITLE", if (titleVisible) "VISIBLE" else "MISSING")
-        assertTrue("The canonical title screen must show the seeded identity", titleVisible)
+    private fun assertSingleBindingSheet(device: UiDevice, scenario: String) {
         val closeButton = device.wait(Until.hasObject(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS)
         val closeButtonCount = if (closeButton) device.findObjects(By.text(BINDING_SHEET_CLOSE_LABEL)).size else 0
         val sheetOutcome = when (closeButtonCount) {
@@ -214,9 +211,14 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         assertEquals(1, closeButtonCount)
     }
 
-    private fun closeBindingSheet(device: UiDevice, fixture: NavigationFixture) {
+    private fun closeBindingSheet(device: UiDevice, fixture: NavigationFixture, scenario: String) {
         waitForObject(device, BINDING_SHEET_CLOSE_LABEL).click()
-        waitForObject(device, fixture.title.displayTitle)
+        val titleVisible = device.wait(Until.hasObject(By.text(fixture.title.displayTitle)), UI_TIMEOUT_MS)
+        reportObservation(scenario, "CANONICAL_TITLE", if (titleVisible) "VISIBLE" else "MISSING")
+        assertTrue(
+            "The canonical title screen must show the seeded identity after closing the binding sheet",
+            titleVisible,
+        )
         assertTrue(
             "The binding sheet should close and leave the canonical title visible",
             device.wait(Until.gone(By.text(BINDING_SHEET_CLOSE_LABEL)), UI_TIMEOUT_MS),
