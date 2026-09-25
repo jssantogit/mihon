@@ -43,7 +43,7 @@ CATEGORIES = frozenset((
 ))
 EVENT_PREFIX = "INSTRUMENTATION_STATUS: stream=MANGABALL_E2E|"
 SEARCH_FAILURE_PREFIX = "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE|"
-SEARCH_FAILURE_FIELDS = frozenset(("failureStage", "failureKind", "httpStatus", "sourceKind", "causeClass"))
+SEARCH_FAILURE_FIELDS = frozenset(("failureStage", "failureKind", "httpStatus", "sourceKind", "causeClass", "causeChain"))
 SEARCH_FAILURE_STAGES = frozenset(("ADDON_DISCOVERY", "SEARCH", "MATERIALIZATION", "PERSISTENCE", "UNKNOWN"))
 SEARCH_FAILURE_KINDS = frozenset((
     "ADDON_NOT_INSTALLED", "ADDON_DISABLED", "NO_ENABLED_SOURCES", "SOURCE_DISABLED",
@@ -55,9 +55,12 @@ SEARCH_SOURCE_KINDS = frozenset((
     "TIMEOUT", "CAPTCHA_REQUIRED", "MALFORMED_RESPONSE", "EXTENSION_FAILURE", "INDETERMINATE",
 ))
 SEARCH_CAUSE_CLASSES = frozenset((
-    "HTTP_EXCEPTION", "SSL_EXCEPTION", "SOCKET_TIMEOUT", "UNKNOWN_HOST", "CONNECT_EXCEPTION",
-    "SOCKET_EXCEPTION", "IO_EXCEPTION", "SECURITY_EXCEPTION", "ILLEGAL_STATE", "NULL_POINTER", "OTHER",
+    "READING_SOURCE_FAILURE", "HTTP_EXCEPTION", "SSL_EXCEPTION", "SOCKET_TIMEOUT", "UNKNOWN_HOST",
+    "CONNECT_EXCEPTION", "SOCKET_EXCEPTION", "IO_EXCEPTION", "SECURITY_EXCEPTION", "ILLEGAL_STATE",
+    "NULL_POINTER", "TIMEOUT_CANCELLATION", "CANCELLATION", "RUNTIME_EXCEPTION", "EXCEPTION", "ERROR",
+    "OTHER",
 ))
+MAX_CAUSE_CHAIN_DEPTH = 8
 EVENT_FIELDS = frozenset(("stage", "outcome", "category", "count", "sourceId", "language", "elapsedMs"))
 SAFE_LANGUAGE = re.compile(r"^[A-Za-z0-9-]{1,16}$")
 SAFE_INTEGER = re.compile(r"^\d{1,20}$")
@@ -140,6 +143,11 @@ def _parse_search_failure(line: str) -> dict[str, str] | None:
         raise MangaBallReportError("Unknown sanitized MangaBall source failure")
     if fields["causeClass"] not in SEARCH_CAUSE_CLASSES:
         raise MangaBallReportError("Unknown sanitized MangaBall exception category")
+    cause_chain = fields["causeChain"].split(",")
+    if not 1 <= len(cause_chain) <= MAX_CAUSE_CHAIN_DEPTH or any(
+        value not in SEARCH_CAUSE_CLASSES for value in cause_chain
+    ):
+        raise MangaBallReportError("Unsafe sanitized MangaBall cause chain")
     status = fields["httpStatus"]
     if status != "NONE" and (not SAFE_INTEGER.fullmatch(status) or not 100 <= int(status) <= 599):
         raise MangaBallReportError("Unsafe sanitized MangaBall HTTP status")
@@ -240,6 +248,7 @@ def verify_and_summarize(output: str, method: str) -> list[str]:
             + "|httpStatus=" + failure["httpStatus"]
             + "|sourceKind=" + failure["sourceKind"]
             + "|causeClass=" + failure["causeClass"]
+            + "|causeChain=" + failure["causeChain"]
         )
 
     outcomes = [event["outcome"] for event in parsed_events]

@@ -1039,19 +1039,8 @@ class MangaBallRealReadingJourneyInstrumentedTest {
     ) {
         val causes = generateSequence(error) { it.cause }.take(8).toList()
         val sourceFailure = causes.filterIsInstance<ReadingSourceSearchFailure>().firstOrNull()
-        val rootClass = when (causes.lastOrNull()) {
-            is HttpException -> "HTTP_EXCEPTION"
-            is SSLException -> "SSL_EXCEPTION"
-            is SocketTimeoutException -> "SOCKET_TIMEOUT"
-            is UnknownHostException -> "UNKNOWN_HOST"
-            is ConnectException -> "CONNECT_EXCEPTION"
-            is SocketException -> "SOCKET_EXCEPTION"
-            is IOException -> "IO_EXCEPTION"
-            is SecurityException -> "SECURITY_EXCEPTION"
-            is IllegalStateException -> "ILLEGAL_STATE"
-            is NullPointerException -> "NULL_POINTER"
-            else -> "OTHER"
-        }
+        val causeClasses = causes.map(::safeCauseClass)
+        val rootClass = causeClasses.lastOrNull() ?: "OTHER"
         val status = failure?.httpStatus ?: sourceFailure?.httpStatus
         val payload = buildString {
             append("MANGABALL_SEARCH_FAILURE")
@@ -1060,11 +1049,32 @@ class MangaBallRealReadingJourneyInstrumentedTest {
             append("|httpStatus=").append(status?.takeIf { it in 100..599 }?.toString() ?: "NONE")
             append("|sourceKind=").append(sourceFailure?.kind?.name ?: "NONE")
             append("|causeClass=").append(rootClass)
+            append("|causeChain=").append(causeClasses.joinToString(","))
         }
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,
             Bundle().apply { putString("stream", payload) },
         )
+    }
+
+    private fun safeCauseClass(error: Throwable): String = when (error) {
+        is ReadingSourceSearchFailure -> "READING_SOURCE_FAILURE"
+        is HttpException -> "HTTP_EXCEPTION"
+        is SSLException -> "SSL_EXCEPTION"
+        is SocketTimeoutException -> "SOCKET_TIMEOUT"
+        is UnknownHostException -> "UNKNOWN_HOST"
+        is ConnectException -> "CONNECT_EXCEPTION"
+        is SocketException -> "SOCKET_EXCEPTION"
+        is IOException -> "IO_EXCEPTION"
+        is SecurityException -> "SECURITY_EXCEPTION"
+        is IllegalStateException -> "ILLEGAL_STATE"
+        is NullPointerException -> "NULL_POINTER"
+        is TimeoutCancellationException -> "TIMEOUT_CANCELLATION"
+        is CancellationException -> "CANCELLATION"
+        is RuntimeException -> "RUNTIME_EXCEPTION"
+        is Exception -> "EXCEPTION"
+        is Error -> "ERROR"
+        else -> "OTHER"
     }
 
     private fun failureCategory(
