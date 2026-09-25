@@ -94,7 +94,16 @@ class RuntimeV2SmokeReadinessTest {
             diagnostics = NoOpChapterInventoryDiagnostics,
         )
 
+        // A passive refresh must never search all internal sources before an explicit link action.
         refresh.execute(TITLE_ID).isSuccess shouldBe true
+        bindings.getByTitle(TITLE_ID) shouldBe emptyList()
+        sourceGateway.searchCalls shouldBe 0
+
+        // Simulate the user's explicit source discovery, then refresh already linked chapters.
+        bindingResolver.executeAll(TITLE_ID, addonId).getOrThrow().size shouldBe 2
+        sourceGateway.searchCalls shouldBe 2
+        refresh.execute(TITLE_ID).isSuccess shouldBe true
+        sourceGateway.searchCalls shouldBe 2
 
         val canonicalChapters = chapters.getByCanonicalTitleId(TITLE_ID)
         canonicalChapters.size shouldBe 1
@@ -175,12 +184,15 @@ class RuntimeV2SmokeReadinessTest {
     }
 
     private class FakeReadingSourceGateway : ReadingSourceGateway {
+        var searchCalls = 0
+
         override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> = emptyList()
 
         override suspend fun search(
             sourceId: Long,
             query: String,
         ): Result<List<ReadingSourceCandidate>> {
+            searchCalls++
             val language = if (sourceId == 7L) "en" else "pt-BR"
             return Result.success(
                 listOf(

@@ -52,7 +52,7 @@ class MihonChapterProbeProvider internal constructor(
                         (
                             allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
                                 .toLongOrNull()?.let { it in allowedSourceIds } == true
-                        )
+                            )
                 }
             if (bindings.isEmpty()) {
                 recordProbe(
