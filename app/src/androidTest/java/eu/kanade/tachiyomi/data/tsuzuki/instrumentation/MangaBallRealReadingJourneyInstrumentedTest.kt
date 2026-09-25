@@ -23,12 +23,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailure
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureKind
+import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureStage
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchMode
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchProgress
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchRequest
@@ -39,6 +43,7 @@ import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import java.net.ConnectException
@@ -153,13 +158,22 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 activeSourceId = source.id
                 activeLanguage = source.lang
                 val registered = withTimeout(SOURCE_REGISTRATION_TIMEOUT_MS) {
-                    appInstance.graph.sourceManager.sources.first { values -> sourceIds.all { id -> values.any { it.id == id } } }
+                    appInstance.graph.sourceManager.sources.first { values ->
+                        sourceIds.all { id -> values.any { it.id == id } }
+                    }
                 }
                 if (registered.singleOrNull { it.id == source.id } !is CatalogueSource) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, "SOURCE_NOT_FOUND", sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "SOURCE_NOT_FOUND",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val addonId = AddonId(PACKAGE_NAME)
-                val baselineDisabled = appInstance.graph.sourcePreferences.disabledSources.get() - sourceIds.map { it.toString() }.toSet()
+                val baselineDisabled = appInstance.graph.sourcePreferences.disabledSources.get() -
+                    sourceIds.map { it.toString() }.toSet()
                 appInstance.graph.sourcePreferences.disabledSources.set(baselineDisabled)
                 val addonsBefore = appInstance.graph.addonRepository.snapshot().filter { it.id == addonId }
                 if (addonsBefore.size != 1 || addonsBefore.single().mihonSourceIds.toSet() != sourceIds) {
@@ -204,8 +218,16 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 )
                 databaseContext = isolatedDatabaseContext
                 val databasePath = isolatedDatabaseContext.getDatabasePath(TARGET_DATABASE_NAME)
-                if (databasePath.exists() || databasePath == instrumentation.targetContext.getDatabasePath(TARGET_DATABASE_NAME)) {
-                    stop(currentStage, Outcome.FAIL, "INSTRUMENTATION", sourceId = source.id, language = source.lang)
+                if (databasePath.exists() ||
+                    databasePath == instrumentation.targetContext.getDatabasePath(TARGET_DATABASE_NAME)
+                ) {
+                    stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "INSTRUMENTATION",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 sendContextObservation()
                 driver = AppBindings.providesSqlDriver(isolatedDatabaseContext)
@@ -248,18 +270,51 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                     }
                 } catch (error: CancellationException) {
                     if (error !is TimeoutCancellationException) throw error
-                    stop(currentStage, Outcome.INCONCLUSIVE, "TIMEOUT", sourceId = source.id, language = source.lang,
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "TIMEOUT",
+                        sourceId = source.id,
+                        language = source.lang,
                         elapsedMs = SystemClock.elapsedRealtime() - searchStarted)
                 }
-                val completion = progressEvents.filterIsInstance<ContentBindingSearchProgress.Completed>().singleOrNull()
-                    ?: stop(currentStage, Outcome.FAIL, "INSTRUMENTATION", sourceId = source.id, language = source.lang)
-                if (completion.queriedSourceIds != listOf(source.id) || disabledPeer.id in completion.queriedSourceIds) {
-                    stop(currentStage, Outcome.FAIL, "SOURCE_QUERY_MISMATCH", sourceId = source.id, language = source.lang)
+                val completion = progressEvents
+                    .filterIsInstance<ContentBindingSearchProgress.Completed>()
+                    .singleOrNull()
+                    ?: stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "INSTRUMENTATION",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
+                if (completion.queriedSourceIds != listOf(source.id) ||
+                    disabledPeer.id in completion.queriedSourceIds
+                ) {
+                    stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "SOURCE_QUERY_MISMATCH",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val searchObservation = composition.searchObservations.singleOrNull()
-                    ?: stop(currentStage, Outcome.FAIL, "INSTRUMENTATION", sourceId = source.id, language = source.lang)
+                    ?: stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "INSTRUMENTATION",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 if (searchObservation.sourceId != source.id) {
-                    stop(currentStage, Outcome.FAIL, "SOURCE_QUERY_MISMATCH", sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "SOURCE_QUERY_MISMATCH",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val queriedCandidates = searchObservation.result.getOrElse { error ->
                     val sourceFailure = progressEvents.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
@@ -297,7 +352,8 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                         currentStage,
                         Outcome.INCONCLUSIVE,
                         when {
-                            queriedCandidates.isEmpty() || sourceResult.outcome == ContentBindingSourceOutcome.EMPTY -> "NO_RESULTS"
+                            queriedCandidates.isEmpty() ||
+                                sourceResult.outcome == ContentBindingSourceOutcome.EMPTY -> "NO_RESULTS"
                             referenceCandidates.size > 1 -> "REFERENCE_AMBIGUOUS"
                             else -> "REFERENCE_NOT_FOUND"
                         },
@@ -321,78 +377,198 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 val confirmedBinding: ContentBinding = when (sourceResult.outcome) {
                     ContentBindingSourceOutcome.BOUND -> {
                         val selected = sourceResult.candidates.singleOrNull()
-                            ?: stop(currentStage, Outcome.FAIL, "INSTRUMENTATION", sourceId = source.id, language = source.lang)
+                            ?: stop(
+                                currentStage,
+                                Outcome.FAIL,
+                                "INSTRUMENTATION",
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                         if (!isSameCandidate(selected, referenceCandidate)) {
-                            stop(currentStage, Outcome.INCONCLUSIVE, "REFERENCE_NOT_FOUND", sourceId = source.id, language = source.lang)
+                            stop(
+                                currentStage,
+                                Outcome.INCONCLUSIVE,
+                                "REFERENCE_NOT_FOUND",
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                         }
-                        record(terminal, currentStage, Outcome.PASS, "AUTO_SELECTED_EXACT_REFERENCE", sourceId = source.id, language = source.lang)
+                        record(
+                            terminal,
+                            currentStage,
+                            Outcome.PASS,
+                            "AUTO_SELECTED_EXACT_REFERENCE",
+                            sourceId = source.id,
+                            language = source.lang,
+                        )
                         sourceResult.bindings.singleOrNull()
-                            ?: stop("BINDING_CREATE", Outcome.FAIL, "BINDING", sourceId = source.id, language = source.lang)
+                            ?: stop(
+                                "BINDING_CREATE",
+                                Outcome.FAIL,
+                                "BINDING",
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                     }
                     ContentBindingSourceOutcome.CONFIRMATION_REQUIRED -> {
                         val exactChoices = sourceResult.candidates.filter { matchesReference(it.candidate.sourceUrl) }
                         if (exactChoices.size != 1 || !isSameCandidate(exactChoices.single(), referenceCandidate)) {
-                            stop(currentStage, Outcome.INCONCLUSIVE, "REFERENCE_AMBIGUOUS", count = exactChoices.size,
-                                sourceId = source.id, language = source.lang)
+                            stop(
+                                currentStage,
+                                Outcome.INCONCLUSIVE,
+                                "REFERENCE_AMBIGUOUS",
+                                count = exactChoices.size,
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                         }
-                        record(terminal, currentStage, Outcome.PASS, "CONFIRMED_EXACT_REFERENCE", sourceId = source.id, language = source.lang)
+                        record(
+                            terminal,
+                            currentStage,
+                            Outcome.PASS,
+                            "CONFIRMED_EXACT_REFERENCE",
+                            sourceId = source.id,
+                            language = source.lang,
+                        )
                         currentStage = "BINDING_MATERIALIZATION"
                         val materialized = composition.confirmContentBinding.execute(
                             canonicalTitleId = canonicalTitleId,
                             addonId = addonId,
                             selected = exactChoices.single(),
                         ).getOrElse { error ->
-                            stop(currentStage, Outcome.INCONCLUSIVE, errorCategory(error), sourceId = source.id, language = source.lang)
+                            stop(
+                                currentStage,
+                                Outcome.INCONCLUSIVE,
+                                errorCategory(error),
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                         }
                         materialized
                     }
                     ContentBindingSourceOutcome.EMPTY -> {
-                        stop("CANDIDATE_IDENTIFICATION", Outcome.INCONCLUSIVE, "NO_RESULTS", count = 0,
-                            sourceId = source.id, language = source.lang)
+                        stop(
+                            "CANDIDATE_IDENTIFICATION",
+                            Outcome.INCONCLUSIVE,
+                            "NO_RESULTS",
+                            count = 0,
+                            sourceId = source.id,
+                            language = source.lang,
+                        )
                     }
                     ContentBindingSourceOutcome.NO_MATCH -> {
-                        stop(currentStage, Outcome.INCONCLUSIVE, "LOW_CONFIDENCE", sourceId = source.id, language = source.lang)
+                        stop(
+                            currentStage,
+                            Outcome.INCONCLUSIVE,
+                            "LOW_CONFIDENCE",
+                            sourceId = source.id,
+                            language = source.lang,
+                        )
                     }
                     ContentBindingSourceOutcome.FAILURE -> {
                         val failure = sourceResult.failure
-                            ?: stop(currentStage, Outcome.INCONCLUSIVE, "INDETERMINATE", sourceId = source.id, language = source.lang)
+                            ?: stop(
+                                currentStage,
+                                Outcome.INCONCLUSIVE,
+                                "INDETERMINATE",
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                         val category = failureCategory(failure)
                         when (failure.stage) {
-                            tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureStage.MATERIALIZATION -> {
+                            ContentBindingSearchFailureStage.MATERIALIZATION -> {
                                 if (queriedCandidates.size != 1 ||
                                     !matchesReference(queriedCandidates.single().sourceUrl)
                                 ) {
-                                    stop(currentStage, Outcome.INCONCLUSIVE, "REFERENCE_AMBIGUOUS",
-                                        count = queriedCandidates.size, sourceId = source.id, language = source.lang)
+                                    stop(
+                                        currentStage,
+                                        Outcome.INCONCLUSIVE,
+                                        "REFERENCE_AMBIGUOUS",
+                                        count = queriedCandidates.size,
+                                        sourceId = source.id,
+                                        language = source.lang,
+                                    )
                                 }
-                                record(terminal, currentStage, Outcome.PASS, "AUTO_SELECTED_EXACT_REFERENCE",
-                                    sourceId = source.id, language = source.lang)
-                                stop("BINDING_MATERIALIZATION", Outcome.INCONCLUSIVE, category,
-                                    sourceId = source.id, language = source.lang,
-                                    elapsedMs = composition.materializationObservation?.elapsedMs)
+                                record(
+                                    terminal,
+                                    currentStage,
+                                    Outcome.PASS,
+                                    "AUTO_SELECTED_EXACT_REFERENCE",
+                                    sourceId = source.id,
+                                    language = source.lang,
+                                )
+                                stop(
+                                    "BINDING_MATERIALIZATION",
+                                    Outcome.INCONCLUSIVE,
+                                    category,
+                                    sourceId = source.id,
+                                    language = source.lang,
+                                    elapsedMs = composition.materializationObservation?.elapsedMs,
+                                )
                             }
-                            tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureStage.PERSISTENCE -> {
+                            ContentBindingSearchFailureStage.PERSISTENCE -> {
                                 if (queriedCandidates.size != 1 ||
                                     !matchesReference(queriedCandidates.single().sourceUrl)
                                 ) {
-                                    stop(currentStage, Outcome.INCONCLUSIVE, "REFERENCE_AMBIGUOUS",
-                                        count = queriedCandidates.size, sourceId = source.id, language = source.lang)
+                                    stop(
+                                        currentStage,
+                                        Outcome.INCONCLUSIVE,
+                                        "REFERENCE_AMBIGUOUS",
+                                        count = queriedCandidates.size,
+                                        sourceId = source.id,
+                                        language = source.lang,
+                                    )
                                 }
-                                record(terminal, currentStage, Outcome.PASS, "AUTO_SELECTED_EXACT_REFERENCE",
-                                    sourceId = source.id, language = source.lang)
+                                record(
+                                    terminal,
+                                    currentStage,
+                                    Outcome.PASS,
+                                    "AUTO_SELECTED_EXACT_REFERENCE",
+                                    sourceId = source.id,
+                                    language = source.lang,
+                                )
                                 val materialized = composition.materializationObservation
-                                    ?: stop("BINDING_MATERIALIZATION", Outcome.INCONCLUSIVE, "INSTRUMENTATION",
-                                        sourceId = source.id, language = source.lang)
+                                    ?: stop(
+                                        "BINDING_MATERIALIZATION",
+                                        Outcome.INCONCLUSIVE,
+                                        "INSTRUMENTATION",
+                                        sourceId = source.id,
+                                        language = source.lang,
+                                    )
                                 if (!materialized.succeeded) {
-                                    stop("BINDING_MATERIALIZATION", Outcome.INCONCLUSIVE, category,
-                                        sourceId = source.id, language = source.lang, elapsedMs = materialized.elapsedMs)
+                                    stop(
+                                        "BINDING_MATERIALIZATION",
+                                        Outcome.INCONCLUSIVE,
+                                        category,
+                                        sourceId = source.id,
+                                        language = source.lang,
+                                        elapsedMs = materialized.elapsedMs,
+                                    )
                                 }
-                                record(terminal, "BINDING_MATERIALIZATION", Outcome.PASS, "SUCCESS",
-                                    sourceId = source.id, language = source.lang, elapsedMs = materialized.elapsedMs)
-                                stop("BINDING_CREATE", Outcome.FAIL, "PERSISTENCE",
-                                    sourceId = source.id, language = source.lang)
+                                record(
+                                    terminal,
+                                    "BINDING_MATERIALIZATION",
+                                    Outcome.PASS,
+                                    "SUCCESS",
+                                    sourceId = source.id,
+                                    language = source.lang,
+                                    elapsedMs = materialized.elapsedMs,
+                                )
+                                stop(
+                                    "BINDING_CREATE",
+                                    Outcome.FAIL,
+                                    "PERSISTENCE",
+                                    sourceId = source.id,
+                                    language = source.lang,
+                                )
                             }
-                            else -> stop(currentStage, Outcome.INCONCLUSIVE, category, sourceId = source.id, language = source.lang)
+                            else -> stop(
+                                currentStage,
+                                Outcome.INCONCLUSIVE,
+                                category,
+                                sourceId = source.id,
+                                language = source.lang,
+                            )
                         }
                     }
                 }
@@ -403,13 +579,32 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 if (terminal["BINDING_MATERIALIZATION"] == null) {
                     currentStage = "BINDING_MATERIALIZATION"
                     val observed = composition.materializationObservation
-                        ?: stop(currentStage, Outcome.FAIL, "INSTRUMENTATION", sourceId = source.id, language = source.lang)
+                        ?: stop(
+                            currentStage,
+                            Outcome.FAIL,
+                            "INSTRUMENTATION",
+                            sourceId = source.id,
+                            language = source.lang,
+                        )
                     if (!observed.succeeded) {
-                        stop(currentStage, Outcome.INCONCLUSIVE, "EXTENSION", sourceId = source.id, language = source.lang,
-                            elapsedMs = observed.elapsedMs)
+                        stop(
+                            currentStage,
+                            Outcome.INCONCLUSIVE,
+                            "EXTENSION",
+                            sourceId = source.id,
+                            language = source.lang,
+                            elapsedMs = observed.elapsedMs,
+                        )
                     }
-                    record(terminal, currentStage, Outcome.PASS, "SUCCESS", sourceId = source.id, language = source.lang,
-                        elapsedMs = observed.elapsedMs)
+                    record(
+                        terminal,
+                        currentStage,
+                        Outcome.PASS,
+                        "SUCCESS",
+                        sourceId = source.id,
+                        language = source.lang,
+                        elapsedMs = observed.elapsedMs,
+                    )
                 }
 
                 currentStage = "BINDING_CREATE"
@@ -417,7 +612,9 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                     stop(currentStage, Outcome.FAIL, "BINDING", sourceId = source.id, language = source.lang)
                 }
                 val expectedProviderTitleKey = "${source.id}:${referenceCandidate.sourceUrl}"
-                val persistedIdentity = runCatching { MihonContentBindingPayloadCodec.decode(confirmedBinding.runtimePayload) }
+                val persistedIdentity = runCatching {
+                    MihonContentBindingPayloadCodec.decode(confirmedBinding.runtimePayload)
+                }
                     .getOrNull()
                 if (confirmedBinding.providerTitleKey != expectedProviderTitleKey ||
                     persistedIdentity == null || persistedIdentity.sourceId != source.id ||
@@ -426,10 +623,19 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 ) {
                     stop(currentStage, Outcome.INCONCLUSIVE, "IDENTITY", sourceId = source.id, language = source.lang)
                 }
-                if (confirmedBinding.verifiedByUser != (sourceResult.outcome == ContentBindingSourceOutcome.CONFIRMATION_REQUIRED)) {
+                if (confirmedBinding.verifiedByUser !=
+                    (sourceResult.outcome == ContentBindingSourceOutcome.CONFIRMATION_REQUIRED)
+                ) {
                     stop(currentStage, Outcome.FAIL, "IDENTITY", sourceId = source.id, language = source.lang)
                 }
-                record(terminal, currentStage, Outcome.PASS, "EXACT_REFERENCE", sourceId = source.id, language = source.lang)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "EXACT_REFERENCE",
+                    sourceId = source.id,
+                    language = source.lang,
+                )
 
                 currentStage = "BINDING_PERSISTENCE"
                 val persisted = composition.contentBindingRepository.getByTitle(canonicalTitleId)
@@ -447,31 +653,75 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 currentStage = "INVENTORY"
                 composition.diagnostics.start(canonicalTitleId)
                 val probeResult = try {
-                    runMihonJourneyBounded(60_000L) { composition.chapterProbeProvider.probe(canonicalTitleId) }
+                    runMihonJourneyBounded(60_000L) {
+                        composition.chapterProbeProvider.probe(canonicalTitleId)
+                    }
                 } catch (error: CancellationException) {
                     if (error !is TimeoutCancellationException) throw error
                     stop(currentStage, Outcome.INCONCLUSIVE, "TIMEOUT", sourceId = source.id, language = source.lang)
                 }
                 val inventory = composition.diagnostics.events()
                     .lastOrNull { it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY }
-                    ?: stop(currentStage, Outcome.FAIL, "INSTRUMENTATION", sourceId = source.id, language = source.lang)
-                if (inventory.outcome != ChapterInventoryDiagnosticOutcome.SUCCESS || (inventory.received ?: 0) == 0) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, inventoryCategory(inventory), count = inventory.received,
-                        sourceId = source.id, language = source.lang, elapsedMs = inventory.elapsedMillis)
+                    ?: stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "INSTRUMENTATION",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
+                if (inventory.outcome != ChapterInventoryDiagnosticOutcome.SUCCESS ||
+                    (inventory.received ?: 0) == 0
+                ) {
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        inventoryCategory(inventory),
+                        count = inventory.received,
+                        sourceId = source.id,
+                        language = source.lang,
+                        elapsedMs = inventory.elapsedMillis,
+                    )
                 }
-                record(terminal, currentStage, Outcome.PASS, "SUCCESS", count = inventory.received,
-                    sourceId = source.id, language = source.lang, elapsedMs = inventory.elapsedMillis)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "SUCCESS",
+                    count = inventory.received,
+                    sourceId = source.id,
+                    language = source.lang,
+                    elapsedMs = inventory.elapsedMillis,
+                )
 
                 currentStage = "CHAPTER_PROBE"
                 val evidence = probeResult.getOrElse { error ->
-                    stop(currentStage, Outcome.INCONCLUSIVE, errorCategory(error), sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        errorCategory(error),
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 if (evidence.isEmpty() || evidence.any { it.canonicalTitleId != canonicalTitleId }) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, "LOW_CONFIDENCE", count = evidence.size,
-                        sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "LOW_CONFIDENCE",
+                        count = evidence.size,
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
-                record(terminal, currentStage, Outcome.PASS, "SUCCESS", count = evidence.size,
-                    sourceId = source.id, language = source.lang)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "SUCCESS",
+                    count = evidence.size,
+                    sourceId = source.id,
+                    language = source.lang,
+                )
 
                 currentStage = "RECONCILIATION"
                 composition.reconcileChapterEvidence.execute(canonicalTitleId, evidence)
@@ -481,14 +731,26 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                             chapter.type == CanonicalChapterType.REGULAR &&
                             chapter.baseNumber?.let { it > 0 } == true &&
                             chapter.confirmation.name != "CONFLICTED"
-                    }
+                }
                 if (chapters.isEmpty()) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, "RECONCILIATION", count = 0,
-                        sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "RECONCILIATION",
+                        count = 0,
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val selectedChapter = chapters.minBy { it.sortKey }
                 if (!selectedChapter.identity.isSpecific) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, "LOW_CONFIDENCE", sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "LOW_CONFIDENCE",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val mappedEvidence = composition.chapterEvidenceRepository.getByCanonicalTitleId(canonicalTitleId)
                     .filter { it.mappedCanonicalChapterId == selectedChapter.id }
@@ -507,18 +769,36 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                         parsed.identity.isSpecific && parsed.identity == selectedChapter.identity
                 }
                 if (identityEvidence.isEmpty()) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, "LOW_CONFIDENCE", sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "LOW_CONFIDENCE",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
-                record(terminal, currentStage, Outcome.PASS, "SUCCESS", count = chapters.size,
-                    sourceId = source.id, language = source.lang)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "SUCCESS",
+                    count = chapters.size,
+                    sourceId = source.id,
+                    language = source.lang,
+                )
 
                 currentStage = "CONTENT_RESOLUTION"
                 val resolution = composition.resolveChapterContent.execute(canonicalTitleId, selectedChapter.id)
                 val options = when (resolution) {
                     is ContentResolution.Direct -> listOf(resolution.option)
                     is ContentResolution.NeedsSelection -> resolution.options
-                    ContentResolution.Unavailable -> stop(currentStage, Outcome.INCONCLUSIVE, "CONTENT_UNAVAILABLE",
-                        sourceId = source.id, language = source.lang)
+                    ContentResolution.Unavailable -> stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "CONTENT_UNAVAILABLE",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 val exactOptions = options.filter { option ->
                     val delivery = option.delivery as? ContentDelivery.Mihon ?: return@filter false
@@ -532,16 +812,30 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 }
                 val option = exactOptions.single()
                 val mihonDelivery = option.delivery as ContentDelivery.Mihon
-                record(terminal, currentStage, Outcome.PASS, "EXACT_REFERENCE", count = exactOptions.size,
-                    sourceId = source.id, language = source.lang)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "EXACT_REFERENCE",
+                    count = exactOptions.size,
+                    sourceId = source.id,
+                    language = source.lang,
+                )
 
                 currentStage = "READER_PREPARATION"
                 val prepared = composition.prepareCanonicalChapterForReader.execute(
                     canonicalChapterId = selectedChapter.id,
                     selectedOption = option,
                 )
-                val target = (prepared as? CanonicalReaderPreparation.Ready)?.target as? PreparedChapterContent.MihonOperational
-                    ?: stop(currentStage, Outcome.INCONCLUSIVE, "READER_PREPARATION", sourceId = source.id, language = source.lang)
+                val target = (prepared as? CanonicalReaderPreparation.Ready)?.target
+                    as? PreparedChapterContent.MihonOperational
+                    ?: stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "READER_PREPARATION",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 if (target.sourceId != source.id ||
                     target.mangaId != mihonDelivery.mangaId ||
                     target.chapterId != mihonDelivery.chapterId ||
@@ -549,40 +843,88 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 ) {
                     stop(currentStage, Outcome.FAIL, "IDENTITY", sourceId = source.id, language = source.lang)
                 }
-                record(terminal, currentStage, Outcome.PASS, "EXACT_REFERENCE", sourceId = source.id, language = source.lang)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "EXACT_REFERENCE",
+                    sourceId = source.id,
+                    language = source.lang,
+                )
 
                 currentStage = "GET_PAGE_LIST"
                 val operationalChapter = composition.chapterRepository.getChapterById(target.chapterId)
-                    ?: stop(currentStage, Outcome.FAIL, "READER_PREPARATION", sourceId = source.id, language = source.lang)
+                    ?: stop(
+                        currentStage,
+                        Outcome.FAIL,
+                        "READER_PREPARATION",
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 if (operationalChapter.id != target.chapterId || operationalChapter.mangaId != target.mangaId) {
                     stop(currentStage, Outcome.FAIL, "IDENTITY", sourceId = source.id, language = source.lang)
                 }
                 val pageList = try {
                     val catalogueSource = registered.single { it.id == source.id } as CatalogueSource
-                    runMihonJourneyBounded(60_000L) { catalogueSource.getPageList(operationalChapter.toSChapter()) }
+                    runMihonJourneyBounded(60_000L) {
+                        catalogueSource.getPageList(operationalChapter.toSChapter())
+                    }
                 } catch (error: CancellationException) {
                     if (error !is TimeoutCancellationException) throw error
                     stop(currentStage, Outcome.INCONCLUSIVE, "TIMEOUT", sourceId = source.id, language = source.lang)
                 } catch (error: Throwable) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, errorCategory(error), sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        errorCategory(error),
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
                 if (pageList.isEmpty()) {
-                    stop(currentStage, Outcome.INCONCLUSIVE, "CONTENT_UNAVAILABLE", count = 0,
-                        sourceId = source.id, language = source.lang)
+                    stop(
+                        currentStage,
+                        Outcome.INCONCLUSIVE,
+                        "CONTENT_UNAVAILABLE",
+                        count = 0,
+                        sourceId = source.id,
+                        language = source.lang,
+                    )
                 }
-                record(terminal, currentStage, Outcome.PASS, "SUCCESS", count = pageList.size,
-                    sourceId = source.id, language = source.lang)
+                record(
+                    terminal,
+                    currentStage,
+                    Outcome.PASS,
+                    "SUCCESS",
+                    count = pageList.size,
+                    sourceId = source.id,
+                    language = source.lang,
+                )
             } catch (stop: MangaBallJourneyStop) {
-                terminal[stop.stage] = MangaBallStageResult(stop.outcome, stop.category, stop.count, stop.sourceId,
-                    stop.language, stop.elapsedMs)
+                terminal[stop.stage] = MangaBallStageResult(
+                    stop.outcome,
+                    stop.category,
+                    stop.count,
+                    stop.sourceId,
+                    stop.language,
+                    stop.elapsedMs,
+                )
             } catch (error: CancellationException) {
                 if (error !is TimeoutCancellationException) throw error
-                terminal[currentStage] = MangaBallStageResult(Outcome.INCONCLUSIVE, "TIMEOUT", sourceId = currentSourceId,
-                    language = currentLanguage)
+                terminal[currentStage] = MangaBallStageResult(
+                    Outcome.INCONCLUSIVE,
+                    "TIMEOUT",
+                    sourceId = currentSourceId,
+                    language = currentLanguage,
+                )
             } catch (error: Throwable) {
                 setupError = true
-                terminal[currentStage] = MangaBallStageResult(Outcome.FAIL, safeSetupCategory(error), sourceId = currentSourceId,
-                    language = currentLanguage)
+                terminal[currentStage] = MangaBallStageResult(
+                    Outcome.FAIL,
+                    safeSetupCategory(error),
+                    sourceId = currentSourceId,
+                    language = currentLanguage,
+                )
             } finally {
                 val driverClosed = driver?.let { value ->
                     runCatching { value.close() }.isSuccess.also { closed ->
@@ -599,8 +941,15 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 } ?: true
                 if (!driverClosed || !databaseCleaned) {
                     setupError = true
-                    terminal.putIfAbsent(currentStage, MangaBallStageResult(Outcome.FAIL, "PERSISTENCE",
-                        sourceId = currentSourceId, language = currentLanguage))
+                    terminal.putIfAbsent(
+                        currentStage,
+                        MangaBallStageResult(
+                            Outcome.FAIL,
+                            "PERSISTENCE",
+                            sourceId = currentSourceId,
+                            language = currentLanguage,
+                        ),
+                    )
                 }
                 val currentApp = app
                 if (currentApp != null) {
@@ -614,7 +963,15 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                 if (value == null) {
                     reportStage(stage, Outcome.NOT_RUN, "NOT_RUN_AFTER_BLOCKER")
                 } else {
-                    reportStage(stage, value.outcome, value.category, value.count, value.sourceId, value.language, value.elapsedMs)
+                    reportStage(
+                        stage,
+                        value.outcome,
+                        value.category,
+                        value.count,
+                        value.sourceId,
+                        value.language,
+                        value.elapsedMs,
+                    )
                 }
             }
             assertTrue("Unexpected MangaBall instrumentation setup failure", !setupError)
@@ -656,26 +1013,32 @@ class MangaBallRealReadingJourneyInstrumentedTest {
         false
     }
 
-    private fun isSameCandidate(left: ScoredSourceCandidate, right: tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate): Boolean =
+    private fun isSameCandidate(
+        left: ScoredSourceCandidate,
+        right: ReadingSourceCandidate,
+    ): Boolean =
         left.candidate.sourceId == right.sourceId && left.candidate.sourceUrl == right.sourceUrl
 
-    private fun failureCategory(failure: tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailure): String = when {
-        failure.httpStatus != null -> httpCategory(requireNotNull(failure.httpStatus))
-        else -> when (failure.kind) {
-            ContentBindingSearchFailureKind.SOURCE_DISABLED -> "SOURCE_DISABLED"
-            ContentBindingSearchFailureKind.SOURCE_UNAVAILABLE -> "SOURCE_NOT_FOUND"
-            ContentBindingSearchFailureKind.HTTP_RESPONSE -> "HTTP_OTHER"
-            ContentBindingSearchFailureKind.NETWORK_FAILURE -> "NETWORK"
-            ContentBindingSearchFailureKind.TIMEOUT -> "TIMEOUT"
-            ContentBindingSearchFailureKind.CAPTCHA_REQUIRED -> "CAPTCHA"
-            ContentBindingSearchFailureKind.MALFORMED_RESPONSE -> "MALFORMED"
-            ContentBindingSearchFailureKind.EXTENSION_FAILURE -> "EXTENSION"
-            ContentBindingSearchFailureKind.INDETERMINATE -> "INSTRUMENTATION"
-            ContentBindingSearchFailureKind.ADDON_NOT_INSTALLED,
-            ContentBindingSearchFailureKind.ADDON_DISABLED,
-            ContentBindingSearchFailureKind.NO_ENABLED_SOURCES -> "SOURCE_NOT_FOUND"
+    private fun failureCategory(
+        failure: ContentBindingSearchFailure,
+    ): String =
+        when {
+            failure.httpStatus != null -> httpCategory(requireNotNull(failure.httpStatus))
+            else -> when (failure.kind) {
+                ContentBindingSearchFailureKind.SOURCE_DISABLED -> "SOURCE_DISABLED"
+                ContentBindingSearchFailureKind.SOURCE_UNAVAILABLE -> "SOURCE_NOT_FOUND"
+                ContentBindingSearchFailureKind.HTTP_RESPONSE -> "HTTP_OTHER"
+                ContentBindingSearchFailureKind.NETWORK_FAILURE -> "NETWORK"
+                ContentBindingSearchFailureKind.TIMEOUT -> "TIMEOUT"
+                ContentBindingSearchFailureKind.CAPTCHA_REQUIRED -> "CAPTCHA"
+                ContentBindingSearchFailureKind.MALFORMED_RESPONSE -> "MALFORMED"
+                ContentBindingSearchFailureKind.EXTENSION_FAILURE -> "EXTENSION"
+                ContentBindingSearchFailureKind.INDETERMINATE -> "INSTRUMENTATION"
+                ContentBindingSearchFailureKind.ADDON_NOT_INSTALLED,
+                ContentBindingSearchFailureKind.ADDON_DISABLED,
+                ContentBindingSearchFailureKind.NO_ENABLED_SOURCES -> "SOURCE_NOT_FOUND"
+            }
         }
-    }
 
     private fun errorCategory(error: Throwable): String {
         val causes = generateSequence(error) { it.cause }.take(6).toList()
@@ -695,10 +1058,11 @@ class MangaBallRealReadingJourneyInstrumentedTest {
         }
         val status = causes.filterIsInstance<HttpException>().map(HttpException::code).firstOrNull { it in 100..599 }
         if (status != null) return httpCategory(status)
-        val diagnostic = tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures.classify(error).first
+        val diagnostic = ChapterInventoryDiagnosticFailures.classify(error).first
         return when {
             diagnostic == ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED -> "CAPTCHA"
-            diagnostic == ChapterInventoryDiagnosticOutcome.TIMEOUT || causes.any { it is SocketTimeoutException } -> "TIMEOUT"
+            diagnostic == ChapterInventoryDiagnosticOutcome.TIMEOUT ||
+                causes.any { it is SocketTimeoutException } -> "TIMEOUT"
             diagnostic == ChapterInventoryDiagnosticOutcome.NETWORK_ERROR || causes.any {
                 it is UnknownHostException || it is ConnectException
             } -> "NETWORK"
@@ -708,17 +1072,20 @@ class MangaBallRealReadingJourneyInstrumentedTest {
         }
     }
 
-    private fun inventoryCategory(event: tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent): String = when {
-        event.httpStatus != null -> httpCategory(requireNotNull(event.httpStatus))
-        event.outcome == ChapterInventoryDiagnosticOutcome.EMPTY -> "INVENTORY_EMPTY"
-        event.outcome == ChapterInventoryDiagnosticOutcome.TIMEOUT -> "TIMEOUT"
-        event.outcome == ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED -> "CAPTCHA"
-        event.outcome == ChapterInventoryDiagnosticOutcome.NETWORK_ERROR -> "NETWORK"
-        event.outcome == ChapterInventoryDiagnosticOutcome.MALFORMED_RESPONSE -> "MALFORMED"
-        event.outcome == ChapterInventoryDiagnosticOutcome.HTTP_ERROR -> "HTTP_OTHER"
-        event.outcome == ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR -> "EXTENSION"
-        else -> "CONTENT_UNAVAILABLE"
-    }
+    private fun inventoryCategory(
+        event: ChapterInventoryDiagnosticEvent,
+    ): String =
+        when {
+            event.httpStatus != null -> httpCategory(requireNotNull(event.httpStatus))
+            event.outcome == ChapterInventoryDiagnosticOutcome.EMPTY -> "INVENTORY_EMPTY"
+            event.outcome == ChapterInventoryDiagnosticOutcome.TIMEOUT -> "TIMEOUT"
+            event.outcome == ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED -> "CAPTCHA"
+            event.outcome == ChapterInventoryDiagnosticOutcome.NETWORK_ERROR -> "NETWORK"
+            event.outcome == ChapterInventoryDiagnosticOutcome.MALFORMED_RESPONSE -> "MALFORMED"
+            event.outcome == ChapterInventoryDiagnosticOutcome.HTTP_ERROR -> "HTTP_OTHER"
+            event.outcome == ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR -> "EXTENSION"
+            else -> "CONTENT_UNAVAILABLE"
+        }
 
     private fun httpCategory(status: Int): String = when (status) {
         403 -> "HTTP_403"
@@ -748,7 +1115,11 @@ class MangaBallRealReadingJourneyInstrumentedTest {
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,
             Bundle().apply {
-                putString("stream", "RUNTIME_CONTEXT|applicationContext=present|storage=TARGET_DISPOSABLE|databaseContext=wrapped")
+                putString(
+                    "stream",
+                    "RUNTIME_CONTEXT|applicationContext=present|" +
+                        "storage=TARGET_DISPOSABLE|databaseContext=wrapped",
+                )
             },
         )
     }
