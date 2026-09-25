@@ -7,6 +7,7 @@ live_probe="${2:-false}"
 fixture_marker="${3:-false}"
 dry_run="${4:-false}"
 extension_profile="${5:-mangafire}"
+mangaball_push_marker="${6:-false}"
 
 if [[ "$live_probe" != 'true' && "$live_probe" != 'false' ]]; then
   echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=INVALID_LIVE_PROBE' >&2
@@ -18,6 +19,10 @@ if [[ "$fixture_marker" != 'true' && "$fixture_marker" != 'false' ]]; then
 fi
 if [[ "$dry_run" != 'true' && "$dry_run" != 'false' ]]; then
   echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=INVALID_DRY_RUN' >&2
+  exit 2
+fi
+if [[ "$mangaball_push_marker" != 'true' && "$mangaball_push_marker" != 'false' ]];
+  echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=INVALID_MANGABALL_MARKER' >&2
   exit 2
 fi
 if [[ "$extension_profile" != 'mangafire' && "$extension_profile" != 'mangaball' ]]; then
@@ -44,20 +49,31 @@ case "$event_name" in
     fi
     ;;
   push)
-    if [[ "$extension_profile" != 'mangafire' ]]; then
-      echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=PROFILE_UNSUPPORTED_FOR_PUSH' >&2
-      exit 2
-    fi
-    if [[ "$fixture_marker" != 'true' ]]; then
-      echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=PUSH_MARKER_REQUIRED' >&2
-      exit 2
-    fi
-    if [[ "$live_probe" == 'true' ]]; then
-      route='MANGAFIRE_LIVE'
+    if [[ "$mangaball_push_marker" == 'true' ]]; then
+      # An exact, one-shot commit marker permits this one bounded MangaBall probe.
+      # All three gates are required; ordinary pushes can never query MangaBall.
+      if [[ "$extension_profile" != 'mangaball' || "$live_probe" != 'true' || "$fixture_marker" != 'true' ]]; then
+        echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=MANGABALL_LIVE_MARKER_REQUIRED' >&2
+        exit 2
+      fi
+      route='MANGABALL_LIVE'
       provider_calls='1'
     else
-      route='MANGAFIRE_FIXTURE'
-      provider_calls='0'
+      if [[ "$extension_profile" != 'mangafire' ]]; then
+        echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=PROFILE_UNSUPPORTED_FOR_PUSH' >&2
+        exit 2
+      fi
+      if [[ "$fixture_marker" != 'true' ]]; then
+        echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=PUSH_MARKER_REQUIRED' >&2
+        exit 2
+      fi
+      if [[ "$live_probe" == 'true' ]]; then
+        route='MANGAFIRE_LIVE'
+        provider_calls='1'
+      else
+        route='MANGAFIRE_FIXTURE'
+        provider_calls='0'
+      fi
     fi
     ;;
   *)

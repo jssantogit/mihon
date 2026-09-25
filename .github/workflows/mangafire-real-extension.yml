@@ -116,7 +116,7 @@ jobs:
     name: Run navigation or real MangaFire test on isolated emulator
     # The default explicit dispatch mode runs only offline navigation. Live
     # MangaFire remains opt-in; existing push markers retain their old routing.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]')))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')))
     needs: compile-android-test
     runs-on: ubuntu-24.04
     timeout-minutes: 65
@@ -146,7 +146,7 @@ jobs:
           disable-animations: true
           # The emulator action runs individual YAML script lines in separate shells.
           # Keep setup and conditional logic within ONE invoked Bash script.
-          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]')) }}" false "${{ inputs.extension_profile || 'mangafire' }}"
+          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')) }}" false "${{ inputs.extension_profile || (contains(github.event.head_commit.message, '[android-live-mangaball]') && 'mangaball' || 'mangafire') }}" "${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-mangaball]') }}"
       - name: Upload sanitized instrumentation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
