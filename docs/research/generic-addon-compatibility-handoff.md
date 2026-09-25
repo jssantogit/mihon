@@ -112,3 +112,28 @@ O `INDETERMINATE` foi retornado no limite do gateway de pesquisa, não é uma id
 
 **Situação atual:** Format e App aprovados no último commit Kotlin `34376b3f`; roteamento/fixture e compilação Android aprovados no commit `f2352bd5`; jornada real permanece **INCONCLUSIVE na etapa SEARCH**. Não houve merge, PR ou APK de distribuição. A correção genérica de produção não deve ser modificada por hipótese. Próximo diagnóstico, somente com nova autorização para a respectiva consulta externa: ampliar a instrumentação com categorias estritamente allowlisted para toda a cadeia limitada de causas, sem mensagens ou URLs, e repetir apenas a fonte pt-BR aprovada se isso puder discriminar uma causa concreta. O aceite final de UX e posição da página em telefone real continua pendente.
 
+## Diagnóstico MangaBall após causa sanitizada — 2026-09-25
+
+No HEAD `1eacf51c601955be77e54530ec05c0c9385c3957`, foi executada uma única jornada ao vivo autorizada, via `workflow_dispatch`, com `extension_profile=mangaball` e `live_probe=true`: [run 36167100902](https://github.com/jssantogit/mihon/actions/runs/36167100902). A fixture imutável e a compilação da instrumentação passaram. O emulador isolado produziu o relatório sanitizado abaixo; o workflow terminou RED porque o verificador não considera um caminho interrompido na busca como E2E aprovado.
+
+| Etapa | Resultado observado |
+| --- | --- |
+| `EXTENSION_INSTALL` | **PASS** — 1 Add-on / 42 fontes internas. |
+| `SOURCE_REGISTRATION` | **PASS** — fonte `35546023386335815`, idioma `pt-BR`. |
+| `SOURCE_ELIGIBILITY` | **PASS** — 41 fontes elegíveis; o peer desabilitado `5763592680824441822` (`ar`) foi excluído. |
+| `LIVE_SEARCH` | **INCONCLUSIVE** após 6.968 ms; falha na fronteira de busca, sem resultado utilizável. |
+| Identificação do candidato, decisão/matching, materialização, criação e persistência do binding, inventário, probe, reconciliação, resolução de conteúdo, preparação do Reader e `GET_PAGE_LIST` | **NOT_RUN** — 11 etapas não executadas após o bloqueio. |
+
+Campos sanitizados da falha: `failureStage=SEARCH`, `failureKind=INDETERMINATE`, `httpStatus=NONE`, `sourceKind=INDETERMINATE`, `causeClass=EXCEPTION`, `causeChain=READING_SOURCE_FAILURE,IO_EXCEPTION,IO_EXCEPTION,EXCEPTION`. O relatório não incluiu mensagens, URLs, headers, payloads ou stack traces.
+
+### Interpretação do limite de busca
+
+O fluxo observado percorre `MihonReadingSourceGateway.search` → `ResolveContentBinding.searchSourceTitle` → `resolveProgressiveSource` → `SourceCompleted` → observação sanitizada do teste. O gateway chama `CatalogueSource.getSearchManga`, preserva a falha original como `ReadingSourceSearchFailure.cause` e classifica uma `IOException` genérica não reconhecida como `INDETERMINATE`. O resolver registra a falha e a mantém como falha; não a converte em inventário vazio nem em ausência de resultados. O teste instrumentado também a reporta como inconclusiva, sem emitir PASS para etapas posteriores.
+
+Esse comportamento é coerente com a regressão determinística existente, que exige que IO genérico permaneça indeterminado em vez de ser adivinhado como falha de rede. `httpStatus=NONE` significa que nenhum `HttpException` reconhecido forneceu status. `EXCEPTION` e os dois rótulos `IO_EXCEPTION` são classes categóricas allowlisted, não mensagens nem identificação do componente que lançou a falha. A cadeia, portanto, **não** comprova problema no Tsuzuki, na instrumentação ou na extensão, nem indisponibilidade de rede, HTTP, CAPTCHA ou timeout. Nenhuma causa-raiz específica foi demonstrada; nenhuma correção de produção é justificada por esta evidência.
+
+### Gates e decisão
+
+A [CI v2.1 36148326149](https://github.com/jssantogit/mihon/actions/runs/36148326149), no mesmo HEAD `1eacf51c601955be77e54530ec05c0c9385c3957`, passou Change Planner, App — Tsuzuki, Format e CI Gate. Native Package Gate, Release Compile, compilação geral, migrações SQLDelight e Supabase foram ignorados pelo planner. A execução Android separada passou verificação da fixture e compilação `androidTest`, mas a jornada do emulador permaneceu inconclusiva na busca; estes resultados não se substituem.
+
+**Conclusão:** a estabilidade genérica coberta pelos testes e gates acima está aprovada para **revisão técnica da arquitetura**. O fluxo real MangaBall completo não foi comprovado e este checkpoint não está concluído: não declarar disponibilidade do provedor, prontidão incondicional para merge ou sucesso E2E. Não repetir a consulta sem novo motivo/escopo aprovado; não fazer correção de runtime com base nesta falha indeterminada. O aceite de UX no telefone, inclusive preservação da posição de página carregada, permanece manual e separado. Nenhuma alteração de código, consulta adicional, Gradle local, merge, PR ou APK de distribuição foi realizada nesta etapa documental.
