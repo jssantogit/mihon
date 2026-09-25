@@ -310,7 +310,9 @@ class MangaFireRealReadingJourneyInstrumentedTest {
                     currentStage = "LIVE_SEARCH"
                     val searchStarted = SystemClock.elapsedRealtime()
                     val search = try {
-                        runMihonJourneyBounded(45_000L) { composition.readingSourceGateway.search(sourceId, SEARCH_QUERY) }
+                        runMihonJourneyBounded(45_000L) {
+                            composition.readingSourceGateway.search(sourceId, SEARCH_QUERY)
+                        }
                     } catch (error: CancellationException) {
                         if (error !is TimeoutCancellationException) throw error
                         stop(Outcome.INCONCLUSIVE, "TIMEOUT", elapsedMs = SystemClock.elapsedRealtime() - searchStarted)

@@ -660,7 +660,7 @@ class MangaBallRealReadingJourneyInstrumentedTest {
         left.candidate.sourceId == right.sourceId && left.candidate.sourceUrl == right.sourceUrl
 
     private fun failureCategory(failure: tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailure): String = when {
-        failure.httpStatus != null -> httpCategory(failure.httpStatus)
+        failure.httpStatus != null -> httpCategory(requireNotNull(failure.httpStatus))
         else -> when (failure.kind) {
             ContentBindingSearchFailureKind.SOURCE_DISABLED -> "SOURCE_DISABLED"
             ContentBindingSearchFailureKind.SOURCE_UNAVAILABLE -> "SOURCE_NOT_FOUND"
@@ -709,7 +709,7 @@ class MangaBallRealReadingJourneyInstrumentedTest {
     }
 
     private fun inventoryCategory(event: tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent): String = when {
-        event.httpStatus != null -> httpCategory(event.httpStatus)
+        event.httpStatus != null -> httpCategory(requireNotNull(event.httpStatus))
         event.outcome == ChapterInventoryDiagnosticOutcome.EMPTY -> "INVENTORY_EMPTY"
         event.outcome == ChapterInventoryDiagnosticOutcome.TIMEOUT -> "TIMEOUT"
         event.outcome == ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED -> "CAPTCHA"
