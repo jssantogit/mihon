@@ -42,6 +42,22 @@ CATEGORIES = frozenset((
     "NOT_RUN_AFTER_BLOCKER", "SUCCESS",
 ))
 EVENT_PREFIX = "INSTRUMENTATION_STATUS: stream=MANGABALL_E2E|"
+SEARCH_FAILURE_PREFIX = "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE|"
+SEARCH_FAILURE_FIELDS = frozenset(("failureStage", "failureKind", "httpStatus", "sourceKind", "causeClass"))
+SEARCH_FAILURE_STAGES = frozenset(("ADDON_DISCOVERY", "SEARCH", "MATERIALIZATION", "PERSISTENCE", "UNKNOWN"))
+SEARCH_FAILURE_KINDS = frozenset((
+    "ADDON_NOT_INSTALLED", "ADDON_DISABLED", "NO_ENABLED_SOURCES", "SOURCE_DISABLED",
+    "SOURCE_UNAVAILABLE", "HTTP_RESPONSE", "NETWORK_FAILURE", "TIMEOUT", "CAPTCHA_REQUIRED",
+    "MALFORMED_RESPONSE", "EXTENSION_FAILURE", "INDETERMINATE", "UNKNOWN",
+))
+SEARCH_SOURCE_KINDS = frozenset((
+    "NONE", "SOURCE_DISABLED", "SOURCE_UNAVAILABLE", "HTTP_RESPONSE", "NETWORK_FAILURE",
+    "TIMEOUT", "CAPTCHA_REQUIRED", "MALFORMED_RESPONSE", "EXTENSION_FAILURE", "INDETERMINATE",
+))
+SEARCH_CAUSE_CLASSES = frozenset((
+    "HTTP_EXCEPTION", "SSL_EXCEPTION", "SOCKET_TIMEOUT", "UNKNOWN_HOST", "CONNECT_EXCEPTION",
+    "SOCKET_EXCEPTION", "IO_EXCEPTION", "SECURITY_EXCEPTION", "ILLEGAL_STATE", "NULL_POINTER", "OTHER",
+))
 EVENT_FIELDS = frozenset(("stage", "outcome", "category", "count", "sourceId", "language", "elapsedMs"))
 SAFE_LANGUAGE = re.compile(r"^[A-Za-z0-9-]{1,16}$")
 SAFE_INTEGER = re.compile(r"^\d{1,20}$")
@@ -102,6 +118,34 @@ def _parse_event(line: str) -> dict[str, str] | None:
     return result
 
 
+def _parse_search_failure(line: str) -> dict[str, str] | None:
+    line = line.strip()
+    if "stream=MANGABALL_SEARCH_FAILURE|" not in line:
+        return None
+    if not line.startswith(SEARCH_FAILURE_PREFIX):
+        raise MangaBallReportError("Malformed sanitized MangaBall search failure")
+    fields: dict[str, str] = {}
+    for item in line[len(SEARCH_FAILURE_PREFIX):].split("|"):
+        key, separator, value = item.partition("=")
+        if not separator or not value or key not in SEARCH_FAILURE_FIELDS or key in fields:
+            raise MangaBallReportError("Unallowlisted MangaBall search failure field")
+        fields[key] = value
+    if set(fields) != SEARCH_FAILURE_FIELDS:
+        raise MangaBallReportError("Incomplete sanitized MangaBall search failure")
+    if fields["failureStage"] not in SEARCH_FAILURE_STAGES:
+        raise MangaBallReportError("Unknown sanitized MangaBall failure stage")
+    if fields["failureKind"] not in SEARCH_FAILURE_KINDS:
+        raise MangaBallReportError("Unknown sanitized MangaBall failure kind")
+    if fields["sourceKind"] not in SEARCH_SOURCE_KINDS:
+        raise MangaBallReportError("Unknown sanitized MangaBall source failure")
+    if fields["causeClass"] not in SEARCH_CAUSE_CLASSES:
+        raise MangaBallReportError("Unknown sanitized MangaBall exception category")
+    status = fields["httpStatus"]
+    if status != "NONE" and (not SAFE_INTEGER.fullmatch(status) or not 100 <= int(status) <= 599):
+        raise MangaBallReportError("Unsafe sanitized MangaBall HTTP status")
+    return fields
+
+
 def _junit_method_ok(output: str, method: str) -> None:
     for label, wanted in (("class", JOURNEY_CLASS), ("test", method), ("numtests", "1")):
         if not re.search(r"(?m)^INSTRUMENTATION_STATUS: " + label + r"=" + re.escape(wanted) + r"\s*$", output):
@@ -150,7 +194,11 @@ def verify_and_summarize(output: str, method: str) -> list[str]:
         raise MangaBallReportError("Unexpected MangaBall instrumentation method")
     safe_lines: list[str] = []
     parsed_events: list[dict[str, str]] = []
+    search_failures: list[dict[str, str]] = []
     for raw in output.splitlines():
+        failure = _parse_search_failure(raw)
+        if failure is not None:
+            search_failures.append(failure)
         parsed = _parse_event(raw)
         if parsed is not None:
             parsed_events.append(parsed)
@@ -162,7 +210,7 @@ def verify_and_summarize(output: str, method: str) -> list[str]:
 
     _junit_method_ok(output, method)
     if method == FIXTURE_METHOD:
-        if parsed_events:
+        if parsed_events or search_failures:
             raise MangaBallReportError("Offline fixture test must not emit or imply live journey events")
         fixture = _parse_fixture(output)
         return [fixture, "DIAGNOSTIC|providerCalls=0"]
@@ -172,6 +220,27 @@ def verify_and_summarize(output: str, method: str) -> list[str]:
         raise MangaBallReportError("MangaBall journey did not report every stage exactly once")
     if [event["stage"] for event in parsed_events] != list(JOURNEY_STAGES):
         raise MangaBallReportError("MangaBall journey stages were missing, duplicated, or out of order")
+
+    if len(search_failures) > 1:
+        raise MangaBallReportError("Duplicate sanitized MangaBall search failure")
+    search_event = parsed_events[JOURNEY_STAGES.index("LIVE_SEARCH")]
+    if search_failures and search_event["outcome"] != "INCONCLUSIVE":
+        raise MangaBallReportError("Search failure evidence without inconclusive search")
+    if (
+        search_event["outcome"] == "INCONCLUSIVE"
+        and search_event.get("category") == "INSTRUMENTATION"
+        and not search_failures
+    ):
+        raise MangaBallReportError("Indeterminate search requires sanitized cause evidence")
+    if search_failures:
+        failure = search_failures[0]
+        safe_lines.append(
+            "DIAGNOSTIC|searchFailureStage=" + failure["failureStage"]
+            + "|searchFailureKind=" + failure["failureKind"]
+            + "|httpStatus=" + failure["httpStatus"]
+            + "|sourceKind=" + failure["sourceKind"]
+            + "|causeClass=" + failure["causeClass"]
+        )
 
     outcomes = [event["outcome"] for event in parsed_events]
     blockers = [index for index, outcome in enumerate(outcomes) if outcome in ("FAIL", "INCONCLUSIVE")]
@@ -205,6 +274,7 @@ def main(argv: list[str]) -> int:
         safe_partial: list[str] = []
         try:
             for raw in output.splitlines():
+                _parse_search_failure(raw)
                 parsed = _parse_event(raw)
                 if parsed is not None:
                     safe = "DIAGNOSTIC|stage=" + parsed["stage"] + "|outcome=" + parsed["outcome"]

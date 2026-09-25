@@ -95,7 +95,7 @@ class MangaBallReportTests(unittest.TestCase):
             journey(blocker=("LIVE_SEARCH", "INCONCLUSIVE"), category="INSTRUMENTATION")
             + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
             + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
-            + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION\\n",
+            + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION\n",
         )
         summary = report.verify_and_summarize(output, report.LIVE_METHOD)
         self.assertIn(
@@ -112,7 +112,7 @@ class MangaBallReportTests(unittest.TestCase):
             + "INSTRUMENTATION_STATUS: stream=MANGABALL_SEARCH_FAILURE"
             + "|failureStage=SEARCH|failureKind=INDETERMINATE|httpStatus=NONE"
             + "|sourceKind=INDETERMINATE|causeClass=IO_EXCEPTION"
-            + "|message=https://secret.example/token\\n",
+            + "|message=https://secret.example/token\n",
         )
         with self.assertRaises(report.MangaBallReportError):
             report.verify_and_summarize(output, report.LIVE_METHOD)

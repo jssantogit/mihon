@@ -46,11 +46,14 @@ import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
+import java.io.IOException
 import java.net.ConnectException
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.UnknownHostException
 import java.util.UUID
+import javax.net.ssl.SSLException
 
 /**
  * Opt-in real-provider journey for a single MangaBall pt-BR source. The fixture-only test never
@@ -321,6 +324,7 @@ class MangaBallRealReadingJourneyInstrumentedTest {
                     val sourceFailure = progressEvents.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
                         .singleOrNull()?.failure
                     val category = sourceFailure?.let(::failureCategory) ?: errorCategory(error)
+                    sendSearchFailureDiagnostic(sourceFailure, error)
                     stop(
                         currentStage,
                         Outcome.INCONCLUSIVE,
@@ -1024,6 +1028,44 @@ class MangaBallRealReadingJourneyInstrumentedTest {
         right: ReadingSourceCandidate,
     ): Boolean =
         left.candidate.sourceId == right.sourceId && left.candidate.sourceUrl == right.sourceUrl
+
+    /**
+     * Emit only closed categories. Third-party exception messages/URLs must never enter CI logs.
+     * An indeterminate source error is not evidence that Android instrumentation itself failed.
+     */
+    private fun sendSearchFailureDiagnostic(
+        failure: ContentBindingSearchFailure?,
+        error: Throwable,
+    ) {
+        val causes = generateSequence(error) { it.cause }.take(8).toList()
+        val sourceFailure = causes.filterIsInstance<ReadingSourceSearchFailure>().firstOrNull()
+        val rootClass = when (causes.lastOrNull()) {
+            is HttpException -> "HTTP_EXCEPTION"
+            is SSLException -> "SSL_EXCEPTION"
+            is SocketTimeoutException -> "SOCKET_TIMEOUT"
+            is UnknownHostException -> "UNKNOWN_HOST"
+            is ConnectException -> "CONNECT_EXCEPTION"
+            is SocketException -> "SOCKET_EXCEPTION"
+            is IOException -> "IO_EXCEPTION"
+            is SecurityException -> "SECURITY_EXCEPTION"
+            is IllegalStateException -> "ILLEGAL_STATE"
+            is NullPointerException -> "NULL_POINTER"
+            else -> "OTHER"
+        }
+        val status = failure?.httpStatus ?: sourceFailure?.httpStatus
+        val payload = buildString {
+            append("MANGABALL_SEARCH_FAILURE")
+            append("|failureStage=").append(failure?.stage?.name ?: "UNKNOWN")
+            append("|failureKind=").append(failure?.kind?.name ?: "UNKNOWN")
+            append("|httpStatus=").append(status?.takeIf { it in 100..599 }?.toString() ?: "NONE")
+            append("|sourceKind=").append(sourceFailure?.kind?.name ?: "NONE")
+            append("|causeClass=").append(rootClass)
+        }
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            1,
+            Bundle().apply { putString("stream", payload) },
+        )
+    }
 
     private fun failureCategory(
         failure: ContentBindingSearchFailure,
