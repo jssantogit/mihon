@@ -255,21 +255,6 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         assertReaderChapter(reader, fixture, scenario)
     }
 
-    private fun waitForObject(device: UiDevice, text: String) =
-        device.wait(Until.findObject(By.text(text)), UI_TIMEOUT_MS)
-            ?: throw AssertionError("Timed out waiting for expected navigation UI")
-
-    private fun <T : Activity> awaitActivity(type: Class<T>): T = awaitValue("resumed activity") {
-        var match: T? = null
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            match = ActivityLifecycleMonitorRegistry.getInstance()
-                .getActivitiesInStage(Stage.RESUMED)
-                .filterIsInstance(type)
-                .firstOrNull()
-        }
-        match
-    }
-
     private fun <T : Activity> recreate(activity: T): T {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::recreate)
         return awaitValue("recreated activity") {
@@ -287,15 +272,6 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
                 .firstOrNull()
         }
         return match
-    }
-
-    private fun <T> awaitValue(description: String, query: () -> T?): T {
-        val deadline = SystemClock.elapsedRealtime() + UI_TIMEOUT_MS
-        while (SystemClock.elapsedRealtime() < deadline) {
-            query()?.let { return it }
-            SystemClock.sleep(100L)
-        }
-        throw AssertionError("Timed out waiting for $description")
     }
 
     private fun finishActivities() {
@@ -504,8 +480,8 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
                 }
             }
         }
-
     }
+
     private data class UserState(
         val contentPreference: ContentPreference?,
         val readerPreference: CanonicalReaderPreference?,
@@ -518,6 +494,30 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
     )
 
     private companion object {
+        private fun waitForObject(device: UiDevice, text: String) =
+            device.wait(Until.findObject(By.text(text)), UI_TIMEOUT_MS)
+                ?: throw AssertionError("Timed out waiting for expected navigation UI")
+
+        private fun <T : Activity> awaitActivity(type: Class<T>): T = awaitValue("resumed activity") {
+            var match: T? = null
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                match = ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(Stage.RESUMED)
+                    .filterIsInstance(type)
+                    .firstOrNull()
+            }
+            match
+        }
+
+        private fun <T> awaitValue(description: String, query: () -> T?): T {
+            val deadline = SystemClock.elapsedRealtime() + UI_TIMEOUT_MS
+            while (SystemClock.elapsedRealtime() < deadline) {
+                query()?.let { return it }
+                SystemClock.sleep(100L)
+            }
+            throw AssertionError("Timed out waiting for $description")
+        }
+
         const val EXPECTED_TARGET_PACKAGE = "app.mihon.dev"
         const val ACTION_FIND_OR_ADD_READING_SOURCE =
             "eu.kanade.tachiyomi.internal.FIND_OR_ADD_READING_SOURCE"
