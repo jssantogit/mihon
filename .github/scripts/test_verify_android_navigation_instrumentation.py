@@ -104,6 +104,31 @@ class VerifyAndroidNavigationTest(unittest.TestCase):
             self.assertNotIn("secret-title-token", summary.read_text(encoding="utf-8"))
             self.assertNotIn("secret-title-token", junit.read_text(encoding="utf-8"))
 
+    def test_failure_summary_includes_only_sanitized_onboarding_precondition(self):
+        method = "coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce"
+        for result in ("COMPLETED", "INCOMPLETE"):
+            with self.subTest(result=result):
+                output = output_for(method) + (
+                    "INSTRUMENTATION_STATUS: stream=ANDROID_NAVIGATION_OBSERVATION"
+                    "|scenario=FIXTURE|checkpoint=ONBOARDING_PRECONDITION|result=" + result + "\n"
+                    "INSTRUMENTATION_STATUS: stream=ANDROID_NAVIGATION_OBSERVATION"
+                    "|scenario=FIXTURE|checkpoint=ONBOARDING_TEXT|result=PRIVATE_TITLE\n"
+                    "INSTRUMENTATION_STATUS: stream=ANDROID_NAVIGATION_OBSERVATION"
+                    "|scenario=FIXTURE|checkpoint=ONBOARDING_PRECONDITION"
+                    "|result=COMPLETED|message=secret-token\n"
+                )
+
+                summary = verifier.sanitized_summary(output, method, passed=False)
+
+                self.assertIn(
+                    "ANDROID_NAVIGATION_RESULT|observation=FIXTURE"
+                    "|checkpoint=ONBOARDING_PRECONDITION|result=" + result,
+                    summary,
+                )
+                self.assertNotIn("ONBOARDING_TEXT", summary)
+                self.assertNotIn("PRIVATE_TITLE", summary)
+                self.assertNotIn("secret-token", summary)
+
     def test_missing_junit_execution_does_not_emit_a_fake_zero_or_one_test_report(self):
         method = "coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce"
         with tempfile.TemporaryDirectory() as temp:

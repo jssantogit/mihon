@@ -45,6 +45,9 @@ OBSERVATION_FIELDS = {
         "CANONICAL_TITLE": {"HIDDEN", "VISIBLE"},
         "BINDING_SHEET": {"CLOSED", "OPEN"},
     },
+    "FIXTURE": {
+        "ONBOARDING_PRECONDITION": {"COMPLETED", "INCOMPLETE"},
+    },
 }
 
 
@@ -127,7 +130,7 @@ def sanitized_summary(output: str, method: str, passed: bool) -> str:
                 continue
             observed_scenario, checkpoint, result = match.groups()
             allowed = OBSERVATION_FIELDS.get(observed_scenario, {}).get(checkpoint, set())
-            if observed_scenario != scenario or result not in allowed or checkpoint in seen:
+            if observed_scenario not in {scenario, "FIXTURE"} or result not in allowed or checkpoint in seen:
                 continue
             seen.add(checkpoint)
             observations.append(

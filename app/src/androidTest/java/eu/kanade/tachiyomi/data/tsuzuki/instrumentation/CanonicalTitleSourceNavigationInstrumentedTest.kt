@@ -356,6 +356,7 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             preferredLanguages = app.graph.canonicalReaderPreferences.preferredLanguages.get().sorted(),
             disabledSources = app.graph.sourcePreferences.disabledSources.get().sorted(),
             enabledLanguages = app.graph.sourcePreferences.enabledLanguages.get().sorted(),
+            onboardingCompleted = app.graph.basePreferences.shownOnboardingFlow.get(),
         )
 
         fun cleanup() {
@@ -383,6 +384,23 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
                 val context = instrumentation.targetContext
                 assertEquals(EXPECTED_TARGET_PACKAGE, context.packageName)
                 val app = context.applicationContext as App
+                app.graph.basePreferences.shownOnboardingFlow.set(true)
+                val onboardingCompleted = app.graph.basePreferences.shownOnboardingFlow.get()
+                instrumentation.sendStatus(
+                    1,
+                    Bundle().apply {
+                        putString(
+                            "stream",
+                            "ANDROID_NAVIGATION_OBSERVATION|scenario=FIXTURE" +
+                                "|checkpoint=ONBOARDING_PRECONDITION" +
+                                "|result=${if (onboardingCompleted) "COMPLETED" else "INCOMPLETE"}",
+                        )
+                    },
+                )
+                assertTrue(
+                    "The isolated navigation fixture must complete onboarding before launch",
+                    onboardingCompleted,
+                )
                 assertTrue(
                     "The isolated navigation fixture must not query installed reading Add-ons",
                     runBlocking { app.graph.addonRepository.snapshot() }.isEmpty(),
@@ -455,6 +473,7 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
                             preferredLanguages = app.graph.canonicalReaderPreferences.preferredLanguages.get().sorted(),
                             disabledSources = app.graph.sourcePreferences.disabledSources.get().sorted(),
                             enabledLanguages = app.graph.sourcePreferences.enabledLanguages.get().sorted(),
+                            onboardingCompleted = app.graph.basePreferences.shownOnboardingFlow.get(),
                         )
                     }
                     return NavigationFixture(
@@ -491,6 +510,7 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         val preferredLanguages: List<String>,
         val disabledSources: List<String>,
         val enabledLanguages: List<String>,
+        val onboardingCompleted: Boolean,
     )
 
     private companion object {
