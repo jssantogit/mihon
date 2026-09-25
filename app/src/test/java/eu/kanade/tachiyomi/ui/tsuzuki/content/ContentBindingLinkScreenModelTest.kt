@@ -368,5 +368,4 @@ class ContentBindingLinkScreenModelTest {
         bindings = bindings,
         failure = failure,
     )
-
 }
