@@ -49,7 +49,7 @@
 
 - [ ] RED tests for installed/enabled Add-ons, existing binding status, preferred-language first pass, explicit “search more”, progressive candidates/errors, explicit ambiguous-edition confirmation, and stale/cancelled search not overwriting a newer state.
 - [ ] Consume Task 2's resolver contract. Do not search all device Add-ons or duplicate title scoring in the ViewModel. Retain one visible Add-on per extension and show internal source/language only as candidate provenance.
-- [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
+- [x] GREEN in App Tsuzuki + Format Fast CI run `36080352470` after RED run `36079886917` exposed missing route/parser and one-shot flow helpers. App, Format, Change Planner, and CI Gate passed for commit `0f9b810ff`; no local Gradle was run. APK Build and unrelated jobs were skipped.
 
 ## Task 4 — Chapter-selector discovery path
 
