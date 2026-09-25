@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -22,6 +23,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.launch
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -45,6 +47,7 @@ import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
+import java.util.Locale
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ContentBindingLinkScreenModelTest {
@@ -106,6 +109,55 @@ class ContentBindingLinkScreenModelTest {
     }
 
     @Test
+    fun `unconfigured language preferences prioritize device locale and English fallback`() = runTest(dispatcher) {
+        val previousLocale = Locale.getDefault()
+        Locale.setDefault(Locale.forLanguageTag("pt-BR"))
+        try {
+            val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L, 9L))
+            val resolver = mockk<ResolveContentBinding>()
+            val requests = mutableListOf<ContentBindingSearchRequest>()
+            every { resolver.searchProgress(any()) } answers {
+                requests += firstArg<ContentBindingSearchRequest>()
+                flowOf(ContentBindingSearchProgress.Completed(listOf(7L, 8L, 9L), remainingSourceCount = 0))
+            }
+            val model = model(addons = listOf(reader), resolver = resolver)
+
+            model.start("canonical")
+            advanceUntilIdle()
+            model.selectAddon(reader.id)
+            advanceUntilIdle()
+
+            requests.single().preferredLanguages shouldBe listOf("pt-BR", "pt", "en")
+        } finally {
+            Locale.setDefault(previousLocale)
+        }
+    }
+
+    @Test
+    fun `three auto-bound internal sources trigger one completed-batch refresh`() = runTest(dispatcher) {
+        val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L, 9L))
+        val resolver = mockk<ResolveContentBinding>()
+        every { resolver.searchProgress(any()) } returns flowOf(
+            source(7L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("en"))),
+            source(8L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("pt"))),
+            source(9L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("es"))),
+            ContentBindingSearchProgress.Completed(listOf(7L, 8L, 9L), remainingSourceCount = 0),
+        )
+        val model = model(addons = listOf(reader), resolver = resolver)
+        var refreshes = 0
+        backgroundScope.launch { model.bindingChanges.collect { refreshes++ } }
+        runCurrent()
+
+        model.start("canonical")
+        advanceUntilIdle()
+        model.selectAddon(reader.id)
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<ContentBindingLinkState.SearchResults>().boundCount shouldBe 3
+        refreshes shouldBe 1
+    }
+
+    @Test
     fun `initial pass orders title and global preferred languages and returns progressive peer results`() = runTest(
         dispatcher,
     ) {
@@ -158,10 +210,11 @@ class ContentBindingLinkScreenModelTest {
         partial.boundCount shouldBe 1
         partial.failureCount shouldBe 0
         firstSourceObserved.isCompleted shouldBe true
-        bindingCreated.await()
+        bindingCreated.isCompleted shouldBe false
 
         releasePeer.complete(Unit)
         advanceUntilIdle()
+        bindingCreated.await()
 
         capturedRequest.captured.preferredLanguages shouldBe listOf("pt-BR", "en", "es")
         capturedRequest.captured.mode shouldBe ContentBindingSearchMode.INITIAL
