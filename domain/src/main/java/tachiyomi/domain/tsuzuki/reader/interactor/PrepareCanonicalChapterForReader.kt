@@ -85,6 +85,9 @@ class PrepareCanonicalChapterForReader(
         option: ContentOption,
         usedFallback: Boolean,
     ): CanonicalReaderPreparation {
+        if (!resolveChapterContent.isOptionEnabled(option)) {
+            return CanonicalReaderPreparation.Unavailable(canonicalChapterId)
+        }
         val progress = canonicalReadingRepository.getProgress(canonicalChapterId)
         return chapterContentPreparer.prepare(option, progress).fold(
             onSuccess = { target ->

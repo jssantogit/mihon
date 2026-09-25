@@ -348,7 +348,7 @@ class RefreshChapterEvidenceTest {
             override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
         }
         val resolver = mockk<ResolveContentBinding>()
-        coEvery { resolver.executeAll("canonical-title", AddonId("fallback")) } returns
+        coEvery { resolver.existingBindingsForRefresh("canonical-title", AddonId("fallback")) } returns
             Result.success(listOf(mockk<ContentBinding>()))
         val chapters = FakeCanonicalChapterRepository()
         val refresh = RefreshChapterEvidence(
@@ -432,7 +432,7 @@ class RefreshChapterEvidenceTest {
         onResolver(resolver)
         val bindingResult: Result<List<ContentBinding>> = bindingError?.let { Result.failure(it) }
             ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
-        coEvery { resolver.executeAll("canonical-title", addonId) } returns bindingResult
+        coEvery { resolver.existingBindingsForRefresh("canonical-title", addonId) } returns bindingResult
 
         return RefreshChapterEvidence(
             registry = registry(emptyList()),

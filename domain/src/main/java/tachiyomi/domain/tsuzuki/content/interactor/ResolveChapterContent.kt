@@ -19,6 +19,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCacheKey
@@ -224,6 +225,29 @@ class ResolveChapterContent(
         contentOptionCache.invalidateAddon(addonId)
     }
 
+    /** Check again at Reader preparation, since an on-screen option may have become stale. */
+    suspend fun isOptionEnabled(option: ContentOption): Boolean {
+        val delivery = option.delivery as? ContentDelivery.Mihon ?: return true
+        val repository = addonRepository ?: return true
+        return repository.snapshot().any { addon ->
+            addon.id == option.addonId && addon.enabled && delivery.sourceId in addon.mihonSourceIds
+        }
+    }
+
+    private suspend fun eligibleOptions(addonId: AddonId, options: List<ContentOption>): List<ContentOption> {
+        if (options.none { it.delivery is ContentDelivery.Mihon }) return options
+        val repository = addonRepository ?: return options
+        val enabled = repository.snapshot()
+            .firstOrNull { it.id == addonId && it.enabled }
+            ?.mihonSourceIds
+            ?.toSet()
+            .orEmpty()
+        return options.filter { option ->
+            val delivery = option.delivery
+            delivery !is ContentDelivery.Mihon || delivery.sourceId in enabled
+        }
+    }
+
     private fun titlePreferredLanguages(
         titleLanguage: String?,
         globalLanguages: List<String>,
@@ -246,22 +270,9 @@ class ResolveChapterContent(
             addonId = provider.addonId,
         )
         contentOptionCache.get(key)?.let { cached ->
-            recordSelector(
-                canonicalTitleId,
-                provider.addonId,
-                if (cached.isEmpty()) {
-                    ChapterInventoryDiagnosticOutcome.EMPTY
-                } else {
-                    ChapterInventoryDiagnosticOutcome.SUCCESS
-                },
-                cached.size,
-                ChapterInventoryDiagnosticReason.CACHED_OPTIONS,
-            )
-            return Result.success(cached)
-        }
-
-        return inFlightContentResolution.execute(key) resolution@{
-            contentOptionCache.get(key)?.let { cached ->
+            if (eligibleOptions(provider.addonId, cached).size != cached.size) {
+                contentOptionCache.invalidateAddon(provider.addonId)
+            } else {
                 recordSelector(
                     canonicalTitleId,
                     provider.addonId,
@@ -273,7 +284,28 @@ class ResolveChapterContent(
                     cached.size,
                     ChapterInventoryDiagnosticReason.CACHED_OPTIONS,
                 )
-                return@resolution Result.success(cached)
+                return Result.success(cached)
+            }
+        }
+
+        return inFlightContentResolution.execute(key) resolution@{
+            contentOptionCache.get(key)?.let { cached ->
+                if (eligibleOptions(provider.addonId, cached).size != cached.size) {
+                    contentOptionCache.invalidateAddon(provider.addonId)
+                } else {
+                    recordSelector(
+                        canonicalTitleId,
+                        provider.addonId,
+                        if (cached.isEmpty()) {
+                            ChapterInventoryDiagnosticOutcome.EMPTY
+                        } else {
+                            ChapterInventoryDiagnosticOutcome.SUCCESS
+                        },
+                        cached.size,
+                        ChapterInventoryDiagnosticReason.CACHED_OPTIONS,
+                    )
+                    return@resolution Result.success(cached)
+                }
             }
             var receivedOptions = 0
             val result = try {
@@ -284,7 +316,7 @@ class ResolveChapterContent(
                 Result.failure(error)
             }.map { options ->
                 receivedOptions = options.size
-                options.filter { option ->
+                eligibleOptions(provider.addonId, options).filter { option ->
                     option.canonicalChapterId == canonicalChapterId &&
                         option.addonId == provider.addonId
                 }

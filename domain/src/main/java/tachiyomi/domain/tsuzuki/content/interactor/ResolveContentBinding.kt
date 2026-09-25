@@ -115,6 +115,29 @@ class ResolveContentBinding internal constructor(
     }
 
     /**
+     * A chapter refresh must not discover new source titles. Reuse existing persisted bindings
+     * only when their operational internal source IDs are still enabled.
+     */
+    suspend fun existingBindingsForRefresh(
+        canonicalTitleId: String,
+        addonId: AddonId,
+    ): Result<List<ContentBinding>> = try {
+        val addon = addonRepository.snapshot().firstOrNull { it.id == addonId && it.enabled }
+        val enabled = addon?.mihonSourceIds?.toSet().orEmpty()
+        Result.success(
+            contentBindingRepository.getByTitle(canonicalTitleId).filter { binding ->
+                binding.addonId == addonId &&
+                    binding.availability != ContentBindingAvailability.UNAVAILABLE &&
+                    binding.providerTitleKey.substringBefore(':').toLongOrNull()?.let { it in enabled } == true
+            },
+        )
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }
+
+    /**
      * Search one bounded batch of installed, enabled sources and emit results as each source
      * finishes. [ContentBindingSearchMode.BROADEN] is an explicit caller action; this resolver
      * never fans out across every source unless the caller requests successive batches. The cold

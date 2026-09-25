@@ -174,7 +174,7 @@ class RefreshChapterEvidence private constructor(
                         gate.withPermit {
                             try {
                                 val bindings = resolver
-                                    .executeAll(canonicalTitleId, provider.addonId)
+                                    .existingBindingsForRefresh(canonicalTitleId, provider.addonId)
                                     .getOrElse { error ->
                                         if (error is CancellationException) throw error
                                         val (outcome, reason) = when (error) {

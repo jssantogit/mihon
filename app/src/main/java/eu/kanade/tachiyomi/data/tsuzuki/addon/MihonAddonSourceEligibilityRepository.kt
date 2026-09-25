@@ -6,6 +6,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
+import eu.kanade.tachiyomi.source.CatalogueSource
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
@@ -24,7 +25,7 @@ class MihonAddonSourceEligibilityRepository(
             .firstOrNull { it.pkgName == addonId.value }
             ?: return emptyList()
         val disabled = sourcePreferences.disabledSources.get()
-        return extension.sources.map { source ->
+        return extension.sources.filterIsInstance<CatalogueSource>().map { source ->
             AddonSourceEligibility(
                 sourceId = source.id,
                 language = source.lang,

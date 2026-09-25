@@ -11,6 +11,8 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -141,6 +143,39 @@ class PrepareCanonicalChapterForReaderTest {
     }
 
     @Test
+    fun `previously displayed disabled source cannot prepare reader content`() = runTest {
+        var enabledSources = listOf(7L)
+        val repository = object : AddonRepository {
+            override fun observeInstalled(): Flow<List<InstalledAddon>> = MutableStateFlow(emptyList())
+            override suspend fun snapshot() = listOf(
+                InstalledAddon(
+                    id = AddonId("mangadex"),
+                    displayName = "Multi-source",
+                    enabled = enabledSources.isNotEmpty(),
+                    versionName = "1.0",
+                    mihonSourceIds = enabledSources,
+                    hasSettings = false,
+                ),
+            )
+            override suspend fun setEnabled(id: AddonId, enabled: Boolean) = Unit
+        }
+        val fixture = fixture(
+            preference = null,
+            providers = emptyList(),
+            addonRepository = repository,
+        )
+        enabledSources = listOf(8L)
+
+        val result = fixture.prepare.execute(
+            canonicalChapterId = "chapter-1",
+            selectedOption = option("mangadex"),
+        )
+
+        result.shouldBeInstanceOf<CanonicalReaderPreparation.Unavailable>()
+        fixture.preparer.calls shouldBe 0
+    }
+
+    @Test
     fun `no content option returns unavailable without preparer call`() = runTest {
         val fixture = fixture(
             preference = null,
@@ -156,6 +191,7 @@ class PrepareCanonicalChapterForReaderTest {
         preference: ContentPreference?,
         providers: List<ContentProvider>,
         downloadArtifact: CanonicalDownloadArtifact? = null,
+        addonRepository: AddonRepository? = null,
     ): Fixture {
         val readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
         val resolver = ResolveChapterContent(
@@ -165,6 +201,7 @@ class PrepareCanonicalChapterForReaderTest {
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
             inFlightContentResolution = InFlightContentResolution(),
+            addonRepository = addonRepository,
         )
         val chapters = FakeCanonicalChapterRepository()
         val reading = FakeCanonicalReadingRepository()

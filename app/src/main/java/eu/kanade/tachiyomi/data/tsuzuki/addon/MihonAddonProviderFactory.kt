@@ -6,6 +6,7 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
@@ -24,6 +25,7 @@ class MihonAddonProviderFactory(
     private val parser: ParseCanonicalChapterLabel,
     private val chapterInventoryGateway: MihonChapterInventoryGateway,
     private val chapterInventoryDiagnostics: ChapterInventoryDiagnostics,
+    private val sourceEligibilityRepository: AddonSourceEligibilityRepository,
 ) {
 
     fun contentProvider(addonId: AddonId) = MihonContentProvider(
@@ -35,6 +37,7 @@ class MihonAddonProviderFactory(
         chapterEvidenceRepository = chapterEvidenceRepository,
         materializeDelivery = ::materializeDelivery,
         diagnostics = chapterInventoryDiagnostics,
+        enabledSourceIds = { enabledSources(addonId) },
     )
 
     fun chapterProbeProvider(addonId: AddonId) = MihonChapterProbeProvider(
@@ -43,7 +46,13 @@ class MihonAddonProviderFactory(
         parser = parser,
         fetchInventory = { binding -> chapterInventoryGateway.fetch(binding, refresh = true) },
         diagnostics = chapterInventoryDiagnostics,
+        enabledSourceIds = { enabledSources(addonId) },
     )
+
+    private suspend fun enabledSources(addonId: AddonId): Set<Long> =
+        sourceEligibilityRepository.getByAddonId(addonId)
+            .filter { it.enabled }
+            .mapTo(mutableSetOf()) { it.sourceId }
 
     private suspend fun materializeDelivery(
         binding: ContentBinding,

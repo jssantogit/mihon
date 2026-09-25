@@ -116,6 +116,46 @@ class MihonContentProviderTest {
     }
 
     @Test
+    fun `disabled internal source is not fetched while its addon has another enabled source`() = runTest {
+        val english = binding("binding-en", "7:/dandadan")
+        val portuguese = binding("binding-pt", "8:/dandadan")
+        val fetched = mutableListOf<String>()
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(english, portuguese)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(
+                variants = listOf(variant(7L, "/en-37"), variant(8L, "/pt-37")),
+            ),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { binding ->
+                fetched += binding.id
+                val isEnglish = binding.id == english.id
+                val id = if (isEnglish) 7L else 8L
+                val chapterKey = if (isEnglish) "/en-37" else "/pt-37"
+                val language = if (isEnglish) "en" else "pt-BR"
+                Result.success(
+                    inventory(binding.id, id, language, snapshot(id, binding.id, chapterKey, language)),
+                )
+            },
+            materializeDelivery = { binding, _ ->
+                Result.success(
+                    ContentDelivery.Mihon(
+                        sourceId = if (binding.id == english.id) 7L else 8L,
+                        mangaId = 80L,
+                        chapterId = 800L,
+                    ),
+                )
+            },
+            enabledSourceIds = { setOf(8L) },
+        )
+
+        val options = provider.resolve("title", "canonical-chapter-37").getOrThrow()
+
+        fetched shouldBe listOf("binding-pt")
+        options.map { it.language } shouldBe listOf("pt-BR")
+    }
+
+    @Test
     fun `one addon keeps content options from multiple bound internal sources`() = runTest {
         val en = binding(id = "binding-en", sourceKey = "7:/dandadan")
         val pt = binding(id = "binding-pt", sourceKey = "8:/dandadan")

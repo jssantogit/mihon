@@ -44,6 +44,7 @@ class MihonContentProvider internal constructor(
     ) -> Result<ContentDelivery.Mihon>,
     private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+    private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
 ) : ContentProvider {
 
     override suspend fun resolve(
@@ -51,8 +52,14 @@ class MihonContentProvider internal constructor(
         canonicalChapterId: String,
     ): Result<List<ContentOption>> {
         return try {
+            val allowedSourceIds = enabledSourceIds?.invoke()
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
-                .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
+                .filter { binding ->
+                    binding.addonId == addonId &&
+                        binding.availability == ContentBindingAvailability.AVAILABLE &&
+                        (allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
+                            .toLongOrNull()?.let { it in allowedSourceIds } == true)
+                }
             if (bindings.isEmpty()) {
                 recordProvider(
                     canonicalTitleId,

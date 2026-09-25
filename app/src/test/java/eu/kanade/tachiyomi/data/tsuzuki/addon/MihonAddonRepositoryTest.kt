@@ -25,8 +25,8 @@ class MihonAddonRepositoryTest {
             pkgName = "eu.kanade.tachiyomi.extension.en.example",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 1L, lang = "en"),
-                FakeSource(id = 2L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 1L, lang = "en"),
+                FakeCatalogueSource(id = 2L, lang = "pt-BR"),
             ),
         )
         val disabled = MutableStateFlow(emptySet<String>())
@@ -51,8 +51,8 @@ class MihonAddonRepositoryTest {
             pkgName = "pkg.partial",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 10L, lang = "en"),
-                FakeSource(id = 20L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 10L, lang = "en"),
+                FakeCatalogueSource(id = 20L, lang = "pt-BR"),
             ),
         )
         val repository = MihonAddonRepository(
@@ -95,7 +95,7 @@ class MihonAddonRepositoryTest {
         val extension = installedExtension(
             pkgName = "pkg.update",
             name = "Example",
-            sources = listOf(FakeSource(id = 1L, lang = "en")),
+            sources = listOf(FakeCatalogueSource(id = 1L, lang = "en")),
             hasUpdate = true,
         )
         val repository = MihonAddonRepository(
@@ -127,7 +127,7 @@ class MihonAddonRepositoryTest {
         val extension = installedExtension(
             pkgName = "pkg.remove.after-uninstall",
             name = "Example",
-            sources = listOf(FakeSource(id = 10L, lang = "en")),
+            sources = listOf(FakeCatalogueSource(id = 10L, lang = "en")),
         )
         var installed = listOf(extension)
         val repository = MihonAddonRepository(
@@ -151,8 +151,8 @@ class MihonAddonRepositoryTest {
             pkgName = "pkg.remove",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 10L, lang = "en"),
-                FakeSource(id = 20L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 10L, lang = "en"),
+                FakeCatalogueSource(id = 20L, lang = "pt-BR"),
             ),
         )
         var removed: Extension.Installed? = null
@@ -176,8 +176,8 @@ class MihonAddonRepositoryTest {
             pkgName = "pkg",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 10L, lang = "en"),
-                FakeSource(id = 20L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 10L, lang = "en"),
+                FakeCatalogueSource(id = 20L, lang = "pt-BR"),
             ),
         )
         val disabled = MutableStateFlow(emptySet<String>())
@@ -215,9 +215,26 @@ class MihonAddonRepositoryTest {
         isShared = false,
     )
 
-    private class FakeCatalogueSource(id: Long, lang: String) : FakeSource(id, lang), CatalogueSource
+    private class FakeCatalogueSource(
+        override val id: Long,
+        override val lang: String,
+    ) : CatalogueSource {
+        override val name = "Source $id"
+        override val supportsLatest = false
+        override fun getFilterList() = FilterList()
+        override suspend fun getPopularManga(page: Int): MangasPage = error("unused")
+        override suspend fun getLatestUpdates(page: Int): MangasPage = error("unused")
+        override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage = error("unused")
+        override suspend fun getMangaUpdate(
+            manga: SManga,
+            chapters: List<SChapter>,
+            fetchDetails: Boolean,
+            fetchChapters: Boolean,
+        ): SMangaUpdate = error("unused")
+        override suspend fun getPageList(chapter: SChapter): List<Page> = error("unused")
+    }
 
-    private open class FakeSource(
+    private class FakeSource(
         override val id: Long,
         override val lang: String,
     ) : Source {

@@ -174,6 +174,37 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `disabled internal source binding never fetches inventory or contributes evidence`() = runTest {
+        val english = binding(id = "binding-en")
+        val portuguese = binding(id = "binding-pt").copy(providerTitleKey = "8:/dandadan")
+        val fetched = mutableListOf<String>()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(english, portuguese)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { binding ->
+                fetched += binding.id
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = listOf(snapshot(binding.id, 8L, "/pt-1", "Chapter 1", 1.0)),
+                        mihonMangaId = 99L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            enabledSourceIds = { setOf(8L) },
+        )
+
+        val observed = provider.probe("title").getOrThrow()
+
+        fetched shouldBe listOf("binding-pt")
+        observed.map { it.externalChapterKey } shouldBe listOf("8:/pt-1")
+    }
+
+    @Test
     fun `multi-source inventories start concurrently`() = runTest {
         val bindings = listOf(
             binding(id = "binding-en"),

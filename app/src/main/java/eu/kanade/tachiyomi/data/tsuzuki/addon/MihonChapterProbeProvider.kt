@@ -38,13 +38,20 @@ class MihonChapterProbeProvider internal constructor(
     private val fetchInventory: suspend (ContentBinding) -> Result<SourceChapterInventory>,
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+    private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
 ) : ChapterProbeProvider {
 
     override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> {
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
+            val allowedSourceIds = enabledSourceIds?.invoke()
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
-                .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
+                .filter { binding ->
+                    binding.addonId == addonId &&
+                        binding.availability == ContentBindingAvailability.AVAILABLE &&
+                        (allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
+                            .toLongOrNull()?.let { it in allowedSourceIds } == true)
+                }
             if (bindings.isEmpty()) {
                 recordProbe(
                     canonicalTitleId = canonicalTitleId,
