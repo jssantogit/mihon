@@ -172,21 +172,21 @@ class ContentBindingLinkScreenModelTest {
             awaitCancellation()
         }
         val model = model(addons = listOf(reader), resolver = resolver)
-        var refreshes = 0
-        val collector = launch { model.bindingChanges.collect { refreshes++ } }
+        val refreshedTitles = mutableListOf<String>()
+        val collector = launch { model.bindingChanges.collect { refreshedTitles += it } }
         runCurrent()
 
         model.start("canonical")
         advanceUntilIdle()
         model.selectAddon(reader.id)
         runCurrent()
-        val beforeDismiss = refreshes
+        val beforeDismiss = refreshedTitles.toList()
         model.close()
         runCurrent()
         collector.cancel()
 
-        beforeDismiss shouldBe 0
-        refreshes shouldBe 1
+        beforeDismiss shouldBe emptyList()
+        refreshedTitles shouldBe listOf("canonical")
     }
 
     @Test

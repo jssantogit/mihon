@@ -91,7 +91,7 @@ import eu.kanade.tachiyomi.util.system.readerBackgroundColor
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -295,8 +295,10 @@ class ReaderActivity : BaseActivity() {
             bindingLinkTitleId?.let(contentBindingLinkViewModel::start)
         }
         LaunchedEffect(contentBindingLinkViewModel) {
-            contentBindingLinkViewModel.bindingChanges.collect {
-                contentSelectorViewModel.retry()
+            contentBindingLinkViewModel.bindingChanges.collectLatest { changedTitleId ->
+                // Keep this Reader Activity and its page position intact. Refresh
+                // observed chapter evidence before retrying the inline selector.
+                contentSelectorViewModel.refreshAfterBinding(changedTitleId)
             }
         }
         val settingsviewModel = remember {

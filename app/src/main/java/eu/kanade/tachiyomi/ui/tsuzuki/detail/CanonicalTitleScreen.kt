@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -24,7 +23,7 @@ import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkState
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 
 data class CanonicalTitleScreen(
     val canonicalTitleId: String,
@@ -46,7 +45,6 @@ data class CanonicalTitleScreen(
         val loaded = (state as? CanonicalTitleScreenState.Loaded)
             ?.takeIf { it.title.id == canonicalTitleId }
         val downloadSelectionChapterId = loaded?.downloadSelectionChapterId
-        val currentDownloadSelectionChapterId = rememberUpdatedState(downloadSelectionChapterId)
 
         LaunchedEffect(canonicalTitleId, openSourceBindingFlow) {
             screenModel.start(canonicalTitleId)
@@ -106,11 +104,13 @@ data class CanonicalTitleScreen(
             },
         )
 
-        LaunchedEffect(linkViewModel) {
-            linkViewModel.bindingChanges.collect {
-                screenModel.refresh()
-                if (currentDownloadSelectionChapterId.value != null) {
-                    contentSelectorViewModel.retry()
+        LaunchedEffect(linkViewModel, canonicalTitleId) {
+            linkViewModel.bindingChanges.collectLatest { changedTitleId ->
+                if (changedTitleId != canonicalTitleId) return@collectLatest
+                // Refresh and reconcile once. The selector does not query chapter
+                // variants until that evidence transaction invalidates its cache.
+                if (contentSelectorViewModel.refreshAfterBinding(changedTitleId).isSuccess) {
+                    screenModel.reloadReconciledChapters()?.join()
                 }
             }
         }

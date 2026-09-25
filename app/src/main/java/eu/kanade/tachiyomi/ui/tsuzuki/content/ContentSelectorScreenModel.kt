@@ -10,6 +10,7 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
@@ -77,6 +79,7 @@ class ContentSelectorScreenModel internal constructor(
     private val contentPreferenceRepository: ContentPreferenceRepository,
     private val addonRepository: AddonRepository,
     private val clock: () -> Long,
+    private val refreshChapterEvidence: RefreshChapterEvidence? = null,
 ) : ViewModel() {
 
     @Inject
@@ -84,11 +87,13 @@ class ContentSelectorScreenModel internal constructor(
         resolveChapterContent: ResolveChapterContent,
         contentPreferenceRepository: ContentPreferenceRepository,
         addonRepository: AddonRepository,
+        refreshChapterEvidence: RefreshChapterEvidence,
     ) : this(
         resolveChapterContent = resolveChapterContent,
         contentPreferenceRepository = contentPreferenceRepository,
         addonRepository = addonRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
+        refreshChapterEvidence = refreshChapterEvidence,
     )
 
     private val _state = MutableStateFlow<ContentSelectorScreenState>(ContentSelectorScreenState.Loading)
@@ -97,6 +102,8 @@ class ContentSelectorScreenModel internal constructor(
     private var canonicalTitleId: String? = null
     private var canonicalChapterId: String? = null
     private var loadJob: Job? = null
+    private var pendingBindingRefreshJob: Job? = null
+    private var pendingBindingTitleId: String? = null
     private val preferenceWriteMutex = Mutex()
 
     fun start(
@@ -109,12 +116,73 @@ class ContentSelectorScreenModel internal constructor(
 
         this.canonicalTitleId = canonicalTitleId
         this.canonicalChapterId = canonicalChapterId
+        // Re-entering a selector while a newly linked source is still being reconciled
+        // must not cache an early EMPTY result.
+        val pending = pendingBindingRefreshJob?.takeIf {
+            pendingBindingTitleId == canonicalTitleId && it.isActive
+        }
+        if (pending != null) {
+            loadJob?.cancel()
+            _state.value = ContentSelectorScreenState.Loading
+            return pending
+        }
         return load(refresh = false)
     }
 
     fun retry(): Job? {
         if (canonicalTitleId == null || canonicalChapterId == null) return null
-        return load(refresh = true)
+        val pending = pendingBindingRefreshJob?.takeIf {
+            pendingBindingTitleId == canonicalTitleId && it.isActive
+        }
+        return pending ?: load(refresh = true)
+    }
+
+    /**
+     * One post-link path for the detail and inline Reader: persist binding first,
+     * refresh and reconcile observed chapter evidence, invalidate cached options
+     * through the refresh interactor, then query the CURRENT selected chapter.
+     * A title without an open selector still refreshes its chapter evidence.
+     */
+    suspend fun refreshAfterBinding(changedTitleId: String): Result<Unit> {
+        val refresher = checkNotNull(refreshChapterEvidence) {
+            "Chapter evidence refresh is required for post-binding selection"
+        }
+        val caller = currentCoroutineContext()[Job]
+        pendingBindingRefreshJob = caller
+        pendingBindingTitleId = changedTitleId
+        if (canonicalTitleId == changedTitleId) {
+            loadJob?.cancel()
+            _state.value = ContentSelectorScreenState.Loading
+        }
+        try {
+            val refreshed = try {
+                refresher.execute(changedTitleId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Result.failure(error)
+            }
+            if (caller?.isActive != false && canonicalTitleId == changedTitleId) {
+                val chapterId = canonicalChapterId
+                if (chapterId != null) {
+                    if (refreshed.isSuccess) {
+                        load(refresh = true).join()
+                    } else {
+                        _state.value = ContentSelectorScreenState.Error(
+                            canonicalTitleId = changedTitleId,
+                            canonicalChapterId = chapterId,
+                            error = requireNotNull(refreshed.exceptionOrNull()),
+                        )
+                    }
+                }
+            }
+            return refreshed
+        } finally {
+            if (pendingBindingRefreshJob === caller) {
+                pendingBindingRefreshJob = null
+                pendingBindingTitleId = null
+            }
+        }
     }
 
     // First selection becomes the per-title preference; replacing an existing preference requires confirmation.

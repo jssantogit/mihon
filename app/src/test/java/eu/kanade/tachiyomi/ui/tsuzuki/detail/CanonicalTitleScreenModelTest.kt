@@ -83,7 +83,9 @@ class CanonicalTitleScreenModelTest {
     }
 
     @Test
-    fun `post-binding local reload exposes reconciled chapters without probing providers again`() = runTest(dispatcher) {
+    fun `post-binding local reload exposes reconciled chapters without probing providers again`() = runTest(
+        dispatcher,
+    ) {
         val chapters = FakeChapterRepository(emptyList())
         val evidence = FakeEvidenceRepository()
         val downloads = mockk<CanonicalDownloadRepository>()

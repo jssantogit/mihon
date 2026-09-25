@@ -9,6 +9,7 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -70,10 +71,13 @@ class ContentBindingLinkScreenModel(
     private val _state = MutableStateFlow<ContentBindingLinkState>(ContentBindingLinkState.Idle)
     val state: StateFlow<ContentBindingLinkState> = _state.asStateFlow()
 
-    private val _bindingChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _bindingChanges = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
-    /** Signals title-detail refresh only; it does not change reading preferences or progress. */
-    val bindingChanges: SharedFlow<Unit> = _bindingChanges.asSharedFlow()
+    /** Carries the persisted title identity even if the sheet closes before its event is consumed. */
+    val bindingChanges: SharedFlow<String> = _bindingChanges.asSharedFlow()
 
     private var titleId: String? = null
     private var enabledAddons = emptyList<InstalledAddon>()
@@ -248,7 +252,7 @@ class ContentBindingLinkScreenModel(
                 if (currentGeneration != generation) return@launch
                 val latest = _state.value as? ContentBindingLinkState.SearchResults ?: return@launch
                 _state.value = if (result.isSuccess) {
-                    _bindingChanges.tryEmit(Unit)
+                    _bindingChanges.tryEmit(title)
                     latest.copy(
                         isConfirming = false,
                         boundCount = latest.boundCount + 1,
@@ -297,7 +301,7 @@ class ContentBindingLinkScreenModel(
     private fun publishPendingBindingRefresh() {
         if (!pendingBindingRefresh) return
         pendingBindingRefresh = false
-        _bindingChanges.tryEmit(Unit)
+        titleId?.let(_bindingChanges::tryEmit)
     }
 
     private fun updateSearch(
