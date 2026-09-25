@@ -77,6 +77,38 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `first batch gives English a slot even when Portuguese has several internal sources`() = runTest {
+        val gateway = FakeReadingSourceGateway(
+            installedByLanguage = mapOf(
+                "pt-BR" to listOf(
+                    descriptor(14L, "pt-BR"),
+                    descriptor(15L, "pt-BR"),
+                    descriptor(11L, "pt-BR"),
+                ),
+                "pt" to listOf(descriptor(12L, "pt")),
+                "en" to listOf(descriptor(13L, "en")),
+            ),
+        )
+        val events = resolver(
+            FakeContentBindingRepository(null),
+            gateway,
+            addonSourceIds = listOf(11L, 12L, 13L, 14L, 15L),
+        ).searchProgress(
+            ContentBindingSearchRequest(
+                canonicalTitleId = "title",
+                addonId = AddonId("mangadex"),
+                preferredLanguages = listOf("pt-BR", "pt", "en"),
+                batchSize = 3,
+            ),
+        ).toList()
+
+        val completed = events.filterIsInstance<ContentBindingSearchProgress.Completed>().single()
+        completed.queriedSourceIds shouldBe listOf(14L, 12L, 13L)
+        completed.remainingSourceCount shouldBe 2
+        gateway.searchedSourceIds.toSet() shouldBe setOf(14L, 12L, 13L)
+    }
+
+    @Test
     fun `initial search without language preferences uses only a small source batch`() = runTest {
         val gateway = FakeReadingSourceGateway()
 
