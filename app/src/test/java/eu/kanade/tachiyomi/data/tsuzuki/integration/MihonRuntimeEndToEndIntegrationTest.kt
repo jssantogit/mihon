@@ -273,10 +273,14 @@ class MihonRuntimeEndToEndIntegrationTest {
             val chapter = reconciledChapters.single()
             chapter.canonicalTitleId shouldBe journey.canonicalTitleId
             chapter.displayNumber shouldBe "1"
-            journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).size shouldBe 2
-            journey.canonicalChapters.getVariantsByCanonicalChapterId(chapter.id).size shouldBe 2
+            val reconciledEvidence = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
+            reconciledEvidence.size shouldBe 2
+            reconciledEvidence.map { it.mappedCanonicalChapterId }.toSet() shouldBe setOf(chapter.id)
+            reconciledEvidence.map { it.evidence.externalChapterKey }.toSet().size shouldBe 2
+            // Evidence-based V2 refresh preserves source identities as mapped evidence, not legacy ChapterVariant rows.
 
             val chapterOptions = journey.options(chapter.id)
+            chapterOptions.size shouldBe 2
             chapterOptions.map { it.language }.toSet() shouldBe setOf("en", "pt-BR")
             chapterOptions.all { it.canonicalChapterId == chapter.id } shouldBe true
             journey.options("canonical-chapter-not-observed") shouldBe emptyList()
