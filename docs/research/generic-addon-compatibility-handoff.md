@@ -90,3 +90,25 @@ O artefato não classifica a busca como `EMPTY`: a falha surgiu do `Result` de b
 Após renovada autorização para alterar código, o próximo experimento deve ser uma única execução limitada da mesma fonte, com observações sanitizadas separadas para `SourceCompleted.failure.stage/kind/httpStatus` e `ReadingSourceSearchFailure.kind`, mais somente uma categoria de classe de exceção explicitamente permitida. Não registrar mensagens, stack traces, URLs, headers ou payloads. Manter uma única busca; avançar a identificação apenas se o `Result` tiver sucesso. Essa instrumentação deve estabelecer em qual fronteira a classificação fica indeterminada antes de se propor qualquer correção. Não repetir a matriz de 42 fontes.
 
 **Prontidão:** não declarar esta branch pronta para merge com o CI v2.1 em vermelho e a jornada real parada em `LIVE_SEARCH`. Aceite de UX, incluindo posição de leitura, continua separado e manual no telefone; não foi realizado neste checkpoint. Não houve merge, PR, APK de distribuição, consulta externa local ou Gradle local.
+
+## Validação direta após a renovação de autorização — 2026-09-25
+
+A branch recebeu primeiro quatro commits desde `fd843822`: `94c3709f` corrigiu o delta exato do Spotless; `d1b2af90` adicionou regressões RED para o diagnóstico sanitizado; `d2e8dbf1` implementou categorias fechadas para stage/kind/status/origem/classe da exceção; `34376b3f` encerrou a correção mecânica de whitespace. A [CI v2.1 36140285894](https://github.com/jssantogit/mihon/actions/runs/36140285894) nesse último commit de código passou **App, Format e CI Gate**; os jobs não selecionados não foram alegados como executados. A [verificação Android 36140285709](https://github.com/jssantogit/mihon/actions/runs/36140285709) passou fixture e compilação, com emulador ignorado, sem consultas externas.
+
+Para executar a verificação opt-in diretamente pelo GitHub sem despacho externo disponível nesta sessão, foram adicionados testes RED de roteamento no commit `830083a3` ([execução 36141105161](https://github.com/jssantogit/mihon/actions/runs/36141105161): três falhas esperadas), seguidos por gatilho de push explicitamente identificado e limitado a `[android-live-mangaball]`. A primeira implementação, `ae8a5fe1`, não passou a fixture devido a um `then` ausente no shell e a um teste de workflow desatualizado; **não** iniciou o emulador nem consultou o provedor. O commit `f2352bd5` corrigiu ambas as falhas. Sua [CI 36141497504](https://github.com/jssantogit/mihon/actions/runs/36141497504) passou **Change Planner e CI Gate**, com Format e testes Kotlin ignorados pelo roteamento de paths. A [execução Android 36141497440](https://github.com/jssantogit/mihon/actions/runs/36141497440) passou os testes de fixture e a compilação `androidTest` no mesmo SHA, depois executou o emulador isolado para uma jornada real MangaBall. [APK Build 36141497439](https://github.com/jssantogit/mihon/actions/runs/36141497439) foi ignorado; nenhum APK de distribuição foi gerado.
+
+### Evidência da jornada real atual
+
+| Etapa/observação | Resultado verificável |
+| --- | --- |
+| EXTENSION_INSTALL | **PASS** — 1 Add-on, 42 fontes internas do fixture imutável. |
+| SOURCE_REGISTRATION | **PASS** — fonte `35546023386335815`, `pt-BR`. |
+| SOURCE_ELIGIBILITY | **PASS** — 41 fontes elegíveis, com o peer `ar` `5763592680824441822` desabilitado e excluído. |
+| LIVE_SEARCH | **INCONCLUSIVE** após 6.150 ms; não houve resultado de busca utilizável. |
+| Diagnóstico sanitizado | `failureStage=SEARCH`, `failureKind=INDETERMINATE`, `httpStatus=NONE`, `sourceKind=INDETERMINATE`, `causeClass=OTHER`. |
+| Identidade, binding, inventário, reconciliação, opções e Reader | **NOT_RUN_AFTER_BLOCKER** — não inferir sucesso nem defeito nessas etapas. |
+
+O `INDETERMINATE` foi retornado no limite do gateway de pesquisa, não é uma identificação de defeito da instrumentação. Na implementação atual, `MihonReadingSourceGateway` mapeia `IOException` sem subtipo reconhecido para `ReadingSourceFailureKind.INDETERMINATE`; essa regra é contexto do código, **não** prova a causa concreta desta execução. O `OTHER` representa somente a classe mais profunda da cadeia de causas fora da allowlist atual, não uma classe identificada. Não existe status HTTP e a duração não comprova timeout. Nenhuma mensagem de exceção, URL, header ou stack trace do provedor foi emitida no relatório.
+
+**Situação atual:** Format e App aprovados no último commit Kotlin `34376b3f`; roteamento/fixture e compilação Android aprovados no commit `f2352bd5`; jornada real permanece **INCONCLUSIVE na etapa SEARCH**. Não houve merge, PR ou APK de distribuição. A correção genérica de produção não deve ser modificada por hipótese. Próximo diagnóstico, somente com nova autorização para a respectiva consulta externa: ampliar a instrumentação com categorias estritamente allowlisted para toda a cadeia limitada de causas, sem mensagens ou URLs, e repetir apenas a fonte pt-BR aprovada se isso puder discriminar uma causa concreta. O aceite final de UX e posição da página em telefone real continua pendente.
+
