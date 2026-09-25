@@ -49,7 +49,7 @@
 
 - [ ] RED tests for installed/enabled Add-ons, existing binding status, preferred-language first pass, explicit “search more”, progressive candidates/errors, explicit ambiguous-edition confirmation, and stale/cancelled search not overwriting a newer state.
 - [ ] Consume Task 2's resolver contract. Do not search all device Add-ons or duplicate title scoring in the ViewModel. Retain one visible Add-on per extension and show internal source/language only as candidate provenance.
-- [x] GREEN in App Tsuzuki + Format Fast CI run `36080352470` after RED run `36079886917` exposed missing route/parser and one-shot flow helpers. App, Format, Change Planner, and CI Gate passed for commit `0f9b810ff`; no local Gradle was run. APK Build and unrelated jobs were skipped.
+- [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
 
 ## Task 4 — Chapter-selector discovery path
 
@@ -57,7 +57,7 @@
 
 - [x] RED tests: no actual option shows “find/add reading source”; failed providers remain distinct; selecting this action opens the existing binding flow and refreshes options only after valid binding. Do not add search candidates directly to selector options. App Tsuzuki run `36072373031` failed at the expected unresolved discovery-state helper after imports were corrected.
 - [x] Implement minimal navigation/interaction. On title detail, the action opens the existing binding sheet for the current canonical title; successful binding events refresh title and active chapter options. From Reader, an explicit component-targeted `MainActivity` action carries only the nonblank canonical title ID, clears the Reader route to the existing main activity, and opens the same title with its binding sheet requested. The action has no manifest filter/deep link, malformed IDs are a no-op, and the sheet request is consumed once. Reader content/fallback/preference behavior is unchanged.
-- [ ] GREEN in App Tsuzuki + Format Fast CI; review and commit/push.
+- [x] GREEN in App Tsuzuki + Format Fast CI run `36080352470` after RED run `36079886917` exposed missing route/parser and one-shot flow helpers. App, Format, Change Planner, and CI Gate passed for commit `0f9b810ff`; no local Gradle was run. APK Build and unrelated jobs were skipped.
 
 ## Task 5 — Generic contract/E2E validation and checkpoint
 
