@@ -21,7 +21,7 @@ if [[ "$dry_run" != 'true' && "$dry_run" != 'false' ]]; then
   echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=INVALID_DRY_RUN' >&2
   exit 2
 fi
-if [[ "$mangaball_push_marker" != 'true' && "$mangaball_push_marker" != 'false' ]];
+if [[ "$mangaball_push_marker" != 'true' && "$mangaball_push_marker" != 'false' ]]; then
   echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=INVALID_MANGABALL_MARKER' >&2
   exit 2
 fi

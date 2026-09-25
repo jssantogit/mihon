@@ -54,10 +54,15 @@ class MangaFireFixtureTest(unittest.TestCase):
         emulator_job = workflow.split("  emulator:\n", 1)[1]
         self.assertNotRegex(fixture_job, r"(?m)^    if:")
         self.assertNotRegex(compile_job, r"(?m)^    if:")
-        self.assertRegex(
-            emulator_job,
-            r"(?m)^    if: github\.event_name == 'workflow_dispatch' \|\| \(github\.event_name == 'push' && \(contains\(github\.event\.head_commit\.message, '\[android-fixture\]'\) \|\| contains\(github\.event\.head_commit\.message, '\[android-live\]'\)\)\)$",
+        expected_emulator_gate = (
+            "    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && "
+            "(contains(github.event.head_commit.message, '[android-fixture]') || "
+            "contains(github.event.head_commit.message, '[android-live]') || "
+            "contains(github.event.head_commit.message, '[android-live-mangaball]')))"
         )
+        self.assertIn(expected_emulator_gate, emulator_job)
+        self.assertIn("contains(github.event.head_commit.message, '[android-live-mangaball]')", emulator_job)
+        self.assertIn("&& 'mangaball' || 'mangafire'", emulator_job)
 
     def test_android_junit_tests_return_void_on_jvm(self):
         # A Kotlin expression-bodied @Test ending in Log.i() returns Int and JUnit4
