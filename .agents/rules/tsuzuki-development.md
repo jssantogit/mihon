@@ -28,6 +28,7 @@ For each task:
 - Do not perform unrelated cleanup.
 - Do not claim verification without CI or an actually executed local check.
 - Do not repeatedly poll CI; use a single run wait/watch when possible.
+- Isolated GitHub Actions Android emulators and emulator-side ADB are permitted for explicitly authorized, opt-in instrumentation; live-provider probes must be bounded and separately authorized. No physical-phone automation by default; manual phone smoke remains required for final interactive UX acceptance. See `docs/AI-WORKFLOW.md`.
 - CI v2.1 affected mode is the normal acceptance gate.
 - Request `[ci-full]` only for meaningful integration checkpoints or when the active plan/reviewer requires it.
 - `[ci-full]` means one full verification contract: all primary unit-test shards, SQLDelight migrations, Supabase backend tests when present, and release compilation.
