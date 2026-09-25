@@ -49,8 +49,10 @@ class MihonChapterProbeProvider internal constructor(
                 .filter { binding ->
                     binding.addonId == addonId &&
                         binding.availability == ContentBindingAvailability.AVAILABLE &&
-                        (allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
-                            .toLongOrNull()?.let { it in allowedSourceIds } == true)
+                        (
+                            allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
+                                .toLongOrNull()?.let { it in allowedSourceIds } == true
+                        )
                 }
             if (bindings.isEmpty()) {
                 recordProbe(

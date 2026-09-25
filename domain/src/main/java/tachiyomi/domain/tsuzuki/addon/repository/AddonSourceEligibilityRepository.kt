@@ -2,14 +2,14 @@ package tachiyomi.domain.tsuzuki.addon.repository
 
 import tachiyomi.domain.tsuzuki.addon.AddonId
 
-/** Diagnostic-only source state; not part of the product-facing installed add-on model. */
+/** Current loaded internal-source eligibility, kept separate from the product-facing Add-on model. */
 data class AddonSourceEligibility(
     val sourceId: Long,
     val language: String,
     val enabled: Boolean,
 )
 
-/** Optional read-only capability used only while chapter diagnostics are explicitly active. */
+/** Read-only capability used for safe chapter resolution and explicit diagnostics. */
 fun interface AddonSourceEligibilityRepository {
     suspend fun getByAddonId(addonId: AddonId): List<AddonSourceEligibility>
 }

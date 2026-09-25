@@ -24,6 +24,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
@@ -509,6 +510,15 @@ class MihonRuntimeEndToEndIntegrationTest {
                 parser = parser,
                 chapterInventoryGateway = chapterGateway,
                 chapterInventoryDiagnostics = diagnostics,
+                sourceEligibilityRepository = AddonSourceEligibilityRepository { requested ->
+                    if (requested == addonId) {
+                        harness.sources.map { source ->
+                            AddonSourceEligibility(source.id, source.lang, enabled = true)
+                        }
+                    } else {
+                        emptyList()
+                    }
+                },
             )
             val provider = providerFactory.contentProvider(addonId)
             registry = DefaultAddonRegistry(

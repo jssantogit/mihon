@@ -11,7 +11,7 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 
-/** Reads enabled/disabled internal Source metadata only for opt-in chapter diagnostics. */
+/** Reads currently loaded CatalogueSource eligibility for chapter safety and opt-in diagnostics. */
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)

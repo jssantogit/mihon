@@ -561,6 +561,30 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `chapter refresh only reuses enabled existing bindings and never searches unbound sources`() = runTest {
+        val existing = binding(
+            providerTitleKey = "7:/dandadan",
+            availability = ContentBindingAvailability.AVAILABLE,
+        )
+        val repository = FakeContentBindingRepository(existing)
+        val gateway = FakeReadingSourceGateway()
+
+        resolver(repository, gateway, addonSourceIds = listOf(8L))
+            .existingBindingsForRefresh("title", AddonId("mangadex"))
+            .getOrThrow() shouldBe emptyList()
+
+        resolver(repository, gateway, addonSourceIds = listOf(7L, 8L))
+            .existingBindingsForRefresh("title", AddonId("mangadex"))
+            .getOrThrow() shouldBe listOf(existing)
+
+        resolver(FakeContentBindingRepository(null), gateway, addonSourceIds = (1L..42L).toList())
+            .existingBindingsForRefresh("title", AddonId("mangadex"))
+            .getOrThrow() shouldBe emptyList()
+
+        gateway.searchCalls shouldBe 0
+    }
+
+    @Test
     fun `existing addon binding is reused without title search`() = runTest {
         val existing = binding(
             providerTitleKey = "remote-123",
