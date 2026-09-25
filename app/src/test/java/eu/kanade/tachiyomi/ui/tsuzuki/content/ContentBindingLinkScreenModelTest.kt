@@ -13,17 +13,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -137,23 +138,54 @@ class ContentBindingLinkScreenModelTest {
     fun `three auto-bound internal sources trigger one completed-batch refresh`() = runTest(dispatcher) {
         val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L, 9L))
         val resolver = mockk<ResolveContentBinding>()
-        every { resolver.searchProgress(any()) } returns flowOf(
-            source(7L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("en"))),
-            source(8L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("pt"))),
-            source(9L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("es"))),
-            ContentBindingSearchProgress.Completed(listOf(7L, 8L, 9L), remainingSourceCount = 0),
-        )
+        every { resolver.searchProgress(any()) } returns flow {
+            emit(source(7L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("en"))))
+            yield()
+            emit(source(8L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("pt"))))
+            yield()
+            emit(source(9L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("es"))))
+            yield()
+            emit(ContentBindingSearchProgress.Completed(listOf(7L, 8L, 9L), remainingSourceCount = 0))
+        }
         val model = model(addons = listOf(reader), resolver = resolver)
         var refreshes = 0
-        backgroundScope.launch { model.bindingChanges.collect { refreshes++ } }
+        val collector = launch { model.bindingChanges.collect { refreshes++ } }
         runCurrent()
 
         model.start("canonical")
         advanceUntilIdle()
         model.selectAddon(reader.id)
         advanceUntilIdle()
+        val boundCount = model.state.value.shouldBeInstanceOf<ContentBindingLinkState.SearchResults>().boundCount
+        collector.cancel()
 
-        model.state.value.shouldBeInstanceOf<ContentBindingLinkState.SearchResults>().boundCount shouldBe 3
+        boundCount shouldBe 3
+        refreshes shouldBe 1
+    }
+
+    @Test
+    fun `closing after partial auto-binding preserves the pending chapter refresh`() = runTest(dispatcher) {
+        val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L))
+        val resolver = mockk<ResolveContentBinding>()
+        every { resolver.searchProgress(any()) } returns flow {
+            emit(source(7L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("en"))))
+            awaitCancellation()
+        }
+        val model = model(addons = listOf(reader), resolver = resolver)
+        var refreshes = 0
+        val collector = launch { model.bindingChanges.collect { refreshes++ } }
+        runCurrent()
+
+        model.start("canonical")
+        advanceUntilIdle()
+        model.selectAddon(reader.id)
+        runCurrent()
+        val beforeDismiss = refreshes
+        model.close()
+        runCurrent()
+        collector.cancel()
+
+        beforeDismiss shouldBe 0
         refreshes shouldBe 1
     }
 
