@@ -30,6 +30,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
+import java.util.Locale
 
 sealed interface ContentBindingLinkState {
     data object Idle : ContentBindingLinkState
@@ -79,10 +80,12 @@ class ContentBindingLinkScreenModel(
     private var searchOperation: Job? = null
     private var confirmationOperation: Job? = null
     private var generation = 0L
+    private var pendingBindingRefresh = false
 
     fun start(canonicalTitleId: String) {
         searchOperation?.cancel()
         confirmationOperation?.cancel()
+        pendingBindingRefresh = false
         val currentGeneration = ++generation
         titleId = canonicalTitleId
         _state.value = ContentBindingLinkState.Loading
@@ -110,6 +113,7 @@ class ContentBindingLinkScreenModel(
     fun selectAddon(addonId: AddonId) {
         val title = titleId ?: return
         val addon = enabledAddons.firstOrNull { it.id == addonId && it.enabled } ?: return
+        publishPendingBindingRefresh()
         searchOperation?.cancel()
         confirmationOperation?.cancel()
         val currentGeneration = ++generation
@@ -153,10 +157,11 @@ class ContentBindingLinkScreenModel(
     ) {
         try {
             val titlePreference = contentPreferenceRepository.get(titleId)?.preferredLanguage
-            val preferredLanguages = buildList {
-                titlePreference?.let(::add)
-                addAll(readerPreferences.preferredLanguages.get())
-            }.map(String::trim).filter(String::isNotEmpty).distinct()
+            val preferredLanguages = preferredSourceLanguages(
+                titlePreference = titlePreference,
+                configuredLanguages = readerPreferences.preferredLanguages.get(),
+                locale = Locale.getDefault(),
+            )
             val request = ContentBindingSearchRequest(
                 canonicalTitleId = titleId,
                 addonId = addon.id,
@@ -196,7 +201,7 @@ class ContentBindingLinkScreenModel(
                             }
                         }
                         if (event.outcome == ContentBindingSourceOutcome.BOUND && event.bindings.isNotEmpty()) {
-                            _bindingChanges.tryEmit(Unit)
+                            pendingBindingRefresh = true
                         }
                     }
                     is ContentBindingSearchProgress.Completed -> {
@@ -207,17 +212,21 @@ class ContentBindingLinkScreenModel(
                                 remainingSourceCount = event.remainingSourceCount,
                             )
                         }
+                        publishPendingBindingRefresh()
                     }
                 }
             }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
-            updateSearch(generation) {
-                it.copy(
-                    isSearching = false,
-                    error = "Unable to finish this search. You can retry or choose another Add-on.",
-                )
+            if (generation == this@ContentBindingLinkScreenModel.generation) {
+                publishPendingBindingRefresh()
+                updateSearch(generation) {
+                    it.copy(
+                        isSearching = false,
+                        error = "Unable to finish this search. You can retry or choose another Add-on.",
+                    )
+                }
             }
         }
     }
@@ -269,6 +278,7 @@ class ContentBindingLinkScreenModel(
     }
 
     fun backToAddons() {
+        publishPendingBindingRefresh()
         searchOperation?.cancel()
         confirmationOperation?.cancel()
         ++generation
@@ -276,11 +286,18 @@ class ContentBindingLinkScreenModel(
     }
 
     fun close() {
+        publishPendingBindingRefresh()
         searchOperation?.cancel()
         confirmationOperation?.cancel()
         ++generation
         titleId = null
         _state.value = ContentBindingLinkState.Idle
+    }
+
+    private fun publishPendingBindingRefresh() {
+        if (!pendingBindingRefresh) return
+        pendingBindingRefresh = false
+        _bindingChanges.tryEmit(Unit)
     }
 
     private fun updateSearch(
@@ -299,4 +316,21 @@ class ContentBindingLinkScreenModel(
         val seen = existing.mapTo(mutableSetOf()) { it.candidate.sourceId to it.candidate.sourceUrl }
         return existing + incoming.filter { seen.add(it.candidate.sourceId to it.candidate.sourceUrl) }
     }
+}
+
+/** Use explicit reader preferences when present; otherwise avoid arbitrarily scanning alphabetic internal IDs. */
+internal fun preferredSourceLanguages(
+    titlePreference: String?,
+    configuredLanguages: List<String>,
+    locale: Locale,
+): List<String> {
+    val configured = listOfNotNull(titlePreference) + configuredLanguages
+    val languages = configured.takeIf(List<String>::isNotEmpty) ?: listOf(
+        locale.toLanguageTag(),
+        locale.language,
+        "en",
+    )
+    return languages.map(String::trim)
+        .filter { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
+        .distinctBy { it.lowercase(Locale.ROOT) }
 }

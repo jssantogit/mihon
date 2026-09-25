@@ -175,6 +175,10 @@ internal class ProductionMihonJourneyComposition(
             return result
         }
     }
+    private val sourceEligibilityRepository = MihonAddonSourceEligibilityRepository(
+        extensionManager = app.graph.extensionManager,
+        sourcePreferences = app.graph.sourcePreferences,
+    )
     private val providerFactory = MihonAddonProviderFactory(
         contentBindingRepository = contentBindingRepository,
         canonicalChapterRepository = canonicalChapterRepository,
@@ -182,6 +186,7 @@ internal class ProductionMihonJourneyComposition(
         parser = chapterLabelParser,
         chapterInventoryGateway = chapterInventoryGateway,
         chapterInventoryDiagnostics = diagnostics,
+        sourceEligibilityRepository = sourceEligibilityRepository,
     )
     val chapterProbeProvider: ChapterProbeProvider = providerFactory.chapterProbeProvider(addonId)
     private val chapterReconciliation = ReconcileChapterEvidence(
@@ -218,10 +223,7 @@ internal class ProductionMihonJourneyComposition(
         addonRepository = app.graph.addonRepository,
         readingSourceGateway = readingSourceGateway,
         scoreSourceTitleMatch = ScoreSourceTitleMatch(),
-        addonSourceEligibilityRepository = MihonAddonSourceEligibilityRepository(
-            extensionManager = app.graph.extensionManager,
-            sourcePreferences = app.graph.sourcePreferences,
-        ),
+        addonSourceEligibilityRepository = sourceEligibilityRepository,
         diagnostics = diagnostics,
     )
     val scoreTitleMatch = ScoreSourceTitleMatch()
