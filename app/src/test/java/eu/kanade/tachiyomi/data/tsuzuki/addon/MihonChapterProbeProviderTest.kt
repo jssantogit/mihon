@@ -25,6 +25,37 @@ import java.net.SocketTimeoutException
 class MihonChapterProbeProviderTest {
 
     @Test
+    fun `targeted probe only requests the chosen enabled binding`() = runTest {
+        val english = binding("binding-en")
+        val portuguese = binding("binding-pt").copy(providerTitleKey = "8:/dandadan")
+        val fetched = mutableListOf<String>()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(english, portuguese)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { current ->
+                fetched += current.id
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = current.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = emptyList(),
+                        mihonMangaId = 99L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            enabledSourceIds = { setOf(8L) },
+        )
+
+        provider.probeBinding(portuguese).getOrThrow() shouldBe emptyList()
+        fetched shouldBe listOf("binding-pt")
+        provider.probeBinding(english).isFailure shouldBe true
+        fetched shouldBe listOf("binding-pt")
+    }
+
+    @Test
     fun `diagnostic accounts for duplicate fractional and identity-less source rows`() = runTest {
         val binding = binding()
         val diagnostics = RecordingChapterInventoryDiagnostics()

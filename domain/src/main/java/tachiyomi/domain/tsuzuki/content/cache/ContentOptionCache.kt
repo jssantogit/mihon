@@ -79,6 +79,14 @@ class ContentOptionCache internal constructor(
         }
     }
 
+    suspend fun invalidateTitleAddon(canonicalTitleId: String, addonId: AddonId) {
+        mutex.withLock {
+            entries.keys.removeAll {
+                it.canonicalTitleId == canonicalTitleId && it.addonId == addonId
+            }
+        }
+    }
+
     suspend fun invalidateTitle(canonicalTitleId: String) {
         mutex.withLock {
             entries.keys.removeAll { it.canonicalTitleId == canonicalTitleId }

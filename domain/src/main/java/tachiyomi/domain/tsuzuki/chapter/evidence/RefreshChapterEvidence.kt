@@ -8,6 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
@@ -16,6 +17,8 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
@@ -90,6 +93,46 @@ class RefreshChapterEvidence private constructor(
         } catch (error: Throwable) {
             recordRefreshOutcome(
                 canonicalTitleId = canonicalTitleId,
+                outcome = error.toDiagnosticOutcome(),
+                reason = ChapterInventoryDiagnosticFailures.classify(error).second,
+            )
+            Result.failure(error)
+        }
+    }
+
+    /** Reconcile only the newly linked edition, without refreshing all stored language bindings. */
+    suspend fun executeForBinding(binding: ContentBinding): Result<Unit> {
+        return try {
+            require(
+                binding.canonicalTitleId.isNotBlank() &&
+                    binding.availability == ContentBindingAvailability.AVAILABLE
+            )
+            val currentRegistry = checkNotNull(addonRegistry)
+            val resolver = checkNotNull(resolveContentBinding)
+            currentRegistry.awaitReady()
+            val persisted = resolver.existingBindingsForRefresh(binding.canonicalTitleId, binding.addonId)
+                .getOrThrow().firstOrNull {
+                    it.id == binding.id && it.providerTitleKey == binding.providerTitleKey &&
+                        it.availability == ContentBindingAvailability.AVAILABLE
+                } ?: error("Selected binding is missing or its internal source is disabled")
+            val provider = currentRegistry.chapterProbeProviders()
+                .firstOrNull { it.addonId == binding.addonId } as? TargetedChapterProbeProvider
+                ?: error("Selected Add-on does not support targeted chapter inventory")
+            val observations = provider.probeBinding(persisted).getOrThrow()
+            require(observations.all {
+                it.canonicalTitleId == binding.canonicalTitleId &&
+                    it.producerKind == ProducerKind.ADDON &&
+                    it.producerId == binding.addonId.value
+            }) { "Targeted inventory belongs to another title or Add-on" }
+            reconcileChapterEvidence.execute(binding.canonicalTitleId, observations)
+            contentOptionCache?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
+            Result.success(Unit)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            recordRefreshOutcome(
+                canonicalTitleId = binding.canonicalTitleId,
+                addonId = binding.addonId.value,
                 outcome = error.toDiagnosticOutcome(),
                 reason = ChapterInventoryDiagnosticFailures.classify(error).second,
             )

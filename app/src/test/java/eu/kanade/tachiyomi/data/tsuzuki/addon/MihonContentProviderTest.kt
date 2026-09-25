@@ -33,6 +33,42 @@ import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 class MihonContentProviderTest {
 
     @Test
+    fun `targeted content lookup never fetches a sibling source inventory`() = runTest {
+        val english = binding(id = "binding-en", sourceKey = "7:/dandadan")
+        val portuguese = binding(id = "binding-pt", sourceKey = "8:/dandadan")
+        val fetched = mutableListOf<String>()
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(english, portuguese)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(
+                variants = listOf(variant(8L, "/ch-37")),
+            ),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { current ->
+                fetched += current.id
+                Result.success(
+                    inventory(
+                        bindingId = current.id,
+                        sourceId = 8L,
+                        language = "pt-BR",
+                        snapshot = snapshot(8L, current.id, "/ch-37", "pt-BR"),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(sourceId = 8L, mangaId = 99L, chapterId = 1L))
+            },
+            enabledSourceIds = { setOf(8L) },
+        )
+
+        provider.resolveBinding(portuguese, "canonical-chapter-37")
+            .getOrThrow().size shouldBe 1
+        fetched shouldBe listOf("binding-pt")
+        provider.resolveBinding(english, "canonical-chapter-37").getOrThrow() shouldBe emptyList()
+        fetched shouldBe listOf("binding-pt")
+    }
+
+    @Test
     fun `content provider explains when no binding exists instead of silently returning empty`() = runTest {
         val diagnostic = RecordingDiagnostics()
         diagnostic.start("title")

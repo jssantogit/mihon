@@ -8,7 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
-import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.addon.TargetedContentProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
@@ -45,17 +45,34 @@ class MihonContentProvider internal constructor(
     private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
-) : ContentProvider {
+) : TargetedContentProvider {
 
     override suspend fun resolve(
         canonicalTitleId: String,
         canonicalChapterId: String,
+    ): Result<List<ContentOption>> = resolveSelected(canonicalTitleId, canonicalChapterId, bindingId = null)
+
+    override suspend fun resolveBinding(
+        binding: ContentBinding,
+        canonicalChapterId: String,
+    ): Result<List<ContentOption>> {
+        if (binding.addonId != addonId || binding.canonicalTitleId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Binding belongs to another Add-on or title"))
+        }
+        return resolveSelected(binding.canonicalTitleId, canonicalChapterId, binding.id)
+    }
+
+    private suspend fun resolveSelected(
+        canonicalTitleId: String,
+        canonicalChapterId: String,
+        bindingId: String?,
     ): Result<List<ContentOption>> {
         return try {
             val allowedSourceIds = enabledSourceIds?.invoke()
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
                 .filter { binding ->
                     binding.addonId == addonId &&
+                        (bindingId == null || binding.id == bindingId) &&
                         binding.availability == ContentBindingAvailability.AVAILABLE &&
                         (
                             allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')

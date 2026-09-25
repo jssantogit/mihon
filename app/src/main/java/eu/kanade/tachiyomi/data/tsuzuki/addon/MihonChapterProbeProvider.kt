@@ -9,7 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
-import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
+import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
@@ -39,21 +39,38 @@ class MihonChapterProbeProvider internal constructor(
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
-) : ChapterProbeProvider {
+) : TargetedChapterProbeProvider {
 
-    override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+    override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+        probeSelected(canonicalTitleId, bindingId = null)
+
+    override suspend fun probeBinding(binding: ContentBinding): Result<List<ChapterEvidence>> {
+        if (binding.addonId != addonId || binding.canonicalTitleId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Binding belongs to another Add-on or title"))
+        }
+        return probeSelected(binding.canonicalTitleId, binding.id)
+    }
+
+    private suspend fun probeSelected(
+        canonicalTitleId: String,
+        bindingId: String?,
+    ): Result<List<ChapterEvidence>> {
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val allowedSourceIds = enabledSourceIds?.invoke()
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
                 .filter { binding ->
                     binding.addonId == addonId &&
+                        (bindingId == null || binding.id == bindingId) &&
                         binding.availability == ContentBindingAvailability.AVAILABLE &&
                         (
                             allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
                                 .toLongOrNull()?.let { it in allowedSourceIds } == true
                             )
                 }
+            if (bindings.isEmpty() && bindingId != null) {
+                return Result.failure(IllegalStateException("Selected binding unavailable or internal source disabled"))
+            }
             if (bindings.isEmpty()) {
                 recordProbe(
                     canonicalTitleId = canonicalTitleId,

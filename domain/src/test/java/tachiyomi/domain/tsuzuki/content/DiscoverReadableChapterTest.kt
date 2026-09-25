@@ -171,8 +171,8 @@ class DiscoverReadableChapterTest {
         val en = installed("english", 8L)
         val runner = DiscoverReadableChapter(
             lookupExisting = { _, _ -> lookup() },
-            lookupAfterBinding = { _, _, addonId ->
-                if (addonId == en.id) lookup(option("english", "en")) else lookup()
+            lookupAfterBinding = { _, _, binding ->
+                if (binding.addonId == en.id) lookup(option("english", "en")) else lookup()
             },
             installedAddons = { listOf(pt, en) },
             sourceEligibility = { addonId ->

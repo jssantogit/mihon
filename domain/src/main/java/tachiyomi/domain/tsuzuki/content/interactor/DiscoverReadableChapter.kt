@@ -1,5 +1,6 @@
 package tachiyomi.domain.tsuzuki.content.interactor
 
+import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -17,10 +18,15 @@ import kotlinx.coroutines.withTimeoutOrNull
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
+import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -95,7 +101,7 @@ sealed interface FastReadingDiscoveryEvent {
  */
 class DiscoverReadableChapter internal constructor(
     private val lookupExisting: suspend (String, String) -> ContentOptionLookup,
-    private val lookupAfterBinding: suspend (String, String, AddonId) -> ContentOptionLookup,
+    private val lookupAfterBinding: suspend (String, String, ContentBinding) -> ContentOptionLookup,
     private val installedAddons: suspend () -> List<InstalledAddon>,
     private val sourceEligibility: suspend (AddonId) -> List<AddonSourceEligibility>,
     private val contentPreference: suspend (String) -> ContentPreference?,
@@ -106,6 +112,31 @@ class DiscoverReadableChapter internal constructor(
     private val planner: PlanFastReadingDiscovery = PlanFastReadingDiscovery(),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+
+    @Inject
+    constructor(
+        chapterContent: ResolveChapterContent,
+        addonRepository: AddonRepository,
+        eligibilityRepository: AddonSourceEligibilityRepository,
+        preferenceRepository: ContentPreferenceRepository,
+        readerPreferences: CanonicalReaderPreferences,
+        sourceResolver: ResolveContentBinding,
+        refreshEvidence: RefreshChapterEvidence,
+        planner: PlanFastReadingDiscovery,
+    ) : this(
+        lookupExisting = { titleId, chapterId -> chapterContent.lookupOptions(titleId, chapterId) },
+        lookupAfterBinding = { _, chapterId, binding ->
+            chapterContent.lookupBindingOptions(binding, chapterId)
+        },
+        installedAddons = addonRepository::snapshot,
+        sourceEligibility = eligibilityRepository::getByAddonId,
+        contentPreference = preferenceRepository::get,
+        globalLanguages = { readerPreferences.preferredLanguages.get() },
+        deviceLocale = { Locale.getDefault() },
+        sourceSearch = sourceResolver::searchProgress,
+        refreshBinding = refreshEvidence::executeForBinding,
+        planner = planner,
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun discover(
@@ -275,7 +306,7 @@ class DiscoverReadableChapter internal constructor(
                                                             lookupAfterBinding(
                                                                 canonicalTitleId,
                                                                 canonicalChapterId,
-                                                                target.addonId,
+                                                                binding,
                                                             )
                                                         } catch (error: CancellationException) {
                                                             throw error

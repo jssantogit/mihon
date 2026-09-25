@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.addon.TargetedContentProvider
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
@@ -19,6 +20,8 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
@@ -218,6 +221,42 @@ class ResolveChapterContent(
             ),
             failedProviders = failed,
             queriedProviderCount = providers.size,
+        )
+    }
+
+    /** Post-discovery lookup for one persisted edition; never fetch every sibling language. */
+    suspend fun lookupBindingOptions(
+        binding: ContentBinding,
+        canonicalChapterId: String,
+    ): ContentOptionLookup {
+        if (binding.availability != ContentBindingAvailability.AVAILABLE) {
+            return ContentOptionLookup(emptyList(), listOf(binding.addonId), 0)
+        }
+        addonRegistry.awaitReady()
+        val provider = addonRegistry.contentProviders()
+            .firstOrNull { it.addonId == binding.addonId } as? TargetedContentProvider
+            ?: return ContentOptionLookup(emptyList(), listOf(binding.addonId), 0)
+        val result = try {
+            provider.resolveBinding(binding, canonicalChapterId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+        val options = result.getOrNull()?.let { received ->
+            eligibleOptions(binding.addonId, received).filter {
+                it.canonicalChapterId == canonicalChapterId && it.addonId == binding.addonId
+            }
+        }.orEmpty()
+        val titlePreference = contentPreferenceRepository.get(binding.canonicalTitleId)
+        val languages = titlePreferredLanguages(
+            titlePreference?.preferredLanguage,
+            readerPreferences.preferredLanguages.get(),
+        )
+        return ContentOptionLookup(
+            options = rankContentOptions.execute(options, titlePreference?.preferredAddonId, languages),
+            failedProviders = if (result.isFailure) listOf(binding.addonId) else emptyList(),
+            queriedProviderCount = 1,
         )
     }
 
