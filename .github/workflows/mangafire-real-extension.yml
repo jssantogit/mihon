@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - tsuzuki/runtime-e2e-tests
+      - tsuzuki/generic-addon-compatibility
     paths:
       - 'test-fixtures/extensions/**'
       - 'app/src/androidTest/**'

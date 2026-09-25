@@ -41,6 +41,24 @@ class MangaFireFixtureTest(unittest.TestCase):
         result = subprocess.run(["bash", "-n", str(script)], check=False, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_compatibility_branch_runs_fixture_and_compile_but_not_emulator_without_marker(self):
+        workflow = (verifier.ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
+        push_config = workflow.split("  push:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
+
+        self.assertRegex(push_config, r"(?m)^      - tsuzuki/generic-addon-compatibility$")
+        self.assertRegex(push_config, r"(?m)^      - 'app/src/androidTest/\*\*'$")
+        self.assertRegex(push_config, r"(?m)^      - '\.github/workflows/mangafire-real-extension\.yml'$")
+
+        fixture_job = workflow.split("  fixture:\n", 1)[1].split("  compile-android-test:", 1)[0]
+        compile_job = workflow.split("  compile-android-test:\n", 1)[1].split("  emulator:", 1)[0]
+        emulator_job = workflow.split("  emulator:\n", 1)[1]
+        self.assertNotRegex(fixture_job, r"(?m)^    if:")
+        self.assertNotRegex(compile_job, r"(?m)^    if:")
+        self.assertRegex(
+            emulator_job,
+            r"(?m)^    if: github\.event_name == 'workflow_dispatch' \|\| \(github\.event_name == 'push' && \(contains\(github\.event\.head_commit\.message, '\[android-fixture\]'\) \|\| contains\(github\.event\.head_commit\.message, '\[android-live\]'\)\)\)$",
+        )
+
     def test_android_junit_tests_return_void_on_jvm(self):
         # A Kotlin expression-bodied @Test ending in Log.i() returns Int and JUnit4
         # rejects it as InvalidTestClassError. A block body returns JVM void.
