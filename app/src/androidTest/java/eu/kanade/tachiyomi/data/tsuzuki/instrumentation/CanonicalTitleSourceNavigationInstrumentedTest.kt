@@ -25,8 +25,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import tachiyomi.data.Database
 import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
-import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalReaderPreferenceRepositoryImpl
+import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -138,8 +138,8 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
                 Bundle().apply {
                     putString(
                         "stream",
-                        "ANDROID_NAVIGATION|scenario=INVALID_INTENT|outcome=PASS"
-                            + "|route=REJECTED|sheetCount=0|progress=UNCHANGED|preferences=UNCHANGED",
+                        "ANDROID_NAVIGATION|scenario=INVALID_INTENT|outcome=PASS" +
+                            "|route=REJECTED|sheetCount=0|progress=UNCHANGED|preferences=UNCHANGED",
                     )
                 },
             )
@@ -315,11 +315,11 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
             Bundle().apply {
                 putString(
                     "stream",
-                    "ANDROID_NAVIGATION|scenario=$scenario|outcome=PASS"
-                        + "|mainActivity=$mainActivity|identity=CANONICAL"
-                        + "|sheetCount=1|recreation=PASS|closed=PASS"
-                        + "|return=READER|readerActivity=ORIGINAL|readerChapter=CANONICAL"
-                        + "|progress=UNCHANGED|preferences=UNCHANGED",
+                    "ANDROID_NAVIGATION|scenario=$scenario|outcome=PASS" +
+                        "|mainActivity=$mainActivity|identity=CANONICAL" +
+                        "|sheetCount=1|recreation=PASS|closed=PASS" +
+                        "|return=READER|readerActivity=ORIGINAL|readerChapter=CANONICAL" +
+                        "|progress=UNCHANGED|preferences=UNCHANGED",
                 )
             },
         )
@@ -506,7 +506,6 @@ class CanonicalTitleSourceNavigationInstrumentedTest {
         }
 
     }
-
     private data class UserState(
         val contentPreference: ContentPreference?,
         val readerPreference: CanonicalReaderPreference?,
