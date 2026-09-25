@@ -1276,6 +1276,5 @@ class MangaBallRealReadingJourneyInstrumentedTest {
             "READER_PREPARATION",
             "GET_PAGE_LIST",
         )
-
     }
 }
