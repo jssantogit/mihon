@@ -18,6 +18,7 @@ import kotlin.time.Clock
  */
 class ReconcileChapterInventory internal constructor(
     private val parser: ParseCanonicalChapterLabel,
+    private val volumeParser: ParseCanonicalChapterVolume,
     private val canonicalChapterRepository: CanonicalChapterRepository,
     private val idFactory: () -> String,
     private val variantIdFactory: () -> String = idFactory,
@@ -27,9 +28,11 @@ class ReconcileChapterInventory internal constructor(
     @Inject
     constructor(
         parser: ParseCanonicalChapterLabel,
+        volumeParser: ParseCanonicalChapterVolume,
         canonicalChapterRepository: CanonicalChapterRepository,
     ) : this(
         parser = parser,
+        volumeParser = volumeParser,
         canonicalChapterRepository = canonicalChapterRepository,
         idFactory = { UUID.randomUUID().toString() },
         variantIdFactory = { UUID.randomUUID().toString() },
@@ -55,10 +58,10 @@ class ReconcileChapterInventory internal constructor(
         val existingChapters = canonicalChapterRepository
             .getByCanonicalTitleId(canonicalTitleId)
         val chaptersById = existingChapters.associateBy { it.id }.toMutableMap()
-        val identities = linkedMapOf<CanonicalChapterIdentity, CanonicalChapter>()
+        val identities = linkedMapOf<CanonicalChapterIdentity, MutableList<CanonicalChapter>>()
         existingChapters
             .filter { it.identity.isSpecific }
-            .forEach { identities.putIfAbsent(it.identity, it) }
+            .forEach { chapter -> identities.getOrPut(chapter.identity) { mutableListOf() }.add(chapter) }
 
         val variantsBySourceIdentity = linkedMapOf<Pair<Long, String>, ChapterVariant>()
         val touchedChapters = linkedMapOf<String, CanonicalChapter>()
@@ -66,13 +69,42 @@ class ReconcileChapterInventory internal constructor(
         val sourceMappingIds = linkedSetOf<String>()
         val now = clock()
 
+        fun indexChapter(chapter: CanonicalChapter) {
+            if (!chapter.identity.isSpecific) return
+            val candidates = identities.getOrPut(chapter.identity) { mutableListOf() }
+            val index = candidates.indexOfFirst { it.id == chapter.id }
+            if (index < 0) {
+                candidates += chapter
+            } else {
+                candidates[index] = chapter
+            }
+        }
+
+        fun reusableChapter(
+            candidates: List<CanonicalChapter>,
+            observedVolume: Int?,
+            hasExplicitVolumePrefix: Boolean,
+        ): CanonicalChapter? {
+            if (candidates.isEmpty()) return null
+            if (observedVolume == null) {
+                if (hasExplicitVolumePrefix || candidates.any { it.volume != null }) return null
+                return candidates.singleOrNull()
+            }
+            candidates.filter { it.volume == observedVolume }.singleOrNull()?.let { return it }
+            if (candidates.any { it.volume != null }) return null
+            return candidates.singleOrNull()
+        }
+
+        val chaptersToPersist = linkedMapOf<String, CanonicalChapter>()
+
         for (inventory in inventories) {
             require(inventory.sourceMappingId.isNotBlank()) { "Source mapping id is required" }
             sourceMappingIds += inventory.sourceMappingId
 
             for (snapshot in inventory.chapters) {
                 require(snapshot.sourceMappingId == inventory.sourceMappingId) {
-                    "Snapshot mapping ${snapshot.sourceMappingId} does not match inventory mapping ${inventory.sourceMappingId}"
+                    "Snapshot mapping ${snapshot.sourceMappingId} does not match " +
+                        "inventory mapping ${inventory.sourceMappingId}"
                 }
                 require(snapshot.sourceId == inventory.sourceId) {
                     "Snapshot source ${snapshot.sourceId} does not match inventory source ${inventory.sourceId}"
@@ -88,6 +120,8 @@ class ReconcileChapterInventory internal constructor(
                         sourceChapterId = sourceChapterId,
                     )
 
+                val observedVolume = volumeParser.execute(snapshot.rawName)
+                val hasExplicitVolumePrefix = volumeParser.hasExplicitVolumePrefix(snapshot.rawName)
                 val canonical = if (associatedVariant != null) {
                     // Persisted source identity is authoritative even if a later
                     // parser would interpret the changed label differently.
@@ -96,13 +130,19 @@ class ReconcileChapterInventory internal constructor(
                         ?: error("Variant ${associatedVariant.id} references missing canonical chapter")
                 } else {
                     val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
-                    val matched = parsed.identity
-                        .takeIf { it.isSpecific }
-                        ?.let { identities[it] }
+                    val matched = parsed.identity.takeIf { it.isSpecific }
+                        ?.let {
+                            reusableChapter(
+                                candidates = identities[it].orEmpty(),
+                                observedVolume = observedVolume,
+                                hasExplicitVolumePrefix = hasExplicitVolumePrefix,
+                            )
+                        }
                     matched ?: CanonicalChapter(
                         id = idFactory(),
                         canonicalTitleId = canonicalTitleId,
                         displayNumber = parsed.displayNumber,
+                        volume = observedVolume,
                         type = parsed.type,
                         baseNumber = parsed.baseNumber,
                         part = parsed.part,
@@ -111,21 +151,32 @@ class ReconcileChapterInventory internal constructor(
                         createdAt = now,
                         updatedAt = now,
                     ).also { chapter ->
-                        chaptersById[chapter.id] = chapter
-                        if (chapter.identity.isSpecific) identities[chapter.identity] = chapter
                         newChapterIds += chapter.id
                     }
                 }
 
-                chaptersById[canonical.id] = canonical
-                touchedChapters[canonical.id] = canonical
+                val reconciledCanonical = if (
+                    associatedVariant == null &&
+                    canonical.volume == null &&
+                    observedVolume != null
+                ) {
+                    canonical.copy(volume = observedVolume, updatedAt = now)
+                } else {
+                    canonical
+                }
+                chaptersById[reconciledCanonical.id] = reconciledCanonical
+                indexChapter(reconciledCanonical)
+                touchedChapters[reconciledCanonical.id] = reconciledCanonical
+                if (reconciledCanonical.id in newChapterIds || reconciledCanonical != canonical) {
+                    chaptersToPersist[reconciledCanonical.id] = reconciledCanonical
+                }
                 val createdAt = associatedVariant?.createdAt
                     ?: snapshot.createdAt.takeIf { it != 0L }
                     ?: now
                 val updatedAt = snapshot.updatedAt.takeIf { it != 0L } ?: now
                 val variant = ChapterVariant(
                     id = associatedVariant?.id ?: variantIdFactory(),
-                    canonicalChapterId = canonical.id,
+                    canonicalChapterId = reconciledCanonical.id,
                     sourceMappingId = snapshot.sourceMappingId.ifBlank { inventory.sourceMappingId },
                     sourceId = sourceId,
                     mihonMangaId = snapshot.mihonMangaId ?: inventory.mihonMangaId,
@@ -149,7 +200,7 @@ class ReconcileChapterInventory internal constructor(
         }
 
         canonicalChapterRepository.upsertBatch(
-            chapters = touchedChapters.values.filter { it.id in newChapterIds },
+            chapters = chaptersToPersist.values.toList(),
             variants = variantsBySourceIdentity.values.toList(),
         )
         return ChapterReconciliationReport(
