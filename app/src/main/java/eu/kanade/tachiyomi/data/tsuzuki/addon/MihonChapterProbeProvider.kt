@@ -23,6 +23,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
@@ -39,6 +40,7 @@ class MihonChapterProbeProvider internal constructor(
     private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
+    private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
 ) : TargetedChapterProbeProvider {
 
     override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
@@ -174,7 +176,7 @@ class MihonChapterProbeProvider internal constructor(
                         externalChapterKey = snapshot.sourceId.toString() + ":" + externalKey,
                         rawLabel = snapshot.rawName,
                         rawNumber = snapshot.rawNumberHint,
-                        volume = null,
+                        volume = volumeParser.execute(snapshot.rawName),
                         title = null,
                         observedAt = observedAt,
                         confidence = parsed.confidence,

@@ -21,7 +21,9 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.interactor.isInferredChapter
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -45,6 +47,7 @@ class MihonContentProvider internal constructor(
     private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
+    private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
 ) : TargetedContentProvider {
 
     override suspend fun resolve(
@@ -169,6 +172,14 @@ class MihonContentProvider internal constructor(
                     firstFailure = firstFailure ?: IllegalStateException("Inventory binding mismatch")
                     continue
                 }
+                val fallbackVolumeLabels = inventory.chapters.asSequence()
+                    .filter { snapshot ->
+                        snapshot.sourceMappingId == binding.id && snapshot.sourceId == inventory.sourceId
+                    }
+                    .mapNotNull { snapshot -> fallbackVolumeLabel(snapshot, canonicalChapter) }
+                    .toSet()
+                val hasUnambiguousFallbackVolume = fallbackVolumeLabels.size == 1
+
                 for (snapshot in inventory.chapters) {
                     if (snapshot.sourceMappingId != binding.id ||
                         snapshot.sourceId != inventory.sourceId
@@ -183,11 +194,21 @@ class MihonContentProvider internal constructor(
                     // even if an old provider URL was reused.
                     val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
                     val mapped = identity in sourceIdentities
+                    val volumeLabel = sourceVolumeLabel(snapshot.rawName)
+                    if (
+                        canonicalChapter.volume != null &&
+                        volumeLabel.explicit &&
+                        volumeLabel.number != canonicalChapter.volume
+                    ) {
+                        continue
+                    }
                     val exactFallback = allowIdentityFallback &&
                         trustedBinding(binding) &&
                         parsed.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE &&
                         parsed.identity.isSpecific &&
-                        parsed.identity == canonicalChapter.identity
+                        parsed.identity == canonicalChapter.identity &&
+                        hasUnambiguousFallbackVolume &&
+                        volumeLabel in fallbackVolumeLabels
                     if (!mapped && !exactFallback) continue
                     if (canonicalChapter.identity.isSpecific &&
                         (!parsed.identity.isSpecific || parsed.identity != canonicalChapter.identity)
@@ -301,6 +322,35 @@ class MihonContentProvider internal constructor(
         val chapterKey = externalChapterKey.substring(separator + 1)
         return sourceId to chapterKey
     }
+
+    private data class SourceVolumeLabel(
+        val explicit: Boolean,
+        val number: Int?,
+    )
+
+    private fun fallbackVolumeLabel(
+        snapshot: SourceChapterSnapshot,
+        canonicalChapter: CanonicalChapter,
+    ): SourceVolumeLabel? {
+        val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
+        if (
+            !parsed.identity.isSpecific ||
+            parsed.identity != canonicalChapter.identity ||
+            parsed.confidence < MIN_TRUSTED_CHAPTER_CONFIDENCE
+        ) {
+            return null
+        }
+
+        val volumeLabel = sourceVolumeLabel(snapshot.rawName)
+        if (volumeLabel.explicit && volumeLabel.number == null) return null
+        if (canonicalChapter.volume != null && volumeLabel.number != canonicalChapter.volume) return null
+        return volumeLabel
+    }
+
+    private fun sourceVolumeLabel(rawLabel: String): SourceVolumeLabel = SourceVolumeLabel(
+        explicit = volumeParser.hasExplicitVolumePrefix(rawLabel),
+        number = volumeParser.execute(rawLabel),
+    )
 
     private fun contentKey(snapshot: SourceChapterSnapshot): String {
         val chapterKey = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }

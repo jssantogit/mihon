@@ -39,6 +39,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -508,6 +509,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 canonicalChapterRepository = canonicalChapters,
                 chapterEvidenceRepository = evidence,
                 parser = parser,
+                volumeParser = ParseCanonicalChapterVolume(),
                 chapterInventoryGateway = chapterGateway,
                 chapterInventoryDiagnostics = diagnostics,
                 sourceEligibilityRepository = AddonSourceEligibilityRepository { requested ->
