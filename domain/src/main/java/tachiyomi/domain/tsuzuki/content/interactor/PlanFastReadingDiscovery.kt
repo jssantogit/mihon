@@ -74,11 +74,15 @@ class PlanFastReadingDiscovery {
             val ordered = orderedSourceIds(item.sources, families)
             val allotted = minOf(perAddonLimit, ordered.size, remaining)
             remaining -= allotted
-            if (allotted == 0) null else PlannedAddonSearch(
-                addonId = item.addon.id,
-                allowedSourceIds = ordered.take(allotted).toSet(),
-                batchSize = allotted,
-            )
+            if (allotted == 0) {
+                null
+            } else {
+                PlannedAddonSearch(
+                    addonId = item.addon.id,
+                    allowedSourceIds = ordered.take(allotted).toSet(),
+                    batchSize = allotted,
+                )
+            }
         }
     }
 

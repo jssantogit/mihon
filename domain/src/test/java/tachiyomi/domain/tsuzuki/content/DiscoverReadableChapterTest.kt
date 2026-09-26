@@ -265,7 +265,7 @@ class DiscoverReadableChapterTest {
             dispatcher = StandardTestDispatcher(testScheduler),
         )
         val received = mutableListOf<FastReadingDiscoveryEvent>()
-        val job = backgroundScope.launch {
+        val job = launch {
             runner.discover("title", "chapter").collect(received::add)
         }
 
@@ -276,9 +276,9 @@ class DiscoverReadableChapterTest {
 
         slowRelease.complete(Unit)
         advanceUntilIdle()
-        received.last().let { it as FastReadingDiscoveryEvent.Completed }.reason shouldBe
-            FastDiscoveryCompletion.FOUND
-        job.isCompleted shouldBe true
+        job.join()
+        received.filterIsInstance<FastReadingDiscoveryEvent.Completed>()
+            .single().reason shouldBe FastDiscoveryCompletion.FOUND
     }
 
     @Test

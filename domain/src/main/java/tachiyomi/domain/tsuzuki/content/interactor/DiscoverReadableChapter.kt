@@ -14,8 +14,8 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
@@ -292,7 +292,10 @@ class DiscoverReadableChapter internal constructor(
                                                     }
                                                     if (!attemptedBindingGate.withLock {
                                                             attemptedBindingIds.add(binding.id)
-                                                        }) continue
+                                                        }
+                                                    ) {
+                                                        continue
+                                                    }
                                                     refreshGate.withPermit {
                                                         if (found.get()) return@withPermit
                                                         val refreshed = try {
