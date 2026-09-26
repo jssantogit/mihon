@@ -50,6 +50,7 @@ READER_VIEW_DIAGNOSTIC_KEYS = (
 READER_VIEW_OPTIONAL_KEYS = (
     "expectedColor", "imageRequestsA", "imageRequestsB", "holderPresent", "holderAttached",
     "holderVisible", "imageViewPresent", "imageViewVisible", "imageViewReady", "errorVisible",
+    "windowSecure", "windowHasFocus",
 )
 READER_VIEWERS = {
     "NONE", "L2RPagerViewer", "R2LPagerViewer", "VerticalPagerViewer",
@@ -63,7 +64,7 @@ READER_DIAGNOSTIC_SCENARIOS = {*METHOD_SCENARIOS.values(), "PAGER_READINESS"}
 READER_BOOL_FIELDS = {"stream", "pagesLoaded", "pagerVisible", "interactionInjected", "pagerIdle"}
 READER_OPTIONAL_BOOL_FIELDS = {
     "holderPresent", "holderAttached", "holderVisible", "imageViewPresent", "imageViewVisible",
-    "imageViewReady", "errorVisible",
+    "imageViewReady", "errorVisible", "windowSecure", "windowHasFocus",
 }
 READER_OPTIONAL_NUMERIC_FIELDS = {"imageRequestsA", "imageRequestsB"}
 READER_SELECTOR_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_SELECTOR_DIAGNOSTIC|"
