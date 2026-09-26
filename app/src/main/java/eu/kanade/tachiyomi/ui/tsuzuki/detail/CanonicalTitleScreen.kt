@@ -105,11 +105,11 @@ data class CanonicalTitleScreen(
         )
 
         LaunchedEffect(linkViewModel, canonicalTitleId) {
-            linkViewModel.bindingChanges.collectLatest { changedTitleId ->
-                if (changedTitleId != canonicalTitleId) return@collectLatest
-                // Refresh and reconcile once. The selector does not query chapter
-                // variants until that evidence transaction invalidates its cache.
-                if (contentSelectorViewModel.refreshAfterBinding(changedTitleId).isSuccess) {
+            linkViewModel.bindingUpdates.collectLatest { request ->
+                if (request.canonicalTitleId != canonicalTitleId) return@collectLatest
+                // A manually linked edition should not re-fetch every existing
+                // source inventory before its chapter can be selected.
+                if (contentSelectorViewModel.refreshAfterBindings(request).isSuccess) {
                     screenModel.reloadReconciledChapters()?.join()
                 }
             }

@@ -135,6 +135,32 @@ class ContentBindingLinkScreenModelTest {
     }
 
     @Test
+    fun `completed manual search reports exact bound editions once`() = runTest(dispatcher) {
+        val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L))
+        val resolver = mockk<ResolveContentBinding>()
+        every { resolver.searchProgress(any()) } returns flowOf(
+            source(7L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("english"))),
+            source(8L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("portuguese"))),
+            source(8L, ContentBindingSourceOutcome.BOUND, bindings = listOf(binding("english"))),
+            ContentBindingSearchProgress.Completed(listOf(7L, 8L), remainingSourceCount = 0),
+        )
+        val model = model(addons = listOf(reader), resolver = resolver)
+        val updates = mutableListOf<BindingRefreshRequest>()
+        val collector = launch { model.bindingUpdates.collect(updates::add) }
+        runCurrent()
+
+        model.start("canonical")
+        advanceUntilIdle()
+        model.selectAddon(reader.id)
+        advanceUntilIdle()
+        collector.cancel()
+
+        updates.size shouldBe 1
+        updates.single().canonicalTitleId shouldBe "canonical"
+        updates.single().bindings.map(ContentBinding::id) shouldBe listOf("english", "portuguese")
+    }
+
+    @Test
     fun `three auto-bound internal sources trigger one completed-batch refresh`() = runTest(dispatcher) {
         val reader = addon("reader", "Reader", enabled = true, sourceIds = listOf(7L, 8L, 9L))
         val resolver = mockk<ResolveContentBinding>()
@@ -339,9 +365,13 @@ class ContentBindingLinkScreenModelTest {
         advanceUntilIdle()
         coVerify(exactly = 0) { confirm.execute(any(), any(), any()) }
 
+        val update = async { model.bindingUpdates.first() }
+        runCurrent()
         model.confirm(choices.last())
         advanceUntilIdle()
 
+        update.await().bindings.map(ContentBinding::id) shouldBe listOf("confirmed")
+        update.await().canonicalTitleId shouldBe "canonical"
         result = model.state.value.shouldBeInstanceOf<ContentBindingLinkState.SearchResults>()
         result.boundCount shouldBe 1
         result.confirmationCandidates.map { it.candidate.sourceUrl } shouldBe listOf("/edition-one")

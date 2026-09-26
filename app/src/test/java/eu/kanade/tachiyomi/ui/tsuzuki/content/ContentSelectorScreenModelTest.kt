@@ -4,6 +4,7 @@ import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -34,11 +35,14 @@ import tachiyomi.domain.tsuzuki.addon.ContentProvider
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
+import tachiyomi.domain.tsuzuki.content.interactor.ContentOptionLookup
 import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableChapter
 import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryCompletion
 import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryFailureStage
@@ -517,6 +521,92 @@ class ContentSelectorScreenModelTest {
 
         val state = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Error>()
         state.error.message shouldBe "addon repository failed"
+    }
+
+    @Test
+    fun `manual link refreshes only the new edition and presents its chapter`() = runTest(dispatcher) {
+        val edition = ContentBinding(
+            id = "new-edition",
+            canonicalTitleId = "title-1",
+            addonId = AddonId("reader"),
+            providerTitleKey = "7:/original",
+            matchConfidence = 0.99,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 2L,
+        )
+        val verified = option("reader", "en", null, 1L)
+        val refresher = mockk<RefreshChapterEvidence>()
+        coEvery { refresher.executeForBinding(edition) } returns Result.success(Unit)
+        val resolver = mockk<ResolveChapterContent>()
+        coEvery { resolver.lookupOptions("title-1", "chapter-1", any()) } returns
+            ContentOptionLookup(emptyList(), emptyList(), 1)
+        coEvery { resolver.lookupBindingOptions(edition, "chapter-1") } returns
+            ContentOptionLookup(listOf(verified), emptyList(), 1)
+        val model = ContentSelectorScreenModel(
+            resolveChapterContent = resolver,
+            contentPreferenceRepository = FakeContentPreferenceRepository(null),
+            addonRepository = FakeAddonRepository(listOf(addon("reader", "Reader"))),
+            clock = { 500L },
+            refreshChapterEvidence = refresher,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+
+        val result = model.refreshAfterBindings(BindingRefreshRequest("title-1", listOf(edition)))
+
+        result.isSuccess shouldBe true
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.options.single().option shouldBe verified
+        ready.options.single().addonDisplayName shouldBe "Reader"
+        coVerify(exactly = 1) { refresher.executeForBinding(edition) }
+        coVerify(exactly = 0) { refresher.execute(any()) }
+        coVerify(exactly = 1) { resolver.lookupBindingOptions(edition, "chapter-1") }
+    }
+
+    @Test
+    fun `one failing manual edition cannot hide a healthy edition`() = runTest(dispatcher) {
+        val valid = ContentBinding(
+            id = "valid",
+            canonicalTitleId = "title-1",
+            addonId = AddonId("reader"),
+            providerTitleKey = "7:/original",
+            matchConfidence = 0.99,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 2L,
+        )
+        val failed = valid.copy(id = "failed", providerTitleKey = "8:/original")
+        val verified = option("reader", "en", null, 1L)
+        val refresher = mockk<RefreshChapterEvidence>()
+        coEvery { refresher.executeForBinding(failed) } returns
+            Result.failure(IllegalStateException("Provider unavailable"))
+        coEvery { refresher.executeForBinding(valid) } returns Result.success(Unit)
+        val resolver = mockk<ResolveChapterContent>()
+        coEvery { resolver.lookupBindingOptions(valid, "chapter-1") } returns
+            ContentOptionLookup(listOf(verified), emptyList(), 1)
+        val model = ContentSelectorScreenModel(
+            resolveChapterContent = resolver,
+            contentPreferenceRepository = FakeContentPreferenceRepository(null),
+            addonRepository = FakeAddonRepository(listOf(addon("reader", "Reader"))),
+            clock = { 500L },
+            refreshChapterEvidence = refresher,
+        )
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+        val request = BindingRefreshRequest("title-1", listOf(failed, valid))
+
+        model.refreshAfterBindings(request).isSuccess shouldBe true
+
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.options.single().option shouldBe verified
+        ready.failedProviderCount shouldBe 1
+        coVerify(exactly = 0) { refresher.execute(any()) }
     }
 
     @Test

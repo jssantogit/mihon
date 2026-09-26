@@ -295,10 +295,10 @@ class ReaderActivity : BaseActivity() {
             bindingLinkTitleId?.let(contentBindingLinkViewModel::start)
         }
         LaunchedEffect(contentBindingLinkViewModel) {
-            contentBindingLinkViewModel.bindingChanges.collectLatest { changedTitleId ->
-                // Keep this Reader Activity and its page position intact. Refresh
-                // observed chapter evidence before retrying the inline selector.
-                contentSelectorViewModel.refreshAfterBinding(changedTitleId)
+            contentBindingLinkViewModel.bindingUpdates.collectLatest { request ->
+                // Keep the Reader and current page alive; reconcile only the
+                // newly persisted editions before retrying the current chapter.
+                contentSelectorViewModel.refreshAfterBindings(request)
             }
         }
         val settingsviewModel = remember {

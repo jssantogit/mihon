@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.interactor.ConfirmContentBinding
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchFailureKind
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchMode
@@ -32,6 +33,17 @@ import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import java.util.Locale
+
+/** Persisted editions, not merely catalogue search hits. */
+data class BindingRefreshRequest(
+    val canonicalTitleId: String,
+    val bindings: List<ContentBinding>,
+) {
+    init {
+        require(bindings.isNotEmpty())
+        require(bindings.all { it.canonicalTitleId == canonicalTitleId })
+    }
+}
 
 sealed interface ContentBindingLinkState {
     data object Idle : ContentBindingLinkState
@@ -76,20 +88,28 @@ class ContentBindingLinkScreenModel(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    /** Carries the persisted title identity even if the sheet closes before its event is consumed. */
+    /** Legacy title-level event for integrations that have not adopted scoped refreshes. */
     val bindingChanges: SharedFlow<String> = _bindingChanges.asSharedFlow()
+
+    private val _bindingUpdates = MutableSharedFlow<BindingRefreshRequest>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Concrete materialized bindings permit a single-edition refresh after manual link. */
+    val bindingUpdates: SharedFlow<BindingRefreshRequest> = _bindingUpdates.asSharedFlow()
 
     private var titleId: String? = null
     private var enabledAddons = emptyList<InstalledAddon>()
     private var searchOperation: Job? = null
     private var confirmationOperation: Job? = null
     private var generation = 0L
-    private var pendingBindingRefresh = false
+    private val pendingBindings = linkedMapOf<String, ContentBinding>()
 
     fun start(canonicalTitleId: String) {
         searchOperation?.cancel()
         confirmationOperation?.cancel()
-        pendingBindingRefresh = false
+        pendingBindings.clear()
         val currentGeneration = ++generation
         titleId = canonicalTitleId
         _state.value = ContentBindingLinkState.Loading
@@ -204,8 +224,8 @@ class ContentBindingLinkScreenModel(
                                 )
                             }
                         }
-                        if (event.outcome == ContentBindingSourceOutcome.BOUND && event.bindings.isNotEmpty()) {
-                            pendingBindingRefresh = true
+                        if (event.outcome == ContentBindingSourceOutcome.BOUND) {
+                            event.bindings.forEach { persisted -> pendingBindings[persisted.id] = persisted }
                         }
                     }
                     is ContentBindingSearchProgress.Completed -> {
@@ -253,6 +273,11 @@ class ContentBindingLinkScreenModel(
                 val latest = _state.value as? ContentBindingLinkState.SearchResults ?: return@launch
                 _state.value = if (result.isSuccess) {
                     _bindingChanges.tryEmit(title)
+                    result.getOrNull()?.let { binding ->
+                        _bindingUpdates.tryEmit(
+                            BindingRefreshRequest(title, listOf(binding)),
+                        )
+                    }
                     latest.copy(
                         isConfirming = false,
                         boundCount = latest.boundCount + 1,
@@ -299,9 +324,13 @@ class ContentBindingLinkScreenModel(
     }
 
     private fun publishPendingBindingRefresh() {
-        if (!pendingBindingRefresh) return
-        pendingBindingRefresh = false
-        titleId?.let(_bindingChanges::tryEmit)
+        if (pendingBindings.isEmpty()) return
+        val title = titleId ?: return
+        val bindings = pendingBindings.values.filter { it.canonicalTitleId == title }
+        pendingBindings.clear()
+        if (bindings.isEmpty()) return
+        _bindingChanges.tryEmit(title)
+        _bindingUpdates.tryEmit(BindingRefreshRequest(title, bindings))
     }
 
     private fun updateSearch(

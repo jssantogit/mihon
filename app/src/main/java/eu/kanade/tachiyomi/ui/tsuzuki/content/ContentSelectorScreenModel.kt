@@ -9,6 +9,9 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -19,10 +22,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
+import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableChapter
@@ -30,6 +36,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryCompletion
 import tachiyomi.domain.tsuzuki.content.interactor.FastReadingDiscoveryEvent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Clock
 
 @Immutable
@@ -226,6 +233,142 @@ class ContentSelectorScreenModel internal constructor(
         }
     }
 
+    /**
+     * Follow the exact persisted editions returned by explicit Link Add-on.
+     * Do not refresh unrelated MangaDex languages or re-query every provider
+     * while waiting to present the selected chapter.
+     */
+    suspend fun refreshAfterBindings(request: BindingRefreshRequest): Result<Unit> {
+        val refresher = checkNotNull(refreshChapterEvidence) {
+            "Chapter evidence refresh is required for post-binding selection"
+        }
+        val titleId = request.canonicalTitleId
+        val caller = currentCoroutineContext()[Job]
+        pendingBindingRefreshJob = caller
+        pendingBindingTitleId = titleId
+        if (canonicalTitleId == titleId) {
+            loadJob?.cancel()
+            _state.value = ContentSelectorScreenState.Loading
+        }
+        val successful = AtomicInteger()
+        val failed = AtomicInteger()
+        val firstFailure = mutableListOf<Throwable>()
+        val failureGate = Mutex()
+        val publicationGate = Mutex()
+        return try {
+            coroutineScope {
+                val gate = Semaphore(MAX_CONCURRENT_MANUAL_BINDING_REFRESHES)
+                request.bindings.distinctBy(ContentBinding::id).map { binding ->
+                    async {
+                        gate.withPermit {
+                            val refreshed = try {
+                                refresher.executeForBinding(binding)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                Result.failure(error)
+                            }
+                            if (refreshed.isFailure) {
+                                failed.incrementAndGet()
+                                failureGate.withLock {
+                                    firstFailure.add(
+                                        requireNotNull(refreshed.exceptionOrNull()),
+                                    )
+                                }
+                                return@withPermit
+                            }
+                            successful.incrementAndGet()
+                            if (canonicalTitleId != titleId) return@withPermit
+                            val chapterId = canonicalChapterId ?: return@withPermit
+                            val lookup = try {
+                                resolveChapterContent.lookupBindingOptions(binding, chapterId)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                failed.incrementAndGet()
+                                failureGate.withLock { firstFailure.add(error) }
+                                return@withPermit
+                            }
+                            if (lookup.failedProviders.isNotEmpty()) {
+                                failed.addAndGet(lookup.failedProviders.size)
+                            }
+                            if (lookup.options.isNotEmpty()) {
+                                publicationGate.withLock {
+                                    currentCoroutineContext().ensureActive()
+                                    if (canonicalTitleId == titleId && canonicalChapterId == chapterId) {
+                                        publishVerifiedOptions(
+                                            titleId = titleId,
+                                            chapterId = chapterId,
+                                            incoming = lookup.options,
+                                            failures = failed.get(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }.awaitAll()
+            }
+            if (canonicalTitleId == titleId && _state.value is ContentSelectorScreenState.Loading) {
+                canonicalChapterId?.let { chapterId ->
+                    _state.value = ContentSelectorScreenState.Empty(
+                        canonicalTitleId = titleId,
+                        canonicalChapterId = chapterId,
+                        failedAttempts = failed.get(),
+                        noEnabledAddon = addonRepository.snapshot().none { it.enabled },
+                    )
+                }
+            }
+            if (successful.get() > 0) Result.success(Unit) else {
+                Result.failure(
+                    firstFailure.firstOrNull()
+                        ?: IllegalStateException("No newly linked reading edition could be refreshed"),
+                )
+            }
+        } finally {
+            if (pendingBindingRefreshJob === caller) {
+                pendingBindingRefreshJob = null
+                pendingBindingTitleId = null
+            }
+        }
+    }
+
+    private suspend fun publishVerifiedOptions(
+        titleId: String,
+        chapterId: String,
+        incoming: List<ContentOption>,
+        failures: Int,
+    ) {
+        if (incoming.isEmpty()) return
+        val previous = (_state.value as? ContentSelectorScreenState.Ready)
+            ?.takeIf { it.canonicalTitleId == titleId && it.canonicalChapterId == chapterId }
+            ?.options
+            .orEmpty()
+            .map(ContentOptionPresentation::option)
+        val options = (previous + incoming).distinctBy(ContentOption::key)
+        val preference = contentPreferenceRepository.get(titleId)
+        val names = addonRepository.snapshot().associate { it.id to it.displayName }
+        val preferred = preference?.preferredAddonId
+        _state.value = ContentSelectorScreenState.Ready(
+            canonicalTitleId = titleId,
+            canonicalChapterId = chapterId,
+            options = options.map { option ->
+                ContentOptionPresentation(
+                    option = option,
+                    addonDisplayName = names[option.addonId] ?: option.addonId.value,
+                    language = option.language,
+                    scanlationGroup = option.scanlationGroup,
+                    releaseDate = option.releaseDate,
+                )
+            },
+            preferredAddonId = preferred,
+            preferredOptionKey = options.firstOrNull { it.addonId == preferred }?.key,
+            preferredLanguage = preference?.preferredLanguage,
+            preferredUnavailable = preferred != null && options.none { it.addonId == preferred },
+            failedProviderCount = failures,
+        )
+    }
+
     // First selection becomes the per-title preference; replacing an existing preference requires confirmation.
     fun select(item: ContentOptionPresentation): SelectionResult {
         val state = _state.value as? ContentSelectorScreenState.Ready
@@ -329,28 +472,7 @@ class ContentSelectorScreenModel internal constructor(
                 }
                 is FastReadingDiscoveryEvent.Ready -> {
                     if (event.options.isEmpty()) return@collect
-                    val preference = contentPreferenceRepository.get(titleId)
-                    val names = addonRepository.snapshot().associate { it.id to it.displayName }
-                    val options = event.options.distinctBy { it.key }
-                    val preferred = preference?.preferredAddonId
-                    _state.value = ContentSelectorScreenState.Ready(
-                        canonicalTitleId = titleId,
-                        canonicalChapterId = chapterId,
-                        options = options.map { option ->
-                            ContentOptionPresentation(
-                                option = option,
-                                addonDisplayName = names[option.addonId] ?: option.addonId.value,
-                                language = option.language,
-                                scanlationGroup = option.scanlationGroup,
-                                releaseDate = option.releaseDate,
-                            )
-                        },
-                        preferredAddonId = preferred,
-                        preferredOptionKey = options.firstOrNull { it.addonId == preferred }?.key,
-                        preferredLanguage = preference?.preferredLanguage,
-                        preferredUnavailable = preferred != null && options.none { it.addonId == preferred },
-                        failedProviderCount = failures,
-                    )
+                    publishVerifiedOptions(titleId, chapterId, event.options, failures)
                 }
                 is FastReadingDiscoveryEvent.ConfirmationRequired -> {
                     needsConfirmation = true
@@ -494,5 +616,6 @@ class ContentSelectorScreenModel internal constructor(
     }
     private companion object {
         const val VISIBLE_DISCOVERY_DEADLINE_MILLIS = 10_000L
+        const val MAX_CONCURRENT_MANUAL_BINDING_REFRESHES = 2
     }
 }
