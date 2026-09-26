@@ -173,6 +173,47 @@ class ReconcileChapterEvidenceTest {
         }
 
     @Test
+    fun `reconciliation uses the title evidence snapshot instead of querying every external key`() = runTest {
+        val fixture = fixture()
+        val observations = (1..100).map { number ->
+            fixture.addonEvidence(
+                id = "observation-$number",
+                rawLabel = "Chapter $number",
+                externalKey = "chapter-$number",
+            )
+        }
+
+        fixture.reconciler.execute("title", observations)
+
+        val externalKeyLookupCount = fixture.evidenceRepository.externalKeyLookupCount
+        val titleSnapshotCount = fixture.evidenceRepository.titleSnapshotCount
+        val batchWriteCount = fixture.evidenceRepository.batchWriteCount
+        val singleWriteCount = fixture.evidenceRepository.singleWriteCount
+        titleSnapshotCount shouldBe 1
+        externalKeyLookupCount shouldBe 0
+        batchWriteCount shouldBe 1
+        singleWriteCount shouldBe 0
+    }
+
+    @Test
+    fun `identity lookup preserves the first existing chapter id when historical duplicates exist`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-first"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-second"))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.editorialEvidence(rawLabel = "Chapter 4", externalKey = "chapter-4")),
+        )
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.INTEGRATION,
+            producerId = "mal",
+            externalChapterKey = "chapter-4",
+        )?.mappedCanonicalChapterId shouldBe "chapter-first"
+    }
+
+    @Test
     fun `decimal and extra evidence remain distinct logical chapters`() = runTest {
         val fixture = fixture()
 
@@ -362,6 +403,21 @@ class ReconcileChapterEvidenceTest {
         return Fixture(reconciler, chapterRepository, evidenceRepository)
     }
 
+    private fun existingChapter(id: String) = CanonicalChapter(
+        id = id,
+        canonicalTitleId = "title",
+        displayNumber = "4",
+        volume = null,
+        title = null,
+        type = tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR,
+        baseNumber = 4,
+        part = null,
+        alphaSuffix = null,
+        confidence = 1.0,
+        createdAt = 1L,
+        updatedAt = 1L,
+    )
+
     private data class Fixture(
         val reconciler: ReconcileChapterEvidence,
         val chapterRepository: FakeCanonicalChapterRepository,
@@ -435,21 +491,49 @@ class ReconcileChapterEvidenceTest {
 
     private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {
         private val records = mutableListOf<PersistedChapterEvidence>()
+        var titleSnapshotCount = 0
+            private set
+        var externalKeyLookupCount = 0
+            private set
+        var batchWriteCount = 0
+            private set
+        var singleWriteCount = 0
+            private set
 
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
-            records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> {
+            titleSnapshotCount++
+            return records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+        }
 
         override suspend fun getByProducerExternalKey(
             producerKind: ProducerKind,
             producerId: String,
             externalChapterKey: String,
-        ): PersistedChapterEvidence? = records.firstOrNull {
-            it.evidence.producerKind == producerKind &&
-                it.evidence.producerId == producerId &&
-                it.evidence.externalChapterKey == externalChapterKey
+        ): PersistedChapterEvidence? {
+            externalKeyLookupCount++
+            return records.firstOrNull {
+                it.evidence.producerKind == producerKind &&
+                    it.evidence.producerId == producerId &&
+                    it.evidence.externalChapterKey == externalChapterKey
+            }
         }
 
         override suspend fun upsert(
+            evidence: ChapterEvidence,
+            mappedCanonicalChapterId: String?,
+        ): PersistedChapterEvidence {
+            singleWriteCount++
+            return persist(evidence, mappedCanonicalChapterId)
+        }
+
+        override suspend fun upsertBatch(
+            writes: List<tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite>,
+        ): List<PersistedChapterEvidence> {
+            batchWriteCount++
+            return writes.map { write -> persist(write.evidence, write.mappedCanonicalChapterId) }
+        }
+
+        private fun persist(
             evidence: ChapterEvidence,
             mappedCanonicalChapterId: String?,
         ): PersistedChapterEvidence {

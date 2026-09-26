@@ -79,7 +79,11 @@ class ReconcileChapterEvidence internal constructor(
             )
             return
         }
-        mutationGate.withLock { reconcileUncontended(canonicalTitleId, evidence) }
+        mutationGate.withLock {
+            evidenceRepository.withTransaction {
+                reconcileUncontended(canonicalTitleId, evidence)
+            }
+        }
     }
 
     private suspend fun reconcileUncontended(
@@ -93,6 +97,55 @@ class ReconcileChapterEvidence internal constructor(
             .getByCanonicalTitleId(canonicalTitleId)
             .associateBy { it.evidence.id }
             .toMutableMap()
+        val persistedEvidenceByExternalKey = persistedEvidence.values
+            .mapNotNull { persisted ->
+                persisted.evidence.externalChapterKey?.let { externalKey ->
+                    EvidenceExternalKey(
+                        producerKind = persisted.evidence.producerKind,
+                        producerId = persisted.evidence.producerId,
+                        externalChapterKey = externalKey,
+                    ) to persisted
+                }
+            }
+            .toMap()
+            .toMutableMap()
+        val chaptersByIdentity = linkedMapOf<CanonicalChapterIdentity, CanonicalChapter>()
+        chapters.values.forEach { chapter ->
+            if (chapter.identity.isSpecific && chapter.identity !in chaptersByIdentity) {
+                chaptersByIdentity[chapter.identity] = chapter
+            }
+        }
+        val chapterUpserts = linkedMapOf<String, CanonicalChapter>()
+        val evidenceUpserts = mutableListOf<ChapterEvidenceWrite>()
+
+        fun stageEvidence(observation: ChapterEvidence, mappedCanonicalChapterId: String?) {
+            val externalKey = observation.externalChapterKey?.let {
+                EvidenceExternalKey(observation.producerKind, observation.producerId, it)
+            }
+            val existing = externalKey?.let(persistedEvidenceByExternalKey::get)
+                ?: persistedEvidence[observation.id]
+            val stableId = existing?.evidence?.id ?: observation.id
+            existing?.evidence?.externalChapterKey?.let { previousExternalKey ->
+                if (previousExternalKey != observation.externalChapterKey) {
+                    persistedEvidenceByExternalKey.remove(
+                        EvidenceExternalKey(
+                            existing.evidence.producerKind,
+                            existing.evidence.producerId,
+                            previousExternalKey,
+                        ),
+                    )
+                }
+            }
+            val persisted = PersistedChapterEvidence(
+                evidence = observation.copy(id = stableId),
+                mappedCanonicalChapterId = mappedCanonicalChapterId,
+                rawMetadata = existing?.rawMetadata ?: byteArrayOf(),
+            )
+            persistedEvidence[stableId] = persisted
+            if (externalKey != null) persistedEvidenceByExternalKey[externalKey] = persisted
+            evidenceUpserts += ChapterEvidenceWrite(observation, mappedCanonicalChapterId)
+        }
+
         val initialChapterCount = chapters.size
         val reasonCounts = mutableMapOf<ChapterInventoryDiagnosticReason, Int>()
         val diagnosticLabels = mutableListOf<String>()
@@ -129,25 +182,19 @@ class ReconcileChapterEvidence internal constructor(
             ) {
                 provisionalCount++
                 reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
-                val persisted = evidenceRepository.upsert(
-                    evidence = observation,
-                    mappedCanonicalChapterId = null,
-                )
-                persistedEvidence[persisted.evidence.id] = persisted
+                stageEvidence(observation, mappedCanonicalChapterId = null)
                 continue
             }
 
             val externalEvidence = observation.externalChapterKey?.let { externalKey ->
-                evidenceRepository.getByProducerExternalKey(
-                    producerKind = observation.producerKind,
-                    producerId = observation.producerId,
-                    externalChapterKey = externalKey,
-                )
+                persistedEvidenceByExternalKey[
+                    EvidenceExternalKey(observation.producerKind, observation.producerId, externalKey),
+                ]
             }
             val previousEvidence = externalEvidence ?: persistedEvidence[observation.id]
             val mappedChapterId = previousEvidence?.mappedCanonicalChapterId
             val mappedChapter = if (mappedChapterId != null) {
-                canonicalChapterRepository.getById(mappedChapterId)?.also { chapter ->
+                (chapters[mappedChapterId] ?: canonicalChapterRepository.getById(mappedChapterId))?.also { chapter ->
                     require(chapter.canonicalTitleId == canonicalTitleId) {
                         "Evidence mapping points to chapter from another canonical title"
                     }
@@ -168,9 +215,7 @@ class ReconcileChapterEvidence internal constructor(
                 parsedIdentityIsReliable &&
                 (mappedChapter == null || mappedIdentityConflicts)
             ) {
-                chapters.values.firstOrNull { chapter ->
-                    chapter.identity.isSpecific && chapter.identity == parsed.identity
-                }
+                chaptersByIdentity[parsed.identity]
             } else {
                 null
             }
@@ -188,8 +233,9 @@ class ReconcileChapterEvidence internal constructor(
                     confirmation = CanonicalChapterConfirmation.CONFLICTED,
                     updatedAt = clock(),
                 )
-                canonicalChapterRepository.upsert(conflicted)
                 chapters[conflicted.id] = conflicted
+                chaptersByIdentity[conflicted.identity] = conflicted
+                chapterUpserts[conflicted.id] = conflicted
             }
 
             // A reliable observation whose stable external key changed semantic
@@ -230,16 +276,18 @@ class ReconcileChapterEvidence internal constructor(
                 updatedAt = if (selected.id in chapters) clock() else selected.updatedAt,
             )
 
-            canonicalChapterRepository.upsert(reconciled)
             chapters[reconciled.id] = reconciled
+            if (reconciled.identity.isSpecific) chaptersByIdentity[reconciled.identity] = reconciled
+            chapterUpserts[reconciled.id] = reconciled
 
-            val persisted = evidenceRepository.upsert(
-                evidence = observation,
-                mappedCanonicalChapterId = reconciled.id,
-            )
-            persistedEvidence[persisted.evidence.id] = persisted
+            stageEvidence(observation, mappedCanonicalChapterId = reconciled.id)
             acceptedCount++
             reasonCounts.increment(ChapterInventoryDiagnosticReason.PERSISTED_MAPPED)
+        }
+
+        canonicalChapterRepository.upsertBatch(chapterUpserts.values.toList(), emptyList())
+        evidenceRepository.upsertBatch(evidenceUpserts).forEach { persisted ->
+            persistedEvidence[persisted.evidence.id] = persisted
         }
 
         val normalizedLabels = ChapterInventoryDiagnosticLabels.boundariesAndGaps(diagnosticLabels)
@@ -348,4 +396,10 @@ class ReconcileChapterEvidence internal constructor(
     private companion object {
         const val RELIABLE_CONFIDENCE = 0.95
     }
+
+    private data class EvidenceExternalKey(
+        val producerKind: ProducerKind,
+        val producerId: String,
+        val externalChapterKey: String,
+    )
 }
