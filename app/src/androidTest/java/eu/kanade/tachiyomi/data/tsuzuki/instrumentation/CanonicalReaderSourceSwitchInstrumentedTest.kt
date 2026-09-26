@@ -1300,6 +1300,29 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
             assertTrue("Foreground launch must create ReaderActivity", launched is ReaderActivity)
+            // The disposable emulator can show Android's first-use immersive-mode
+            // tutorial above Reader ("Viewing full screen" / "Got it"). It is an
+            // Android SYSTEM window: ActivityManager reports Reader top-resumed,
+            // but screenshots and touch input belong to this tutorial until
+            // dismissed. Dismiss only this exact OS prompt in instrumentation;
+            // never disable fullscreen behavior in the production Reader.
+            if (device.wait(Until.hasObject(By.text("Viewing full screen")), 5_000L)) {
+                val confirm = requireNotNull(device.findObject(By.text("Got it"))) {
+                    "Android fullscreen tutorial appeared without its confirmation button"
+                }
+                confirm.click()
+                assertTrue(
+                    "Android fullscreen tutorial should close after confirmation",
+                    device.wait(Until.gone(By.text("Viewing full screen")), 5_000L),
+                )
+            }
+            awaitSourceSwitchFixtureValue("Reader to own focus after Android immersive confirmation") {
+                var focused = false
+                instrumentation.runOnMainSync {
+                    focused = (launched as ReaderActivity).window.decorView.hasWindowFocus()
+                }
+                focused.takeIf { it }
+            }
         }
 
         fun close() {
