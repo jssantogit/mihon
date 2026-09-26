@@ -105,7 +105,7 @@ class ChapterInventoryAndReconciliationTest {
 
         report.createdCanonicalChapterIds.size shouldBe 1
         val newChapterId = report.canonicalChapters.single().id
-        newChapterId in setOf("chapter-volume-2-a", "chapter-volume-2-b") shouldBe false
+        (newChapterId in setOf("chapter-volume-2-a", "chapter-volume-2-b")) shouldBe false
         repository.getVariantBySourceIdentity(2L, "/md/vol2/ch1")?.canonicalChapterId shouldBe newChapterId
     }
 
