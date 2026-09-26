@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -41,6 +42,7 @@ import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableChapter
 import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryCompletion
+import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryFailureStage
 import tachiyomi.domain.tsuzuki.content.interactor.FastReadingDiscoveryEvent
 import tachiyomi.domain.tsuzuki.content.interactor.PlannedAddonSearch
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
@@ -549,6 +551,66 @@ class ContentSelectorScreenModelTest {
         job.isActive shouldBe false
         model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
         verify(exactly = 1) { discovery.discover("title-1", "chapter-1", any()) }
+    }
+
+    @Test
+    fun `a late provider failure never replaces a verified option`() = runTest(dispatcher) {
+        val verified = option("reader", "en", null, 1L)
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flowOf(
+            FastReadingDiscoveryEvent.Searching(
+                listOf(PlannedAddonSearch(AddonId("reader"), setOf(7L), batchSize = 1)),
+            ),
+            FastReadingDiscoveryEvent.Ready(listOf(verified), alreadyAvailable = false),
+            FastReadingDiscoveryEvent.SourceFailed(
+                addonId = AddonId("broken"),
+                sourceId = 8L,
+                stage = FastDiscoveryFailureStage.SEARCH,
+            ),
+            FastReadingDiscoveryEvent.Completed(FastDiscoveryCompletion.TIME_BUDGET, emptyMap()),
+        )
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("reader", "Reader")),
+            discovery = discovery,
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.options.single().option shouldBe verified
+        ready.failedProviderCount shouldBe 1
+    }
+
+    @Test
+    fun `visible deadline stops a stuck source`() = runTest(dispatcher) {
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flow {
+            emit(
+                FastReadingDiscoveryEvent.Searching(
+                    listOf(PlannedAddonSearch(AddonId("reader"), setOf(7L), batchSize = 1)),
+                ),
+            )
+            awaitCancellation()
+        }
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("reader", "Reader")),
+            discovery = discovery,
+        )
+        val pending = model.start("title-1", "chapter-1")
+        runCurrent()
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Discovering>()
+
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        pending.isActive shouldBe false
+        val empty = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+        empty.timedOut shouldBe true
+        empty.discoveryAttempted shouldBe true
+        empty.canonicalChapterId shouldBe "chapter-1"
     }
 
     @Test

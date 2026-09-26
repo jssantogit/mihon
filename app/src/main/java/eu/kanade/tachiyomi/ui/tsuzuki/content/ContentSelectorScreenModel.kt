@@ -11,6 +11,8 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -313,6 +315,7 @@ class ContentSelectorScreenModel internal constructor(
         var needsConfirmation = false
         var addonCount = 0
         discoverer.discover(titleId, chapterId).collect { event ->
+            currentCoroutineContext().ensureActive()
             when (event) {
                 is FastReadingDiscoveryEvent.Searching -> {
                     addonCount = event.targets.size
@@ -393,7 +396,35 @@ class ContentSelectorScreenModel internal constructor(
         loadJob = viewModelScope.launch {
             try {
                 if (allowDiscovery && discoverReadableChapter != null) {
-                    runAutomaticDiscovery(titleId, chapterId)
+                    val requestJob = currentCoroutineContext()[Job]
+                    // Third-party Java extensions may ignore coroutine cancellation.
+                    // A separate Main-scope deadline stops the visible spinner even
+                    // when the IO worker has not cooperated with its timeout.
+                    val visibleDeadline = viewModelScope.launch {
+                        delay(VISIBLE_DISCOVERY_DEADLINE_MILLIS)
+                        if (loadJob !== requestJob) return@launch
+                        val current = _state.value
+                        if (current == ContentSelectorScreenState.Loading ||
+                            current is ContentSelectorScreenState.Discovering
+                        ) {
+                            loadJob?.cancel()
+                            _state.value = ContentSelectorScreenState.Empty(
+                                canonicalTitleId = titleId,
+                                canonicalChapterId = chapterId,
+                                discoveryAttempted = true,
+                                timedOut = true,
+                                failedAttempts = (current as? ContentSelectorScreenState.Discovering)
+                                    ?.failedAttempts ?: 0,
+                                confirmationRequired = (current as? ContentSelectorScreenState.Discovering)
+                                    ?.confirmationRequired ?: false,
+                            )
+                        }
+                    }
+                    try {
+                        runAutomaticDiscovery(titleId, chapterId)
+                    } finally {
+                        visibleDeadline.cancel()
+                    }
                     return@launch
                 }
                 val preference = contentPreferenceRepository.get(titleId)
@@ -460,5 +491,8 @@ class ContentSelectorScreenModel internal constructor(
             }
         }
         return loadJob!!
+    }
+    private companion object {
+        const val VISIBLE_DISCOVERY_DEADLINE_MILLIS = 10_000L
     }
 }
