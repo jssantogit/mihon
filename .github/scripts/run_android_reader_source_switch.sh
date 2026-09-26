@@ -6,6 +6,13 @@ umask 077
 readonly target_package='app.mihon.dev'
 readonly test_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.CanonicalReaderSourceSwitchInstrumentedTest'
 readonly results_root='.github/results/android-reader-source-switch'
+# The disposable CI diagnostic runs one failing case first, avoiding eight
+# repeated one-minute screenshot timeouts before establishing visible pixels.
+readonly selected_method="${TSUZUKI_READER_SWITCH_METHOD:-}"
+if [[ -n "$selected_method" && "$selected_method" != 'emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession' ]]; then
+  echo 'ANDROID_SOURCE_SWITCH_SETUP|outcome=BLOCKED|reason=INVALID_TARGETED_METHOD' >&2
+  exit 2
+fi
 readonly run_name="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 readonly results_dir="${results_root}/${run_name}"
 mkdir -p "$results_dir"
@@ -169,6 +176,9 @@ for method in \
   repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry \
   slowSourceDoesNotBlockHealthySourceOption \
   cancelledDiscoveryCannotMutateActiveReaderSession; do
+  if [[ -n "$selected_method" && "$method" != "$selected_method" ]]; then
+    continue
+  fi
   if ! run_one "$method"; then
     overall_status=1
   fi

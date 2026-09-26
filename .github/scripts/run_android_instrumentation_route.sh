@@ -35,8 +35,13 @@ if [[ "$instrumentation_suite" != 'navigation' && "$instrumentation_suite" != 'r
   exit 2
 fi
 if [[ "$instrumentation_suite" == 'reader-source-switch' && "$event_name" != 'workflow_dispatch' ]]; then
-  echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=READER_SWITCH_REQUIRES_OFFLINE_DISPATCH' >&2
-  exit 2
+  # This exact disposable CI branch may run the synthetic, strictly offline
+  # screenshot diagnostic on push. Normal push routes remain forbidden.
+  if [[ "$event_name" != 'push' || "${GITHUB_REF_NAME:-}" != 'tsuzuki/chapter-acceptance-ci' ||
+        "${TSUZUKI_CI_OFFLINE_SOURCE_SWITCH:-false}" != 'true' || "$live_probe" != 'false' ]]; then
+    echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=READER_SWITCH_REQUIRES_OFFLINE_DISPATCH' >&2
+    exit 2
+  fi
 fi
 
 case "$event_name" in
@@ -65,7 +70,14 @@ case "$event_name" in
     fi
     ;;
   push)
-    if [[ "$mangaball_push_marker" == 'true' ]]; then
+    if [[ "$instrumentation_suite" == 'reader-source-switch' ]]; then
+      if [[ "$fixture_marker" != 'true' || "$live_probe" != 'false' ]]; then
+        echo 'ANDROID_INSTRUMENTATION_ROUTE|outcome=BLOCKED|reason=READER_SWITCH_REQUIRES_OFFLINE_DISPATCH' >&2
+        exit 2
+      fi
+      route='READER_SOURCE_SWITCH'
+      provider_calls='0'
+    elif [[ "$mangaball_push_marker" == 'true' ]]; then
       # An exact, one-shot commit marker permits this one bounded MangaBall probe.
       # All three gates are required; ordinary pushes can never query MangaBall.
       if [[ "$extension_profile" != 'mangaball' || "$live_probe" != 'true' || "$fixture_marker" != 'true' ]]; then

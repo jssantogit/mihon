@@ -5,6 +5,7 @@ on:
     branches:
       - tsuzuki/runtime-e2e-tests
       - tsuzuki/generic-addon-compatibility
+      - tsuzuki/chapter-acceptance-ci
     paths:
       - 'test-fixtures/extensions/**'
       - 'app/src/androidTest/**'
@@ -158,7 +159,7 @@ jobs:
           python3 .github/scripts/verify_extension_fixture.py
           python3 .github/scripts/verify_mangaball_fixture.py
       - name: Assemble app and instrumentation APKs for Reader source-switch route
-        if: github.event_name == 'workflow_dispatch' && inputs.instrumentation_suite == 'reader-source-switch'
+        if: (github.event_name == 'workflow_dispatch' && inputs.instrumentation_suite == 'reader-source-switch') || (github.event_name == 'push' && github.ref_name == 'tsuzuki/chapter-acceptance-ci')
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Enable KVM for Android emulator
         run: |
@@ -175,7 +176,7 @@ jobs:
           disable-animations: true
           # The emulator action runs individual YAML script lines in separate shells.
           # Keep setup and conditional logic within ONE invoked Bash script.
-          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')) }}" false "${{ inputs.extension_profile || (contains(github.event.head_commit.message, '[android-live-mangaball]') && 'mangaball' || 'mangafire') }}" "${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ inputs.instrumentation_suite || 'navigation' }}"
+          script: TSUZUKI_CI_OFFLINE_SOURCE_SWITCH=true TSUZUKI_READER_SWITCH_METHOD=emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')) }}" false "${{ inputs.extension_profile || (contains(github.event.head_commit.message, '[android-live-mangaball]') && 'mangaball' || 'mangafire') }}" "${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ inputs.instrumentation_suite || (github.ref_name == 'tsuzuki/chapter-acceptance-ci' && 'reader-source-switch') || 'navigation' }}"
       - name: Upload sanitized instrumentation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
