@@ -123,6 +123,73 @@ class PlanFastReadingDiscoveryTest {
         result.all { it.allowedSourceIds.size <= 2 } shouldBe true
     }
 
+    @Test
+    fun `Kimetsu reaches third Portuguese addon without selecting search more`() {
+        val absent = installed("animexnovel", 1L)
+        val broken = installed("mangaflix", 2L)
+        val readable = installed("mangalivreto", 3L)
+        val result = planner.planAutomatic(
+            installed = listOf(readable, broken, absent),
+            eligibility = mapOf(
+                absent.id to listOf(source(1L, "pt-BR")),
+                broken.id to listOf(source(2L, "pt-BR")),
+                readable.id to listOf(source(3L, "pt-BR")),
+            ),
+            preferredAddonId = null,
+            preferredLanguages = listOf("pt-BR", "pt", "en"),
+        )
+
+        result.map { it.addonId } shouldBe listOf(absent.id, broken.id, readable.id)
+        result.last().allowedSourceIds shouldBe setOf(3L)
+        result.sumOf { it.batchSize } shouldBe 3
+    }
+
+    @Test
+    fun `cold discovery considers giant multilingual English addon without sweeping its languages`() {
+        val small = (1..6).map { i -> installed("pt-$i", i.toLong()) }
+        val giant = installed("mangadot", *LongArray(120) { it.toLong() + 100L })
+        val installed = small + giant
+        val eligibility = small.associate { item ->
+            item.id to listOf(source(item.mihonSourceIds.single(), "pt-BR"))
+        } + (giant.id to (
+            listOf(source(100L, "pt-BR"), source(101L, "en")) +
+                (102L..219L).map { source(it, "zh-Hant") }
+            ))
+        val result = planner.planAutomatic(
+            installed = installed,
+            eligibility = eligibility,
+            preferredAddonId = null,
+            preferredLanguages = listOf("pt-BR", "pt", "en"),
+        )
+
+        result.size shouldBe 7
+        result.single { it.addonId == giant.id }.allowedSourceIds shouldBe setOf(100L, 101L)
+        result.sumOf { it.batchSize } shouldBe 8
+    }
+
+    @Test
+    fun `automatic scan cannot exceed enabled IDs or bounded package and query limits`() {
+        val addons = (1..15).map { i -> installed("addon-$i", i.toLong(), (i + 100).toLong()) }
+        val eligibility = addons.associate { addon ->
+            addon.id to listOf(
+                source(addon.mihonSourceIds[0], "pt-BR"),
+                source(addon.mihonSourceIds[1], "en"),
+                source(999L, "en"),
+            )
+        }
+        val result = planner.planAutomatic(
+            installed = addons,
+            eligibility = eligibility,
+            preferredAddonId = null,
+            preferredLanguages = listOf("pt-BR", "en"),
+        )
+
+        result.size shouldBe 8
+        result.sumOf { it.batchSize } shouldBe 16
+        result.all { it.batchSize <= 2 && it.allowedSourceIds.size == it.batchSize } shouldBe true
+        result.none { 999L in it.allowedSourceIds } shouldBe true
+    }
+
     private fun installed(name: String, vararg ids: Long) = InstalledAddon(
         id = AddonId(name),
         displayName = name,

@@ -237,8 +237,10 @@ private fun TitleHeader(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        TextButton(onClick = onLinkReadingAddon) {
-            Text("Link alternative reading Add-on")
+        if (state.chapterDiagnosticsRecording) {
+            TextButton(onClick = onLinkReadingAddon) {
+                Text("Link alternative reading Add-on")
+            }
         }
         state.refreshError?.let {
             Text(

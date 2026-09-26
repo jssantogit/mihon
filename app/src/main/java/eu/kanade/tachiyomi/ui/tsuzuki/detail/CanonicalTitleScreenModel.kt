@@ -133,7 +133,7 @@ class CanonicalTitleScreenModel(
             if (alreadyLoaded == null) {
                 loadCachedFirst(canonicalTitleId)
             } else {
-                refreshInBackground(canonicalTitleId)
+                refreshInBackground(canonicalTitleId, refreshObservedChapters = false)
             }
         }
         return operation!!
@@ -398,7 +398,7 @@ class CanonicalTitleScreenModel(
                     "${(_state.value as? CanonicalTitleScreenState.Loaded)?.chapters?.size ?: 0} " +
                     "elapsed=${initialStart.elapsedNow()}"
             }
-            refreshInBackground(canonicalTitleId)
+            refreshInBackground(canonicalTitleId, refreshObservedChapters = false)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -406,7 +406,10 @@ class CanonicalTitleScreenModel(
         }
     }
 
-    private suspend fun refreshInBackground(canonicalTitleId: String) {
+    private suspend fun refreshInBackground(
+        canonicalTitleId: String,
+        refreshObservedChapters: Boolean = true,
+    ) {
         val refreshStart = TimeSource.Monotonic.markNow()
         val before = _state.value as? CanonicalTitleScreenState.Loaded
         if (before != null) {
@@ -414,8 +417,15 @@ class CanonicalTitleScreenModel(
         }
 
         val errors = coroutineScope {
+            // Opening a title must not re-query dozens of unrelated internal
+            // extension languages while the Reader is discovering one chapter.
+            // The explicit Refresh action still performs the comprehensive probe.
             val chapterRefresh = async {
-                refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull()
+                if (refreshObservedChapters) {
+                    refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull()
+                } else {
+                    null
+                }
             }
             val metadataRefresh = async {
                 refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull()

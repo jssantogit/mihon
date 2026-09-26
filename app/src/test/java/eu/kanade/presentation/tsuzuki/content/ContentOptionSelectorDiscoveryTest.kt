@@ -121,6 +121,50 @@ class ContentOptionSelectorDiscoveryTest {
     }
 
     @Test
+    fun `automatic discovery displays options without requiring an Add-on selection`() {
+        val ready = ContentSelectorScreenState.Ready(
+            canonicalTitleId = "canonical-title",
+            canonicalChapterId = "canonical-chapter",
+            options = listOf(
+                ContentOptionPresentation(
+                    option = ContentOption(
+                        key = "reader:chapter",
+                        canonicalChapterId = "canonical-chapter",
+                        addonId = AddonId("reader"),
+                        language = "pt-BR",
+                        scanlationGroup = null,
+                        releaseDate = null,
+                        delivery = ContentDelivery.LocalArchive("content://chapter"),
+                    ),
+                    addonDisplayName = "Manga Livre.to",
+                    language = "pt-BR",
+                    scanlationGroup = null,
+                    releaseDate = null,
+                ),
+            ),
+            preferredAddonId = null,
+            preferredOptionKey = null,
+            preferredLanguage = null,
+            preferredUnavailable = false,
+            isDiscovering = true,
+        )
+
+        ready.options.size shouldBe 1
+        ready.isDiscovering shouldBe true
+        ready.sourceDiscoveryTitleId() shouldBe null
+    }
+
+    @Test
+    fun `ordinary readers are not asked to dig through Add-ons`() {
+        showManualSourceAction(developerToolsEnabled = false) shouldBe false
+        showManualSourceAction(developerToolsEnabled = true) shouldBe true
+        showManualSourceAction(
+            developerToolsEnabled = false,
+            confirmationRequired = true,
+        ) shouldBe true
+    }
+
+    @Test
     fun `empty ready state does not invent an option and still allows discovery`() {
         val state = ContentSelectorScreenState.Ready(
             canonicalTitleId = "canonical-title",

@@ -37,15 +37,15 @@ data class InitialDiscoveryBudget(
     val totalMillis: Long = 10_000L,
     val existingLookupMillis: Long = 2_000L,
     val sourceTimeoutMillis: Long = 4_000L,
-    val maxAddons: Int = PlanFastReadingDiscovery.MAX_INITIAL_ADDONS,
-    val maxQueries: Int = PlanFastReadingDiscovery.MAX_INITIAL_QUERIES,
+    val maxAddons: Int = PlanFastReadingDiscovery.MAX_AUTOMATIC_ADDONS,
+    val maxQueries: Int = PlanFastReadingDiscovery.MAX_AUTOMATIC_QUERIES,
 ) {
     init {
         require(totalMillis in 1L..60_000L)
         require(existingLookupMillis in 1L..totalMillis)
         require(sourceTimeoutMillis in 1L..ContentBindingSearchRequest.MAX_SOURCE_TIMEOUT_MILLIS)
-        require(maxAddons in 1..PlanFastReadingDiscovery.MAX_INITIAL_ADDONS)
-        require(maxQueries in 1..PlanFastReadingDiscovery.MAX_INITIAL_QUERIES)
+        require(maxAddons in 1..PlanFastReadingDiscovery.MAX_AUTOMATIC_ADDONS)
+        require(maxQueries in 1..PlanFastReadingDiscovery.MAX_AUTOMATIC_QUERIES)
     }
 }
 
@@ -156,6 +156,8 @@ class DiscoverReadableChapter internal constructor(
         val queried = linkedMapOf<AddonId, Set<Long>>()
         val queriedGate = Mutex()
         val hasUnconfirmedCandidate = AtomicBoolean(false)
+        val publishedOptionKeys = mutableSetOf<String>()
+        val publicationGate = Mutex()
 
         val finishedWithinBudget = withTimeoutOrNull(budget.totalMillis) {
             val initial = try {
@@ -221,7 +223,7 @@ class DiscoverReadableChapter internal constructor(
                 }
                 addon.id to current
             }
-            val targets = planner.execute(
+            val targets = planner.planAutomatic(
                 installed = eligibleAddons,
                 eligibility = eligibility,
                 preferredAddonId = preferred?.preferredAddonId,
@@ -241,130 +243,138 @@ class DiscoverReadableChapter internal constructor(
             send(FastReadingDiscoveryEvent.Searching(targets))
 
             coroutineScope {
+                val addonGate = Semaphore(MAX_CONCURRENT_ADDON_SEARCHES)
                 targets.map { target ->
                     launch {
-                        val request = ContentBindingSearchRequest(
-                            canonicalTitleId = canonicalTitleId,
-                            addonId = target.addonId,
-                            preferredLanguages = preferredLanguages,
-                            allowedSourceIds = target.allowedSourceIds,
-                            batchSize = target.batchSize,
-                            sourceTimeoutMillis = budget.sourceTimeoutMillis,
-                        )
-                        try {
-                            sourceSearch(request).collect { event ->
-                                when (event) {
-                                    is ContentBindingSearchProgress.ExistingBindingsObserved -> Unit
-                                    is ContentBindingSearchProgress.Completed -> {
-                                        queriedGate.withLock {
-                                            queried[target.addonId] =
-                                                queried[target.addonId].orEmpty() + event.queriedSourceIds
+                        addonGate.withPermit {
+                            val request = ContentBindingSearchRequest(
+                                canonicalTitleId = canonicalTitleId,
+                                addonId = target.addonId,
+                                preferredLanguages = preferredLanguages,
+                                allowedSourceIds = target.allowedSourceIds,
+                                batchSize = target.batchSize,
+                                sourceTimeoutMillis = budget.sourceTimeoutMillis,
+                            )
+                            try {
+                                sourceSearch(request).collect { event ->
+                                    when (event) {
+                                        is ContentBindingSearchProgress.ExistingBindingsObserved -> Unit
+                                        is ContentBindingSearchProgress.Completed -> {
+                                            queriedGate.withLock {
+                                                queried[target.addonId] =
+                                                    queried[target.addonId].orEmpty() + event.queriedSourceIds
+                                            }
                                         }
-                                    }
-                                    is ContentBindingSearchProgress.SourceCompleted -> {
-                                        when (event.outcome) {
-                                            ContentBindingSourceOutcome.CONFIRMATION_REQUIRED -> {
-                                                if (event.candidates.isNotEmpty()) {
-                                                    hasUnconfirmedCandidate.set(true)
-                                                    send(
-                                                        FastReadingDiscoveryEvent.ConfirmationRequired(
-                                                            target.addonId,
-                                                            event.candidates,
-                                                        ),
-                                                    )
-                                                }
-                                            }
-                                            ContentBindingSourceOutcome.FAILURE -> send(
-                                                FastReadingDiscoveryEvent.SourceFailed(
-                                                    target.addonId,
-                                                    event.sourceId,
-                                                    FastDiscoveryFailureStage.SEARCH,
-                                                    event.failure,
-                                                ),
-                                            )
-                                            ContentBindingSourceOutcome.BOUND -> {
-                                                for (binding in event.bindings) {
-                                                    if (binding.canonicalTitleId != canonicalTitleId ||
-                                                        binding.addonId != target.addonId ||
-                                                        binding.availability != ContentBindingAvailability.AVAILABLE
-                                                    ) {
-                                                        continue
-                                                    }
-                                                    if (!attemptedBindingGate.withLock {
-                                                            attemptedBindingIds.add(binding.id)
-                                                        }
-                                                    ) {
-                                                        continue
-                                                    }
-                                                    refreshGate.withPermit {
-                                                        if (found.get()) return@withPermit
-                                                        val refreshed = try {
-                                                            refreshBinding(binding)
-                                                        } catch (error: CancellationException) {
-                                                            throw error
-                                                        } catch (_: Throwable) {
-                                                            Result.failure(UnitRefreshFailedException())
-                                                        }
-                                                        if (refreshed.isFailure) {
-                                                            send(
-                                                                FastReadingDiscoveryEvent.SourceFailed(
-                                                                    target.addonId,
-                                                                    event.sourceId,
-                                                                    FastDiscoveryFailureStage.EVIDENCE_REFRESH,
-                                                                ),
-                                                            )
-                                                            return@withPermit
-                                                        }
-                                                        val available = try {
-                                                            lookupAfterBinding(
-                                                                canonicalTitleId,
-                                                                canonicalChapterId,
-                                                                binding,
-                                                            )
-                                                        } catch (error: CancellationException) {
-                                                            throw error
-                                                        } catch (_: Throwable) {
-                                                            send(
-                                                                FastReadingDiscoveryEvent.SourceFailed(
-                                                                    target.addonId,
-                                                                    event.sourceId,
-                                                                    FastDiscoveryFailureStage.CHAPTER_LOOKUP,
-                                                                ),
-                                                            )
-                                                            return@withPermit
-                                                        }
-                                                        val matching = available.options.filter { option ->
-                                                            option.canonicalChapterId == canonicalChapterId &&
-                                                                option.addonId == target.addonId
-                                                        }
-                                                        if (matching.isNotEmpty() && found.compareAndSet(false, true)) {
-                                                            send(
-                                                                FastReadingDiscoveryEvent.Ready(
-                                                                    matching,
-                                                                    alreadyAvailable = false,
-                                                                ),
-                                                            )
-                                                        }
+                                        is ContentBindingSearchProgress.SourceCompleted -> {
+                                            when (event.outcome) {
+                                                ContentBindingSourceOutcome.CONFIRMATION_REQUIRED -> {
+                                                    if (event.candidates.isNotEmpty()) {
+                                                        hasUnconfirmedCandidate.set(true)
+                                                        send(
+                                                            FastReadingDiscoveryEvent.ConfirmationRequired(
+                                                                target.addonId,
+                                                                event.candidates,
+                                                            ),
+                                                        )
                                                     }
                                                 }
+                                                ContentBindingSourceOutcome.FAILURE -> send(
+                                                    FastReadingDiscoveryEvent.SourceFailed(
+                                                        target.addonId,
+                                                        event.sourceId,
+                                                        FastDiscoveryFailureStage.SEARCH,
+                                                        event.failure,
+                                                    ),
+                                                )
+                                                ContentBindingSourceOutcome.BOUND -> {
+                                                    for (binding in event.bindings) {
+                                                        if (binding.canonicalTitleId != canonicalTitleId ||
+                                                            binding.addonId != target.addonId ||
+                                                            binding.availability != ContentBindingAvailability.AVAILABLE
+                                                        ) {
+                                                            continue
+                                                        }
+                                                        if (!attemptedBindingGate.withLock {
+                                                                attemptedBindingIds.add(binding.id)
+                                                            }
+                                                        ) {
+                                                            continue
+                                                        }
+                                                        refreshGate.withPermit refreshPermit@{
+                                                            val refreshed = try {
+                                                                refreshBinding(binding)
+                                                            } catch (error: CancellationException) {
+                                                                throw error
+                                                            } catch (_: Throwable) {
+                                                                Result.failure(UnitRefreshFailedException())
+                                                            }
+                                                            if (refreshed.isFailure) {
+                                                                send(
+                                                                    FastReadingDiscoveryEvent.SourceFailed(
+                                                                        target.addonId,
+                                                                        event.sourceId,
+                                                                        FastDiscoveryFailureStage.EVIDENCE_REFRESH,
+                                                                    ),
+                                                                )
+                                                                return@refreshPermit
+                                                            }
+                                                            val available = try {
+                                                                lookupAfterBinding(
+                                                                    canonicalTitleId,
+                                                                    canonicalChapterId,
+                                                                    binding,
+                                                                )
+                                                            } catch (error: CancellationException) {
+                                                                throw error
+                                                            } catch (_: Throwable) {
+                                                                send(
+                                                                    FastReadingDiscoveryEvent.SourceFailed(
+                                                                        target.addonId,
+                                                                        event.sourceId,
+                                                                        FastDiscoveryFailureStage.CHAPTER_LOOKUP,
+                                                                    ),
+                                                                )
+                                                                return@refreshPermit
+                                                            }
+                                                            val matching = available.options.filter { option ->
+                                                                option.canonicalChapterId == canonicalChapterId &&
+                                                                    option.addonId == target.addonId
+                                                            }
+                                                            if (matching.isNotEmpty()) {
+                                                                val fresh = publicationGate.withLock {
+                                                                    matching.filter { publishedOptionKeys.add(it.key) }
+                                                                }
+                                                                if (fresh.isNotEmpty()) {
+                                                                    found.set(true)
+                                                                    send(
+                                                                        FastReadingDiscoveryEvent.Ready(
+                                                                            fresh,
+                                                                            alreadyAvailable = false,
+                                                                        ),
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                ContentBindingSourceOutcome.EMPTY,
+                                                ContentBindingSourceOutcome.NO_MATCH,
+                                                -> Unit
                                             }
-                                            ContentBindingSourceOutcome.EMPTY,
-                                            ContentBindingSourceOutcome.NO_MATCH,
-                                            -> Unit
                                         }
                                     }
                                 }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Throwable) {
+                                send(
+                                    FastReadingDiscoveryEvent.SourceFailed(
+                                        target.addonId,
+                                        null,
+                                        FastDiscoveryFailureStage.SEARCH,
+                                    ),
+                                )
                             }
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (_: Throwable) {
-                            send(
-                                FastReadingDiscoveryEvent.SourceFailed(
-                                    target.addonId,
-                                    null,
-                                    FastDiscoveryFailureStage.SEARCH,
-                                ),
-                            )
                         }
                     }
                 }.joinAll()
@@ -397,5 +407,6 @@ class DiscoverReadableChapter internal constructor(
 
     private companion object {
         const val MAX_CONCURRENT_TARGETED_REFRESHES = 2
+        const val MAX_CONCURRENT_ADDON_SEARCHES = 3
     }
 }

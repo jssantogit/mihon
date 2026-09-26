@@ -49,7 +49,13 @@ internal fun sourceDiscoveryAction(
     return { action(canonicalTitleId) }
 }
 
-/** Existing readable options must not hide the ability to add other languages. */
+/** User confirmation is the only normal exception to automatic source selection. */
+internal fun showManualSourceAction(
+    developerToolsEnabled: Boolean,
+    confirmationRequired: Boolean = false,
+): Boolean = developerToolsEnabled || confirmationRequired
+
+/** Manual source selection is an internal diagnostic action, not a normal reader step. */
 internal fun additionalSourcesAction(
     state: ContentSelectorScreenState,
     onFindOrAddSource: ((canonicalTitleId: String) -> Unit)?,
@@ -70,6 +76,7 @@ fun ContentOptionSelectorSheet(
     onOpenAddonsSettings: () -> Unit,
     onFindOrAddSource: ((canonicalTitleId: String) -> Unit)? = null,
     onCancelDiscovery: (() -> Unit)? = null,
+    showDeveloperSourceTools: Boolean = false,
     onDismissRequest: () -> Unit,
 ) {
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
@@ -128,14 +135,14 @@ fun ContentOptionSelectorSheet(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (showDeveloperSourceTools) {
                             onCancelDiscovery?.let { onCancel ->
                                 OutlinedButton(onClick = onCancel) { Text("Stop searching") }
                             }
-                        }
-                        sourceDiscoveryAction(state, onFindOrAddSource)?.let { onClick ->
-                            Button(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
-                                Text("Choose a reading Add-on")
+                            sourceDiscoveryAction(state, onFindOrAddSource)?.let { onClick ->
+                                Button(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+                                    Text("Choose a reading Add-on")
+                                }
                             }
                         }
                     }
@@ -158,6 +165,13 @@ fun ContentOptionSelectorSheet(
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
+                        if (state.isDiscovering) {
+                            Text(
+                                "Checking other reading sources…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -175,12 +189,14 @@ fun ContentOptionSelectorSheet(
                                 )
                             }
                         }
-                        additionalSourcesAction(state, onFindOrAddSource)?.let { onClick ->
-                            OutlinedButton(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = onClick,
-                            ) {
-                                Text("Find more reading sources")
+                        if (showDeveloperSourceTools) {
+                            additionalSourcesAction(state, onFindOrAddSource)?.let { onClick ->
+                                OutlinedButton(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = onClick,
+                                ) {
+                                    Text("Find more reading sources")
+                                }
                             }
                         }
                     }
@@ -192,18 +208,25 @@ fun ContentOptionSelectorSheet(
                             state.noEnabledAddon ->
                                 "No reading Add-ons are enabled. Enable or install one to discover chapters."
                             state.confirmationRequired ->
-                                "Possible editions were found, but you must confirm the correct one. Choose an Add-on."
+                                "A possible edition needs confirmation before it can be used."
                             state.timedOut ->
-                                "The initial search has finished its time budget. " +
-                                    "Choose an Add-on to search further or retry."
+                                "No verified chapter was available within the current search. " +
+                                    "Please try again later."
                             state.discoveryAttempted ->
-                                "No verified chapter was found in the initial sources. " +
-                                    "Choose another Add-on to search more."
+                                "No verified reading option is available for this chapter right now. " +
+                                    "Please try again later."
                             else -> stringResource(MR.strings.tsuzuki_content_no_options)
                         },
                         onRetry = onRetry,
                         onOpenAddonsSettings = onOpenAddonsSettings,
-                        onFindOrAddSource = sourceDiscoveryAction(state, onFindOrAddSource),
+                        showAddonsSettings = state.noEnabledAddon || showDeveloperSourceTools,
+                        onFindOrAddSource = if (
+                            showManualSourceAction(showDeveloperSourceTools, state.confirmationRequired)
+                        ) {
+                            sourceDiscoveryAction(state, onFindOrAddSource)
+                        } else {
+                            null
+                        },
                     )
                 }
 
@@ -213,7 +236,12 @@ fun ContentOptionSelectorSheet(
                             ?: stringResource(MR.strings.tsuzuki_content_selector_error),
                         onRetry = onRetry,
                         onOpenAddonsSettings = onOpenAddonsSettings,
-                        onFindOrAddSource = sourceDiscoveryAction(state, onFindOrAddSource),
+                        showAddonsSettings = showDeveloperSourceTools,
+                        onFindOrAddSource = if (showDeveloperSourceTools) {
+                            sourceDiscoveryAction(state, onFindOrAddSource)
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -273,6 +301,7 @@ private fun SelectorUnavailableContent(
     onRetry: () -> Unit,
     onOpenAddonsSettings: () -> Unit,
     onFindOrAddSource: (() -> Unit)?,
+    showAddonsSettings: Boolean = true,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -290,8 +319,10 @@ private fun SelectorUnavailableContent(
             Button(onClick = onRetry) {
                 Text(stringResource(MR.strings.action_retry))
             }
-            OutlinedButton(onClick = onOpenAddonsSettings) {
-                Text(stringResource(MR.strings.tsuzuki_content_open_addons))
+            if (showAddonsSettings) {
+                OutlinedButton(onClick = onOpenAddonsSettings) {
+                    Text(stringResource(MR.strings.tsuzuki_content_open_addons))
+                }
             }
         }
         onFindOrAddSource?.let { onClick ->

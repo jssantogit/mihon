@@ -86,6 +86,57 @@ class PlanFastReadingDiscovery {
         }
     }
 
+    /**
+     * Production chapter discovery continues past an empty first batch without
+     * asking the reader to select an Add-on. The first two priority packages
+     * retain their existing order. Remaining enabled, language-compatible
+     * packages each get at most two relevant internal sources; this is NOT a
+     * sweep over every locale exposed by a multilingual Mihon extension.
+     */
+    fun planAutomatic(
+        installed: List<InstalledAddon>,
+        eligibility: Map<AddonId, List<AddonSourceEligibility>>,
+        preferredAddonId: AddonId?,
+        preferredLanguages: List<String>,
+        maxAddons: Int = MAX_AUTOMATIC_ADDONS,
+        maxQueries: Int = MAX_AUTOMATIC_QUERIES,
+    ): List<PlannedAddonSearch> {
+        require(maxAddons in 1..MAX_AUTOMATIC_ADDONS)
+        require(maxQueries in 1..MAX_AUTOMATIC_QUERIES)
+        val families = languageFamilies(preferredLanguages)
+        if (families.isEmpty()) return emptyList()
+        val initial = execute(
+            installed = installed,
+            eligibility = eligibility,
+            preferredAddonId = preferredAddonId,
+            preferredLanguages = preferredLanguages,
+            maxAddons = minOf(MAX_INITIAL_ADDONS, maxAddons),
+            maxQueries = minOf(MAX_INITIAL_QUERIES, maxQueries),
+        )
+        val result = initial.toMutableList()
+        val usedAddons = initial.mapTo(mutableSetOf()) { it.addonId }
+        var remaining = maxQueries - initial.sumOf { it.batchSize }
+        if (result.size >= maxAddons || remaining <= 0) return result
+
+        val remainingAddons = installed.asSequence()
+            .filter { it.enabled && it.id !in usedAddons }
+            .sortedWith(compareBy<InstalledAddon> { it.mihonSourceIds.size }.thenBy { it.id.value })
+        for (addon in remainingAddons) {
+            if (result.size >= maxAddons || remaining <= 0) break
+            val installedIds = addon.mihonSourceIds.toSet()
+            val sources = eligibility[addon.id].orEmpty().filter { source ->
+                source.enabled && source.sourceId in installedIds &&
+                    families.any { family -> family.containsLanguage(source.language) }
+            }
+            val ordered = orderedSourceIds(sources, families)
+            val count = minOf(ordered.size, MAX_AUTOMATIC_SOURCES_PER_ADDON, remaining)
+            if (count == 0) continue
+            result += PlannedAddonSearch(addon.id, ordered.take(count).toSet(), count)
+            remaining -= count
+        }
+        return result
+    }
+
     private fun orderedSourceIds(
         sources: List<AddonSourceEligibility>,
         families: List<List<String>>,
@@ -125,5 +176,8 @@ class PlanFastReadingDiscovery {
         const val MAX_INITIAL_ADDONS = 2
         const val MAX_INITIAL_QUERIES = 4
         const val MAX_INITIAL_SOURCES_PER_ADDON = 3
+        const val MAX_AUTOMATIC_ADDONS = 8
+        const val MAX_AUTOMATIC_QUERIES = 16
+        const val MAX_AUTOMATIC_SOURCES_PER_ADDON = 2
     }
 }

@@ -22,6 +22,7 @@ import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkState
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import kotlinx.coroutines.flow.collect
 
@@ -45,6 +46,8 @@ data class CanonicalTitleScreen(
         val loaded = (state as? CanonicalTitleScreenState.Loaded)
             ?.takeIf { it.title.id == canonicalTitleId }
         val downloadSelectionChapterId = loaded?.downloadSelectionChapterId
+        val firstAutomaticOption = downloadSelectionChapterId != null &&
+            (contentSelectorState as? ContentSelectorScreenState.Ready)?.isDiscovering == true
 
         LaunchedEffect(canonicalTitleId, openSourceBindingFlow) {
             screenModel.start(canonicalTitleId)
@@ -114,6 +117,11 @@ data class CanonicalTitleScreen(
                 }
             }
         }
+        // A verified automatic binding has already reconciled its chapter list.
+        // Reload local rows once; do not trigger the old all-Add-on refresh.
+        LaunchedEffect(canonicalTitleId, downloadSelectionChapterId, firstAutomaticOption) {
+            if (firstAutomaticOption) screenModel.reloadReconciledChapters()?.join()
+        }
         if (linkSheetOpen) {
             ContentBindingLinkSheet(
                 state = linkState,
@@ -148,6 +156,7 @@ data class CanonicalTitleScreen(
                     linkSheetOpen = true
                 },
                 onCancelDiscovery = contentSelectorViewModel::cancelDiscovery,
+                showDeveloperSourceTools = loaded?.chapterDiagnosticsRecording == true,
                 onOpenAddonsSettings = {
                     context.startActivity(
                         Intent(context, MainActivity::class.java)

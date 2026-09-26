@@ -773,6 +773,66 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
+    fun `automatic discovery progressively merges two independent readable sources`() = runTest(dispatcher) {
+        val portuguese = option("mangalivreto", "pt-BR", null, 10L)
+        val english = option("mangadot", "en", null, 20L)
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flowOf(
+            FastReadingDiscoveryEvent.Searching(
+                listOf(
+                    PlannedAddonSearch(AddonId("mangalivreto"), setOf(7L), 1),
+                    PlannedAddonSearch(AddonId("mangadot"), setOf(8L), 1),
+                ),
+            ),
+            FastReadingDiscoveryEvent.Ready(listOf(portuguese), alreadyAvailable = false),
+            FastReadingDiscoveryEvent.Ready(listOf(english), alreadyAvailable = false),
+            FastReadingDiscoveryEvent.Completed(FastDiscoveryCompletion.FOUND, emptyMap()),
+        )
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(
+                addon("mangalivreto", "Manga Livre.to"),
+                addon("mangadot", "MangaDot"),
+            ),
+            discovery = discovery,
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.options.map { it.option.key }.toSet() shouldBe setOf(portuguese.key, english.key)
+        ready.options.map { it.addonDisplayName }.toSet() shouldBe
+            setOf("Manga Livre.to", "MangaDot")
+        ready.isDiscovering shouldBe false
+    }
+
+    @Test
+    fun `first readable source appears before later providers finish`() = runTest(dispatcher) {
+        val portuguese = option("mangalivreto", "pt-BR", null, 10L)
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flow {
+            emit(FastReadingDiscoveryEvent.Ready(listOf(portuguese), alreadyAvailable = false))
+            awaitCancellation()
+        }
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("mangalivreto", "Manga Livre.to")),
+            discovery = discovery,
+        )
+
+        model.start("title-1", "chapter-1")
+        runCurrent()
+
+        val ready = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        ready.options.single().option shouldBe portuguese
+        ready.isDiscovering shouldBe true
+        model.cancelDiscovery()
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+            .isDiscovering shouldBe false
+    }
+
+    @Test
     fun `auto search timeout leaves usable manual source actions instead of endless loading`() = runTest(dispatcher) {
         val discovery = mockk<DiscoverReadableChapter>()
         every { discovery.discover("title-1", "chapter-1", any()) } returns flowOf(

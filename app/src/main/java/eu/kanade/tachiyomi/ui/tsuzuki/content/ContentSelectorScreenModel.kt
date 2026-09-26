@@ -61,6 +61,7 @@ sealed interface ContentSelectorScreenState {
         val preferredLanguage: String?,
         val preferredUnavailable: Boolean,
         val failedProviderCount: Int = 0,
+        val isDiscovering: Boolean = false,
     ) : ContentSelectorScreenState
 
     data class Discovering(
@@ -172,7 +173,10 @@ class ContentSelectorScreenModel internal constructor(
                 confirmationRequired = current.confirmationRequired,
                 failedAttempts = current.failedAttempts,
             )
-        } else if (current is ContentSelectorScreenState.Ready || current is ContentSelectorScreenState.Loading) {
+        } else if (current is ContentSelectorScreenState.Ready) {
+            loadJob?.cancel()
+            _state.value = current.copy(isDiscovering = false)
+        } else if (current is ContentSelectorScreenState.Loading) {
             loadJob?.cancel()
         }
     }
@@ -309,6 +313,10 @@ class ContentSelectorScreenModel internal constructor(
                     }
                 }.awaitAll()
             }
+            if (canonicalTitleId == titleId && _state.value is ContentSelectorScreenState.Ready) {
+                val ready = _state.value as ContentSelectorScreenState.Ready
+                _state.value = ready.copy(isDiscovering = false, failedProviderCount = failed.get())
+            }
             if (canonicalTitleId == titleId && _state.value is ContentSelectorScreenState.Loading) {
                 canonicalChapterId?.let { chapterId ->
                     _state.value = ContentSelectorScreenState.Empty(
@@ -372,6 +380,7 @@ class ContentSelectorScreenModel internal constructor(
             preferredLanguage = preference?.preferredLanguage,
             preferredUnavailable = preferred != null && options.none { it.addonId == preferred },
             failedProviderCount = failures,
+            isDiscovering = true,
         )
     }
 
@@ -500,7 +509,11 @@ class ContentSelectorScreenModel internal constructor(
                     }
                 }
                 is FastReadingDiscoveryEvent.Completed -> {
-                    if (_state.value is ContentSelectorScreenState.Ready) return@collect
+                    val current = _state.value
+                    if (current is ContentSelectorScreenState.Ready) {
+                        _state.value = current.copy(isDiscovering = false)
+                        return@collect
+                    }
                     _state.value = ContentSelectorScreenState.Empty(
                         canonicalTitleId = titleId,
                         canonicalChapterId = chapterId,
@@ -532,7 +545,10 @@ class ContentSelectorScreenModel internal constructor(
                         delay(VISIBLE_DISCOVERY_DEADLINE_MILLIS)
                         if (loadJob !== requestJob) return@launch
                         val current = _state.value
-                        if (current == ContentSelectorScreenState.Loading ||
+                        if (current is ContentSelectorScreenState.Ready) {
+                            _state.value = current.copy(isDiscovering = false)
+                            loadJob?.cancel()
+                        } else if (current == ContentSelectorScreenState.Loading ||
                             current is ContentSelectorScreenState.Discovering
                         ) {
                             loadJob?.cancel()

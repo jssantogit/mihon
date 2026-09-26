@@ -133,11 +133,14 @@ class CanonicalTitleScreenModelTest {
 
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters.single().chapter.id shouldBe "chapter-after-binding"
+        coVerify(exactly = 0) { refresh.execute("title") }
+        model.refresh()
+        advanceUntilIdle()
         coVerify(exactly = 1) { refresh.execute("title") }
     }
 
     @Test
-    fun `detail can add and remove canonical title from Library without replacing title`() = runTest(dispatcher) {
+    fun `detail can add and remove canonical title from Library without replacing title` = runTest(dispatcher) {
         val library = FakeLibraryRepository()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),

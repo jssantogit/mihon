@@ -321,6 +321,123 @@ class DiscoverReadableChapterTest {
     }
 
     @Test
+    fun `later enabled addon is searched automatically when the first two have no chapters`() = runTest {
+        val missing = installed("animexnovel", 1L)
+        val broken = installed("mangaflix", 2L)
+        val readable = installed("mangalivreto", 3L)
+        val queried = mutableListOf<AddonId>()
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, binding ->
+                if (binding.addonId == readable.id) lookup(option("mangalivreto", "pt-BR")) else lookup()
+            },
+            installedAddons = { listOf(readable, missing, broken) },
+            sourceEligibility = { addonId ->
+                when (addonId) {
+                    missing.id -> listOf(source(1L, "pt-BR"))
+                    broken.id -> listOf(source(2L, "pt-BR"))
+                    else -> listOf(source(3L, "pt-BR"))
+                }
+            },
+            contentPreference = { null },
+            globalLanguages = { listOf("pt-BR", "en") },
+            deviceLocale = { Locale.forLanguageTag("pt-BR") },
+            sourceSearch = { request ->
+                queried += request.addonId
+                flow {
+                    when (request.addonId) {
+                        broken.id -> emit(
+                            ContentBindingSearchProgress.SourceCompleted(
+                                sourceId = 2L,
+                                language = "pt-BR",
+                                outcome = ContentBindingSourceOutcome.FAILURE,
+                            ),
+                        )
+                        readable.id -> emit(
+                            ContentBindingSearchProgress.SourceCompleted(
+                                sourceId = 3L,
+                                language = "pt-BR",
+                                outcome = ContentBindingSourceOutcome.BOUND,
+                                bindings = listOf(binding("mangalivreto", 3L)),
+                            ),
+                        )
+                        else -> Unit
+                    }
+                    emit(ContentBindingSearchProgress.Completed(request.allowedSourceIds.orEmpty().toList(), 0))
+                }
+            },
+            refreshBinding = { Result.success(Unit) },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        val events = runner.discover("title", "chapter").toList()
+
+        queried.toSet() shouldBe setOf(missing.id, broken.id, readable.id)
+        events.filterIsInstance<FastReadingDiscoveryEvent.Ready>()
+            .single().options.single().addonId shouldBe readable.id
+        (events.last() as FastReadingDiscoveryEvent.Completed).reason shouldBe
+            FastDiscoveryCompletion.FOUND
+    }
+
+    @Test
+    fun `two healthy editions appear independently without waiting for each other`() = runTest {
+        val first = installed("mangaflix", 1L)
+        val second = installed("mangalivreto", 2L)
+        val slowRelease = CompletableDeferred<Unit>()
+        val slowStarted = CompletableDeferred<Unit>()
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, binding ->
+                lookup(option(binding.addonId.value, "pt-BR").copy(key = binding.id))
+            },
+            installedAddons = { listOf(first, second) },
+            sourceEligibility = { id ->
+                listOf(source(if (id == first.id) 1L else 2L, "pt-BR"))
+            },
+            contentPreference = { null },
+            globalLanguages = { listOf("pt-BR") },
+            deviceLocale = { Locale.forLanguageTag("pt-BR") },
+            sourceSearch = { request ->
+                flow {
+                    val id = if (request.addonId == first.id) 1L else 2L
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = id,
+                            language = "pt-BR",
+                            outcome = ContentBindingSourceOutcome.BOUND,
+                            bindings = listOf(binding(request.addonId.value, id)),
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(id), 0))
+                }
+            },
+            refreshBinding = { binding ->
+                if (binding.addonId == first.id) {
+                    slowStarted.complete(Unit)
+                    slowRelease.await()
+                }
+                Result.success(Unit)
+            },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        val events = mutableListOf<FastReadingDiscoveryEvent>()
+        val job = launch { runner.discover("title", "chapter").collect(events::add) }
+
+        runCurrent()
+        slowStarted.isCompleted shouldBe true
+        events.filterIsInstance<FastReadingDiscoveryEvent.Ready>()
+            .single().options.single().addonId shouldBe second.id
+        slowRelease.complete(Unit)
+        advanceUntilIdle()
+        job.join()
+
+        events.filterIsInstance<FastReadingDiscoveryEvent.Ready>()
+            .flatMap { it.options }.map { it.addonId }.toSet() shouldBe setOf(first.id, second.id)
+        (events.last() as FastReadingDiscoveryEvent.Completed).reason shouldBe
+            FastDiscoveryCompletion.FOUND
+    }
+
+    @Test
     fun `initial discovery time budget exits a cooperatively slow source`() = runTest {
         val addon = installed("slow", 7L)
         val runner = DiscoverReadableChapter(
