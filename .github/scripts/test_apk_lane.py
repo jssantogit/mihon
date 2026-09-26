@@ -52,6 +52,17 @@ class ApkLaneTest(unittest.TestCase):
         self.assertEqual(preview["mapping"], "app/build/outputs/mapping/generic")
         self.assertEqual(preview["flags"], "")
 
+    def test_fast_reading_discovery_builds_isolated_generic_preview(self):
+        preview = resolve_lane("tsuzuki/fast-reading-discovery")
+        self.assertEqual(preview["lane"], "generic")
+        self.assertEqual(preview["task"], "assembleGeneric")
+        self.assertEqual(
+            preview["apk"],
+            "app/build/outputs/apk/generic/app-arm64-v8a-generic.apk",
+        )
+        self.assertEqual(preview["mapping"], "app/build/outputs/mapping/generic")
+        self.assertEqual(preview["flags"], "")
+
     def test_unsupported_branch_is_rejected(self):
         with self.assertRaises(ValueError):
             resolve_lane("tsuzuki/random-experiment")

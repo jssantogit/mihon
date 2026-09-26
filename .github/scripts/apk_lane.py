@@ -42,7 +42,7 @@ GENERIC = {
 }
 
 RULES = (
-    (("tsuzuki/generic-addon-compatibility",), GENERIC),
+    (("tsuzuki/generic-addon-compatibility", "tsuzuki/fast-reading-discovery"), GENERIC),
     (
         (
             "main",
