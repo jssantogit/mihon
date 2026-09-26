@@ -97,7 +97,4 @@ conflicting-key compatibility coverage.
   Reader tests on the **same final production implementation SHA**.
   Distinguish a compiled or skipped test from an executed Android pass.
 
-The current Android focused lane has validated decoded image widgets and
-screen-capture configuration, but has not yet proven a foreground Reader
-screenshot and successful A-to-B source switch. Synthetic 169/163 inventory
-tests are not proof of current live MangaDex causes.
+Focused offline Android [36273190025](https://github.com/jssantogit/mihon/actions/runs/36273190025) passed the empty/503 scenario with foreground pixels, ten loaded pages and previous session preserved, but its disposable branch used **older production files without migration 33**. It does not sign off the current PR. Final-tree [focused Android 36274376538](https://github.com/jssantogit/mihon/actions/runs/36274376538) runs on a disposable branch derived directly from current PR HEAD `37bcc340` and differs only in four CI-only scripts/workflow; it is pending. An A→B on-screen switch and all eight tests on this implementation remain required. Synthetic 169/163 inventory tests are not proof of current live MangaDex causes.
