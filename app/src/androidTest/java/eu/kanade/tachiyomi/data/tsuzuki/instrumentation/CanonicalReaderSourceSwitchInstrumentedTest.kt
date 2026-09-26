@@ -1364,9 +1364,23 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             // A RESUMED Activity can still be hidden by an Android-owned window.
             // Establish focus on the actual foreground application before opening
             // Reader from that Activity, keeping both in its real task.
+            // API 35's disposable emulator may show a genuine Pixel Launcher
+            // ANR above a RESUMED MainActivity. Close only that exact Android
+            // system dialog by its visible action; never dismiss Mihon ANRs or
+            // weaken the required window-focus and rendered-image assertions.
+            var dismissedPixelLauncherAnr = false
             awaitSourceSwitchFixtureValue("MainActivity to own the foreground window") {
                 var focused = false
                 instrumentation.runOnMainSync { focused = main.window.decorView.hasWindowFocus() }
+                if (!focused && !dismissedPixelLauncherAnr &&
+                    device.hasObject(By.text("Pixel Launcher isn't responding"))
+                ) {
+                    val closeLauncher = requireNotNull(device.findObject(By.text("Close app"))) {
+                        "Pixel Launcher ANR has no visible Close app action"
+                    }
+                    closeLauncher.click()
+                    dismissedPixelLauncherAnr = true
+                }
                 focused.takeIf { it }
             }
             // Instrumentation starts the separate singleTask Reader as a
