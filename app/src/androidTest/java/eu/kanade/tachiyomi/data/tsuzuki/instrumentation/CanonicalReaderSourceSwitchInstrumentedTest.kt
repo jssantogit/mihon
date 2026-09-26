@@ -580,7 +580,22 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 null
             }
         }
-        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+        // The screenshot artifact showed a second, app-owned "Left/Right"
+        // navigation guide behind Android's immersive-mode tutorial. Dismiss
+        // it via the same performClick() a user's tap invokes, without
+        // altering the Reader's image/loading implementation or relaxing
+        // screenshot and decoded-image assertions.
+        awaitValue("Reader tap-zone guide to clear before visual verification") {
+            var dismissed = false
+            instrumentation.runOnMainSync {
+                val guide = reader.binding.navigationOverlay
+                if (guide.visibility == View.VISIBLE) guide.performClick()
+                dismissed = guide.visibility != View.VISIBLE
+            }
+            dismissed.takeIf { it }
+        }
         var lastMatchingSampleCount = 0
         var lastMatchingRowCount = 0
         val imageEvidence = try {
