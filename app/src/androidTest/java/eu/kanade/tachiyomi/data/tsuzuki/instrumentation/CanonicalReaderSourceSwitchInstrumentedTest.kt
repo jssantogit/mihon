@@ -930,6 +930,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             focusedPackage == "$EXPECTED_TARGET_PACKAGE.test" -> "TEST_RUNNER"
             focusedPackage == "com.android.settings" -> "SETTINGS"
             focusedPackage.contains("launcher", ignoreCase = true) -> "LAUNCHER"
+            focusedPackage == "android" -> "ANDROID_FRAMEWORK"
+            focusedPackage.contains("inputmethod", ignoreCase = true) ||
+                focusedPackage.contains("latinime", ignoreCase = true) -> "KEYBOARD"
+            focusedPackage == "com.google.android.gms" -> "GOOGLE_PLAY_SERVICES"
+            focusedPackage.startsWith("com.android.") -> "ANDROID_SYSTEM"
+            focusedPackage.startsWith("com.google.android.") -> "GOOGLE_SYSTEM"
             focusedPackage.isBlank() -> "UNAVAILABLE"
             else -> "OTHER"
         }
@@ -1286,9 +1292,14 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 instrumentation.runOnMainSync { focused = main.window.decorView.hasWindowFocus() }
                 focused.takeIf { it }
             }
-            instrumentation.runOnMainSync {
-                main.startActivity(ReaderActivity.newCanonicalIntent(main, chapter.id))
-            }
+            // Instrumentation starts the separate singleTask Reader as a
+            // foreground Activity and waits for creation. A plain startActivity
+            // returned RESUMED with the emulator still focused on another app.
+            val launched = instrumentation.startActivitySync(
+                ReaderActivity.newCanonicalIntent(context, chapter.id)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            assertTrue("Foreground launch must create ReaderActivity", launched is ReaderActivity)
         }
 
         fun close() {

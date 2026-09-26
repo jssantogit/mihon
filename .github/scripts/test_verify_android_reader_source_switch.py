@@ -461,6 +461,16 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             verifier._reader_view_diagnostics(permission)[0]["activeWindow"],
         )
 
+        for package_class in (
+            "ANDROID_FRAMEWORK", "KEYBOARD", "GOOGLE_PLAY_SERVICES",
+            "ANDROID_SYSTEM", "GOOGLE_SYSTEM",
+        ):
+            fixture = line.replace("activeWindow=READER_APP", "activeWindow=" + package_class)
+            self.assertEqual(
+                package_class,
+                verifier._reader_view_diagnostics(fixture)[0]["activeWindow"],
+            )
+
         for malformed in (
             line.replace("viewer=WebtoonViewer", "viewer=" + private_value),
             line.replace("imageRequestsA=1", "imageRequestsA=" + private_value),
