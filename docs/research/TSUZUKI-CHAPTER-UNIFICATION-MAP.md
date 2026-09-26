@@ -46,7 +46,8 @@ divergent until equivalent outcomes are established by the tests below.
 
 - `ReconcileChapterEvidenceTest` now contains a dual-writer characterization using two explicit volume identities and two Mihon source IDs. The comparison seeds the *same existing canonical chapter IDs* in isolated legacy/evidence stores, checks both writers' source-to-chapter decisions and verifies that a repeated refresh retains legacy variant IDs.
 - The Domain job passed in [CI 36267018356](https://github.com/jssantogit/mihon/actions/runs/36267018356) with byte-identical matcher, both reconcilers, volume/label parsers, and test sources on the acceptance PR and validation branch.
-- This is intentionally narrow. **It does not cover the legacy Reader UI, fractional numeric ordering, reused external URLs, a transaction spanning evidence and operational variants, or Android E2E.** Do not use it as authorization to remove the older writer.
+- A second parity test exercises chapters 0, 0.5 and 1, then refreshes with the middle observation **omitted**. Both writers preserve the middle chapter; the legacy source variant and persisted evidence retain their original mappings. [Domain tests passed in CI 36267649886](https://github.com/jssantogit/mihon/actions/runs/36267649886).
+- The baseline is still intentionally narrow. It does not cover the legacy Reader UI, reused external URLs, contradictory volume releases, a transaction spanning evidence and operational variants, or Android E2E. Do not use it as authorization to remove the older writer.
 
 ## Acceptance checks
 
