@@ -724,7 +724,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     }
                 },
                 1,
-            ) { statement -> statement.bindString(0, chapter.id) }.await()
+            ) { bindString(0, chapter.id) }.await()
         }
 
         companion object {
