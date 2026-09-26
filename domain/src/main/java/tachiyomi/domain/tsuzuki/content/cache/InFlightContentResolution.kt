@@ -16,9 +16,11 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.content.ContentOption
 
 /** Shares provider requests without making extension execution a child of the UI caller. */
-@Inject
 @SingleIn(AppScope::class)
-class InFlightContentResolution {
+class InFlightContentResolution private constructor(
+    private val workScope: CoroutineScope,
+    @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
+) {
 
     private class Task(
         val key: ContentOptionCacheKey,
@@ -33,12 +35,20 @@ class InFlightContentResolution {
     )
 
     private val mutex = Mutex()
-    private val workScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val globalProviderGate = Semaphore(MAX_CONCURRENT_PROVIDER_CALLS)
     private val activeByKey = mutableMapOf<ContentOptionCacheKey, Task>()
     private val outstandingTasks = mutableSetOf<Task>()
     private val providerGates = mutableMapOf<AddonId, ProviderGate>()
     private val outstandingByAddon = mutableMapOf<AddonId, Int>()
+
+    /**
+     * Allows tests in dependent modules to run detached provider work on a test scope.
+     * Production DI uses the no-argument constructor and an IO-backed supervisor scope.
+     */
+    constructor(workScope: CoroutineScope) : this(workScope, Unit)
+
+    @Inject
+    constructor() : this(CoroutineScope(SupervisorJob() + Dispatchers.IO), Unit)
 
     /**
      * Work is admitted only into a bounded queue. Callers can cancel their wait while an

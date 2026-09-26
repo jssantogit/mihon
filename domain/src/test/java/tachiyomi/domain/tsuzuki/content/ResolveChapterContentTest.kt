@@ -8,6 +8,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -422,7 +423,7 @@ class ResolveChapterContentTest {
             readerPreferences = preferences,
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
         )
 
         val first = resolver.execute("title", "chapter-37")
@@ -439,7 +440,7 @@ class ResolveChapterContentTest {
         second.option.canonicalChapterId shouldBe first.option.canonicalChapterId
     }
 
-    private fun fixture(
+    private fun TestScope.fixture(
         preference: ContentPreference?,
         automaticFallback: Boolean,
         providers: List<ContentProvider>,
@@ -456,7 +457,7 @@ class ResolveChapterContentTest {
             readerPreferences = preferences,
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
             addonRepository = addonRepository,
             diagnostics = diagnostics,
         )

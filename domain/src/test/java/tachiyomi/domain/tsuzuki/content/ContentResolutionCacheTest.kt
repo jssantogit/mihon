@@ -5,9 +5,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
@@ -33,9 +33,10 @@ class ContentResolutionCacheTest {
         val resolver = resolver(provider)
 
         val first = async { resolver.execute("title", "chapter") }
-        yield()
+        provider.started.await()
         val second = async { resolver.execute("title", "chapter") }
-        yield()
+        runCurrent()
+        provider.resolveCalls shouldBe 1
         gate.complete(Unit)
 
         first.await()
@@ -46,7 +47,7 @@ class ContentResolutionCacheTest {
 
     @Test
     fun `repeated blocked requests from one addon leave a slot for a healthy addon`() = runTest {
-        val inFlight = InFlightContentResolution()
+        val inFlight = InFlightContentResolution(backgroundScope)
         val releaseSlow = CompletableDeferred<Unit>()
         val slowStarted = CompletableDeferred<Unit>()
         val slowCalls = AtomicInteger()
@@ -95,7 +96,7 @@ class ContentResolutionCacheTest {
 
     @Test
     fun `invalidated provider completion is not shared with a refreshed chapter request`() = runTest {
-        val inFlight = InFlightContentResolution()
+        val inFlight = InFlightContentResolution(backgroundScope)
         val key = ContentOptionCacheKey("title", "chapter-1", AddonId("mangadex"))
         val releaseStale = CompletableDeferred<Unit>()
         val staleStarted = CompletableDeferred<Unit>()
@@ -204,7 +205,7 @@ class ContentResolutionCacheTest {
         cache.get(unaffected) shouldBe listOf(option)
     }
 
-    private fun resolver(
+    private fun TestScope.resolver(
         provider: ContentProvider,
         cache: ContentOptionCache = ContentOptionCache(),
     ): ResolveChapterContent {
@@ -224,7 +225,7 @@ class ContentResolutionCacheTest {
             readerPreferences = readerPreferences,
             rankContentOptions = RankContentOptions(),
             contentOptionCache = cache,
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
         )
     }
 
@@ -233,12 +234,14 @@ class ContentResolutionCacheTest {
     ) : ContentProvider {
         override val addonId = AddonId("mangadex")
         var resolveCalls = 0
+        val started = CompletableDeferred<Unit>()
 
         override suspend fun resolve(
             canonicalTitleId: String,
             canonicalChapterId: String,
         ): Result<List<ContentOption>> {
             resolveCalls++
+            started.complete(Unit)
             gate?.await()
             return Result.success(
                 listOf(
