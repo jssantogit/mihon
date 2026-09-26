@@ -170,6 +170,9 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("- reader-source-switch", workflow)
         self.assertIn("run_android_instrumentation_route.sh", workflow)
         self.assertIn("inputs.instrumentation_suite || 'navigation'", workflow)
+        for method in verifier.METHOD_SCENARIOS:
+            with self.subTest(method=method):
+                self.assertIn("public final void " + method + "();", workflow)
 
 
 if __name__ == "__main__":

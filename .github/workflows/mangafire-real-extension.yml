@@ -119,7 +119,10 @@ jobs:
               grep -F 'public final void loadsRealExtensionAndRegistersInternalSourcesAndDisabledPeerIsExcluded();' junit-signatures.txt
               grep -F 'public final void optionalLivePtBrReadingJourney();' junit-signatures.txt
             elif [[ "$class" == 'CanonicalReaderSourceSwitchInstrumentedTest' ]]; then
-              grep -F 'public final void syntheticMihonSourceLoadsObservablePagesInReaderActivity();' junit-signatures.txt
+              grep -F 'public final void sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition();' junit-signatures.txt
+              grep -F 'public final void emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession();' junit-signatures.txt
+              grep -F 'public final void pageCountDifferenceClampsPositionToValidPage();' junit-signatures.txt
+              grep -F 'public final void retiredSourceCallbackCannotChangePublishedSession();' junit-signatures.txt
             else
               grep -F 'public final void coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
               grep -F 'public final void warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
