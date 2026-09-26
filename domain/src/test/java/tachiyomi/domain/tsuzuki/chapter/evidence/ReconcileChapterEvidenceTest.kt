@@ -472,6 +472,93 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `both writers retain fractional chapters when a later source inventory is partial`() = runTest {
+        val legacyChapters = FakeCanonicalChapterRepository()
+        val evidenceFixture = fixture()
+        var nextChapter = 0
+        var nextVariant = 0
+        val legacy = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = legacyChapters,
+            idFactory = { "legacy-${++nextChapter}" },
+            variantIdFactory = { "variant-${++nextVariant}" },
+            clock = { 100L },
+        )
+        val rows = listOf(
+            Triple("/chapter/0", "Chapter 0", 0.0),
+            Triple("/chapter/0.5", "Chapter 0.5", 0.5),
+            Triple("/chapter/1", "Chapter 1", 1.0),
+        )
+        suspend fun refresh(selected: List<Triple<String, String, Double>>) {
+            legacy.execute(
+                SourceChapterInventory(
+                    sourceMappingId = "mapping-en",
+                    sourceId = 101L,
+                    canonicalTitleId = "title",
+                    chapters = selected.map { (url, label, number) ->
+                        SourceChapterSnapshot(
+                            sourceId = 101L,
+                            sourceMappingId = "mapping-en",
+                            sourceChapterId = url,
+                            rawName = label,
+                            rawNumberHint = number,
+                        )
+                    },
+                ),
+            )
+            evidenceFixture.reconciler.execute(
+                "title",
+                selected.map { (url, label, _) ->
+                    evidenceFixture.addonEvidence(
+                        id = "observation-$url",
+                        rawLabel = label,
+                        externalKey = "101:$url",
+                        producerId = "addon-101",
+                    )
+                },
+            )
+        }
+
+        refresh(rows)
+        val expectedLabels = setOf("0", "0.5", "1")
+        legacyChapters.getByCanonicalTitleId("title").map { it.displayNumber }.toSet() shouldBe expectedLabels
+        evidenceFixture.chapterRepository.getByCanonicalTitleId("title")
+            .map { it.displayNumber }.toSet() shouldBe expectedLabels
+        val previousVariants = rows.associate { (url, _, _) ->
+            url to legacyChapters.getVariantBySourceIdentity(101L, url)?.id
+        }
+        val previousEvidence = rows.associate { (url, _, _) ->
+            url to evidenceFixture.evidenceRepository.getByProducerExternalKey(
+                ProducerKind.ADDON,
+                "addon-101",
+                "101:$url",
+            )?.mappedCanonicalChapterId
+        }
+        rows.forEach { (url, _, _) ->
+            val legacyMapped = legacyChapters.getVariantBySourceIdentity(101L, url)
+                ?.canonicalChapterId?.let { legacyChapters.getById(it) }
+            val evidenceMapped = previousEvidence[url]?.let { evidenceFixture.chapterRepository.getById(it) }
+            legacyMapped?.identity shouldBe evidenceMapped?.identity
+        }
+
+        // The provider omits chapter 0.5 on its next refresh. Neither writer
+        // may erase its established canonical identity or its source mapping.
+        refresh(listOf(rows.first(), rows.last()))
+        legacyChapters.getByCanonicalTitleId("title").map { it.displayNumber }.toSet() shouldBe expectedLabels
+        evidenceFixture.chapterRepository.getByCanonicalTitleId("title")
+            .map { it.displayNumber }.toSet() shouldBe expectedLabels
+        rows.forEach { (url, _, _) ->
+            legacyChapters.getVariantBySourceIdentity(101L, url)?.id shouldBe previousVariants[url]
+            evidenceFixture.evidenceRepository.getByProducerExternalKey(
+                ProducerKind.ADDON,
+                "addon-101",
+                "101:$url",
+            )?.mappedCanonicalChapterId shouldBe previousEvidence[url]
+        }
+    }
+
+    @Test
     fun `changed volume on stable key conflicts old chapter and rehomes evidence`() = runTest {
         val fixture = fixture()
         fixture.reconciler.execute(
