@@ -485,7 +485,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             val persistedBinding = journey.bindings.getByTitle(journey.canonicalTitleId).single()
             persistedBinding shouldBe confirmed
             harness.enqueue(body = "/chapter/1\tChapter 1\t1\tEnglish Group", language = "en")
-            journey.refresh()
+            journey.refreshBinding(confirmed)
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
             chapter.displayNumber shouldBe "1"
@@ -502,7 +502,7 @@ class MihonRuntimeEndToEndIntegrationTest {
 
             // Only the selected edition is refreshed; an empty peer contributes no false chapter.
             harness.enqueue(body = "/chapter/1\tChapter 1\t1\tEnglish Group", language = "en")
-            journey.refresh()
+            journey.refreshBinding(confirmed)
             journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
                 .single().id shouldBe chapter.id
             journey.bindings.getByTitle(journey.canonicalTitleId).single() shouldBe confirmed
@@ -685,6 +685,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             ).also { bindings.upsert(it) }
         }
         suspend fun refresh() = refresh.execute(canonicalTitleId).getOrThrow()
+        suspend fun refreshBinding(binding: ContentBinding) = refresh.executeForBinding(binding).getOrThrow()
         suspend fun installedSources() = harness.gateway.listInstalled("en")
         suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
         suspend fun prepare(option: ContentOption) =
