@@ -151,10 +151,12 @@ class PlanFastReadingDiscoveryTest {
         val installed = small + giant
         val eligibility = small.associate { item ->
             item.id to listOf(source(item.mihonSourceIds.single(), "pt-BR"))
-        } + (giant.id to (
-            listOf(source(100L, "pt-BR"), source(101L, "en")) +
-                (102L..219L).map { source(it, "zh-Hant") }
-            ))
+        } + (
+            giant.id to (
+                listOf(source(100L, "pt-BR"), source(101L, "en")) +
+                    (102L..219L).map { source(it, "zh-Hant") }
+                )
+            )
         val result = planner.planAutomatic(
             installed = installed,
             eligibility = eligibility,

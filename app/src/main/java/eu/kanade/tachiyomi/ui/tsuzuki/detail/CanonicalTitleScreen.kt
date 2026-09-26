@@ -46,8 +46,14 @@ data class CanonicalTitleScreen(
         val loaded = (state as? CanonicalTitleScreenState.Loaded)
             ?.takeIf { it.title.id == canonicalTitleId }
         val downloadSelectionChapterId = loaded?.downloadSelectionChapterId
-        val firstAutomaticOption = downloadSelectionChapterId != null &&
-            (contentSelectorState as? ContentSelectorScreenState.Ready)?.isDiscovering == true
+        val verifiedOptionKeys = (contentSelectorState as? ContentSelectorScreenState.Ready)
+            ?.takeIf {
+                it.canonicalTitleId == canonicalTitleId &&
+                    it.canonicalChapterId == downloadSelectionChapterId
+            }
+            ?.options
+            .orEmpty()
+            .map { it.option.key }
 
         LaunchedEffect(canonicalTitleId, openSourceBindingFlow) {
             screenModel.start(canonicalTitleId)
@@ -119,8 +125,10 @@ data class CanonicalTitleScreen(
         }
         // A verified automatic binding has already reconciled its chapter list.
         // Reload local rows once; do not trigger the old all-Add-on refresh.
-        LaunchedEffect(canonicalTitleId, downloadSelectionChapterId, firstAutomaticOption) {
-            if (firstAutomaticOption) screenModel.reloadReconciledChapters()?.join()
+        LaunchedEffect(canonicalTitleId, downloadSelectionChapterId, verifiedOptionKeys) {
+            if (downloadSelectionChapterId != null && verifiedOptionKeys.isNotEmpty()) {
+                screenModel.reloadReconciledChapters()?.join()
+            }
         }
         if (linkSheetOpen) {
             ContentBindingLinkSheet(
