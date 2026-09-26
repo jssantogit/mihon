@@ -2,9 +2,9 @@ package tachiyomi.domain.tsuzuki.content
 
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
-import java.util.Locale
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
+import java.util.Locale
 
 class RankContentOptionsTest {
 

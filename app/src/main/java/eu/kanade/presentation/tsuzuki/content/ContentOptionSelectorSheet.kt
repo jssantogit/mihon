@@ -105,7 +105,8 @@ fun ContentOptionSelectorSheet(
                         }
                         if (state.failedAttempts > 0) {
                             Text(
-                                "${state.failedAttempts} source attempt(s) could not finish. Other sources are still being checked.",
+                                "${state.failedAttempts} source attempt(s) could not finish. " +
+                                    "Other sources are still being checked.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -174,9 +175,11 @@ fun ContentOptionSelectorSheet(
                             state.confirmationRequired ->
                                 "Possible editions were found, but you must confirm the correct one. Choose an Add-on."
                             state.timedOut ->
-                                "The initial search has finished its time budget. Choose an Add-on to search further or retry."
+                                "The initial search has finished its time budget. " +
+                                    "Choose an Add-on to search further or retry."
                             state.discoveryAttempted ->
-                                "No verified chapter was found in the initial sources. Choose another Add-on to search more."
+                                "No verified chapter was found in the initial sources. " +
+                                    "Choose another Add-on to search more."
                             else -> stringResource(MR.strings.tsuzuki_content_no_options)
                         },
                         onRetry = onRetry,

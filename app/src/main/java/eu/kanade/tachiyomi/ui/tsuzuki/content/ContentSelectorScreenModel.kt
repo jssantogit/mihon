@@ -12,9 +12,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -408,7 +408,8 @@ class ContentSelectorScreenModel internal constructor(
                         canonicalTitleId = titleId,
                         canonicalChapterId = chapterId,
                         error = IllegalStateException(
-                            "Could not query ${lookup.failedProviders.size} reading Add-on(s). Retry or choose another source.",
+                            "Could not query ${lookup.failedProviders.size} reading Add-on(s). " +
+                                "Retry or choose another source.",
                         ),
                     )
                     return@launch

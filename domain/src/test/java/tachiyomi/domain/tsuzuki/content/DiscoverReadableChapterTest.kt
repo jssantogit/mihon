@@ -1,11 +1,16 @@
 package tachiyomi.domain.tsuzuki.content
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -216,6 +221,103 @@ class DiscoverReadableChapterTest {
             .options.map { it.language } shouldBe listOf("en")
         events.last().let { it as FastReadingDiscoveryEvent.Completed }.reason shouldBe
             FastDiscoveryCompletion.FOUND
+    }
+
+    @Test
+    fun `healthy fast edition is emitted while earlier bound edition is still refreshing`() = runTest {
+        val slow = installed("portuguese", 7L)
+        val fast = installed("english", 8L)
+        val slowStarted = CompletableDeferred<Unit>()
+        val slowRelease = CompletableDeferred<Unit>()
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, binding ->
+                if (binding.addonId == fast.id) lookup(option("english", "en")) else lookup()
+            },
+            installedAddons = { listOf(slow, fast) },
+            sourceEligibility = { id ->
+                if (id == slow.id) listOf(source(7L, "pt-BR")) else listOf(source(8L, "en"))
+            },
+            contentPreference = { null },
+            globalLanguages = { listOf("pt-BR", "en") },
+            deviceLocale = { Locale.forLanguageTag("pt-BR") },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = if (request.addonId == slow.id) 7L else 8L
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = if (request.addonId == slow.id) "pt-BR" else "en",
+                            outcome = ContentBindingSourceOutcome.BOUND,
+                            bindings = listOf(binding(request.addonId.value, sourceId)),
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            refreshBinding = { binding ->
+                if (binding.addonId == slow.id) {
+                    slowStarted.complete(Unit)
+                    slowRelease.await()
+                }
+                Result.success(Unit)
+            },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        val received = mutableListOf<FastReadingDiscoveryEvent>()
+        val job = backgroundScope.launch {
+            runner.discover("title", "chapter").collect(received::add)
+        }
+
+        runCurrent()
+        slowStarted.isCompleted shouldBe true
+        received.filterIsInstance<FastReadingDiscoveryEvent.Ready>()
+            .single().options.map { it.addonId } shouldBe listOf(fast.id)
+
+        slowRelease.complete(Unit)
+        advanceUntilIdle()
+        received.last().let { it as FastReadingDiscoveryEvent.Completed }.reason shouldBe
+            FastDiscoveryCompletion.FOUND
+        job.isCompleted shouldBe true
+    }
+
+    @Test
+    fun `duplicate binding events do not trigger duplicate targeted inventories`() = runTest {
+        val addon = installed("english", 7L)
+        var refreshCalls = 0
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, _ -> lookup() },
+            installedAddons = { listOf(addon) },
+            sourceEligibility = { listOf(source(7L, "en")) },
+            contentPreference = { null },
+            globalLanguages = { listOf("en") },
+            deviceLocale = { Locale.US },
+            sourceSearch = {
+                flow {
+                    repeat(2) {
+                        emit(
+                            ContentBindingSearchProgress.SourceCompleted(
+                                sourceId = 7L,
+                                language = "en",
+                                outcome = ContentBindingSourceOutcome.BOUND,
+                                bindings = listOf(binding("english", 7L)),
+                            ),
+                        )
+                    }
+                    emit(ContentBindingSearchProgress.Completed(listOf(7L), 0))
+                }
+            },
+            refreshBinding = {
+                refreshCalls++
+                Result.success(Unit)
+            },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        runner.discover("title", "chapter").toList()
+
+        refreshCalls shouldBe 1
     }
 
     @Test

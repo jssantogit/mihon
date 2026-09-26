@@ -105,7 +105,7 @@ class RefreshChapterEvidence private constructor(
         return try {
             require(
                 binding.canonicalTitleId.isNotBlank() &&
-                    binding.availability == ContentBindingAvailability.AVAILABLE
+                    binding.availability == ContentBindingAvailability.AVAILABLE,
             )
             val currentRegistry = checkNotNull(addonRegistry)
             val resolver = checkNotNull(resolveContentBinding)
@@ -119,11 +119,13 @@ class RefreshChapterEvidence private constructor(
                 .firstOrNull { it.addonId == binding.addonId } as? TargetedChapterProbeProvider
                 ?: error("Selected Add-on does not support targeted chapter inventory")
             val observations = provider.probeBinding(persisted).getOrThrow()
-            require(observations.all {
-                it.canonicalTitleId == binding.canonicalTitleId &&
-                    it.producerKind == ProducerKind.ADDON &&
-                    it.producerId == binding.addonId.value
-            }) { "Targeted inventory belongs to another title or Add-on" }
+            require(
+                observations.all {
+                    it.canonicalTitleId == binding.canonicalTitleId &&
+                        it.producerKind == ProducerKind.ADDON &&
+                        it.producerId == binding.addonId.value
+                },
+            ) { "Targeted inventory belongs to another title or Add-on" }
             reconcileChapterEvidence.execute(binding.canonicalTitleId, observations)
             contentOptionCache?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
             Result.success(Unit)

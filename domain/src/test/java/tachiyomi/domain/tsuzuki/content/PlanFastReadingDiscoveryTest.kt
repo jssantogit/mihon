@@ -100,12 +100,18 @@ class PlanFastReadingDiscoveryTest {
             installed = listOf(first, second),
             eligibility = mapOf(
                 first.id to listOf(
-                    source(1L, "pt-BR"), source(2L, "en"), source(3L, "pt"),
-                    source(4L, "en"), source(5L, "pt-BR"),
+                    source(1L, "pt-BR"),
+                    source(2L, "en"),
+                    source(3L, "pt"),
+                    source(4L, "en"),
+                    source(5L, "pt-BR"),
                 ),
                 second.id to listOf(
-                    source(6L, "pt-BR"), source(7L, "en"), source(8L, "pt"),
-                    source(9L, "en"), source(10L, "pt-BR"),
+                    source(6L, "pt-BR"),
+                    source(7L, "en"),
+                    source(8L, "pt"),
+                    source(9L, "en"),
+                    source(10L, "pt-BR"),
                 ),
             ),
             preferredAddonId = null,

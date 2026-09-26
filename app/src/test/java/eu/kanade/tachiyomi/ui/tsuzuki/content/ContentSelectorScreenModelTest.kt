@@ -4,14 +4,14 @@ import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
-import io.mockk.mockk
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -518,7 +518,7 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
-    fun `automatic discovery exposes first verified option without waiting for remaining sources`() = runTest(dispatcher) {
+    fun `first verified option appears before other sources finish`() = runTest(dispatcher) {
         val discovered = option("reader", "en", "Team", 10L)
         val discovery = mockk<DiscoverReadableChapter>()
         every { discovery.discover("title-1", "chapter-1", any()) } returns flow {
@@ -605,7 +605,7 @@ class ContentSelectorScreenModelTest {
     }
 
     @Test
-    fun `ambiguous discovery asks for manual edition confirmation instead of offering a chapter`() = runTest(dispatcher) {
+    fun `ambiguous discovery asks for confirmation instead of offering a chapter`() = runTest(dispatcher) {
         val discovery = mockk<DiscoverReadableChapter>()
         every { discovery.discover("title-1", "chapter-1", any()) } returns flowOf(
             FastReadingDiscoveryEvent.Completed(FastDiscoveryCompletion.CONFIRMATION_REQUIRED, emptyMap()),

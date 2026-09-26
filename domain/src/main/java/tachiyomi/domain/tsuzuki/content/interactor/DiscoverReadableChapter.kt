@@ -13,13 +13,15 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
+import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
-import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
@@ -92,12 +94,12 @@ sealed interface FastReadingDiscoveryEvent {
 }
 
 /**
- * Cold, user-relevant chapter discovery. Not connected to the UI until a targeted
- * per-binding refresh implementation is available: the injected refresh callback
- * MUST NOT refresh every stored binding in a multilingual extension.
+ * Cold, user-relevant discovery, used by the Reader and chapter selector.
+ * A successful source match refreshes only its verified binding; it never
+ * refreshes the entire multilingual package on the critical reading path.
  *
- * All provider work is off the caller thread. Timeouts are cooperative; a
- * non-interruptible third-party Java invocation still needs executor isolation.
+ * Provider work stays off the caller thread. Timeouts are cooperative:
+ * non-interruptible third-party Java calls still need executor isolation.
  */
 class DiscoverReadableChapter internal constructor(
     private val lookupExisting: suspend (String, String) -> ContentOptionLookup,
@@ -146,7 +148,11 @@ class DiscoverReadableChapter internal constructor(
     ): Flow<FastReadingDiscoveryEvent> = channelFlow {
         require(canonicalTitleId.isNotBlank() && canonicalChapterId.isNotBlank())
         val found = AtomicBoolean(false)
-        val refreshGate = Mutex()
+        // A slow edition must not hold the entire refresh queue while a second
+        // verified source is already ready. Keep concurrency bounded at two.
+        val refreshGate = Semaphore(MAX_CONCURRENT_TARGETED_REFRESHES)
+        val attemptedBindingGate = Mutex()
+        val attemptedBindingIds = mutableSetOf<String>()
         val queried = linkedMapOf<AddonId, Set<Long>>()
         val queriedGate = Mutex()
         val hasUnconfirmedCandidate = AtomicBoolean(false)
@@ -188,11 +194,12 @@ class DiscoverReadableChapter internal constructor(
 
             val preferred = contentPreference(canonicalTitleId)
             val configured = listOfNotNull(preferred?.preferredLanguage) + globalLanguages()
-            val preferredLanguages = (configured.takeIf(List<String>::isNotEmpty) ?: listOf(
-                deviceLocale().toLanguageTag(),
-                deviceLocale().language,
-                "en",
-            )).map(String::trim)
+            val requestedLanguages = if (configured.isNotEmpty()) {
+                configured
+            } else {
+                listOf(deviceLocale().toLanguageTag(), deviceLocale().language, "en")
+            }
+            val preferredLanguages = requestedLanguages.map(String::trim)
                 .filter { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
                 .distinctBy { it.lowercase(Locale.ROOT) }
 
@@ -283,8 +290,11 @@ class DiscoverReadableChapter internal constructor(
                                                     ) {
                                                         continue
                                                     }
-                                                    refreshGate.withLock {
-                                                        if (found.get()) return@withLock
+                                                    if (!attemptedBindingGate.withLock {
+                                                            attemptedBindingIds.add(binding.id)
+                                                        }) continue
+                                                    refreshGate.withPermit {
+                                                        if (found.get()) return@withPermit
                                                         val refreshed = try {
                                                             refreshBinding(binding)
                                                         } catch (error: CancellationException) {
@@ -300,7 +310,7 @@ class DiscoverReadableChapter internal constructor(
                                                                     FastDiscoveryFailureStage.EVIDENCE_REFRESH,
                                                                 ),
                                                             )
-                                                            return@withLock
+                                                            return@withPermit
                                                         }
                                                         val available = try {
                                                             lookupAfterBinding(
@@ -318,7 +328,7 @@ class DiscoverReadableChapter internal constructor(
                                                                     FastDiscoveryFailureStage.CHAPTER_LOOKUP,
                                                                 ),
                                                             )
-                                                            return@withLock
+                                                            return@withPermit
                                                         }
                                                         val matching = available.options.filter { option ->
                                                             option.canonicalChapterId == canonicalChapterId &&
@@ -381,4 +391,8 @@ class DiscoverReadableChapter internal constructor(
     }.flowOn(dispatcher)
 
     private class UnitRefreshFailedException : IllegalStateException("Chapter refresh failed")
+
+    private companion object {
+        const val MAX_CONCURRENT_TARGETED_REFRESHES = 2
+    }
 }
