@@ -173,6 +173,353 @@ class ReconcileChapterEvidenceTest {
         }
 
     @Test
+    fun `reconciliation uses the title evidence snapshot instead of querying every external key`() = runTest {
+        val fixture = fixture()
+        val observations = (1..100).map { number ->
+            fixture.addonEvidence(
+                id = "observation-$number",
+                rawLabel = "Chapter $number",
+                externalKey = "chapter-$number",
+            )
+        }
+
+        fixture.reconciler.execute("title", observations)
+
+        val externalKeyLookupCount = fixture.evidenceRepository.externalKeyLookupCount
+        val titleSnapshotCount = fixture.evidenceRepository.titleSnapshotCount
+        val batchWriteCount = fixture.evidenceRepository.batchWriteCount
+        val singleWriteCount = fixture.evidenceRepository.singleWriteCount
+        titleSnapshotCount shouldBe 1
+        externalKeyLookupCount shouldBe 0
+        batchWriteCount shouldBe 1
+        singleWriteCount shouldBe 0
+    }
+
+    @Test
+    fun `evidence stays unmapped when historical candidates share an identity`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-first"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-second"))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.editorialEvidence(rawLabel = "Chapter 4", externalKey = "chapter-4")),
+        )
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.INTEGRATION,
+            producerId = "mal",
+            externalChapterKey = "chapter-4",
+        )?.mappedCanonicalChapterId shouldBe null
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-first", "chapter-second")
+    }
+
+    @Test
+    fun `duplicate candidates for the observed volume remain unmapped`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-first", volume = 1))
+        fixture.chapterRepository.upsert(existingChapter("chapter-second", volume = 1))
+        val observation = fixture.addonEvidence(
+            rawLabel = "Chapter 4",
+            externalKey = "source-chapter-4",
+            volume = 1,
+        )
+
+        fixture.reconciler.execute("title", listOf(observation))
+        fixture.reconciler.execute("title", listOf(observation.copy(id = "refresh")))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-first", "chapter-second")
+        val storedEvidence = fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-chapter-4",
+        )
+        storedEvidence?.evidence?.id shouldBe observation.id
+        storedEvidence?.mappedCanonicalChapterId shouldBe null
+        fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 1
+    }
+
+    @Test
+    fun `ambiguous explicit volume prefix does not reuse an unqualified candidate`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-unqualified"))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    rawLabel = "Vol.1 Ch.4 - Vol.2 edition",
+                    externalKey = "ambiguous-source-key",
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-unqualified")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "ambiguous-source-key",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `stable external mapping remains authoritative when duplicate candidates appear`() = runTest {
+        val fixture = fixture()
+        val originalObservation = fixture.addonEvidence(
+            id = "original",
+            rawLabel = "Chapter 4",
+            externalKey = "stable-source-key",
+            volume = 1,
+        )
+        fixture.reconciler.execute("title", listOf(originalObservation))
+        val originalChapterId = fixture.chapterRepository.getByCanonicalTitleId("title").single().id
+        fixture.chapterRepository.upsert(existingChapter("historical-duplicate", volume = 1))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(originalObservation.copy(id = "refresh")),
+        )
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "stable-source-key",
+        )?.mappedCanonicalChapterId shouldBe originalChapterId
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf(originalChapterId, "historical-duplicate")
+    }
+
+    @Test
+    fun `same number in different volumes creates separate chapters and preserves evidence`() = runTest {
+        val fixture = fixture()
+        val volumeOne = fixture.addonEvidence(
+            id = "volume-one-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "source-one-37",
+            producerId = "source-one",
+            volume = 1,
+        )
+        val volumeTwo = fixture.addonEvidence(
+            id = "volume-two-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "source-two-37",
+            producerId = "source-two",
+            volume = 2,
+        )
+
+        fixture.reconciler.execute("title", listOf(volumeOne, volumeTwo))
+
+        val chapters = fixture.chapterRepository.getByCanonicalTitleId("title")
+        chapters shouldHaveSize 2
+        chapters.map { it.volume }.toSet() shouldBe setOf(1, 2)
+        chapters.map { it.id }.distinct() shouldHaveSize 2
+        val observations = fixture.evidenceRepository.getByCanonicalTitleId("title")
+        observations shouldHaveSize 2
+        observations.associate { it.evidence.id to it.mappedCanonicalChapterId } shouldBe mapOf(
+            "volume-one-observation" to chapters.single { it.volume == 1 }.id,
+            "volume-two-observation" to chapters.single { it.volume == 2 }.id,
+        )
+    }
+
+    @Test
+    fun `explicit volume selects the matching existing canonical chapter`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-volume-1", volume = 1))
+        fixture.chapterRepository.upsert(existingChapter("chapter-volume-2", volume = 2))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    rawLabel = "Chapter 4",
+                    externalKey = "source-volume-2-chapter-4",
+                    volume = 2,
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-volume-1", "chapter-volume-2")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-volume-2-chapter-4",
+        )?.mappedCanonicalChapterId shouldBe "chapter-volume-2"
+    }
+
+    @Test
+    fun `same identity and volume across sources reuse one canonical chapter id`() = runTest {
+        val fixture = fixture()
+        val firstSource = fixture.addonEvidence(
+            id = "first-source-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "first-source-37",
+            producerId = "source-one",
+            volume = 1,
+        )
+        val secondSource = fixture.addonEvidence(
+            id = "second-source-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "second-source-37",
+            producerId = "source-two",
+            volume = 1,
+        )
+
+        fixture.reconciler.execute("title", listOf(firstSource, secondSource))
+
+        val chapters = fixture.chapterRepository.getByCanonicalTitleId("title")
+        chapters shouldHaveSize 1
+        val observations = fixture.evidenceRepository.getByCanonicalTitleId("title")
+        observations shouldHaveSize 2
+        observations.map { it.mappedCanonicalChapterId }.distinct() shouldBe listOf(chapters.single().id)
+    }
+
+    @Test
+    fun `changed volume on stable key conflicts old chapter and rehomes evidence`() = runTest {
+        val fixture = fixture()
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    id = "initial-observation",
+                    rawLabel = "Chapter 37",
+                    externalKey = "reused-source-key",
+                    volume = 1,
+                ),
+            ),
+        )
+        val originalChapter = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    id = "updated-observation",
+                    rawLabel = "Chapter 37",
+                    externalKey = "reused-source-key",
+                    volume = 2,
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getById(originalChapter.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.CONFLICTED
+        val volumeTwoChapter = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.volume == 2 }
+        volumeTwoChapter.id shouldBe "chapter-2"
+        val storedEvidence = fixture.evidenceRepository.getByCanonicalTitleId("title").single()
+        storedEvidence.evidence.id shouldBe "initial-observation"
+        storedEvidence.mappedCanonicalChapterId shouldBe volumeTwoChapter.id
+    }
+
+    @Test
+    fun `unmapped observation without volume does not join the only explicit volume candidate`() = runTest {
+        val fixture = fixture()
+        val volumeOne = fixture.addonEvidence(
+            id = "volume-one-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "source-one-37",
+            producerId = "source-one",
+            volume = 1,
+        )
+        val unknownVolume = fixture.addonEvidence(
+            id = "unknown-volume-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "source-two-37",
+            producerId = "source-two",
+        )
+
+        fixture.reconciler.execute("title", listOf(volumeOne, unknownVolume))
+
+        val chapters = fixture.chapterRepository.getByCanonicalTitleId("title")
+        chapters shouldHaveSize 1
+        chapters.single().volume shouldBe 1
+        fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 2
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-two",
+            externalChapterKey = "source-two-37",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `unknown volume refresh preserves a previously mapped stable external key`() = runTest {
+        val fixture = fixture()
+        val volumeOne = fixture.addonEvidence(
+            id = "first-source-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "first-source-37",
+            producerId = "source-one",
+            volume = 1,
+        )
+        val volumeTwo = fixture.addonEvidence(
+            id = "second-source-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "second-source-37",
+            producerId = "source-two",
+            volume = 2,
+        )
+        fixture.reconciler.execute("title", listOf(volumeOne, volumeTwo))
+        val volumeOneChapterId = fixture.chapterRepository.getByCanonicalTitleId("title")
+            .single { it.volume == 1 }
+            .id
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(volumeOne.copy(id = "first-source-refresh", volume = null)),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 2
+        val storedEvidence = fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-one",
+            externalChapterKey = "first-source-37",
+        )
+        storedEvidence?.evidence?.id shouldBe "first-source-observation"
+        storedEvidence?.mappedCanonicalChapterId shouldBe volumeOneChapterId
+    }
+
+    @Test
+    fun `unknown volume stays unmapped when the same chapter identity has multiple volume candidates`() = runTest {
+        val fixture = fixture()
+        val knownVolumes = listOf(
+            fixture.addonEvidence(
+                id = "volume-one-observation",
+                rawLabel = "Chapter 37",
+                externalKey = "source-one-37",
+                producerId = "source-one",
+                volume = 1,
+            ),
+            fixture.addonEvidence(
+                id = "volume-two-observation",
+                rawLabel = "Chapter 37",
+                externalKey = "source-two-37",
+                producerId = "source-two",
+                volume = 2,
+            ),
+        )
+        val unknownVolume = fixture.addonEvidence(
+            id = "unknown-volume-observation",
+            rawLabel = "Chapter 37",
+            externalKey = "source-three-37",
+            producerId = "source-three",
+        )
+
+        fixture.reconciler.execute("title", knownVolumes + unknownVolume)
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 2
+        fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 3
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-three",
+            externalChapterKey = "source-three-37",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `decimal and extra evidence remain distinct logical chapters`() = runTest {
         val fixture = fixture()
 
@@ -362,6 +709,21 @@ class ReconcileChapterEvidenceTest {
         return Fixture(reconciler, chapterRepository, evidenceRepository)
     }
 
+    private fun existingChapter(id: String, volume: Int? = null) = CanonicalChapter(
+        id = id,
+        canonicalTitleId = "title",
+        displayNumber = "4",
+        volume = volume,
+        title = null,
+        type = tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR,
+        baseNumber = 4,
+        part = null,
+        alphaSuffix = null,
+        confidence = 1.0,
+        createdAt = 1L,
+        updatedAt = 1L,
+    )
+
     private data class Fixture(
         val reconciler: ReconcileChapterEvidence,
         val chapterRepository: FakeCanonicalChapterRepository,
@@ -371,15 +733,17 @@ class ReconcileChapterEvidenceTest {
             id: String = "addon-evidence",
             rawLabel: String,
             externalKey: String?,
+            producerId: String = "addon",
+            volume: Int? = null,
         ) = ChapterEvidence(
             id = id,
             canonicalTitleId = "title",
             producerKind = ProducerKind.ADDON,
-            producerId = "addon",
+            producerId = producerId,
             externalChapterKey = externalKey,
             rawLabel = rawLabel,
             rawNumber = null,
-            volume = null,
+            volume = volume,
             title = null,
             observedAt = 10L,
             confidence = 1.0,
@@ -435,21 +799,49 @@ class ReconcileChapterEvidenceTest {
 
     private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {
         private val records = mutableListOf<PersistedChapterEvidence>()
+        var titleSnapshotCount = 0
+            private set
+        var externalKeyLookupCount = 0
+            private set
+        var batchWriteCount = 0
+            private set
+        var singleWriteCount = 0
+            private set
 
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
-            records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> {
+            titleSnapshotCount++
+            return records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+        }
 
         override suspend fun getByProducerExternalKey(
             producerKind: ProducerKind,
             producerId: String,
             externalChapterKey: String,
-        ): PersistedChapterEvidence? = records.firstOrNull {
-            it.evidence.producerKind == producerKind &&
-                it.evidence.producerId == producerId &&
-                it.evidence.externalChapterKey == externalChapterKey
+        ): PersistedChapterEvidence? {
+            externalKeyLookupCount++
+            return records.firstOrNull {
+                it.evidence.producerKind == producerKind &&
+                    it.evidence.producerId == producerId &&
+                    it.evidence.externalChapterKey == externalChapterKey
+            }
         }
 
         override suspend fun upsert(
+            evidence: ChapterEvidence,
+            mappedCanonicalChapterId: String?,
+        ): PersistedChapterEvidence {
+            singleWriteCount++
+            return persist(evidence, mappedCanonicalChapterId)
+        }
+
+        override suspend fun upsertBatch(
+            writes: List<tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite>,
+        ): List<PersistedChapterEvidence> {
+            batchWriteCount++
+            return writes.map { write -> persist(write.evidence, write.mappedCanonicalChapterId) }
+        }
+
+        private fun persist(
             evidence: ChapterEvidence,
             mappedCanonicalChapterId: String?,
         ): PersistedChapterEvidence {

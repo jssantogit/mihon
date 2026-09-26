@@ -21,7 +21,9 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.interactor.isInferredChapter
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -45,6 +47,7 @@ class MihonContentProvider internal constructor(
     private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
+    private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
 ) : TargetedContentProvider {
 
     override suspend fun resolve(
@@ -98,23 +101,71 @@ class MihonContentProvider internal constructor(
                     )
                 }
 
-            val variantIdentities = canonicalChapterRepository
+            val mappedVariants = canonicalChapterRepository
                 .getVariantsByCanonicalChapterId(canonicalChapterId)
-                .mapNotNull(::sourceIdentity)
-            val evidenceIdentities = chapterEvidenceRepository
+            val variantIdentities = mappedVariants.mapNotNull(::sourceIdentity)
+            val mappedEvidence = chapterEvidenceRepository
                 ?.getByCanonicalTitleId(canonicalTitleId)
                 .orEmpty()
-                .asSequence()
                 .filter {
                     it.mappedCanonicalChapterId == canonicalChapterId &&
                         it.evidence.producerKind == ProducerKind.ADDON &&
                         it.evidence.producerId == addonId.value
                 }
+            val evidenceIdentities = mappedEvidence
+                .asSequence()
                 .mapNotNull { persisted ->
                     persisted.evidence.externalChapterKey?.let(::sourceIdentity)
                 }
                 .toList()
             val sourceIdentities = (variantIdentities + evidenceIdentities).toSet()
+            val boundSourceIds = bindings.mapNotNull { binding ->
+                binding.providerTitleKey.substringBefore(':').toLongOrNull()
+            }.toSet()
+            val mappedVolumesByIdentity = mutableMapOf<Pair<Long, String>, MutableSet<Int>>()
+            val conflictingMappedEvidenceIdentities = mutableSetOf<Pair<Long, String>>()
+            mappedVariants.forEach { variant ->
+                val identity = sourceIdentity(variant) ?: return@forEach
+                if (identity.first !in boundSourceIds) return@forEach
+                mappedVariantVolume(variant.rawName, canonicalChapter)?.let { volume ->
+                    mappedVolumesByIdentity.getOrPut(identity) { mutableSetOf() }.add(volume)
+                }
+            }
+            mappedEvidence.forEach { persisted ->
+                val identity = persisted.evidence.externalChapterKey?.let(::sourceIdentity) ?: return@forEach
+                if (identity.first !in boundSourceIds) return@forEach
+                val volumeLabel = sourceVolumeLabel(persisted.evidence.rawLabel)
+                val parsed = parser.execute(persisted.evidence.rawLabel, persisted.evidence.rawNumber)
+                val matchesCanonicalIdentity = !canonicalChapter.identity.isSpecific ||
+                    (parsed.identity.isSpecific && parsed.identity == canonicalChapter.identity)
+                if (
+                    matchesCanonicalIdentity &&
+                    volumeLabel.explicit &&
+                    volumeLabel.number != null &&
+                    persisted.evidence.volume != null &&
+                    volumeLabel.number != persisted.evidence.volume
+                ) {
+                    conflictingMappedEvidenceIdentities += identity
+                    return@forEach
+                }
+                mappedEvidenceVolume(
+                    rawLabel = persisted.evidence.rawLabel,
+                    rawNumberHint = persisted.evidence.rawNumber,
+                    volume = persisted.evidence.volume,
+                    canonicalChapter = canonicalChapter,
+                )?.let { volume ->
+                    mappedVolumesByIdentity.getOrPut(identity) { mutableSetOf() }.add(volume)
+                }
+            }
+            val mappedVolumes = mappedVolumesByIdentity.values.flatten().toSet()
+            if (canonicalChapter.volume == null && mappedVolumes.size > 1) {
+                recordProvider(
+                    canonicalTitleId,
+                    ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                    ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT,
+                )
+                return Result.success(emptyList())
+            }
             // A newly linked alternative Add-on may not have a persisted chapter
             // mapping yet. Its verified/high-confidence title binding is sufficient
             // to try an exact, high-confidence chapter identity match on demand.
@@ -169,6 +220,14 @@ class MihonContentProvider internal constructor(
                     firstFailure = firstFailure ?: IllegalStateException("Inventory binding mismatch")
                     continue
                 }
+                val fallbackVolumeLabels = inventory.chapters.asSequence()
+                    .filter { snapshot ->
+                        snapshot.sourceMappingId == binding.id && snapshot.sourceId == inventory.sourceId
+                    }
+                    .mapNotNull { snapshot -> fallbackVolumeLabel(snapshot, canonicalChapter) }
+                    .toSet()
+                val hasUnambiguousFallbackVolume = fallbackVolumeLabels.size == 1
+
                 for (snapshot in inventory.chapters) {
                     if (snapshot.sourceMappingId != binding.id ||
                         snapshot.sourceId != inventory.sourceId
@@ -176,6 +235,7 @@ class MihonContentProvider internal constructor(
                         continue
                     }
                     val identity = sourceIdentity(snapshot) ?: continue
+                    if (identity in conflictingMappedEvidenceIdentities) continue
 
                     // Stable provider evidence is preferred. For a newly linked
                     // alternative, permit only an exact, confident chapter identity
@@ -183,11 +243,32 @@ class MihonContentProvider internal constructor(
                     // even if an old provider URL was reused.
                     val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
                     val mapped = identity in sourceIdentities
+                    val volumeLabel = sourceVolumeLabel(snapshot.rawName)
+                    if (volumeLabel.explicit && volumeLabel.number == null) continue
+                    val persistedMappedVolumes = mappedVolumesByIdentity[identity].orEmpty()
+                    if (
+                        mapped &&
+                        canonicalChapter.volume == null &&
+                        volumeLabel.number != null &&
+                        persistedMappedVolumes.isNotEmpty() &&
+                        volumeLabel.number !in persistedMappedVolumes
+                    ) {
+                        continue
+                    }
+                    if (
+                        canonicalChapter.volume != null &&
+                        volumeLabel.explicit &&
+                        volumeLabel.number != canonicalChapter.volume
+                    ) {
+                        continue
+                    }
                     val exactFallback = allowIdentityFallback &&
                         trustedBinding(binding) &&
                         parsed.confidence >= MIN_TRUSTED_CHAPTER_CONFIDENCE &&
                         parsed.identity.isSpecific &&
-                        parsed.identity == canonicalChapter.identity
+                        parsed.identity == canonicalChapter.identity &&
+                        hasUnambiguousFallbackVolume &&
+                        volumeLabel in fallbackVolumeLabels
                     if (!mapped && !exactFallback) continue
                     if (canonicalChapter.identity.isSpecific &&
                         (!parsed.identity.isSpecific || parsed.identity != canonicalChapter.identity)
@@ -300,6 +381,74 @@ class MihonContentProvider internal constructor(
         val sourceId = externalChapterKey.substring(0, separator).toLongOrNull() ?: return null
         val chapterKey = externalChapterKey.substring(separator + 1)
         return sourceId to chapterKey
+    }
+
+    private data class SourceVolumeLabel(
+        val explicit: Boolean,
+        val number: Int?,
+    )
+
+    private fun fallbackVolumeLabel(
+        snapshot: SourceChapterSnapshot,
+        canonicalChapter: CanonicalChapter,
+    ): SourceVolumeLabel? {
+        val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
+        if (
+            !parsed.identity.isSpecific ||
+            parsed.identity != canonicalChapter.identity ||
+            parsed.confidence < MIN_TRUSTED_CHAPTER_CONFIDENCE
+        ) {
+            return null
+        }
+
+        val volumeLabel = sourceVolumeLabel(snapshot.rawName)
+        if (volumeLabel.explicit && volumeLabel.number == null) return null
+        if (canonicalChapter.volume != null && volumeLabel.number != canonicalChapter.volume) return null
+        return volumeLabel
+    }
+
+    private fun sourceVolumeLabel(rawLabel: String): SourceVolumeLabel = SourceVolumeLabel(
+        explicit = volumeParser.hasExplicitVolumePrefix(rawLabel),
+        number = volumeParser.execute(rawLabel),
+    )
+
+    private fun mappedVariantVolume(rawLabel: String, canonicalChapter: CanonicalChapter): Int? {
+        val volumeLabel = sourceVolumeLabel(rawLabel)
+        if (!volumeLabel.explicit) return null
+        val parsed = parser.execute(rawLabel)
+        if (
+            canonicalChapter.identity.isSpecific &&
+            (!parsed.identity.isSpecific || parsed.identity != canonicalChapter.identity)
+        ) {
+            return null
+        }
+        return volumeLabel.number
+    }
+
+    private fun mappedEvidenceVolume(
+        rawLabel: String,
+        rawNumberHint: Double?,
+        volume: Int?,
+        canonicalChapter: CanonicalChapter,
+    ): Int? {
+        val volumeLabel = sourceVolumeLabel(rawLabel)
+        if (volumeLabel.explicit && volumeLabel.number == null) return null
+        val parsed = parser.execute(rawLabel, rawNumberHint)
+        if (
+            canonicalChapter.identity.isSpecific &&
+            (!parsed.identity.isSpecific || parsed.identity != canonicalChapter.identity)
+        ) {
+            return null
+        }
+        if (
+            volumeLabel.explicit &&
+            volumeLabel.number != null &&
+            volume != null &&
+            volumeLabel.number != volume
+        ) {
+            return null
+        }
+        return volume ?: volumeLabel.number
     }
 
     private fun contentKey(snapshot: SourceChapterSnapshot): String {

@@ -205,6 +205,45 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `probe records only explicit unambiguous numeric source volumes`() = runTest {
+        val binding = binding()
+        val labels = listOf(
+            "Vol. 12 Ch. 37",
+            "Chapter 38",
+            "Vol.none Ch. 39",
+            "Vol. 1 Ch. 40 Vol. 2 Ch. 40",
+        )
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = 7L,
+                        canonicalTitleId = "title",
+                        chapters = labels.mapIndexed { index, label ->
+                            snapshot(binding.id, 7L, "/chapter-$index", label, (37 + index).toDouble())
+                        },
+                        mihonMangaId = 99L,
+                        language = "en",
+                    ),
+                )
+            },
+        )
+
+        val evidence = provider.probe("title").getOrThrow()
+
+        evidence.associate { it.rawLabel to it.volume } shouldBe mapOf(
+            "Vol. 12 Ch. 37" to 12,
+            "Chapter 38" to null,
+            "Vol.none Ch. 39" to null,
+            "Vol. 1 Ch. 40 Vol. 2 Ch. 40" to null,
+        )
+    }
+
+    @Test
     fun `disabled internal source binding never fetches inventory or contributes evidence`() = runTest {
         val english = binding(id = "binding-en")
         val portuguese = binding(id = "binding-pt").copy(providerTitleKey = "8:/dandadan")

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.interactor.ReconcileChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
@@ -59,7 +60,7 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
-    fun `mangadex volume prefix and plain chapter share one identity without losing variants`() = runTest {
+    fun `unqualified chapter does not join an explicit volume and both variants remain`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val reconciler = reconciler(repository)
 
@@ -67,9 +68,62 @@ class ChapterInventoryAndReconciliationTest {
         reconciler.execute(inventory("mapping-2", 2L, "Chapter 1", "/mf/1"))
 
         val chapters = repository.getByCanonicalTitleId("title-1")
-        chapters.size shouldBe 1
-        chapters.single().baseNumber shouldBe 1
-        repository.getVariantsByCanonicalChapterId(chapters.single().id).size shouldBe 2
+        chapters.size shouldBe 2
+        chapters.single { it.volume == 1 }.baseNumber shouldBe 1
+        val unqualifiedChapter = chapters.single { it.volume == null }
+        unqualifiedChapter.baseNumber shouldBe 1
+        repository.getVariantBySourceIdentity(1L, "/md/1")?.canonicalChapterId shouldBe
+            chapters.single { it.volume == 1 }.id
+        repository.getVariantBySourceIdentity(2L, "/mf/1")?.canonicalChapterId shouldBe
+            unqualifiedChapter.id
+    }
+
+    @Test
+    fun `explicit inventory volume selects the matching canonical chapter id`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        repository.chapters["chapter-volume-1"] = canonicalChapter("chapter-volume-1", volume = 1)
+        repository.chapters["chapter-volume-2"] = canonicalChapter("chapter-volume-2", volume = 2)
+        val reconciler = reconciler(repository)
+
+        val report = reconciler.execute(inventory("mapping-2", 2L, "Vol.2 Ch.1", "/md/vol2/ch1"))
+
+        report.canonicalChapters.map { it.id } shouldBe listOf("chapter-volume-2")
+        report.createdCanonicalChapterIds shouldBe emptySet()
+        repository.getVariantBySourceIdentity(2L, "/md/vol2/ch1")?.canonicalChapterId shouldBe "chapter-volume-2"
+        repository.getById("chapter-volume-1")?.volume shouldBe 1
+        repository.getById("chapter-volume-2")?.volume shouldBe 2
+    }
+
+    @Test
+    fun `duplicate canonical candidates for one explicit volume are not selected arbitrarily`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        repository.chapters["chapter-volume-2-a"] = canonicalChapter("chapter-volume-2-a", volume = 2)
+        repository.chapters["chapter-volume-2-b"] = canonicalChapter("chapter-volume-2-b", volume = 2)
+        val reconciler = reconciler(repository)
+
+        val report = reconciler.execute(inventory("mapping-2", 2L, "Vol.2 Ch.1", "/md/vol2/ch1"))
+
+        report.createdCanonicalChapterIds.size shouldBe 1
+        val newChapterId = report.canonicalChapters.single().id
+        (newChapterId in setOf("chapter-volume-2-a", "chapter-volume-2-b")) shouldBe false
+        repository.getVariantBySourceIdentity(2L, "/md/vol2/ch1")?.canonicalChapterId shouldBe newChapterId
+    }
+
+    @Test
+    fun `ambiguous explicit volume does not fall back to an unqualified candidate`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        repository.chapters["chapter-unqualified"] = canonicalChapter("chapter-unqualified", volume = null)
+        val reconciler = reconciler(repository)
+
+        val report = reconciler.execute(
+            inventory("mapping-1", 1L, "Vol.1 Ch.1 - Vol.2 edition", "/md/ambiguous/ch1"),
+        )
+
+        report.createdCanonicalChapterIds.size shouldBe 1
+        val newChapterId = report.canonicalChapters.single().id
+        newChapterId shouldBe report.createdCanonicalChapterIds.single()
+        repository.getVariantBySourceIdentity(1L, "/md/ambiguous/ch1")?.canonicalChapterId shouldBe newChapterId
+        repository.getById("chapter-unqualified")?.volume shouldBe null
     }
 
     @Test
@@ -312,6 +366,7 @@ class ChapterInventoryAndReconciliationTest {
 
     private fun reconciler(repository: FakeCanonicalChapterRepository) = ReconcileChapterInventory(
         parser = ParseCanonicalChapterLabel(),
+        volumeParser = ParseCanonicalChapterVolume(),
         canonicalChapterRepository = repository,
         idFactory = object : () -> String {
             private var next = 0
@@ -351,6 +406,18 @@ class ChapterInventoryAndReconciliationTest {
             createdAt = 100L,
             updatedAt = 100L,
         )
+
+    private fun canonicalChapter(id: String, volume: Int?) = CanonicalChapter(
+        id = id,
+        canonicalTitleId = "title-1",
+        displayNumber = "1",
+        volume = volume,
+        type = CanonicalChapterType.REGULAR,
+        baseNumber = 1,
+        confidence = 1.0,
+        createdAt = 50L,
+        updatedAt = 50L,
+    )
 
     private fun mapping(id: String, materialized: Boolean, preferred: Boolean = false) = SourceTitleMapping(
         id = id,
