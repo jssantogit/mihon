@@ -98,20 +98,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val after = awaitReaderPages(reader, fixture.sourceB.name, expectedCount = 10)
             assertEquals("An equal-length source switch must preserve the observed page index", positionBefore, after.first)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
+            confirmPreferredSource(fixture, fixture.addonB)
             awaitImagePixels(reader, Color.rgb(35, 70, 225), "SOURCE_A_TO_B")
-
-            assertEquals("Switch must leave the preference provisional until user confirmation", fixture.addonA, runBlocking {
-                fixture.preferences.get(fixture.title.id)?.preferredAddonId
-            })
-            val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-            assertTrue(
-                "Successful alternate source preparation should ask before replacing the saved preference",
-                device.wait(Until.hasObject(By.text("Set preferred Add-on?")), UI_TIMEOUT_MS),
-            )
-            clickText(device, "OK")
-            awaitValue("confirmed preferred Add-on to persist") {
-                runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId == fixture.addonB }
-            }
 
             val progressAfter = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
             assertEquals("An incomplete chapter must remain unread", false, progressAfter?.read)
@@ -153,6 +141,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             awaitSourceRequest(fixture.dispatcher, fixture.sourceB.token, emptyPagesBefore)
             assertReaderSession(reader, fixture, fixture.sourceA.name, initial.first, 10)
+            dismissSourceSelectorThroughReaderUi()
             awaitImagePixels(reader, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
 
             fixture.dispatcher.setBehavior(fixture.sourceB.token, FixtureBehavior(pageCount = 10, pageListStatus = 503))
@@ -186,6 +175,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val positionBefore = advanceToPage(reader, 8, "PAGE_COUNT_CLAMP")
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             val after = awaitReaderPages(reader, fixture.sourceB.name, 3)
+            confirmPreferredSource(fixture, fixture.addonB)
             awaitImagePixels(reader, Color.rgb(35, 70, 225), "PAGE_COUNT_CLAMP")
             assertTrue("The published page index must be valid for the shorter source", after.first in 0 until after.second)
             assertEquals("A shorter source must clamp the prior index", minOf(positionBefore, after.second - 1), after.first)
@@ -429,6 +419,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     fixture.addonA,
                     runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId },
                 )
+                dismissSourceSelectorThroughReaderUi()
                 awaitImagePixels(reader, Color.rgb(220, 40, 40), "DISCOVERY_CANCEL")
                 assertEquals(
                     "The previous page position must remain observable after late responses return",
@@ -976,6 +967,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val preferences: ContentPreferenceRepositoryImpl,
         val reading: CanonicalReadingRepositoryImpl,
         private val originalReaderMode: Int,
+        private val originalNavigateToPan: Boolean,
         private val installedExtensions: MutableStateFlow<Map<String, Extension.Installed>>,
         private val priorExtensions: Map<String, Extension.Installed>,
     ) {
@@ -1005,6 +997,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 }
             } finally {
                 app.graph.readerPreferences.defaultReadingMode.set(originalReaderMode)
+                app.graph.readerPreferences.navigateToPan.set(originalNavigateToPan)
                 server.close()
                 driver.close()
             }
@@ -1217,7 +1210,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         )
                     }
                     val originalReaderMode = app.graph.readerPreferences.defaultReadingMode.get()
+                    val originalNavigateToPan = app.graph.readerPreferences.navigateToPan.get()
                     app.graph.readerPreferences.defaultReadingMode.set(ReadingMode.LEFT_TO_RIGHT.flagValue)
+                    app.graph.readerPreferences.navigateToPan.set(false)
                     return SourceSwitchFixture(
                         app = app,
                         driver = driver,
@@ -1233,6 +1228,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         preferences = preferences,
                         reading = CanonicalReadingRepositoryImpl(database),
                         originalReaderMode = originalReaderMode,
+                        originalNavigateToPan = originalNavigateToPan,
                         installedExtensions = installedExtensions,
                         priorExtensions = priorExtensions,
                     )
@@ -1359,7 +1355,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             .build()
 
         private fun imageResponse(color: Int): MockResponse {
-            val bitmap = Bitmap.createBitmap(32, 48, Bitmap.Config.ARGB_8888).apply {
+            val bitmap = Bitmap.createBitmap(512, 768, Bitmap.Config.ARGB_8888).apply {
                 eraseColor(color)
             }
             val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
