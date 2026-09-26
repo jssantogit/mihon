@@ -4,8 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.PointF
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.View
+import androidx.core.view.children
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -15,7 +18,9 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
+import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.tachiyomi.App
+import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.extension.ExtensionManager
@@ -31,6 +36,8 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion
+import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerPageHolder
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
@@ -85,8 +92,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val reader = awaitActivity(ReaderActivity::class.java)
             val first = awaitReaderPages(reader, expectedSource = fixture.sourceA.name, expectedCount = 10)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
-            awaitImagePixels(reader, Color.rgb(220, 40, 40), "SOURCE_A_TO_B")
-            val positionBefore = advanceToPage(reader, 4, "SOURCE_A_TO_B")
+            val positionBefore = advanceToPage(reader, fixture, 4, "SOURCE_A_TO_B")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "SOURCE_A_TO_B")
             val progressBefore = awaitValue("canonical progress for observed page 4") {
                 runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
                     ?.takeIf { it.lastPageRead >= positionBefore.toLong() }
@@ -99,7 +106,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             assertEquals("An equal-length source switch must preserve the observed page index", positionBefore, after.first)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
             confirmPreferredSource(fixture, fixture.addonB)
-            awaitImagePixels(reader, Color.rgb(35, 70, 225), "SOURCE_A_TO_B")
+            awaitImagePixels(reader, fixture, Color.rgb(35, 70, 225), "SOURCE_A_TO_B")
 
             val progressAfter = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
             assertEquals("An incomplete chapter must remain unread", false, progressAfter?.read)
@@ -138,11 +145,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val progressBefore = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
             val historyBefore = runBlocking { fixture.reading.getHistory(fixture.chapter.id) }
             val emptyPagesBefore = fixture.dispatcher.pageRequestCount(fixture.sourceB.token)
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             awaitSourceRequest(fixture.dispatcher, fixture.sourceB.token, emptyPagesBefore)
             assertReaderSession(reader, fixture, fixture.sourceA.name, initial.first, 10)
             dismissSourceSelectorThroughReaderUi()
-            awaitImagePixels(reader, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
 
             fixture.dispatcher.setBehavior(fixture.sourceB.token, FixtureBehavior(pageCount = 10, pageListStatus = 503))
             val failedPagesBefore = fixture.dispatcher.pageRequestCount(fixture.sourceB.token)
@@ -159,7 +167,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 fixture.reading.getHistory(fixture.chapter.id)
             })
             dismissSourceSelectorThroughReaderUi()
-            awaitImagePixels(reader, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
             assertSame("Failure must not replace the published chapter object", retiredCandidate.chapter, reader.viewModel.state.value.currentChapter!!.pages!![initial.first].chapter)
             report("EMPTY_OR_FAILING", 10, initial.first, details = "session=PREVIOUS_PRESERVED")
         }
@@ -172,11 +180,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             val first = awaitReaderPages(reader, fixture.sourceA.name, 10)
-            val positionBefore = advanceToPage(reader, 8, "PAGE_COUNT_CLAMP")
+            val positionBefore = advanceToPage(reader, fixture, 8, "PAGE_COUNT_CLAMP")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "PAGE_COUNT_CLAMP")
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             val after = awaitReaderPages(reader, fixture.sourceB.name, 3)
             confirmPreferredSource(fixture, fixture.addonB)
-            awaitImagePixels(reader, Color.rgb(35, 70, 225), "PAGE_COUNT_CLAMP")
+            awaitImagePixels(reader, fixture, Color.rgb(35, 70, 225), "PAGE_COUNT_CLAMP")
             assertTrue("The published page index must be valid for the shorter source", after.first in 0 until after.second)
             assertEquals("A shorter source must clamp the prior index", minOf(positionBefore, after.second - 1), after.first)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
@@ -199,7 +208,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val sourceA = awaitReaderPages(reader, fixture.sourceA.name, 10)
             val retiredPage = reader.viewModel.state.value.currentChapter!!.pages!![sourceA.first]
             retiredPage.chapter.ref()
-            advanceToPage(reader, 3, "RETIRED_CALLBACK")
+            advanceToPage(reader, fixture, 3, "RETIRED_CALLBACK")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "RETIRED_CALLBACK")
             val progressBefore = awaitValue("canonical progress before switching source") {
                 runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
                     ?.takeIf { it.lastPageRead >= 3L }
@@ -240,13 +250,14 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val original = awaitActivity(ReaderActivity::class.java)
             awaitReaderPages(original, fixture.sourceA.name, expectedCount = 10)
-            val positionBefore = advanceToPage(original, 6, "ACTIVITY_RECREATE")
+            val positionBefore = advanceToPage(original, fixture, 6, "ACTIVITY_RECREATE")
+            awaitImagePixels(original, fixture, Color.rgb(220, 40, 40), "ACTIVITY_RECREATE")
 
             chooseSourceThroughReaderUi(original, fixture.sourceB.name)
             val switched = awaitReaderPages(original, fixture.sourceB.name, expectedCount = 10)
             assertEquals(positionBefore, switched.first)
             confirmPreferredSource(fixture, fixture.addonB)
-            awaitImagePixels(original, Color.rgb(35, 70, 225), "ACTIVITY_RECREATE")
+            awaitImagePixels(original, fixture, Color.rgb(35, 70, 225), "ACTIVITY_RECREATE")
 
             InstrumentationRegistry.getInstrumentation().runOnMainSync { original.recreate() }
             val recreated = awaitReplacementReaderActivity(original)
@@ -254,7 +265,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val restored = awaitReaderPages(recreated, fixture.sourceB.name, expectedCount = 10)
             assertEquals("Recreated Reader must restore the observed page position", positionBefore, restored.first)
             assertEquals(fixture.chapter.id, recreated.intent.getStringExtra("canonical_chapter"))
-            awaitImagePixels(recreated, Color.rgb(35, 70, 225), "ACTIVITY_RECREATE")
+            awaitImagePixels(recreated, fixture, Color.rgb(35, 70, 225), "ACTIVITY_RECREATE")
             assertEquals(fixture.addonB, runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId })
             assertEquals(
                 fixture.chapter.id,
@@ -277,17 +288,18 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
-            advanceToPage(reader, 2, "HISTORY_IDEMPOTENCE")
+            advanceToPage(reader, fixture, 2, "HISTORY_IDEMPOTENCE")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "HISTORY_IDEMPOTENCE")
 
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             val firstSwitch = awaitReaderPages(reader, fixture.sourceB.name, expectedCount = 10)
             confirmPreferredSource(fixture, fixture.addonB)
-            awaitImagePixels(reader, Color.rgb(35, 70, 225), "HISTORY_IDEMPOTENCE")
+            awaitImagePixels(reader, fixture, Color.rgb(35, 70, 225), "HISTORY_IDEMPOTENCE")
 
             chooseSourceThroughReaderUi(reader, fixture.sourceA.name)
             val secondSwitch = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
             confirmPreferredSource(fixture, fixture.addonA)
-            awaitImagePixels(reader, Color.rgb(220, 40, 40), "HISTORY_IDEMPOTENCE")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "HISTORY_IDEMPOTENCE")
 
             val preference = runBlocking { fixture.preferences.get(fixture.title.id) }
             assertEquals(
@@ -324,6 +336,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             val current = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "SLOW_TO_HEALTHY")
             val sourceARoutesBeforeDiscovery = fixture.dispatcher.routeCounts(fixture.sourceA.token)
             val sourceBRoutesBeforeDiscovery = fixture.dispatcher.routeCounts(fixture.sourceB.token)
             fixture.dispatcher.holdResponses(fixture.sourceB.token)
@@ -369,7 +382,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 assertEquals(current.first, unchanged.first)
                 assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
                 dismissSourceSelectorThroughReaderUi()
-                awaitImagePixels(reader, Color.rgb(220, 40, 40), "SLOW_TO_HEALTHY")
+                awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "SLOW_TO_HEALTHY")
                 report(
                     scenario = "SLOW_TO_HEALTHY",
                     pageCount = unchanged.second,
@@ -389,7 +402,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             val initial = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
-            val positionBefore = advanceToPage(reader, 3, "DISCOVERY_CANCEL")
+            val positionBefore = advanceToPage(reader, fixture, 3, "DISCOVERY_CANCEL")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "DISCOVERY_CANCEL")
             fixture.dispatcher.holdResponses(fixture.sourceA.token)
             fixture.dispatcher.holdResponses(fixture.sourceB.token)
             try {
@@ -420,7 +434,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId },
                 )
                 dismissSourceSelectorThroughReaderUi()
-                awaitImagePixels(reader, Color.rgb(220, 40, 40), "DISCOVERY_CANCEL")
+                awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "DISCOVERY_CANCEL")
                 assertEquals(
                     "The previous page position must remain observable after late responses return",
                     initial.second,
@@ -518,7 +532,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         }
     }
 
-    private fun awaitImagePixels(reader: ReaderActivity, expectedColor: Int, scenario: String) {
+    private fun awaitImagePixels(
+        reader: ReaderActivity,
+        fixture: SourceSwitchFixture,
+        expectedColor: Int,
+        scenario: String,
+    ) {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         var lastMatchingSampleCount = 0
         var lastMatchingRowCount = 0
@@ -540,6 +559,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         } catch (error: AssertionError) {
             val snapshot = reportScreenshotFailure(
                 reader = reader,
+                fixture = fixture,
                 scenario = scenario,
                 expectedColor = expectedColor,
                 matchingSamples = lastMatchingSampleCount,
@@ -555,6 +575,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         } catch (error: RuntimeException) {
             reportScreenshotFailure(
                 reader = reader,
+                fixture = fixture,
                 scenario = scenario,
                 expectedColor = expectedColor,
                 matchingSamples = lastMatchingSampleCount,
@@ -567,16 +588,42 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             imageEvidence.sampleCount >= MIN_IMAGE_COLOR_SAMPLES &&
                 imageEvidence.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS,
         )
+        val snapshot = readerViewSnapshot(reader)
+        val pager = snapshot.pager
+        val currentImageVisible =
+            pager.visible && pager.holderAttached && pager.holderVisible &&
+                pager.imageViewPresent && pager.imageViewVisible && pager.imageViewReady && !pager.errorVisible
+        if (!currentImageVisible) {
+            val imageCounts = fixture.imageRequestCounts()
+            reportReaderViewDiagnostic(
+                scenario = scenario,
+                phase = "IMAGE_VIEW_NOT_READY",
+                snapshot = snapshot,
+                interactionInjected = false,
+                interactionTarget = "READER_PAGER",
+                expectedColor = colorName(expectedColor),
+                matchingSamples = imageEvidence.sampleCount,
+                matchingRows = imageEvidence.rowsWithLongRun,
+                imageRequestsA = imageCounts.first,
+                imageRequestsB = imageCounts.second,
+            )
+        }
+        assertTrue(
+            "The current Reader page image must be attached, visible, decoded, and free of an error view",
+            currentImageVisible,
+        )
     }
 
     private fun reportScreenshotFailure(
         reader: ReaderActivity,
+        fixture: SourceSwitchFixture,
         scenario: String,
         expectedColor: Int,
         matchingSamples: Int,
         matchingRows: Int,
     ): ReaderViewSnapshot? {
         val snapshot = runCatching { readerViewSnapshot(reader) }.getOrNull() ?: return null
+        val imageCounts = fixture.imageRequestCounts()
         reportReaderViewDiagnostic(
             scenario = scenario,
             phase = "SCREENSHOT_TIMEOUT",
@@ -586,6 +633,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             expectedColor = colorName(expectedColor),
             matchingSamples = matchingSamples,
             matchingRows = matchingRows,
+            imageRequestsA = imageCounts.first,
+            imageRequestsB = imageCounts.second,
         )
         return snapshot
     }
@@ -626,7 +675,15 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val rowsWithLongRun: Int,
     )
 
-    private fun advanceToPage(reader: ReaderActivity, requestedIndex: Int, scenario: String): Int {
+    private fun SourceSwitchFixture.imageRequestCounts(): Pair<Int, Int> =
+        dispatcher.imageRequestCount(sourceA.token) to dispatcher.imageRequestCount(sourceB.token)
+
+    private fun advanceToPage(
+        reader: ReaderActivity,
+        fixture: SourceSwitchFixture,
+        requestedIndex: Int,
+        scenario: String,
+    ): Int {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val startIndex = readerViewSnapshot(reader).position
         assertTrue("Current Reader page index must be observable before advancing", startIndex >= 0)
@@ -634,32 +691,26 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             for (expectedIndex in (startIndex + 1)..requestedIndex) {
                 val before = readerViewSnapshot(reader)
                 val pager = pagerSnapshot(reader)
-                val injected = if (pager.visible && pager.count > 0) {
-                    val bounds = pagerBounds(reader)
-                    bounds != null && device.swipe(
-                        bounds.left + bounds.width * 4 / 5,
-                        bounds.top + bounds.height / 2,
-                        bounds.left + bounds.width / 5,
-                        bounds.top + bounds.height / 2,
-                        12,
-                    )
-                } else {
-                    false
-                }
+                val tapPoint = pagerNextTapPoint(reader)
+                val injected =
+                    pager.visible && pager.count > 0 && tapPoint != null && device.click(tapPoint.x, tapPoint.y)
                 try {
-                    assertTrue("Reader pager must accept a forward page swipe", injected)
+                    assertTrue("Reader pager must expose and accept a forward navigation-zone tap", injected)
                     awaitObservedPage(reader, expectedIndex)
                 } catch (error: AssertionError) {
                     val after = readerViewSnapshot(reader)
+                    val imageCounts = fixture.imageRequestCounts()
                     reportReaderViewDiagnostic(
                         scenario = scenario,
-                        phase = "PAGE_SWIPE_TIMEOUT",
+                        phase = "PAGE_TAP_TIMEOUT",
                         snapshot = after,
                         interactionInjected = injected,
                         interactionTarget = if (before.viewer == "NONE") "NONE" else "READER_PAGER",
+                        imageRequestsA = imageCounts.first,
+                        imageRequestsB = imageCounts.second,
                     )
                     throw AssertionError(
-                        "Reader pager swipe did not reach the requested ready page " +
+                        "Reader navigation-zone tap did not reach the requested ready page " +
                             "(requestedIndex=$expectedIndex, beforeIndex=${before.position}, " +
                             "afterIndex=${after.position}, viewer=${after.viewer}, pageState=${after.pageState}, " +
                             "pagerVisible=${after.pager.visible}, pagerCount=${after.pager.count}, " +
@@ -672,34 +723,70 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         return awaitObservedPage(reader, requestedIndex)
     }
 
-    private fun pagerBounds(reader: ReaderActivity): PagerBounds? {
-        var bounds: PagerBounds? = null
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val pager = (reader.viewModel.state.value.viewer as? PagerViewer)?.pager ?: return@runOnMainSync
-            val location = IntArray(2)
-            pager.getLocationOnScreen(location)
-            if (pager.width > 0 && pager.height > 0) {
-                bounds = PagerBounds(location[0], location[1], pager.width, pager.height)
-            }
-        }
-        return bounds
-    }
-
-    private fun pagerSnapshot(reader: ReaderActivity): PagerSnapshot {
-        var snapshot = PagerSnapshot(visible = false, count = 0, currentItem = -1, idle = false)
+    private fun pagerNextTapPoint(reader: ReaderActivity): PagerTapPoint? {
+        var tapPoint: PagerTapPoint? = null
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val viewer = reader.viewModel.state.value.viewer as? PagerViewer ?: return@runOnMainSync
             val pager = viewer.pager
+            val nextRegion = viewer.config.navigator.getRegions().firstOrNull {
+                it.type == NavigationRegion.RIGHT || it.type == NavigationRegion.NEXT
+            } ?: return@runOnMainSync
+            val normalizedPoint = PointF(nextRegion.rectF.centerX(), nextRegion.rectF.centerY())
+            val action = viewer.config.navigator.getAction(normalizedPoint)
+            if (action != NavigationRegion.RIGHT && action != NavigationRegion.NEXT) return@runOnMainSync
+            val location = IntArray(2)
+            pager.getLocationOnScreen(location)
+            if (pager.width > 0 && pager.height > 0) {
+                tapPoint = PagerTapPoint(
+                    x = location[0] + (normalizedPoint.x * pager.width).toInt(),
+                    y = location[1] + (normalizedPoint.y * pager.height).toInt(),
+                )
+            }
+        }
+        return tapPoint
+    }
+
+    private fun pagerSnapshot(reader: ReaderActivity): PagerSnapshot {
+        var snapshot = PagerSnapshot(
+            visible = false,
+            count = 0,
+            currentItem = -1,
+            idle = false,
+            holderPresent = false,
+            holderAttached = false,
+            holderVisible = false,
+            imageViewPresent = false,
+            imageViewVisible = false,
+            imageViewReady = false,
+            errorVisible = false,
+        )
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val viewer = reader.viewModel.state.value.viewer as? PagerViewer ?: return@runOnMainSync
+            val pager = viewer.pager
+            val state = reader.viewModel.state.value
+            val currentPage = state.currentChapter?.pages?.getOrNull(state.currentPage - 1)
+            val holder = currentPage?.let { page ->
+                pager.children.filterIsInstance<PagerPageHolder>().firstOrNull { it.page === page }
+            }
+            val imageView = holder?.children?.filterIsInstance<SubsamplingScaleImageView>()?.firstOrNull()
+            val errorVisible = holder?.findViewById<View>(R.id.error_message)?.visibility == View.VISIBLE
             val idle = runCatching {
                 PagerViewer::class.java.getDeclaredField("isIdle")
                     .apply { isAccessible = true }
                     .getBoolean(viewer)
             }.getOrDefault(false)
             snapshot = PagerSnapshot(
-                visible = pager.visibility == android.view.View.VISIBLE,
+                visible = pager.visibility == View.VISIBLE,
                 count = pager.adapter?.count ?: 0,
                 currentItem = pager.currentItem,
                 idle = idle,
+                holderPresent = holder != null,
+                holderAttached = holder?.isAttachedToWindow == true,
+                holderVisible = holder?.isShown == true,
+                imageViewPresent = imageView != null,
+                imageViewVisible = imageView?.isShown == true,
+                imageViewReady = imageView?.isReady == true,
+                errorVisible = errorVisible,
             )
         }
         return snapshot
@@ -788,9 +875,16 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         expectedColor: String = "NONE",
         matchingSamples: Int? = null,
         matchingRows: Int? = null,
+        imageRequestsA: Int? = null,
+        imageRequestsB: Int? = null,
     ) {
         val colorDetail = expectedColor.takeIf { it != "NONE" }?.let { "|expectedColor=$it" }.orEmpty()
         val pixelDetails = "|matchingSamples=${matchingSamples ?: 0}|matchingRows=${matchingRows ?: 0}$colorDetail"
+        val imageRequests = if (imageRequestsA != null && imageRequestsB != null) {
+            "|imageRequestsA=$imageRequestsA|imageRequestsB=$imageRequestsB"
+        } else {
+            ""
+        }
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,
             Bundle().apply {
@@ -803,8 +897,15 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|pagerVisible=${snapshot.pager.visible.toWireBoolean()}|pagerCount=${snapshot.pager.count}" +
                         "|pagerCurrentItem=${snapshot.pager.currentItem}" +
                         "|pagerIdle=${snapshot.pager.idle.toWireBoolean()}" +
+                        "|holderPresent=${snapshot.pager.holderPresent.toWireBoolean()}" +
+                        "|holderAttached=${snapshot.pager.holderAttached.toWireBoolean()}" +
+                        "|holderVisible=${snapshot.pager.holderVisible.toWireBoolean()}" +
+                        "|imageViewPresent=${snapshot.pager.imageViewPresent.toWireBoolean()}" +
+                        "|imageViewVisible=${snapshot.pager.imageViewVisible.toWireBoolean()}" +
+                        "|imageViewReady=${snapshot.pager.imageViewReady.toWireBoolean()}" +
+                        "|errorVisible=${snapshot.pager.errorVisible.toWireBoolean()}" +
                         "|interactionInjected=${interactionInjected.toWireBoolean()}" +
-                        "|interactionTarget=$interactionTarget$pixelDetails",
+                        "|interactionTarget=$interactionTarget$pixelDetails$imageRequests",
                 )
             },
         )
@@ -1349,6 +1450,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         private val behaviors = java.util.concurrent.ConcurrentHashMap(behaviors)
         private val pageRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        private val imageRequestCounts =
+            java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
         private val routeRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
         private val heldResponses = java.util.concurrent.ConcurrentHashMap<String, CountDownLatch>()
@@ -1370,6 +1473,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         fun heldRequestCount(token: String): Int = heldRequestCounts[token]?.get() ?: 0
 
         fun pageRequestCount(token: String): Int = pageRequestCounts[token]?.get() ?: 0
+
+        fun imageRequestCount(token: String): Int = imageRequestCounts[token]?.get() ?: 0
 
         fun routeCounts(token: String): FixtureRouteCounts = FixtureRouteCounts(
             search = routeRequestCount(token, "search"),
@@ -1428,6 +1533,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             }
             if (path.startsWith("/image/")) {
                 val token = path.removePrefix("/image/").substringBefore('/')
+                imageRequestCounts.computeIfAbsent(token) {
+                    java.util.concurrent.atomic.AtomicInteger()
+                }.incrementAndGet()
                 val color = behaviors[token]?.imageColor ?: Color.BLACK
                 return imageResponse(color)
             }
@@ -1555,14 +1663,16 @@ private data class PagerSnapshot(
     val count: Int,
     val currentItem: Int,
     val idle: Boolean,
+    val holderPresent: Boolean,
+    val holderAttached: Boolean,
+    val holderVisible: Boolean,
+    val imageViewPresent: Boolean,
+    val imageViewVisible: Boolean,
+    val imageViewReady: Boolean,
+    val errorVisible: Boolean,
 )
 
-private data class PagerBounds(
-    val left: Int,
-    val top: Int,
-    val width: Int,
-    val height: Int,
-)
+private data class PagerTapPoint(val x: Int, val y: Int)
 
 private data class SelectorSnapshot(
     val state: String,
