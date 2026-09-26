@@ -925,6 +925,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         return when {
             focusedPackage == EXPECTED_TARGET_PACKAGE -> "READER_APP"
             focusedPackage == "com.android.systemui" -> "SYSTEM_UI"
+            focusedPackage.contains("permissioncontroller", ignoreCase = true) -> "PERMISSION_DIALOG"
+            focusedPackage == "$EXPECTED_TARGET_PACKAGE.test" -> "TEST_RUNNER"
+            focusedPackage == "com.android.settings" -> "SETTINGS"
             focusedPackage.contains("launcher", ignoreCase = true) -> "LAUNCHER"
             focusedPackage.isBlank() -> "UNAVAILABLE"
             else -> "OTHER"
@@ -1250,7 +1253,20 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
     ) {
 
         fun launchReader() {
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val context = instrumentation.targetContext
+            val device = UiDevice.getInstance(instrumentation)
+            device.wakeUp()
+            // A shell-launched exported MainActivity gives the app a real
+            // foreground task. Starting the non-exported Reader directly from
+            // a background instrumentation context can leave it RESUMED but
+            // without window focus, with screenshots capturing another app.
+            val foregroundResult = device.executeShellCommand(
+                "am start -n $EXPECTED_TARGET_PACKAGE/eu.kanade.tachiyomi.ui.main.MainActivity " +
+                    "-a android.intent.action.MAIN -c android.intent.category.LAUNCHER",
+            )
+            assertTrue("Unable to foreground the isolated Reader test package", !foregroundResult.contains("Error"))
+            device.waitForIdle()
             context.startActivity(
                 ReaderActivity.newCanonicalIntent(context, chapter.id)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
