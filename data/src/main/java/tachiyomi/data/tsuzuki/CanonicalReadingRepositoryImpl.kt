@@ -189,8 +189,18 @@ class CanonicalReadingRepositoryImpl(
 
     private suspend fun loadProjection(chapterId: String, mihonId: Long): ProjectionRow? =
         database.tsuzuki_mihon_projection_queueQueries.getTsuzukiMihonProjection(chapterId, mihonId) {
-            _, _, pendingProgress, progressRead, progressPage, pendingHistory, pendingDuration,
-            historyReadAt, _, generation, attemptCount, nextRetryAt,
+                _,
+                _,
+                pendingProgress,
+                progressRead,
+                progressPage,
+                pendingHistory,
+                pendingDuration,
+                historyReadAt,
+                _,
+                generation,
+                attemptCount,
+                nextRetryAt,
             ->
             ProjectionRow(
                 pendingProgress = pendingProgress,

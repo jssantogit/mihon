@@ -1,7 +1,7 @@
 package tachiyomi.data.tsuzuki
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
-import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
@@ -313,20 +313,15 @@ class CanonicalReadingRepositoryImplTest {
         ).await()
     }
 
-    private suspend fun legacyState(): Triple<Long, Long, Long> = driver.executeQuery(
-        null,
-        """
-        SELECT c.read, c.last_page_read, COALESCE(h.time_read, 0)
-        FROM chapters c LEFT JOIN history h ON h.chapter_id = c._id WHERE c._id = 77
-        """.trimIndent(),
-        { cursor ->
-            QueryResult.AsyncValue {
-                check(cursor.next().await())
-                Triple(checkNotNull(cursor.getLong(0)), checkNotNull(cursor.getLong(1)), checkNotNull(cursor.getLong(2)))
-            }
-        },
-        0,
-    ).await()
+    private suspend fun legacyState(): Triple<Long, Long, Long> {
+        val chapter = database.chaptersQueries.getChapterById(77L).awaitAsOne()
+        val history = database.historyQueries.getHistoryByMangaId(77L).awaitAsList().firstOrNull()
+        return Triple(
+            if (chapter.read) 1L else 0L,
+            chapter.last_page_read,
+            history?.time_read ?: 0L,
+        )
+    }
 
     private suspend fun seedTitleMappingAndChapters() {
         database.tsuzuki_titlesQueries.insertTsuzukiTitle(
