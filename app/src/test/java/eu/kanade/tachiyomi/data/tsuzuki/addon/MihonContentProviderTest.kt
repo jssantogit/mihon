@@ -397,31 +397,51 @@ class MihonContentProviderTest {
     }
 
     @Test
-    fun `count-only chapter resolves an exact release from trusted bound Add-on`() = runTest {
-        val linked = binding(id = "binding-pt", sourceKey = "7:/death-note")
+    fun `verified Death Note MangaDot binding resolves chapter one from raw inventory`() = runTest {
+        val linked = binding(id = "binding-mangadot-en", sourceKey = "7:/death-note")
+            .copy(addonId = AddonId("mangadot"), verifiedByUser = true)
         val placeholder = CanonicalChapter(
-            id = inferredChapterId("title", 37),
+            id = inferredChapterId("title", 1),
             canonicalTitleId = "title",
-            displayNumber = "37",
+            displayNumber = "1",
             type = CanonicalChapterType.REGULAR,
-            baseNumber = 37,
+            baseNumber = 1,
             confidence = 0.0,
         )
+        val repository = FakeCanonicalChapterRepository(emptyList(), placeholder)
+        val fetchedBindings = mutableListOf<String>()
+        val materializedChapters = mutableListOf<String>()
+        val rawChapters = (1..544).map { number ->
+            snapshot(7L, linked.id, "/chapter-$number", "en").copy(
+                rawName = "Chapter $number",
+                rawNumberHint = number.toDouble(),
+            )
+        }
         val provider = MihonContentProvider(
-            addonId = AddonId("mangadex"),
+            addonId = AddonId("mangadot"),
             contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
-            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), placeholder),
+            canonicalChapterRepository = repository,
             parser = ParseCanonicalChapterLabel(),
-            fetchInventory = {
-                Result.success(inventory(it.id, 7L, "en", snapshot(7L, it.id, "/chapter-37", "en")))
+            fetchInventory = { selected ->
+                fetchedBindings += selected.id
+                Result.success(
+                    inventory(selected.id, 7L, "en", rawChapters.first())
+                        .copy(chapters = rawChapters),
+                )
             },
-            materializeDelivery = { _, _ ->
-                Result.success(ContentDelivery.Mihon(7L, 99L, 370L))
+            materializeDelivery = { _, chapter ->
+                materializedChapters += chapter.sourceChapterId
+                Result.success(ContentDelivery.Mihon(7L, 99L, 1L))
             },
         )
 
-        val available = provider.resolve("title", placeholder.id).getOrThrow()
-        available.single().delivery shouldBe ContentDelivery.Mihon(7L, 99L, 370L)
+        val available = provider.resolveBinding(linked, placeholder.id).getOrThrow()
+
+        available.single().delivery shouldBe ContentDelivery.Mihon(7L, 99L, 1L)
+        available.single().canonicalChapterId shouldBe placeholder.id
+        fetchedBindings shouldBe listOf(linked.id)
+        materializedChapters shouldBe listOf("/chapter-1")
+        repository.writeCount shouldBe 0
     }
 
     @Test
@@ -657,6 +677,376 @@ class MihonContentProviderTest {
         )
 
         provider.resolve("title", "canonical-chapter-4").getOrThrow() shouldBe emptyList()
+    }
+
+    @Test
+    fun mappedVariantsWithConflictingVolumesAreNotOfferedWhenCanonicalVolumeIsUnknown() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val mappedVariants = listOf(
+            variant(7L, "/vol-1-chapter-37").copy(
+                id = "variant-vol-1",
+                canonicalChapterId = requested.id,
+                rawName = "Vol. 1 Ch. 37",
+            ),
+            variant(7L, "/vol-2-chapter-37").copy(
+                id = "variant-vol-2",
+                canonicalChapterId = requested.id,
+                rawName = "Vol. 2 Ch. 37",
+            ),
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(mappedVariants, requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/vol-1-chapter-37", "en").copy(rawName = "Vol. 1 Ch. 37"),
+                    ).copy(
+                        chapters = listOf(
+                            snapshot(7L, it.id, "/vol-1-chapter-37", "en").copy(rawName = "Vol. 1 Ch. 37"),
+                            snapshot(7L, it.id, "/vol-2-chapter-37", "en").copy(rawName = "Vol. 2 Ch. 37"),
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, chapter ->
+                materializations++
+                Result.success(
+                    ContentDelivery.Mihon(
+                        7L,
+                        70L,
+                        if (chapter.sourceChapterId.contains("vol-1")) 371L else 372L,
+                    ),
+                )
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun mappedGroupsWithOneSharedVolumeRemainAvailableWhenCanonicalVolumeIsUnknown() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val mappedVariants = listOf(
+            variant(7L, "/group-a-chapter-37").copy(
+                id = "variant-group-a",
+                canonicalChapterId = requested.id,
+                rawName = "Vol. 2 Ch. 37",
+            ),
+            variant(7L, "/group-b-chapter-37").copy(
+                id = "variant-group-b",
+                canonicalChapterId = requested.id,
+                rawName = "Vol. 2 Ch. 37",
+            ),
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(mappedVariants, requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/group-a-chapter-37", "en").copy(
+                            rawName = "Vol. 2 Ch. 37",
+                            scanlationGroup = "Group A",
+                        ),
+                    ).copy(
+                        chapters = listOf(
+                            snapshot(7L, it.id, "/group-a-chapter-37", "en").copy(
+                                rawName = "Vol. 2 Ch. 37",
+                                scanlationGroup = "Group A",
+                            ),
+                            snapshot(7L, it.id, "/group-b-chapter-37", "en").copy(
+                                rawName = "Vol. 2 Ch. 37",
+                                scanlationGroup = "Group B",
+                            ),
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, chapter ->
+                Result.success(
+                    ContentDelivery.Mihon(
+                        7L,
+                        70L,
+                        if (chapter.scanlationGroup == "Group A") 371L else 372L,
+                    ),
+                )
+            },
+        )
+
+        val options = provider.resolve("title", requested.id).getOrThrow()
+
+        options.map { it.scanlationGroup }.shouldContainExactly("Group A", "Group B")
+    }
+
+    @Test
+    fun mappedSpecificVolumeOptionSurvivesAnotherUnmappedVolume() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37-volume-2",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            volume = 2,
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val mapped = variant(7L, "/vol-2-chapter-37").copy(
+            id = "variant-vol-2",
+            canonicalChapterId = requested.id,
+            rawName = "Vol. 2 Ch. 37",
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(listOf(mapped), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/vol-1-chapter-37", "en").copy(rawName = "Vol. 1 Ch. 37"),
+                    ).copy(
+                        chapters = listOf(
+                            snapshot(7L, it.id, "/vol-1-chapter-37", "en").copy(rawName = "Vol. 1 Ch. 37"),
+                            snapshot(7L, it.id, "/vol-2-chapter-37", "en").copy(rawName = "Vol. 2 Ch. 37"),
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, chapter ->
+                Result.success(
+                    ContentDelivery.Mihon(7L, 70L, if (chapter.sourceChapterId.contains("vol-2")) 372L else 371L),
+                )
+            },
+        )
+
+        val options = provider.resolve("title", requested.id).getOrThrow()
+
+        options.size shouldBe 1
+        options.single().delivery shouldBe ContentDelivery.Mihon(7L, 70L, 372L)
+    }
+
+    @Test
+    fun mappedSnapshotWithAmbiguousExplicitVolumeIsNotOffered() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val mapped = variant(7L, "/ambiguous-chapter-37").copy(canonicalChapterId = requested.id)
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(listOf(mapped), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/ambiguous-chapter-37", "en").copy(
+                            rawName = "Vol. 1 Ch. 37 Vol. 2 Ch. 37",
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 370L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun mappedSnapshotCannotChangeThePersistedVolumeForTheSameSourceIdentity() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val mapped = variant(7L, "/reused-chapter-key").copy(
+            canonicalChapterId = requested.id,
+            rawName = "Vol. 2 Ch. 37",
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(listOf(mapped), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/reused-chapter-key", "en").copy(
+                            rawName = "Vol. 1 Ch. 37",
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 370L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun ambiguousMappedEvidenceVolumeDoesNotOverrideCurrentInventory() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val evidence = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = "ambiguous-volume-evidence",
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = "mangadex",
+                externalChapterKey = "7:/mapped-evidence-chapter",
+                rawLabel = "Vol. 1 Ch. 37 Vol. 2 Ch. 37",
+                rawNumber = 37.0,
+                volume = 2,
+                title = null,
+                observedAt = 1L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = requested.id,
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/mapped-evidence-chapter", "en").copy(rawName = "Vol. 1 Ch. 37"),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                Result.success(ContentDelivery.Mihon(7L, 70L, 371L))
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(listOf(evidence)),
+        )
+
+        val options = provider.resolve("title", requested.id).getOrThrow()
+
+        options.single().delivery shouldBe ContentDelivery.Mihon(7L, 70L, 371L)
+    }
+
+    @Test
+    fun mappedEvidenceWithStoredVolumeConflictingWithRawLabelIsNotOffered() = runTest {
+        val linked = binding(id = "binding-volume", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val evidence = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = "conflicting-volume-evidence",
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = "mangadex",
+                externalChapterKey = "7:/mapped-evidence-chapter",
+                rawLabel = "Vol. 1 Ch. 37",
+                rawNumber = 37.0,
+                volume = 2,
+                title = null,
+                observedAt = 1L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = requested.id,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/mapped-evidence-chapter", "en").copy(rawName = "Vol. 2 Ch. 37"),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 372L))
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(listOf(evidence)),
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
     }
 
     private fun binding(id: String, sourceKey: String) = ContentBinding(
