@@ -22,6 +22,10 @@ METHOD_SCENARIOS = {
 }
 SAFE_TEST_CLASS_PREFIX = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation."
 SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
+SAFE_FRAME_PREFIXES = (
+    SAFE_TEST_CLASS_PREFIX,
+    "eu.kanade.tachiyomi.ui.reader.",
+)
 FIXTURE_DIAGNOSTIC_PREFIXES = (
     "INSTRUMENTATION_STATUS: stream=READER_FIXTURE_DIAGNOSTIC|",
     "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_SWITCH_DIAGNOSTIC|",
@@ -33,6 +37,29 @@ FIXTURE_DIAGNOSTIC_KEYS = (
 FIXTURE_DIAGNOSTIC_SELECTORS = {
     "READY_WITH_A", "DISCOVERING", "OPEN_WITHOUT_A", "CLOSED_OR_OTHER",
 }
+READER_VIEW_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_VIEW_DIAGNOSTIC|"
+READER_VIEW_DIAGNOSTIC_KEYS = (
+    "scenario", "phase", "viewer", "focused", "stream", "pagesLoaded",
+    "pageCount", "pageState", "position", "keyInjected", "keyTarget",
+    "matchingSamples", "matchingRows",
+)
+READER_VIEW_OPTIONAL_KEYS = ("expectedColor",)
+READER_VIEWERS = {
+    "NONE", "L2RPagerViewer", "R2LPagerViewer", "VerticalPagerViewer",
+    "WebtoonViewer", "WebGpuViewer", "WebGpuViewerContinuous",
+}
+READER_PAGE_STATES = {"QUEUE", "LOAD_PAGE", "DOWNLOAD_IMAGE", "READY", "ERROR", "NONE"}
+READER_FOCUS_STATES = {"FOCUSED", "NO_FOCUS", "UNKNOWN"}
+READER_KEY_TARGETS = {"READER_VIEWER", "NONE"}
+READER_EXPECTED_COLORS = {"RED", "BLUE", "NONE"}
+READER_BOOL_FIELDS = {"stream", "pagesLoaded", "keyInjected"}
+READER_SELECTOR_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_SELECTOR_DIAGNOSTIC|"
+READER_SELECTOR_DIAGNOSTIC_KEYS = (
+    "scenario", "state", "options", "aOption", "bOption", "chapterMatch",
+    "failedProviders", "aSearchDelta", "aInventoryDelta", "aPagesDelta",
+    "bSearchDelta", "bInventoryDelta", "bPagesDelta", "bHeld",
+)
+READER_SELECTOR_STATES = {"LOADING", "DISCOVERING", "READY", "EMPTY", "ERROR"}
 SAFE_DIAGNOSTIC_CATEGORIES = {
     "ASSERTION_FAILURE",
     "EVIDENCE_NOT_EMITTED",
@@ -220,8 +247,94 @@ def _fixture_diagnostic(output: str, method: str) -> dict[str, str] | None:
     return {key: fields[key] for key in FIXTURE_DIAGNOSTIC_KEYS}
 
 
+def _split_diagnostic(
+    line: str,
+    prefix: str,
+    expected_keys: tuple[str, ...],
+    optional_keys: tuple[str, ...] = (),
+) -> dict[str, str] | None:
+    if not line.startswith(prefix):
+        return None
+    fields: dict[str, str] = {}
+    for part in line[len(prefix):].split("|"):
+        key, separator, value = part.partition("=")
+        if not separator or key not in (*expected_keys, *optional_keys) or key in fields:
+            return {}
+        fields[key] = value
+    if not set(expected_keys).issubset(fields):
+        return {}
+    return fields
+
+
+def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
+    """Retain only known Reader enums and numeric facts from test-side probes."""
+    records: list[dict[str, str]] = []
+    for line in output.splitlines():
+        fields = _split_diagnostic(
+            line,
+            READER_VIEW_DIAGNOSTIC_PREFIX,
+            READER_VIEW_DIAGNOSTIC_KEYS,
+            READER_VIEW_OPTIONAL_KEYS,
+        )
+        if fields is None:
+            continue
+        if not fields:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if fields["scenario"] not in METHOD_SCENARIOS.values():
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,39}", fields["phase"]):
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if fields["viewer"] not in READER_VIEWERS:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if fields["focused"] not in READER_FOCUS_STATES or fields["pageState"] not in READER_PAGE_STATES:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if fields["keyTarget"] not in READER_KEY_TARGETS:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if "expectedColor" in fields and fields["expectedColor"] not in READER_EXPECTED_COLORS:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if any(fields[key] not in {"TRUE", "FALSE"} for key in READER_BOOL_FIELDS):
+            records.append({"evidence": "MALFORMED"})
+            continue
+        numeric_keys = ("pageCount", "matchingSamples", "matchingRows")
+        if any(not re.fullmatch(r"[0-9]{1,7}", fields[key]) for key in numeric_keys):
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if not re.fullmatch(r"-1|[0-9]{1,7}", fields["position"]):
+            records.append({"evidence": "MALFORMED"})
+            continue
+        records.append(fields)
+    return records[:16]
+
+
+def _reader_selector_diagnostics(output: str) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    binary_keys = {"aOption", "bOption", "chapterMatch"}
+    for line in output.splitlines():
+        fields = _split_diagnostic(line, READER_SELECTOR_DIAGNOSTIC_PREFIX, READER_SELECTOR_DIAGNOSTIC_KEYS)
+        if fields is None:
+            continue
+        if not fields or fields["scenario"] != "SLOW_TO_HEALTHY" or fields["state"] not in READER_SELECTOR_STATES:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        valid = True
+        for key in READER_SELECTOR_DIAGNOSTIC_KEYS[2:]:
+            if key in binary_keys:
+                valid = valid and fields[key] in {"0", "1"}
+            else:
+                valid = valid and re.fullmatch(r"[0-9]{1,7}", fields[key]) is not None
+        records.append(fields if valid else {"evidence": "MALFORMED"})
+    return records[:16]
+
+
 def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, str]:
-    """Extract only fixed categories, numeric runner facts, and allowlisted test frames."""
+    """Extract fixed categories, numeric facts, an exception class, and safe stack frames."""
     class_seen = re.search(r"(?m)^INSTRUMENTATION_STATUS: class=" + re.escape(TEST_CLASS) + r"\s*$", output) is not None
     test_seen = re.search(r"(?m)^INSTRUMENTATION_STATUS: test=" + re.escape(method) + r"\s*$", output) is not None
     numtests = re.findall(r"(?m)^INSTRUMENTATION_STATUS: numtests=([0-9]{1,6})\s*$", output)
@@ -229,17 +342,27 @@ def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, 
     code = status_codes[-1] if status_codes else "UNKNOWN"
     method_seen = class_seen and test_seen
 
+    exception_types = re.findall(
+        r"(?m)^INSTRUMENTATION_STATUS: stack=([A-Za-z_$][A-Za-z0-9_.$]*)(?=[:\s]|$)",
+        output,
+    )
+    exception_type = ""
+    if exception_types:
+        candidate = exception_types[-1].rsplit(".", 1)[-1]
+        if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]{0,79}", candidate):
+            exception_type = candidate
+
     frames: list[str] = []
     for match in re.finditer(
         r"(?m)^[ \t]*at ([A-Za-z_$][A-Za-z0-9_.$]*?)\(([^()/\\\s:]+):([0-9]{1,7})\)[ \t]*$",
         output,
     ):
         class_name, filename, line = match.groups()
-        if class_name.startswith(SAFE_TEST_CLASS_PREFIX) and filename == SAFE_TEST_SOURCE:
+        if any(class_name.startswith(prefix) for prefix in SAFE_FRAME_PREFIXES) and filename.endswith((".kt", ".java")):
             safe_frame = class_name + "(" + filename + ":" + line + ")"
             if safe_frame not in frames:
                 frames.append(safe_frame)
-        if len(frames) == 3:
+        if len(frames) == 6:
             break
 
     if runner_exit in (124, 137, 143):
@@ -247,7 +370,7 @@ def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, 
     elif "POSITION_NOT_OBSERVABLE" in output:
         category = "POSITION_NOT_OBSERVABLE"
     elif "-2" in status_codes:
-        if re.search(r"(?i)\b(?:java\.lang\.)?AssertionError\b|\borg\.junit\.[A-Za-z]*ComparisonFailure\b", output):
+        if exception_type in {"AssertionError", "ComparisonFailure", "AssertionFailedError"}:
             category = "ASSERTION_FAILURE"
         else:
             category = "TEST_EXCEPTION"
@@ -268,6 +391,7 @@ def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, 
         "junitTests": numtests[-1] if numtests else "UNKNOWN",
         "statusCode": code,
         "frames": ",".join(frames),
+        "exceptionType": exception_type,
     }
 
 
@@ -277,6 +401,8 @@ def sanitized_summary(
     passed: bool,
     diagnosis: dict[str, str] | None = None,
     fixture_diagnostic: dict[str, str] | None = None,
+    reader_view_diagnostics: list[dict[str, str]] | None = None,
+    reader_selector_diagnostics: list[dict[str, str]] | None = None,
 ) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
@@ -309,6 +435,8 @@ def sanitized_summary(
             )
             if diagnosis["frames"]:
                 lines.append("ANDROID_SOURCE_SWITCH_DIAGNOSTIC|frames=" + diagnosis["frames"])
+            if diagnosis.get("exceptionType"):
+                lines.append("ANDROID_SOURCE_SWITCH_DIAGNOSTIC|exceptionType=" + diagnosis["exceptionType"])
     if fixture_diagnostic is not None:
         if "evidence" in fixture_diagnostic:
             lines.append(
@@ -326,6 +454,26 @@ def sanitized_summary(
                 + "|bInventory=" + fixture_diagnostic["bInventory"]
                 + "|bPages=" + fixture_diagnostic["bPages"]
                 + "|bHeld=" + fixture_diagnostic["bHeld"]
+            )
+    for record in reader_view_diagnostics or []:
+        if "evidence" in record:
+            lines.append("ANDROID_SOURCE_SWITCH_READER_VIEW|evidence=" + record["evidence"])
+        else:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_READER_VIEW|"
+                + "|".join(
+                    key + "=" + record[key]
+                    for key in (*READER_VIEW_DIAGNOSTIC_KEYS, *READER_VIEW_OPTIONAL_KEYS)
+                    if key in record
+                )
+            )
+    for record in reader_selector_diagnostics or []:
+        if "evidence" in record:
+            lines.append("ANDROID_SOURCE_SWITCH_READER_SELECTOR|evidence=" + record["evidence"])
+        else:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_READER_SELECTOR|"
+                + "|".join(key + "=" + record[key] for key in READER_SELECTOR_DIAGNOSTIC_KEYS)
             )
     return "\n".join(lines) + "\n"
 
@@ -371,9 +519,19 @@ def main(argv: list[str] | None = None) -> int:
         error = ReaderSourceSwitchVerificationError("Instrumentation runner exited unsuccessfully")
     diagnosis = None if error is None else _failure_diagnosis(output, args.method, args.runner_exit)
     fixture_diagnostic = _fixture_diagnostic(output, args.method)
+    reader_view_diagnostics = _reader_view_diagnostics(output)
+    reader_selector_diagnostics = _reader_selector_diagnostics(output)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(
-        sanitized_summary(args.method, fields, error is None, diagnosis, fixture_diagnostic),
+        sanitized_summary(
+            args.method,
+            fields,
+            error is None,
+            diagnosis,
+            fixture_diagnostic,
+            reader_view_diagnostics,
+            reader_selector_diagnostics,
+        ),
         encoding="utf-8",
     )
     write_junit(args.junit, args.method, error is None, diagnosis)

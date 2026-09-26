@@ -38,6 +38,36 @@ clear_target_data() {
   fi
 }
 
+record_failure_screen_histogram() {
+  local method="$1" summary_file="$2" airplane_status screenshot_file histogram_output histogram_status=0
+  if ! airplane_status="$(adb shell settings get global airplane_mode_on 2>/dev/null | tr -d '\r')"; then
+    printf 'ANDROID_SOURCE_SWITCH_SCREEN|method=%s|capture=SKIPPED|reason=OFFLINE_MODE_NOT_CONFIRMED\n' "$method" >> "$summary_file"
+    return
+  fi
+  if [[ "$airplane_status" != '1' ]]; then
+    printf 'ANDROID_SOURCE_SWITCH_SCREEN|method=%s|capture=SKIPPED|reason=OFFLINE_MODE_NOT_CONFIRMED\n' "$method" >> "$summary_file"
+    return
+  fi
+
+  if ! screenshot_file="$(mktemp --suffix=.png "${RUNNER_TEMP:-/tmp}/tsuzuki-reader-screen.XXXXXX")"; then
+    printf 'ANDROID_SOURCE_SWITCH_SCREEN|method=%s|capture=UNAVAILABLE|decode=NOT_RUN\n' "$method" >> "$summary_file"
+    return
+  fi
+  if ! adb exec-out screencap -p > "$screenshot_file" 2>/dev/null; then
+    printf 'ANDROID_SOURCE_SWITCH_SCREEN|method=%s|capture=UNAVAILABLE|decode=NOT_RUN\n' "$method" >> "$summary_file"
+    rm -f "$screenshot_file"
+    return
+  fi
+
+  histogram_output="$(python3 .github/scripts/summarize_reader_screenshot.py "$screenshot_file" 2>/dev/null)" || histogram_status=$?
+  if (( histogram_status == 0 )) && [[ "$histogram_output" == ANDROID_SOURCE_SWITCH_SCREEN\|capture=PASS\|decode=PASS\|* ]]; then
+    printf 'ANDROID_SOURCE_SWITCH_SCREEN|method=%s|%s\n' "$method" "${histogram_output#ANDROID_SOURCE_SWITCH_SCREEN|}" >> "$summary_file"
+  else
+    printf 'ANDROID_SOURCE_SWITCH_SCREEN|method=%s|capture=PASS|decode=UNAVAILABLE\n' "$method" >> "$summary_file"
+  fi
+  rm -f "$screenshot_file"
+}
+
 finish() {
   local exit_status=$?
   trap - EXIT
@@ -115,6 +145,7 @@ run_one() {
 
   if (( runner_exit != 0 || verifier_exit != 0 )); then
     echo "ANDROID_SOURCE_SWITCH_RESULT|method=${method}|outcome=FAIL|runnerExit=${runner_exit}|verifierExit=${verifier_exit}" >> "$summary_file"
+    record_failure_screen_histogram "$method" "$summary_file"
     method_status=1
     cat "$summary_file"
   fi

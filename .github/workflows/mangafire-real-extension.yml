@@ -29,6 +29,8 @@ on:
       - '.github/scripts/run_android_reader_source_switch.sh'
       - '.github/scripts/verify_android_reader_source_switch.py'
       - '.github/scripts/test_verify_android_reader_source_switch.py'
+      - '.github/scripts/summarize_reader_screenshot.py'
+      - '.github/scripts/test_summarize_reader_screenshot.py'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
     inputs:
@@ -75,6 +77,7 @@ jobs:
           python3 .github/scripts/test_summarize_android_instrumentation.py
           python3 .github/scripts/test_verify_android_navigation_instrumentation.py
           python3 .github/scripts/test_verify_android_reader_source_switch.py
+          python3 .github/scripts/test_summarize_reader_screenshot.py
           python3 .github/scripts/test_android_instrumentation_route.py
           python3 .github/scripts/test_mangaball_android.py
           python3 .github/scripts/test_mangaball_fixture.py

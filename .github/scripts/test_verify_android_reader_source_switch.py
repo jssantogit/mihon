@@ -268,11 +268,30 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             self.assertNotIn(secret, junit.read_text(encoding="utf-8"))
             self.assertNotIn(secret, captured.getvalue())
             self.assertIn("category=ASSERTION_FAILURE", summary.read_text(encoding="utf-8"))
+            self.assertIn("exceptionType=AssertionError", summary.read_text(encoding="utf-8"))
             self.assertIn(
                 verifier.TEST_CLASS + ".sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition(" + verifier.SAFE_TEST_SOURCE + ":117)",
                 summary.read_text(encoding="utf-8"),
             )
             self.assertNotIn("Assert.java", summary.read_text(encoding="utf-8"))
+
+    def test_failure_diagnosis_keeps_safe_app_frame_without_test_frame(self):
+        method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
+        secret = "private title https://provider.invalid/chapter?token=do-not-leak"
+        raw = (
+            "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
+            "INSTRUMENTATION_STATUS: test=" + method + "\n"
+            "INSTRUMENTATION_STATUS: numtests=1\n"
+            "INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: " + secret + "\n"
+            "\tat eu.kanade.tachiyomi.ui.reader.ReaderActivity.dispatchKeyEvent(ReaderActivity.kt:579)\n"
+            "INSTRUMENTATION_STATUS_CODE: -2\n"
+            "INSTRUMENTATION_CODE: -1\n"
+        )
+        diagnosis = verifier._failure_diagnosis(raw, method, 0)
+        self.assertEqual("TEST_EXCEPTION", diagnosis["category"])
+        self.assertEqual("IllegalStateException", diagnosis["exceptionType"])
+        self.assertIn("ReaderActivity.dispatchKeyEvent(ReaderActivity.kt:579)", diagnosis["frames"])
+        self.assertNotIn(secret, str(diagnosis))
 
     def test_failure_diagnosis_distinguishes_unobserved_test_and_timeout(self):
         method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
@@ -343,6 +362,47 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertNotIn(private_value, sanitized)
         self.assertNotIn(diagnostic_line.split("|selector=")[1].split("|")[0], sanitized)
 
+    def test_reader_view_diagnostic_exposes_only_allowlisted_state_and_counts(self):
+        method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
+        private_value = "https://provider.invalid/private-title?token=private"
+        line = (
+            "INSTRUMENTATION_STATUS: stream=READER_VIEW_DIAGNOSTIC|scenario=SOURCE_A_TO_B"
+            "|phase=AFTER_PAGE_KEY|viewer=WebtoonViewer|focused=FOCUSED|stream=FALSE"
+            "|pagesLoaded=TRUE|pageCount=10|pageState=READY|position=2"
+            "|keyInjected=TRUE|keyTarget=READER_VIEWER|matchingSamples=40|matchingRows=10"
+            "|expectedColor=RED\n"
+        )
+        parsed = verifier._reader_view_diagnostics(line)
+        self.assertEqual(1, len(parsed))
+        summary = verifier.sanitized_summary(method, {}, False, reader_view_diagnostics=parsed)
+        self.assertIn("viewer=WebtoonViewer|focused=FOCUSED|stream=FALSE", summary)
+        self.assertIn("keyInjected=TRUE|keyTarget=READER_VIEWER", summary)
+        self.assertIn("expectedColor=RED", summary)
+
+        malformed = line.replace("viewer=WebtoonViewer", "viewer=" + private_value)
+        sanitized = verifier.sanitized_summary(
+            method, {}, False, reader_view_diagnostics=verifier._reader_view_diagnostics(malformed),
+        )
+        self.assertIn("ANDROID_SOURCE_SWITCH_READER_VIEW|evidence=MALFORMED", sanitized)
+        self.assertNotIn(private_value, sanitized)
+
+    def test_reader_selector_diagnostic_uses_per_scenario_deltas(self):
+        line = (
+            "INSTRUMENTATION_STATUS: stream=READER_SELECTOR_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY"
+            "|state=DISCOVERING|options=1|aOption=1|bOption=0|chapterMatch=1|failedProviders=0"
+            "|aSearchDelta=0|aInventoryDelta=0|aPagesDelta=0|bSearchDelta=1"
+            "|bInventoryDelta=1|bPagesDelta=0|bHeld=1\n"
+        )
+        parsed = verifier._reader_selector_diagnostics(line)
+        self.assertEqual(1, len(parsed))
+        summary = verifier.sanitized_summary(
+            "slowSourceDoesNotBlockHealthySourceOption", {}, False,
+            reader_selector_diagnostics=parsed,
+        )
+        self.assertIn("state=DISCOVERING|options=1|aOption=1|bOption=0", summary)
+        self.assertIn("aSearchDelta=0|aInventoryDelta=0|aPagesDelta=0", summary)
+        self.assertNotIn("INSTRUMENTATION_STATUS: stream=", summary)
+
     def test_workflow_has_manual_offline_suite_opt_in_and_preserves_navigation_default(self):
         workflow = (ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
@@ -352,9 +412,14 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("- reader-source-switch", workflow)
         self.assertIn("run_android_instrumentation_route.sh", workflow)
         self.assertIn("inputs.instrumentation_suite || 'navigation'", workflow)
+        self.assertIn("test_summarize_reader_screenshot.py", workflow)
         runner = (ROOT / ".github/scripts/run_android_reader_source_switch.sh").read_text(encoding="utf-8")
         self.assertIn("--runner-exit", runner)
         self.assertIn("overall_status", runner)
+        self.assertIn("settings get global airplane_mode_on", runner)
+        self.assertIn("adb exec-out screencap -p", runner)
+        self.assertIn("summarize_reader_screenshot.py", runner)
+        self.assertIn("record_failure_screen_histogram", runner)
         self.assertNotIn("syntheticMihonSourceLoadsObservablePagesInReaderActivity", workflow)
         for method in verifier.METHOD_SCENARIOS:
             with self.subTest(method=method):
