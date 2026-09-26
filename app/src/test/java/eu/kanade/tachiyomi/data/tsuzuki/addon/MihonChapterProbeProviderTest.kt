@@ -103,6 +103,63 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `One Punch Man 169 raw versus 163 accepted requires per-session discard reasons`() = runTest {
+        // These are two deliberately different synthetic explanations for the
+        // same headline totals. Neither is evidence about current MangaDex.
+        val binding = binding("opm")
+        val unique = (1..163).map { number ->
+            snapshot(binding.id, 7L, "/chapter/$number", "Chapter $number", number.toDouble())
+        }
+        val inventories = listOf(
+            ("duplicates" to (unique + unique.take(6))) to ChapterInventoryDiagnosticReason.DUPLICATE,
+            ("missing keys" to (unique + (1..6).map { number ->
+                snapshot(binding.id, 7L, "", "Special $number", 0.0)
+                    .copy(sourceChapterUrl = "")
+            })) to ChapterInventoryDiagnosticReason.MISSING_SOURCE_ID,
+        )
+
+        inventories.forEach { (scenario, expectedReason) ->
+            val (description, raw) = scenario
+            val diagnostics = RecordingChapterInventoryDiagnostics()
+            diagnostics.start("title")
+            val provider = MihonChapterProbeProvider(
+                addonId = AddonId("mangadex"),
+                contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+                parser = ParseCanonicalChapterLabel(),
+                fetchInventory = {
+                    Result.success(
+                        SourceChapterInventory(
+                            sourceMappingId = binding.id,
+                            sourceId = 7L,
+                            canonicalTitleId = "title",
+                            chapters = raw,
+                            mihonMangaId = 99L,
+                            language = "pt-BR",
+                        ),
+                    )
+                },
+                clock = { 1L },
+                diagnostics = diagnostics,
+            )
+
+            val accepted = provider.probe("title").getOrThrow()
+            accepted.size shouldBe 163
+            val event = diagnostics.events.single()
+            event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_PROBE
+            event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
+            event.received shouldBe 169
+            event.accepted shouldBe 163
+            event.discarded shouldBe 6
+            event.reasons[expectedReason] shouldBe 6
+            when (description) {
+                "duplicates" -> event.reasons[ChapterInventoryDiagnosticReason.MISSING_SOURCE_ID] shouldBe null
+                "missing keys" -> event.reasons[ChapterInventoryDiagnosticReason.DUPLICATE] shouldBe null
+                else -> error("Unknown synthetic accounting case")
+            }
+        }
+    }
+
+    @Test
     fun `diagnostic records no binding separately from an empty extension inventory`() = runTest {
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title")
