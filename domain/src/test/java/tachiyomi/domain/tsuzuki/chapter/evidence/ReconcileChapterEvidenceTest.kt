@@ -567,6 +567,86 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `both writers preserve mapped chapters after empty inventory from one or all sources`() = runTest {
+        val legacyChapters = FakeCanonicalChapterRepository()
+        val evidenceFixture = fixture()
+        val chapter = existingChapter("chapter-volume-1", volume = 1)
+        legacyChapters.upsert(chapter)
+        evidenceFixture.chapterRepository.upsert(chapter)
+        var nextVariant = 0
+        val legacy = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = legacyChapters,
+            idFactory = { error("An empty refresh must not materialize new chapters") },
+            variantIdFactory = { "variant-${++nextVariant}" },
+            clock = { 100L },
+        )
+        fun inventory(sourceId: Long, chaptersPresent: Boolean) = SourceChapterInventory(
+            sourceMappingId = "mapping-$sourceId",
+            sourceId = sourceId,
+            canonicalTitleId = "title",
+            chapters = if (chaptersPresent) {
+                listOf(
+                    SourceChapterSnapshot(
+                        sourceId = sourceId,
+                        sourceMappingId = "mapping-$sourceId",
+                        sourceChapterId = "/volume/1/chapter/4",
+                        rawName = "Vol. 1 Ch. 4",
+                        rawNumberHint = 4.0,
+                    ),
+                )
+            } else {
+                emptyList()
+            },
+        )
+        val observations = listOf(101L, 202L).map { sourceId ->
+            evidenceFixture.addonEvidence(
+                id = "observation-$sourceId",
+                rawLabel = "Vol. 1 Ch. 4",
+                externalKey = "$sourceId:/volume/1/chapter/4",
+                producerId = "addon-$sourceId",
+                volume = 1,
+            )
+        }
+        suspend fun assertMappingsPreserved(initialVariants: Map<Long, String>) {
+            for (sourceId in listOf(101L, 202L)) {
+                val variant = requireNotNull(
+                    legacyChapters.getVariantBySourceIdentity(sourceId, "/volume/1/chapter/4"),
+                )
+                variant.id shouldBe initialVariants.getValue(sourceId)
+                variant.canonicalChapterId shouldBe chapter.id
+                evidenceFixture.evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "addon-$sourceId",
+                    "$sourceId:/volume/1/chapter/4",
+                )?.mappedCanonicalChapterId shouldBe chapter.id
+            }
+            legacyChapters.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapter.id)
+            evidenceFixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+                listOf(chapter.id)
+        }
+
+        legacy.execute(listOf(inventory(101L, true), inventory(202L, true)))
+        evidenceFixture.reconciler.execute("title", observations)
+        val initialVariants = listOf(101L, 202L).associateWith { sourceId ->
+            requireNotNull(legacyChapters.getVariantBySourceIdentity(sourceId, "/volume/1/chapter/4")).id
+        }
+        assertMappingsPreserved(initialVariants)
+
+        // An empty response from one source must not remove the other source's
+        // variant or the empty source's previously established mapping.
+        legacy.execute(listOf(inventory(101L, false), inventory(202L, true)))
+        evidenceFixture.reconciler.execute("title", observations.drop(1))
+        assertMappingsPreserved(initialVariants)
+
+        // An entirely empty accepted inventory is also non-destructive.
+        legacy.execute(listOf(inventory(101L, false), inventory(202L, false)))
+        evidenceFixture.reconciler.execute("title", emptyList())
+        assertMappingsPreserved(initialVariants)
+    }
+
+    @Test
     fun `legacy inventory rejects an existing source URL with a contradictory explicit volume`() = runTest {
         val legacyChapters = FakeCanonicalChapterRepository()
         val evidenceFixture = fixture()
