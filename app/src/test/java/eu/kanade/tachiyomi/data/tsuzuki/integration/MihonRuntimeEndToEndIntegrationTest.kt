@@ -446,6 +446,69 @@ class MihonRuntimeEndToEndIntegrationTest {
         }
     }
 
+    @Test
+    fun `synthetic Death Note manual English binding survives empty peer and opens exact chapter one`() = runTest {
+        LocalMihonSourceHarness(languages = listOf("en", "pt-BR")).use { harness ->
+            val ambiguousEnglish = listOf(
+                "/manga/death-note-original\\tDeath Note",
+                "/manga/death-note-remix\\tDeath Note",
+            ).joinToString("\\n")
+            repeat(3) { harness.enqueue(body = ambiguousEnglish, language = "en") }
+            repeat(3) { harness.enqueue(body = "", language = "pt-BR") }
+            val journey = RuntimeJourney(
+                harness = harness,
+                canonicalTitleId = "canonical-death-note-fixture",
+                workScope = backgroundScope,
+                displayTitle = "Death Note",
+            )
+            val events = journey.searchProgress(
+                ContentBindingSearchRequest(
+                    canonicalTitleId = journey.canonicalTitleId,
+                    addonId = journey.addonId,
+                    preferredLanguages = listOf("en", "pt-BR"),
+                    mode = ContentBindingSearchMode.INITIAL,
+                    batchSize = 2,
+                ),
+            )
+            val outcomes = events.filterIsInstance<ContentBindingSearchProgress.SourceCompleted>()
+                .associateBy { it.language }
+            val english = requireNotNull(outcomes["en"])
+            english.outcome shouldBe ContentBindingSourceOutcome.CONFIRMATION_REQUIRED
+            requireNotNull(outcomes["pt-BR"]).outcome shouldBe ContentBindingSourceOutcome.EMPTY
+            journey.bindings.getByTitle(journey.canonicalTitleId) shouldBe emptyList()
+
+            val chosen = english.candidates.single {
+                it.candidate.sourceUrl == "/manga/death-note-original"
+            }
+            val confirmed = journey.confirmBinding(chosen)
+            confirmed.verifiedByUser shouldBe true
+            val persistedBinding = journey.bindings.getByTitle(journey.canonicalTitleId).single()
+            persistedBinding shouldBe confirmed
+            harness.enqueue(body = "/chapter/1\\tChapter 1\\t1\\tEnglish Group", language = "en")
+            journey.refresh()
+
+            val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            chapter.displayNumber shouldBe "1"
+            val evidence = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            evidence.mappedCanonicalChapterId shouldBe chapter.id
+            val option = journey.options(chapter.id).single()
+            option.language shouldBe "en"
+            option.canonicalChapterId shouldBe chapter.id
+            harness.enqueue(body = "/page/1\\n/page/2", language = "en")
+            val ready = journey.prepare(option) as CanonicalReaderPreparation.Ready
+            ready.canonicalChapterId shouldBe chapter.id
+            val target = ready.target as PreparedChapterContent.MihonOperational
+            journey.fetchReaderPages(target).map { it.url } shouldBe listOf("/page/1", "/page/2")
+
+            // Only the selected edition is refreshed; an empty peer contributes no false chapter.
+            harness.enqueue(body = "/chapter/1\\tChapter 1\\t1\\tEnglish Group", language = "en")
+            journey.refresh()
+            journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
+                .single().id shouldBe chapter.id
+            journey.bindings.getByTitle(journey.canonicalTitleId).single() shouldBe confirmed
+        }
+    }
+
     private fun enqueueJourney(harness: LocalMihonSourceHarness, language: String = harness.source.lang) {
         harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man", language = language)
         harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group", language = language)
@@ -455,6 +518,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val harness: LocalMihonSourceHarness,
         val canonicalTitleId: String,
         private val workScope: CoroutineScope,
+        private val displayTitle: String = "One-Punch Man",
     ) {
         val addonId = AddonId("fixture-addon")
         val chapterRows = InMemoryMihonChapters()
@@ -476,7 +540,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val titleRepository = mockk<CanonicalTitleRepository> {
             coEvery { getById(canonicalTitleId) } returns CanonicalTitle(
                 id = canonicalTitleId,
-                displayTitle = "One-Punch Man",
+                displayTitle = displayTitle,
                 identityState = CanonicalIdentityState.RESOLVED,
                 createdAt = 1L,
                 updatedAt = 1L,
@@ -598,7 +662,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 id = mangaId,
                 source = source.id,
                 url = "/manga/already-linked",
-                title = "One-Punch Man",
+                title = displayTitle,
             )
             return ContentBinding(
                 id = "existing-informational-${source.id}",
