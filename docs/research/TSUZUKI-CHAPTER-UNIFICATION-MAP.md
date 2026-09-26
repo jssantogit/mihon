@@ -18,31 +18,35 @@ conservative `CanonicalChapterCandidateResolver` and explicit volume policy,
 but they remain different canonical writers. Treat them as potentially
 divergent until equivalent outcomes are established by the tests below.
 
-## Confirmed divergence to protect before migration
+## Reused source URLs: safety guard before writer unification
 
-**A stable provider URL reused for a different chapter is currently handled
-differently by the two writers.** In
-`ReconcileChapterInventory.execute`, an existing `ChapterVariant` found by
-`(sourceId, sourceChapterId)` unconditionally reuses its old canonical chapter,
-even if a provider's later label describes a different chapter or an explicit
-incompatible volume. In `ReconcileChapterEvidence`, a reliable new observation
-with the same producer-scoped external key is checked for conflict and may
-rehome its evidence to a new canonical identity; an independently supported
-old chapter remains available.
+The original legacy reconciler reused a persisted `ChapterVariant` solely
+because `(sourceId, sourceChapterId)` was unchanged, even when a later
+observation described a reliably different chapter or explicitly contradictory
+volume. The evidence reconciler already detects those conflicts and can remap
+source-scoped evidence to the newly supported identity.
 
-Before routing legacy Reader through the evidence writer, add a **red/green
-cross-writer characterization** using one stable source URL changing from
-volume 1 chapter 4 to volume 2 chapter 4 and another source that still
-supports the old mapping. Assert the prior canonical ID/history remains
-unchanged, no old Mihon variant silently reads the replacement chapter,
-the conflicting mapping cannot auto-open an unverified chapter, and both
-writers converge under one authoritative reconciliation policy. Prefer
-quarantining the conflicting old operational variant and requesting source
-confirmation over binding it to a known-wrong canonical chapter.
+**The acceptance branch now fails closed in the legacy writer:** it parses
+existing source-key observations, checks reliably contradictory chapter
+identities and explicitly incompatible non-null volumes, and rejects the
+affected inventory *before* committing any batch. Existing canonical IDs,
+progress and independent source variants remain intact. It also rejects a
+persisted variant pointing to another canonical title. This guard prevents
+silently reaffirming a known-wrong old association, but does **not** resolve
+the reused source URL automatically: old operational variants remain on disk
+until a shared, transactionally safe evidence/variant migration is implemented.
 
-This is a code-path finding, not a report of a current real provider doing so.
-The existing parity tests cover stable inputs and omitted rows; they do **not**
-prove this conflict case.
+A RED→GREEN regression reproduces an existing URL changing from volume 1
+chapter 4 to volume 2 chapter 4 while a second source still supports the old
+chapter. Two older tests were updated to assert fail-closed behavior instead
+of unconditional trust in the reused URL. The [focused Domain and App CI
+36271257460](https://github.com/jssantogit/mihon/actions/runs/36271257460)
+passed on equivalent production and test source blobs; skipped Format,
+Release and migration jobs in that run do not count as validation.
+
+Full unification is still blocked on legacy Reader acceptance, operational
+variant projection in the same database transaction as evidence, and
+conflicting-key compatibility coverage.
 
 ## Migration sequence (after Phase A/C acceptance)
 
