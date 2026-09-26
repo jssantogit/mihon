@@ -455,6 +455,11 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("holderPresent=TRUE|holderAttached=TRUE|holderVisible=TRUE", summary)
         self.assertIn("imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE", summary)
         self.assertIn("windowSecure=FALSE|windowHasFocus=TRUE|activeWindow=READER_APP", summary)
+        permission = line.replace("activeWindow=READER_APP", "activeWindow=PERMISSION_DIALOG")
+        self.assertEqual(
+            "PERMISSION_DIALOG",
+            verifier._reader_view_diagnostics(permission)[0]["activeWindow"],
+        )
 
         for malformed in (
             line.replace("viewer=WebtoonViewer", "viewer=" + private_value),
