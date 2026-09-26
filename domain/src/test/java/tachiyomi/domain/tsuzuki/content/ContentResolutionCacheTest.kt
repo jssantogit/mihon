@@ -2,9 +2,13 @@ package tachiyomi.domain.tsuzuki.content
 
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -18,6 +22,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
+import java.util.concurrent.atomic.AtomicInteger
 
 class ContentResolutionCacheTest {
 
@@ -37,6 +42,81 @@ class ContentResolutionCacheTest {
         second.await()
 
         provider.resolveCalls shouldBe 1
+    }
+
+    @Test
+    fun `repeated blocked requests from one addon leave a slot for a healthy addon`() = runTest {
+        val inFlight = InFlightContentResolution()
+        val releaseSlow = CompletableDeferred<Unit>()
+        val slowStarted = CompletableDeferred<Unit>()
+        val slowCalls = AtomicInteger()
+        val activeSlowCalls = AtomicInteger()
+        val peakSlowCalls = AtomicInteger()
+        val slowRequests = (1..4).map { index ->
+            async {
+                inFlight.execute(
+                    ContentOptionCacheKey("title", "chapter-$index", AddonId("slow")),
+                ) {
+                    slowCalls.incrementAndGet()
+                    val active = activeSlowCalls.incrementAndGet()
+                    peakSlowCalls.updateAndGet { maxOf(it, active) }
+                    slowStarted.complete(Unit)
+                    try {
+                        withContext(NonCancellable) { releaseSlow.await() }
+                        Result.success(emptyList())
+                    } finally {
+                        activeSlowCalls.decrementAndGet()
+                    }
+                }
+            }
+        }
+
+        slowStarted.await()
+        runCurrent()
+        slowCalls.get() shouldBe 1
+
+        val overflow = inFlight.execute(
+            ContentOptionCacheKey("title", "chapter-overflow", AddonId("slow")),
+        ) { Result.success(emptyList()) }
+        overflow.isFailure shouldBe true
+
+        val healthy = inFlight.execute(
+            ContentOptionCacheKey("title", "chapter-healthy", AddonId("healthy")),
+        ) {
+            Result.success(listOf(contentOption("healthy", "chapter-healthy")))
+        }
+        healthy.getOrThrow().single().canonicalChapterId shouldBe "chapter-healthy"
+        peakSlowCalls.get() shouldBe 1
+
+        releaseSlow.complete(Unit)
+        slowRequests.awaitAll()
+        slowCalls.get() shouldBe 4
+    }
+
+    @Test
+    fun `invalidated provider completion is not shared with a refreshed chapter request`() = runTest {
+        val inFlight = InFlightContentResolution()
+        val key = ContentOptionCacheKey("title", "chapter-1", AddonId("mangadex"))
+        val releaseStale = CompletableDeferred<Unit>()
+        val staleStarted = CompletableDeferred<Unit>()
+        val stale = async {
+            inFlight.execute(key) {
+                staleStarted.complete(Unit)
+                withContext(NonCancellable) { releaseStale.await() }
+                Result.success(listOf(contentOption("mangadex", "chapter-1")))
+            }
+        }
+
+        staleStarted.await()
+        inFlight.invalidateChapter("title", "chapter-1")
+        stale.await().isFailure shouldBe true
+
+        releaseStale.complete(Unit)
+        val refreshed = inFlight.execute(key) {
+            Result.success(listOf(contentOption("mangadex", "chapter-1")))
+        }
+
+        refreshed.getOrThrow().single().canonicalChapterId shouldBe "chapter-1"
     }
 
     @Test
@@ -83,6 +163,19 @@ class ContentResolutionCacheTest {
         cache.invalidateAddon(AddonId("mangadex"))
 
         cache.get(key) shouldBe null
+    }
+
+    @Test
+    fun `late result cannot repopulate cache after key invalidation`() = runTest {
+        val cache = ContentOptionCache()
+        val key = ContentOptionCacheKey("title", "chapter-1", AddonId("mangadex"))
+        val token = cache.beginLookup(key)
+
+        cache.invalidate(key)
+
+        cache.putIfCurrent(token, listOf(contentOption("mangadex", "chapter-1"))) shouldBe false
+        cache.get(key) shouldBe null
+        cache.finishLookup(token)
     }
 
     @Test
@@ -162,4 +255,14 @@ class ContentResolutionCacheTest {
             )
         }
     }
+
+    private fun contentOption(addonId: String, chapterId: String) = ContentOption(
+        key = "$addonId:$chapterId",
+        canonicalChapterId = chapterId,
+        addonId = AddonId(addonId),
+        language = "en",
+        scanlationGroup = null,
+        releaseDate = null,
+        delivery = ContentDelivery.LocalArchive("content://$addonId/$chapterId"),
+    )
 }
