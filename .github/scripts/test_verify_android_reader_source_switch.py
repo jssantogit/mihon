@@ -249,6 +249,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: " + secret + "\n"
             "\tat " + verifier.TEST_CLASS + ".sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition(" + verifier.SAFE_TEST_SOURCE + ":117)\n"
             "\tat org.junit.Assert.fail(Assert.java:88)\n"
+            "INSTRUMENTATION_RESULT: shortMsg=" + secret + "\n"
             "INSTRUMENTATION_STATUS_CODE: -2\n"
             "INSTRUMENTATION_CODE: -1\n"
         )
@@ -269,6 +270,11 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             self.assertNotIn(secret, captured.getvalue())
             self.assertIn("category=ASSERTION_FAILURE", summary.read_text(encoding="utf-8"))
             self.assertIn("exceptionType=AssertionError", summary.read_text(encoding="utf-8"))
+            self.assertIn(
+                "ANDROID_SOURCE_SWITCH_TERMINATION|method=EXPECTED|class=EXPECTED|numtests=1"
+                "|lastStatusCode=-2|instrumentationCode=RESULT_OK|summary=NONE|shortMsg=OTHER",
+                summary.read_text(encoding="utf-8"),
+            )
             self.assertIn(
                 verifier.TEST_CLASS + ".sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition(" + verifier.SAFE_TEST_SOURCE + ":117)",
                 summary.read_text(encoding="utf-8"),
@@ -304,6 +310,63 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         timeout = verifier._failure_diagnosis("", method, 124)
         self.assertEqual("TEST_NOT_OBSERVED", unobserved["category"])
         self.assertEqual("TIMEOUT", timeout["category"])
+
+    def test_terminal_evidence_is_allowlisted_and_distinguishes_test_finish_from_runner_completion(self):
+        method = "emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession"
+        incomplete = (
+            "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
+            "INSTRUMENTATION_STATUS: test=" + method + "\n"
+            "INSTRUMENTATION_STATUS: numtests=1\n"
+            "INSTRUMENTATION_STATUS_CODE: 1\n"
+            "INSTRUMENTATION_STATUS_CODE: 0\n"
+        )
+        evidence = verifier._terminal_evidence(incomplete, method)
+        self.assertEqual(
+            {
+                "method": "EXPECTED",
+                "class": "EXPECTED",
+                "numtests": "1",
+                "lastStatusCode": "0",
+                "instrumentationCode": "MISSING",
+                "summary": "NONE",
+                "shortMsg": "NONE",
+            },
+            evidence,
+        )
+        summary = verifier.sanitized_summary(method, {}, False, terminal_evidence=evidence)
+        self.assertIn("lastStatusCode=0|instrumentationCode=MISSING|summary=NONE|shortMsg=NONE", summary)
+
+        complete = verifier._terminal_evidence(output_for(method), method)
+        self.assertEqual("OK_1_TEST", complete["summary"])
+        self.assertEqual("RESULT_OK", complete["instrumentationCode"])
+        self.assertEqual(
+            "FAILURES",
+            verifier._terminal_evidence(output_for(method).replace("OK (1 test)", "FAILURES!!!"), method)["summary"],
+        )
+        self.assertEqual(
+            "OK_OTHER_COUNT",
+            verifier._terminal_evidence(output_for(method).replace("OK (1 test)", "OK (2 tests)"), method)["summary"],
+        )
+
+        private_value = "https://provider.invalid/read?token=private-title"
+        method = "slowSourceDoesNotBlockHealthySourceOption"
+        raw = (
+            "INSTRUMENTATION_STATUS: class=" + private_value + "\n"
+            "INSTRUMENTATION_STATUS: test=" + private_value + "\n"
+            "INSTRUMENTATION_STATUS: numtests=1\n"
+            "INSTRUMENTATION_STATUS_CODE: 0\n"
+            "INSTRUMENTATION_RESULT: shortMsg=Process crashed. " + private_value + "\n"
+            "INSTRUMENTATION_CODE: 0\n"
+            "INSTRUMENTATION_RESULT: stream=" + private_value + "\n"
+        )
+        evidence = verifier._terminal_evidence(raw, method)
+        self.assertEqual("MISMATCH", evidence["method"])
+        self.assertEqual("MISMATCH", evidence["class"])
+        self.assertEqual("PROCESS_CRASHED", evidence["shortMsg"])
+        self.assertEqual("RESULT_CANCELED", evidence["instrumentationCode"])
+        self.assertNotIn(private_value, str(evidence))
+        rendered = verifier.sanitized_summary(method, {}, False, terminal_evidence=evidence)
+        self.assertNotIn(private_value, rendered)
 
     def test_nonzero_runner_exit_cannot_be_accepted_even_with_pass_marker(self):
         method = "retiredSourceCallbackCannotChangePublishedSession"
@@ -376,7 +439,9 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "|pagesLoaded=TRUE|pageCount=10|pageState=READY|position=2"
             "|pagerVisible=TRUE|pagerCount=12|pagerCurrentItem=3|pagerIdle=TRUE"
             "|interactionInjected=TRUE|interactionTarget=READER_PAGER|matchingSamples=40|matchingRows=10"
-            "|expectedColor=RED\n"
+            "|expectedColor=RED|imageRequestsA=1|imageRequestsB=1"
+            "|holderPresent=TRUE|holderAttached=TRUE|holderVisible=TRUE"
+            "|imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE\n"
         )
         parsed = verifier._reader_view_diagnostics(line)
         self.assertEqual(1, len(parsed))
@@ -385,13 +450,21 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("pagerVisible=TRUE|pagerCount=12|pagerCurrentItem=3|pagerIdle=TRUE", summary)
         self.assertIn("interactionInjected=TRUE|interactionTarget=READER_PAGER", summary)
         self.assertIn("expectedColor=RED", summary)
+        self.assertIn("imageRequestsA=1|imageRequestsB=1", summary)
+        self.assertIn("holderPresent=TRUE|holderAttached=TRUE|holderVisible=TRUE", summary)
+        self.assertIn("imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE", summary)
 
-        malformed = line.replace("viewer=WebtoonViewer", "viewer=" + private_value)
-        sanitized = verifier.sanitized_summary(
-            method, {}, False, reader_view_diagnostics=verifier._reader_view_diagnostics(malformed),
-        )
-        self.assertIn("ANDROID_SOURCE_SWITCH_READER_VIEW|evidence=MALFORMED", sanitized)
-        self.assertNotIn(private_value, sanitized)
+        for malformed in (
+            line.replace("viewer=WebtoonViewer", "viewer=" + private_value),
+            line.replace("imageRequestsA=1", "imageRequestsA=" + private_value),
+            line.replace("holderPresent=TRUE", "holderPresent=" + private_value),
+            line.replace("imageViewReady=FALSE", "imageViewReady=1"),
+        ):
+            sanitized = verifier.sanitized_summary(
+                method, {}, False, reader_view_diagnostics=verifier._reader_view_diagnostics(malformed),
+            )
+            self.assertIn("ANDROID_SOURCE_SWITCH_READER_VIEW|evidence=MALFORMED", sanitized)
+            self.assertNotIn(private_value, sanitized)
 
     def test_reader_selector_diagnostic_uses_per_scenario_deltas(self):
         line = (

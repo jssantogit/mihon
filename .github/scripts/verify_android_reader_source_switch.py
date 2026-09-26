@@ -47,7 +47,10 @@ READER_VIEW_DIAGNOSTIC_KEYS = (
     "pagerCurrentItem", "pagerIdle", "interactionInjected", "interactionTarget",
     "matchingSamples", "matchingRows",
 )
-READER_VIEW_OPTIONAL_KEYS = ("expectedColor",)
+READER_VIEW_OPTIONAL_KEYS = (
+    "expectedColor", "imageRequestsA", "imageRequestsB", "holderPresent", "holderAttached",
+    "holderVisible", "imageViewPresent", "imageViewVisible", "imageViewReady", "errorVisible",
+)
 READER_VIEWERS = {
     "NONE", "L2RPagerViewer", "R2LPagerViewer", "VerticalPagerViewer",
     "WebtoonViewer", "WebGpuViewer", "WebGpuViewerContinuous",
@@ -58,6 +61,11 @@ READER_INTERACTION_TARGETS = {"READER_PAGER", "NONE"}
 READER_EXPECTED_COLORS = {"RED", "BLUE", "NONE"}
 READER_DIAGNOSTIC_SCENARIOS = {*METHOD_SCENARIOS.values(), "PAGER_READINESS"}
 READER_BOOL_FIELDS = {"stream", "pagesLoaded", "pagerVisible", "interactionInjected", "pagerIdle"}
+READER_OPTIONAL_BOOL_FIELDS = {
+    "holderPresent", "holderAttached", "holderVisible", "imageViewPresent", "imageViewVisible",
+    "imageViewReady", "errorVisible",
+}
+READER_OPTIONAL_NUMERIC_FIELDS = {"imageRequestsA", "imageRequestsB"}
 READER_SELECTOR_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_SELECTOR_DIAGNOSTIC|"
 READER_SELECTOR_DIAGNOSTIC_KEYS = (
     "scenario", "state", "options", "aOption", "bOption", "chapterMatch",
@@ -77,6 +85,7 @@ SAFE_DIAGNOSTIC_CATEGORIES = {
     "TEST_NOT_OBSERVED",
     "TIMEOUT",
 }
+STATUS_CODE_ENUM = {"-4", "-3", "-2", "-1", "0", "1"}
 
 
 class ReaderSourceSwitchVerificationError(ValueError):
@@ -309,8 +318,17 @@ def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
         if any(fields[key] not in {"TRUE", "FALSE"} for key in READER_BOOL_FIELDS):
             records.append({"evidence": "MALFORMED"})
             continue
+        if any(
+            key in fields and fields[key] not in {"TRUE", "FALSE"}
+            for key in READER_OPTIONAL_BOOL_FIELDS
+        ):
+            records.append({"evidence": "MALFORMED"})
+            continue
         numeric_keys = ("pageCount", "pagerCount", "matchingSamples", "matchingRows")
-        if any(not re.fullmatch(r"[0-9]{1,7}", fields[key]) for key in numeric_keys):
+        if any(not re.fullmatch(r"[0-9]{1,7}", fields[key]) for key in numeric_keys) or any(
+            key in fields and not re.fullmatch(r"[0-9]{1,7}", fields[key])
+            for key in READER_OPTIONAL_NUMERIC_FIELDS
+        ):
             records.append({"evidence": "MALFORMED"})
             continue
         if not re.fullmatch(r"-1|[0-9]{1,7}", fields["position"]) or not re.fullmatch(
@@ -405,6 +423,74 @@ def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, 
     }
 
 
+def _terminal_evidence(output: str, method: str) -> dict[str, str]:
+    """Keep only fixed terminal enums and allowlisted test identity/count facts."""
+    classes = re.findall(r"(?m)^INSTRUMENTATION_STATUS: class=(.*?)\s*$", output)
+    methods = re.findall(r"(?m)^INSTRUMENTATION_STATUS: test=(.*?)\s*$", output)
+    numtests = re.findall(r"(?m)^INSTRUMENTATION_STATUS: numtests=([0-9]{1,6})\s*$", output)
+    status_codes = re.findall(r"(?m)^INSTRUMENTATION_STATUS_CODE: (.*?)\s*$", output)
+    instrumentation_codes = re.findall(r"(?m)^INSTRUMENTATION_CODE: (.*?)\s*$", output)
+    short_messages = re.findall(r"(?m)^INSTRUMENTATION_RESULT: shortMsg=(.*?)\s*$", output)
+
+    if TEST_CLASS in classes:
+        class_status = "EXPECTED"
+    else:
+        class_status = "MISMATCH" if classes else "NOT_SEEN"
+    if method in methods:
+        method_status = "EXPECTED"
+    else:
+        method_status = "MISMATCH" if methods else "NOT_SEEN"
+
+    raw_numtests = numtests[-1] if numtests else ""
+    count = raw_numtests if raw_numtests and int(raw_numtests) <= 999_999 else "UNKNOWN"
+    raw_status_code = status_codes[-1] if status_codes else ""
+    if raw_status_code in STATUS_CODE_ENUM:
+        status_code = raw_status_code
+    elif status_codes:
+        status_code = "OTHER"
+    else:
+        status_code = "MISSING"
+
+    raw_instrumentation_code = instrumentation_codes[-1] if instrumentation_codes else ""
+    if raw_instrumentation_code == "-1":
+        instrumentation_code = "RESULT_OK"
+    elif raw_instrumentation_code == "0":
+        instrumentation_code = "RESULT_CANCELED"
+    elif instrumentation_codes:
+        instrumentation_code = "OTHER"
+    else:
+        instrumentation_code = "MISSING"
+
+    has_ok_one = re.search(r"(?m)^OK \(1 test\)\s*$", output) is not None
+    has_ok_other = re.search(r"(?m)^OK \((?:0|[2-9][0-9]*) tests\)\s*$", output) is not None
+    has_failures = re.search(r"(?m)^FAILURES!!!\s*$", output) is not None
+    if has_ok_one and has_failures:
+        summary = "BOTH"
+    elif has_failures:
+        summary = "FAILURES"
+    elif has_ok_one:
+        summary = "OK_1_TEST"
+    elif has_ok_other:
+        summary = "OK_OTHER_COUNT"
+    else:
+        summary = "NONE"
+
+    if short_messages:
+        short_message = "PROCESS_CRASHED" if short_messages[-1].casefold().startswith("process crashed") else "OTHER"
+    else:
+        short_message = "NONE"
+
+    return {
+        "method": method_status,
+        "class": class_status,
+        "numtests": count,
+        "lastStatusCode": status_code,
+        "instrumentationCode": instrumentation_code,
+        "summary": summary,
+        "shortMsg": short_message,
+    }
+
+
 def sanitized_summary(
     method: str,
     fields: dict[str, str],
@@ -413,11 +499,19 @@ def sanitized_summary(
     fixture_diagnostic: dict[str, str] | None = None,
     reader_view_diagnostics: list[dict[str, str]] | None = None,
     reader_selector_diagnostics: list[dict[str, str]] | None = None,
+    terminal_evidence: dict[str, str] | None = None,
 ) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
         "ANDROID_SOURCE_SWITCH_RESULT|method=" + method + "|scenario=" + METHOD_SCENARIOS[method] + "|outcome=" + result,
     ]
+    if terminal_evidence is not None:
+        lines.append(
+            "ANDROID_SOURCE_SWITCH_TERMINATION|"
+            + "|".join(key + "=" + terminal_evidence[key] for key in (
+                "method", "class", "numtests", "lastStatusCode", "instrumentationCode", "summary", "shortMsg",
+            ))
+        )
     if passed:
         # Whitelist only numeric fixture observations and fixed state tokens.
         page_count = fields.get("pageCount", "UNKNOWN")
@@ -530,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
     if error is None and args.runner_exit != 0:
         error = ReaderSourceSwitchVerificationError("Instrumentation runner exited unsuccessfully")
     diagnosis = None if error is None else _failure_diagnosis(output, args.method, args.runner_exit)
+    terminal_evidence = _terminal_evidence(output, args.method)
     fixture_diagnostic = _fixture_diagnostic(output, args.method)
     reader_view_diagnostics = _reader_view_diagnostics(output)
     reader_selector_diagnostics = _reader_selector_diagnostics(output)
@@ -543,6 +638,7 @@ def main(argv: list[str] | None = None) -> int:
             fixture_diagnostic,
             reader_view_diagnostics,
             reader_selector_diagnostics,
+            terminal_evidence,
         ),
         encoding="utf-8",
     )
