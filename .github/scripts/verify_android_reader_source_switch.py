@@ -40,6 +40,15 @@ FIXTURE_DIAGNOSTIC_KEYS = (
 FIXTURE_DIAGNOSTIC_SELECTORS = {
     "READY_WITH_A", "DISCOVERING", "OPEN_WITHOUT_A", "CLOSED_OR_OTHER",
 }
+READER_FOREGROUND_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_FOREGROUND_DIAGNOSTIC|"
+READER_FOREGROUND_KEYS = (
+    "scenario", "currentFocus", "focusedApp", "topResumed", "rootType", "rootPackage", "keyguard",
+)
+READER_FOREGROUND_CATEGORIES = {
+    "READER", "MAIN", "PERMISSION_DIALOG", "ANDROID_ALERT", "SYSTEM_UI", "TEST_RUNNER",
+    "LAUNCHER", "KEYBOARD", "ANDROID_FRAMEWORK", "OTHER", "NONE", "UNAVAILABLE",
+}
+READER_FOREGROUND_ROOT_TYPES = {"APPLICATION", "SYSTEM", "INPUT", "ACCESSIBILITY_OVERLAY", "OTHER", "UNAVAILABLE"}
 READER_VIEW_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_VIEW_DIAGNOSTIC|"
 READER_VIEW_DIAGNOSTIC_KEYS = (
     "scenario", "phase", "viewer", "focused", "stream", "pagesLoaded",
@@ -99,17 +108,39 @@ class ReaderSourceSwitchVerificationError(ValueError):
 
 
 def _instrumentation_ran(output: str, method: str) -> bool:
-    if len(re.findall(r"(?m)^INSTRUMENTATION_STATUS: numtests=1\s*$", output)) != 1:
+    # AndroidJUnitRunner legitimately emits numtests=1 in BOTH its start and
+    # completion status bundles. Count executed test EVENTS, not bare field
+    # occurrences: two numtests lines in one bundle are still malformed.
+    bundles: list[tuple[str, dict[str, str]]] = []
+    current: dict[str, str] = {}
+    recognized = {"class", "test", "numtests"}
+    for line in output.splitlines():
+        if line.startswith("INSTRUMENTATION_STATUS: "):
+            key, sep, value = line[len("INSTRUMENTATION_STATUS: "):].partition("=")
+            if key in recognized:
+                if not sep or key in current:
+                    return False
+                current[key] = value
+        elif line.startswith("INSTRUMENTATION_STATUS_CODE: "):
+            code = line[len("INSTRUMENTATION_STATUS_CODE: "):].strip()
+            bundles.append((code, current))
+            current = {}
+    if current or any(code not in {"0", "1"} for code, _ in bundles):
         return False
-    for label, expected in (("class", TEST_CLASS), ("test", method), ("numtests", "1")):
-        if not re.search(
-            r"(?m)^INSTRUMENTATION_STATUS: " + label + r"=" + re.escape(expected) + r"\s*$",
-            output,
-        ):
-            return False
+    test_events = [(code, fields) for code, fields in bundles if recognized.intersection(fields)]
+    if len(test_events) != 2:
+        return False
+    (start_code, started), (end_code, completed) = test_events
+    if start_code != "1" or end_code != "0":
+        return False
+    if started != {"class": TEST_CLASS, "test": method, "numtests": "1"}:
+        return False
+    if completed.get("class") != TEST_CLASS or completed.get("test") != method:
+        return False
+    if completed.get("numtests", "1") != "1":
+        return False
     return (
-        re.search(r"(?m)^INSTRUMENTATION_STATUS_CODE: 0\s*$", output) is not None
-        and re.search(r"(?m)^OK \(1 test\)\s*$", output) is not None
+        re.search(r"(?m)^OK \(1 test\)\s*$", output) is not None
         and re.search(r"(?m)^INSTRUMENTATION_CODE: -1\s*$", output) is not None
         and "FAILURES!!!" not in output
     )
@@ -349,6 +380,29 @@ def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
     return records[:16]
 
 
+def _reader_foreground_diagnostics(output: str) -> list[dict[str, str]]:
+    """Preserve only trusted window classes and no raw dumpsys, package names or UI text."""
+    records: list[dict[str, str]] = []
+    for line in output.splitlines():
+        fields = _split_diagnostic(line, READER_FOREGROUND_PREFIX, READER_FOREGROUND_KEYS)
+        if fields is None:
+            continue
+        if (
+            not fields
+            or fields["scenario"] not in METHOD_SCENARIOS.values()
+            or any(fields[key] not in READER_FOREGROUND_CATEGORIES for key in (
+                "currentFocus", "focusedApp", "topResumed",
+            ))
+            or fields["rootType"] not in READER_FOREGROUND_ROOT_TYPES
+            or fields["rootPackage"] not in READER_ACTIVE_WINDOWS
+            or fields["keyguard"] not in {"TRUE", "FALSE"}
+        ):
+            records.append({"evidence": "MALFORMED"})
+        else:
+            records.append(fields)
+    return records[:8]
+
+
 def _reader_selector_diagnostics(output: str) -> list[dict[str, str]]:
     records: list[dict[str, str]] = []
     binary_keys = {"aOption", "bOption", "chapterMatch"}
@@ -509,6 +563,7 @@ def sanitized_summary(
     reader_view_diagnostics: list[dict[str, str]] | None = None,
     reader_selector_diagnostics: list[dict[str, str]] | None = None,
     terminal_evidence: dict[str, str] | None = None,
+    foreground_diagnostics: list[dict[str, str]] | None = None,
 ) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
@@ -580,6 +635,14 @@ def sanitized_summary(
                     if key in record
                 )
             )
+    for record in foreground_diagnostics or []:
+        if "evidence" in record:
+            lines.append("ANDROID_SOURCE_SWITCH_FOREGROUND|evidence=" + record["evidence"])
+        else:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_FOREGROUND|"
+                + "|".join(key + "=" + record[key] for key in READER_FOREGROUND_KEYS)
+            )
     for record in reader_selector_diagnostics or []:
         if "evidence" in record:
             lines.append("ANDROID_SOURCE_SWITCH_READER_SELECTOR|evidence=" + record["evidence"])
@@ -637,6 +700,7 @@ def main(argv: list[str] | None = None) -> int:
     fixture_diagnostic = _fixture_diagnostic(output, args.method)
     reader_view_diagnostics = _reader_view_diagnostics(output)
     reader_selector_diagnostics = _reader_selector_diagnostics(output)
+    foreground_diagnostics = _reader_foreground_diagnostics(output)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(
         sanitized_summary(
@@ -648,6 +712,7 @@ def main(argv: list[str] | None = None) -> int:
             reader_view_diagnostics,
             reader_selector_diagnostics,
             terminal_evidence,
+            foreground_diagnostics,
         ),
         encoding="utf-8",
     )

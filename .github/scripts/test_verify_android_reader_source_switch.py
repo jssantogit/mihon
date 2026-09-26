@@ -117,12 +117,48 @@ def output_for(method: str) -> str:
 
 
 class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
+    def test_runner_has_no_commands_after_terminal_exit(self):
+        runner = (ROOT / ".github/scripts/run_android_reader_source_switch.sh").read_text()
+        self.assertTrue(
+            runner.rstrip().endswith('exit "$overall_status"'),
+            "CI runner must not append dangling shell commands after its final exit",
+        )
+
     def test_each_named_method_requires_one_executed_junit_test_and_observed_pages(self):
         for method in verifier.METHOD_SCENARIOS:
             with self.subTest(method=method):
                 fields = verifier.verify(output_for(method), method)
                 self.assertEqual("OBSERVABLE", fields["position"])
                 self.assertGreater(int(fields["pageCount"]), 0)
+
+    def test_real_runner_repeats_numtests_in_the_terminal_status_bundle(self):
+        # AndroidJUnitRunner sends numtests=1 both when the test starts and
+        # when it completes. Two status bundles are still exactly one test.
+        method = "emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession"
+        output = output_for(method)
+        terminal = (
+            "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
+            "INSTRUMENTATION_STATUS: test=" + method + "\n"
+            "INSTRUMENTATION_STATUS_CODE: 0"
+        )
+        terminal_with_numtests = (
+            "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
+            "INSTRUMENTATION_STATUS: numtests=1\n"
+            "INSTRUMENTATION_STATUS: test=" + method + "\n"
+            "INSTRUMENTATION_STATUS_CODE: 0"
+        )
+        realistic_output = output.replace(terminal, terminal_with_numtests)
+        self.assertNotEqual(output, realistic_output)
+        self.assertEqual("PREVIOUS_PRESERVED", verifier.verify(realistic_output, method)["session"])
+
+    def test_duplicate_numtests_inside_one_status_bundle_is_rejected(self):
+        method = "emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession"
+        valid = output_for(method)
+        first = "INSTRUMENTATION_STATUS: numtests=1\n"
+        duplicated = valid.replace(first, first + first, 1)
+        self.assertNotEqual(valid, duplicated)
+        with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+            verifier.verify(duplicated, method)
 
     def test_zero_skipped_or_unexecuted_method_is_not_green(self):
         method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
@@ -484,6 +520,33 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             )
             self.assertIn("ANDROID_SOURCE_SWITCH_READER_VIEW|evidence=MALFORMED", sanitized)
             self.assertNotIn(private_value, sanitized)
+
+    def test_foreground_diagnostic_exposes_only_fixed_window_categories(self):
+        method = "emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession"
+        private_value = "https://provider.invalid/private?token=secret"
+        valid = (
+            "INSTRUMENTATION_STATUS: stream=READER_FOREGROUND_DIAGNOSTIC|scenario=EMPTY_OR_FAILING"
+            "|currentFocus=ANDROID_ALERT|focusedApp=READER|topResumed=READER"
+            "|rootType=APPLICATION|rootPackage=ANDROID_FRAMEWORK|keyguard=FALSE\n"
+        )
+        parsed = verifier._reader_foreground_diagnostics(valid)
+        self.assertEqual(1, len(parsed))
+        summary = verifier.sanitized_summary(method, {}, False, foreground_diagnostics=parsed)
+        self.assertIn(
+            "ANDROID_SOURCE_SWITCH_FOREGROUND|scenario=EMPTY_OR_FAILING|currentFocus=ANDROID_ALERT"
+            "|focusedApp=READER|topResumed=READER|rootType=APPLICATION"
+            "|rootPackage=ANDROID_FRAMEWORK|keyguard=FALSE",
+            summary,
+        )
+        for field in ("currentFocus", "focusedApp", "topResumed", "rootType", "rootPackage", "keyguard"):
+            malicious = valid.replace(field + "=" + valid.split(field + "=")[1].split("|")[0],
+                                      field + "=" + private_value)
+            rejected = verifier.sanitized_summary(
+                method, {}, False,
+                foreground_diagnostics=verifier._reader_foreground_diagnostics(malicious),
+            )
+            self.assertIn("ANDROID_SOURCE_SWITCH_FOREGROUND|evidence=MALFORMED", rejected)
+            self.assertNotIn(private_value, rejected)
 
     def test_reader_selector_diagnostic_uses_per_scenario_deltas(self):
         line = (

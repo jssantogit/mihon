@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.data.tsuzuki.instrumentation
 
 import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -9,6 +11,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.view.children
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -46,7 +49,6 @@ import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
-import mihon.app.di.AppBindings
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -682,6 +684,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
     ): ReaderViewSnapshot? {
         val snapshot = runCatching { readerViewSnapshot(reader) }.getOrNull() ?: return null
         val imageCounts = fixture.imageRequestCounts()
+        reportForegroundDiagnostic(scenario)
         reportReaderViewDiagnostic(
             scenario = scenario,
             phase = "SCREENSHOT_TIMEOUT",
@@ -695,6 +698,69 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             imageRequestsB = imageCounts.second,
         )
         return snapshot
+    }
+
+    /** Only fixed categories leave this isolated fixture; never export dumpsys or UI text. */
+    private fun reportForegroundDiagnostic(scenario: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+        val windowDump = runCatching { device.executeShellCommand("dumpsys window") }.getOrDefault("")
+        val activityDump = runCatching {
+            device.executeShellCommand("dumpsys activity activities")
+        }.getOrDefault("")
+
+        fun category(line: String?): String = when {
+            line == null -> "UNAVAILABLE"
+            line.contains("ReaderActivity") && line.contains(EXPECTED_TARGET_PACKAGE) -> "READER"
+            line.contains("MainActivity") && line.contains(EXPECTED_TARGET_PACKAGE) -> "MAIN"
+            line.contains("permissioncontroller", ignoreCase = true) -> "PERMISSION_DIALOG"
+            line.contains("com.android.internal.app.") -> "ANDROID_ALERT"
+            line.contains("com.android.systemui") -> "SYSTEM_UI"
+            line.contains("$EXPECTED_TARGET_PACKAGE.test") -> "TEST_RUNNER"
+            line.contains("launcher", ignoreCase = true) -> "LAUNCHER"
+            line.contains("inputmethod", ignoreCase = true) || line.contains("latinime", ignoreCase = true) ->
+                "KEYBOARD"
+            line.contains("android/") -> "ANDROID_FRAMEWORK"
+            line.contains("null", ignoreCase = true) -> "NONE"
+            else -> "OTHER"
+        }
+
+        fun findLine(dump: String, marker: String): String? =
+            dump.lineSequence().map(String::trim).firstOrNull { it.startsWith(marker) }
+
+        val currentFocus = category(findLine(windowDump, "mCurrentFocus="))
+        val focusedApp = category(findLine(windowDump, "mFocusedApp="))
+        val topResumed = category(
+            findLine(activityDump, "topResumedActivity=")
+                ?: findLine(activityDump, "mResumedActivity="),
+        )
+        val rootType = runCatching {
+            val active = instrumentation.uiAutomation.windows.firstOrNull { it.isActive }
+            when (active?.type) {
+                AccessibilityWindowInfo.TYPE_APPLICATION -> "APPLICATION"
+                AccessibilityWindowInfo.TYPE_SYSTEM -> "SYSTEM"
+                AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "INPUT"
+                AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "ACCESSIBILITY_OVERLAY"
+                null -> "UNAVAILABLE"
+                else -> "OTHER"
+            }
+        }.getOrDefault("UNAVAILABLE")
+        val keyguard = runCatching {
+            (instrumentation.targetContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager)
+                .isKeyguardLocked
+        }.getOrDefault(false)
+        instrumentation.sendStatus(
+            1,
+            Bundle().apply {
+                putString(
+                    "stream",
+                    "READER_FOREGROUND_DIAGNOSTIC|scenario=$scenario|currentFocus=$currentFocus" +
+                        "|focusedApp=$focusedApp|topResumed=$topResumed" +
+                        "|rootType=$rootType|rootPackage=${activeWindowCategory()}" +
+                        "|keyguard=${keyguard.toWireBoolean()}",
+                )
+            },
+        )
     }
 
     private fun countImageColorSamples(bitmap: Bitmap, expectedColor: Int): ImageColorEvidence {
@@ -1362,7 +1428,6 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 app.graph.securityPreferences.secureScreen.set(originalSecureScreen)
                 app.graph.basePreferences.shownOnboardingFlow.set(originalOnboardingCompleted)
                 server.close()
-                driver.close()
             }
         }
 
@@ -1469,9 +1534,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         addons.any { it.id == addonA && it.enabled } && addons.any { it.id == addonB && it.enabled }
                 }
 
-                val driver = AppBindings.providesSqlDriver(context)
+                // Reader and fixture must share AppScope's database connection.
+                // An independently opened driver can race Reader writes and fail SQLITE_LOCKED.
+                val driver = app.graph.sqlDriver
+                val database = app.graph.database
                 try {
-                    val database = AppBindings.providesDatabase(driver)
                     val titleId = "android-source-switch-$runId"
                     val now = System.currentTimeMillis()
                     val title = CanonicalTitle(
@@ -1607,7 +1674,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 } catch (error: Throwable) {
                     installedExtensions.value = priorExtensions
                     server.close()
-                    driver.close()
+                    // AppScope owns the shared driver; do not close it from this fixture.
                     throw error
                 }
             }
