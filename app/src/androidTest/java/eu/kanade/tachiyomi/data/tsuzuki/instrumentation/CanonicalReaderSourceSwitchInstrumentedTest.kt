@@ -8,6 +8,7 @@ import android.graphics.PointF
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
+import android.view.WindowManager
 import androidx.core.view.children
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -21,6 +22,7 @@ import app.cash.sqldelight.db.SqlDriver
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.tachiyomi.App
 import eu.kanade.tachiyomi.R
+import eu.kanade.tachiyomi.core.security.SecurityPreferences
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.extension.ExtensionManager
@@ -569,6 +571,14 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         expectedColor: Int,
         scenario: String,
     ) {
+        // Only the disposable fixture opts out of secure capture; production privacy is unchanged.
+        awaitValue("Reader test window to permit visual screenshot evidence") {
+            if ((reader.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) == 0) {
+                true
+            } else {
+                null
+            }
+        }
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         var lastMatchingSampleCount = 0
         var lastMatchingRowCount = 0
@@ -862,7 +872,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val position = (state.currentPage - 1).takeIf { it >= 0 } ?: -1
         val page = pages?.getOrNull(position)
         var focused = "UNKNOWN"
+        var windowSecure = false
+        var windowHasFocus = false
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            windowSecure =
+                (reader.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
+            windowHasFocus = reader.window.decorView.hasWindowFocus()
             val focusedView = reader.currentFocus
             focused = when {
                 focusedView == null -> "UNKNOWN"
@@ -873,6 +888,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         return ReaderViewSnapshot(
             viewer = state.viewer?.javaClass?.simpleName ?: "NONE",
             focused = focused,
+            windowSecure = windowSecure,
+            windowHasFocus = windowHasFocus,
             streamPresent = page?.stream != null,
             pagesLoaded = chapter?.state is ReaderChapter.State.Loaded,
             pageCount = pages?.size ?: 0,
@@ -935,6 +952,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|imageViewVisible=${snapshot.pager.imageViewVisible.toWireBoolean()}" +
                         "|imageViewReady=${snapshot.pager.imageViewReady.toWireBoolean()}" +
                         "|errorVisible=${snapshot.pager.errorVisible.toWireBoolean()}" +
+                        "|windowSecure=${snapshot.windowSecure.toWireBoolean()}" +
+                        "|windowHasFocus=${snapshot.windowHasFocus.toWireBoolean()}" +
                         "|interactionInjected=${interactionInjected.toWireBoolean()}" +
                         "|interactionTarget=$interactionTarget$pixelDetails$imageRequests",
                 )
@@ -1192,6 +1211,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val reading: CanonicalReadingRepositoryImpl,
         private val originalReaderMode: Int,
         private val originalNavigateToPan: Boolean,
+        private val originalSecureScreen: SecurityPreferences.SecureScreenMode,
         private val installedExtensions: MutableStateFlow<Map<String, Extension.Installed>>,
         private val priorExtensions: Map<String, Extension.Installed>,
     ) {
@@ -1223,6 +1243,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             } finally {
                 app.graph.readerPreferences.defaultReadingMode.set(originalReaderMode)
                 app.graph.readerPreferences.navigateToPan.set(originalNavigateToPan)
+                app.graph.securityPreferences.secureScreen.set(originalSecureScreen)
                 server.close()
                 driver.close()
             }
@@ -1437,6 +1458,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     }
                     val originalReaderMode = app.graph.readerPreferences.defaultReadingMode.get()
                     val originalNavigateToPan = app.graph.readerPreferences.navigateToPan.get()
+                    val originalSecureScreen = app.graph.securityPreferences.secureScreen.get()
+                    app.graph.securityPreferences.secureScreen.set(SecurityPreferences.SecureScreenMode.NEVER)
                     app.graph.readerPreferences.defaultReadingMode.set(ReadingMode.LEFT_TO_RIGHT.flagValue)
                     app.graph.readerPreferences.navigateToPan.set(false)
                     return SourceSwitchFixture(
@@ -1455,6 +1478,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         reading = CanonicalReadingRepositoryImpl(database),
                         originalReaderMode = originalReaderMode,
                         originalNavigateToPan = originalNavigateToPan,
+                        originalSecureScreen = originalSecureScreen,
                         installedExtensions = installedExtensions,
                         priorExtensions = priorExtensions,
                     )
@@ -1685,6 +1709,8 @@ private fun <T> awaitSourceSwitchFixtureValue(description: String, query: () -> 
 private data class ReaderViewSnapshot(
     val viewer: String,
     val focused: String,
+    val windowSecure: Boolean,
+    val windowHasFocus: Boolean,
     val streamPresent: Boolean,
     val pagesLoaded: Boolean,
     val pageCount: Int,
