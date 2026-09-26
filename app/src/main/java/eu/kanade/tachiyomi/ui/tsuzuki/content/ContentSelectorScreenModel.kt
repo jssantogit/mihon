@@ -350,6 +350,10 @@ class ContentSelectorScreenModel internal constructor(
         val options = (previous + incoming).distinctBy(ContentOption::key)
         val preference = contentPreferenceRepository.get(titleId)
         val names = addonRepository.snapshot().associate { it.id to it.displayName }
+        currentCoroutineContext().ensureActive()
+        // A title preference or installed-Add-on lookup can suspend. Never let
+        // an older chapter overwrite a newer selection when those calls return.
+        if (canonicalTitleId != titleId || canonicalChapterId != chapterId) return
         val preferred = preference?.preferredAddonId
         _state.value = ContentSelectorScreenState.Ready(
             canonicalTitleId = titleId,
