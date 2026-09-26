@@ -487,7 +487,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     return@awaitValue null
                 }
                 val pager = snapshot.pager
-                if (!pager.visible || pager.count < expectedCount || pager.currentItem !in 0 until pager.count || !pager.idle) {
+                if (
+                    !pager.visible || pager.count < expectedCount ||
+                    pager.currentItem !in 0 until pager.count || !pager.idle
+                ) {
                     return@awaitValue null
                 }
                 index to pages.size
@@ -798,7 +801,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|pagesLoaded=${snapshot.pagesLoaded.toWireBoolean()}|pageCount=${snapshot.pageCount}" +
                         "|pageState=${snapshot.pageState}|position=${snapshot.position}" +
                         "|pagerVisible=${snapshot.pager.visible.toWireBoolean()}|pagerCount=${snapshot.pager.count}" +
-                        "|pagerCurrentItem=${snapshot.pager.currentItem}|pagerIdle=${snapshot.pager.idle.toWireBoolean()}" +
+                        "|pagerCurrentItem=${snapshot.pager.currentItem}" +
+                        "|pagerIdle=${snapshot.pager.idle.toWireBoolean()}" +
                         "|interactionInjected=${interactionInjected.toWireBoolean()}" +
                         "|interactionTarget=$interactionTarget$pixelDetails",
                 )
