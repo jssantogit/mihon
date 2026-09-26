@@ -18,6 +18,32 @@ conservative `CanonicalChapterCandidateResolver` and explicit volume policy,
 but they remain different canonical writers. Treat them as potentially
 divergent until equivalent outcomes are established by the tests below.
 
+## Confirmed divergence to protect before migration
+
+**A stable provider URL reused for a different chapter is currently handled
+differently by the two writers.** In
+`ReconcileChapterInventory.execute`, an existing `ChapterVariant` found by
+`(sourceId, sourceChapterId)` unconditionally reuses its old canonical chapter,
+even if a provider's later label describes a different chapter or an explicit
+incompatible volume. In `ReconcileChapterEvidence`, a reliable new observation
+with the same producer-scoped external key is checked for conflict and may
+rehome its evidence to a new canonical identity; an independently supported
+old chapter remains available.
+
+Before routing legacy Reader through the evidence writer, add a **red/green
+cross-writer characterization** using one stable source URL changing from
+volume 1 chapter 4 to volume 2 chapter 4 and another source that still
+supports the old mapping. Assert the prior canonical ID/history remains
+unchanged, no old Mihon variant silently reads the replacement chapter,
+the conflicting mapping cannot auto-open an unverified chapter, and both
+writers converge under one authoritative reconciliation policy. Prefer
+quarantining the conflicting old operational variant and requesting source
+confirmation over binding it to a known-wrong canonical chapter.
+
+This is a code-path finding, not a report of a current real provider doing so.
+The existing parity tests cover stable inputs and omitted rows; they do **not**
+prove this conflict case.
+
 ## Migration sequence (after Phase A/C acceptance)
 
 1. Record equivalence fixtures against *both existing writers*: fractional
