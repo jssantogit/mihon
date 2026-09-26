@@ -107,14 +107,29 @@ class ReconcileChapterInventory internal constructor(
 
                 val observedVolume = volumeParser.execute(snapshot.rawName)
                 val hasExplicitVolumePrefix = volumeParser.hasExplicitVolumePrefix(snapshot.rawName)
+                val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
                 val canonical = if (associatedVariant != null) {
-                    // Persisted source identity is authoritative even if a later
-                    // parser would interpret the changed label differently.
-                    chaptersById[associatedVariant.canonicalChapterId]
+                    val existing = chaptersById[associatedVariant.canonicalChapterId]
                         ?: canonicalChapterRepository.getById(associatedVariant.canonicalChapterId)
                         ?: error("Variant ${associatedVariant.id} references missing canonical chapter")
+                    check(existing.canonicalTitleId == canonicalTitleId) {
+                        "Existing operational variant belongs to a different canonical title"
+                    }
+                    // A stable source URL is not proof of a stable chapter. Until
+                    // the legacy adapter writes through the evidence reconciler,
+                    // fail closed on reliable contradictory identities or explicit
+                    // volumes; preserve the old variant and the supported chapter.
+                    val changedIdentity =
+                        parsed.confidence >= 0.95 && parsed.identity.isSpecific &&
+                            existing.identity.isSpecific && parsed.identity != existing.identity
+                    val changedExplicitVolume =
+                        hasExplicitVolumePrefix && observedVolume != null &&
+                            existing.volume != null && observedVolume != existing.volume
+                    check(!changedIdentity && !changedExplicitVolume) {
+                        "Stable source chapter key now describes a conflicting canonical identity"
+                    }
+                    existing
                 } else {
-                    val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
                     val matched = parsed.identity.takeIf { it.isSpecific }
                         ?.let { identity ->
                             CanonicalChapterCandidateResolver.resolve(

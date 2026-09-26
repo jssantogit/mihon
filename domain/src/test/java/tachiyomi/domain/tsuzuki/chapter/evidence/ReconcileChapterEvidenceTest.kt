@@ -1,5 +1,6 @@
 package tachiyomi.domain.tsuzuki.chapter.evidence
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
@@ -564,6 +565,103 @@ class ReconcileChapterEvidenceTest {
             )?.mappedCanonicalChapterId shouldBe previousEvidence[url]
         }
     }
+
+    @Test
+    fun `legacy inventory rejects an existing source URL with a contradictory explicit volume`() = runTest {
+        val legacyChapters = FakeCanonicalChapterRepository()
+        val evidenceFixture = fixture()
+        val original = existingChapter("volume-one", volume = 1)
+        val replacement = existingChapter("volume-two", volume = 2)
+        for (chapter in listOf(original, replacement)) {
+            legacyChapters.upsert(chapter)
+            evidenceFixture.chapterRepository.upsert(chapter)
+        }
+        var nextVariant = 0
+        val legacy = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = legacyChapters,
+            idFactory = { error("Both chapter identities are already present") },
+            variantIdFactory = { "variant-${++nextVariant}" },
+            clock = { 100L },
+        )
+        fun inventory(sourceId: Long, url: String, label: String) = SourceChapterInventory(
+            sourceMappingId = "mapping-${sourceId}",
+            sourceId = sourceId,
+            canonicalTitleId = "title",
+            chapters = listOf(
+                SourceChapterSnapshot(
+                    sourceId = sourceId,
+                    sourceMappingId = "mapping-${sourceId}",
+                    sourceChapterId = url,
+                    rawName = label,
+                    rawNumberHint = 4.0,
+                ),
+            ),
+        )
+        val originalRow = inventory(101L, "/reused-key", "Vol. 1 Ch. 4")
+        val independentRow = inventory(202L, "/independent", "Vol. 1 Ch. 4")
+        legacy.execute(listOf(originalRow, independentRow))
+        evidenceFixture.reconciler.execute(
+            "title",
+            listOf(
+                evidenceFixture.addonEvidence(
+                    id = "first-observation",
+                    rawLabel = "Vol. 1 Ch. 4",
+                    externalKey = "101:/reused-key",
+                    producerId = "addon-101",
+                    volume = 1,
+                ),
+                evidenceFixture.addonEvidence(
+                    id = "independent-observation",
+                    rawLabel = "Vol. 1 Ch. 4",
+                    externalKey = "202:/independent",
+                    producerId = "addon-202",
+                    volume = 1,
+                ),
+            ),
+        )
+        val firstVariant = requireNotNull(legacyChapters.getVariantBySourceIdentity(101L, "/reused-key"))
+        val secondVariant = requireNotNull(legacyChapters.getVariantBySourceIdentity(202L, "/independent"))
+        firstVariant.canonicalChapterId shouldBe original.id
+        secondVariant.canonicalChapterId shouldBe original.id
+
+        // RED: the old writer currently trusts a reused URL even when its
+        // explicit new volume contradicts the previously persisted identity.
+        shouldThrow<IllegalStateException> {
+            legacy.execute(inventory(101L, "/reused-key", "Vol. 2 Ch. 4"))
+        }
+        legacyChapters.getVariantBySourceIdentity(101L, "/reused-key") shouldBe firstVariant
+        legacyChapters.getVariantBySourceIdentity(202L, "/independent") shouldBe secondVariant
+        legacyChapters.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe
+            setOf(original.id, replacement.id)
+
+        evidenceFixture.reconciler.execute(
+            "title",
+            listOf(
+                evidenceFixture.addonEvidence(
+                    id = "changed-observation",
+                    rawLabel = "Vol. 2 Ch. 4",
+                    externalKey = "101:/reused-key",
+                    producerId = "addon-101",
+                    volume = 2,
+                ),
+            ),
+        )
+        evidenceFixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "addon-101",
+            "101:/reused-key",
+        )?.mappedCanonicalChapterId shouldBe replacement.id
+        evidenceFixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "addon-202",
+            "202:/independent",
+        )?.mappedCanonicalChapterId shouldBe original.id
+        evidenceFixture.chapterRepository.getById(original.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.PROVISIONAL
+    }
+
 
     @Test
     fun `changed volume on stable key conflicts old chapter and rehomes evidence`() = runTest {

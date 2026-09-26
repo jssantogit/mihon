@@ -161,17 +161,21 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
-    fun `existing source identity association wins over later parsed identity`() = runTest {
-        val repository = FakeCanonicalChapterRepository()
-        val reconciler = reconciler(repository)
+    fun `reused source identity with a different reliable chapter number fails without changing its old mapping`() =
+        runTest {
+            val repository = FakeCanonicalChapterRepository()
+            val reconciler = reconciler(repository)
 
-        reconciler.execute(inventory("mapping-1", 1L, "Chapter 12", sourceChapterId = "/chapter"))
-        reconciler.execute(inventory("mapping-1", 1L, "Chapter 99", sourceChapterId = "/chapter"))
+            reconciler.execute(inventory("mapping-1", 1L, "Chapter 12", sourceChapterId = "/chapter"))
+            val originalVariant = repository.getVariantBySourceIdentity(1L, "/chapter")
+            shouldThrow<IllegalStateException> {
+                reconciler.execute(inventory("mapping-1", 1L, "Chapter 99", sourceChapterId = "/chapter"))
+            }
 
-        repository.getByCanonicalTitleId("title-1").size shouldBe 1
-        repository.getVariantBySourceIdentity(1L, "/chapter")?.canonicalChapterId shouldBe "chapter-1"
-        repository.getById("chapter-1")?.baseNumber shouldBe 12
-    }
+            repository.getByCanonicalTitleId("title-1").size shouldBe 1
+            repository.getVariantBySourceIdentity(1L, "/chapter") shouldBe originalVariant
+            repository.getById("chapter-1")?.baseNumber shouldBe 12
+        }
 
     @Test
     fun `refresh never deletes variants absent from the current source inventory`() = runTest {
@@ -219,10 +223,14 @@ class ChapterInventoryAndReconciliationTest {
 
         reconciler.execute(inventory("mapping-1", 1L, "Chapter 1", "/one"))
         reconciler.execute(inventory("mapping-2", 2L, "Chapter 1", "/two"))
+        val mappingOneBefore = repository.getVariantBySourceIdentity(1L, "/one")
         val mappingTwoBefore = repository.getVariantBySourceIdentity(2L, "/two")
 
-        reconciler.execute(inventory("mapping-1", 1L, "Chapter 9", "/one"))
+        shouldThrow<IllegalStateException> {
+            reconciler.execute(inventory("mapping-1", 1L, "Chapter 9", "/one"))
+        }
 
+        repository.getVariantBySourceIdentity(1L, "/one") shouldBe mappingOneBefore
         repository.getVariantBySourceIdentity(2L, "/two") shouldBe mappingTwoBefore
         repository.getVariantsBySourceMappingId("mapping-2").size shouldBe 1
     }
