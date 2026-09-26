@@ -13,8 +13,12 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
+import tachiyomi.domain.tsuzuki.chapter.interactor.ReconcileChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 
 class ReconcileChapterEvidenceTest {
@@ -375,6 +379,96 @@ class ReconcileChapterEvidenceTest {
         val observations = fixture.evidenceRepository.getByCanonicalTitleId("title")
         observations shouldHaveSize 2
         observations.map { it.mappedCanonicalChapterId }.distinct() shouldBe listOf(chapters.single().id)
+    }
+
+    @Test
+    fun `legacy and evidence writers reuse the same volume scoped chapters and source mappings`() = runTest {
+        val legacyChapters = FakeCanonicalChapterRepository()
+        val evidenceFixture = fixture()
+        for (volume in 1..2) {
+            val chapter = existingChapter("chapter-volume-$volume", volume)
+            legacyChapters.upsert(chapter)
+            evidenceFixture.chapterRepository.upsert(chapter)
+        }
+
+        var nextVariant = 0
+        val legacy = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = legacyChapters,
+            idFactory = { error("Explicit volume must match one of the seeded chapters") },
+            variantIdFactory = { "variant-${++nextVariant}" },
+            clock = { 100L },
+        )
+        data class Observation(
+            val sourceId: Long,
+            val sourceChapterId: String,
+            val rawName: String,
+            val volume: Int,
+        )
+        val observations = listOf(
+            Observation(101L, "/volume/1/chapter/4", "Vol. 1 Ch. 4", 1),
+            Observation(101L, "/volume/2/chapter/4", "Vol. 2 Ch. 4", 2),
+            Observation(202L, "/volume/1/chapter/4", "Vol. 1 Ch. 4", 1),
+        )
+
+        suspend fun refresh() {
+            val inventories = observations.groupBy(Observation::sourceId).map { (sourceId, rows) ->
+                SourceChapterInventory(
+                    sourceMappingId = "mapping-$sourceId",
+                    sourceId = sourceId,
+                    canonicalTitleId = "title",
+                    chapters = rows.map { row ->
+                        SourceChapterSnapshot(
+                            sourceId = sourceId,
+                            sourceMappingId = "mapping-$sourceId",
+                            sourceChapterId = row.sourceChapterId,
+                            rawName = row.rawName,
+                            rawNumberHint = 4.0,
+                            mihonMangaId = sourceId,
+                        )
+                    },
+                )
+            }
+            legacy.execute(inventories)
+            evidenceFixture.reconciler.execute(
+                "title",
+                observations.mapIndexed { index, row ->
+                    evidenceFixture.addonEvidence(
+                        id = "observation-$index",
+                        rawLabel = row.rawName,
+                        externalKey = "${row.sourceId}:${row.sourceChapterId}",
+                        producerId = "addon-${row.sourceId}",
+                        volume = row.volume,
+                    )
+                },
+            )
+        }
+
+        refresh()
+        val expected = setOf("chapter-volume-1", "chapter-volume-2")
+        legacyChapters.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe expected
+        evidenceFixture.chapterRepository.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe expected
+        for (row in observations) {
+            val canonicalId = "chapter-volume-${row.volume}"
+            legacyChapters.getVariantBySourceIdentity(row.sourceId, row.sourceChapterId)
+                ?.canonicalChapterId shouldBe canonicalId
+            evidenceFixture.evidenceRepository.getByProducerExternalKey(
+                ProducerKind.ADDON,
+                "addon-${row.sourceId}",
+                "${row.sourceId}:${row.sourceChapterId}",
+            )?.mappedCanonicalChapterId shouldBe canonicalId
+        }
+        val firstVariantIds = observations.map { row ->
+            legacyChapters.getVariantBySourceIdentity(row.sourceId, row.sourceChapterId)?.id
+        }
+
+        refresh()
+        legacyChapters.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe expected
+        evidenceFixture.chapterRepository.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe expected
+        observations.map { row ->
+            legacyChapters.getVariantBySourceIdentity(row.sourceId, row.sourceChapterId)?.id
+        } shouldBe firstVariantIds
     }
 
     @Test
@@ -871,6 +965,7 @@ class ReconcileChapterEvidenceTest {
 
     private class FakeCanonicalChapterRepository : CanonicalChapterRepository {
         private val chapters = linkedMapOf<String, CanonicalChapter>()
+        private val variants = linkedMapOf<Pair<Long, String>, ChapterVariant>()
         private val state = MutableStateFlow<List<CanonicalChapter>>(emptyList())
 
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
@@ -883,26 +978,29 @@ class ReconcileChapterEvidenceTest {
         override suspend fun getVariantBySourceIdentity(
             sourceId: Long,
             sourceChapterId: String,
-        ): ChapterVariant? = null
+        ): ChapterVariant? = variants[sourceId to sourceChapterId]
 
         override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> =
-            emptyList()
+            variants.values.filter { it.canonicalChapterId == canonicalChapterId }
 
         override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> =
-            emptyList()
+            variants.values.filter { it.sourceMappingId == sourceMappingId }
 
         override suspend fun upsert(chapter: CanonicalChapter) {
             chapters[chapter.id] = chapter
             state.value = chapters.values.toList()
         }
 
-        override suspend fun upsertVariant(variant: ChapterVariant) = Unit
+        override suspend fun upsertVariant(variant: ChapterVariant) {
+            variants[variant.sourceId to variant.sourceChapterId] = variant
+        }
 
         override suspend fun upsertBatch(
             chapters: List<CanonicalChapter>,
             variants: List<ChapterVariant>,
         ) {
             chapters.forEach { upsert(it) }
+            variants.forEach { upsertVariant(it) }
         }
     }
 }
