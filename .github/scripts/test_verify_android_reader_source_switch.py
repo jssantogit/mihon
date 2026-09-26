@@ -442,7 +442,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "|expectedColor=RED|imageRequestsA=1|imageRequestsB=1"
             "|holderPresent=TRUE|holderAttached=TRUE|holderVisible=TRUE"
             "|imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE"
-            "|windowSecure=FALSE|windowHasFocus=TRUE\n"
+            "|windowSecure=FALSE|windowHasFocus=TRUE|activeWindow=READER_APP\n"
         )
         parsed = verifier._reader_view_diagnostics(line)
         self.assertEqual(1, len(parsed))
@@ -454,7 +454,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("imageRequestsA=1|imageRequestsB=1", summary)
         self.assertIn("holderPresent=TRUE|holderAttached=TRUE|holderVisible=TRUE", summary)
         self.assertIn("imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE", summary)
-        self.assertIn("windowSecure=FALSE|windowHasFocus=TRUE", summary)
+        self.assertIn("windowSecure=FALSE|windowHasFocus=TRUE|activeWindow=READER_APP", summary)
 
         for malformed in (
             line.replace("viewer=WebtoonViewer", "viewer=" + private_value),
@@ -462,6 +462,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             line.replace("holderPresent=TRUE", "holderPresent=" + private_value),
             line.replace("imageViewReady=FALSE", "imageViewReady=1"),
             line.replace("windowSecure=FALSE", "windowSecure=1"),
+            line.replace("activeWindow=READER_APP", "activeWindow=" + private_value),
         ):
             sanitized = verifier.sanitized_summary(
                 method, {}, False, reader_view_diagnostics=verifier._reader_view_diagnostics(malformed),

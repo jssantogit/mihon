@@ -50,7 +50,7 @@ READER_VIEW_DIAGNOSTIC_KEYS = (
 READER_VIEW_OPTIONAL_KEYS = (
     "expectedColor", "imageRequestsA", "imageRequestsB", "holderPresent", "holderAttached",
     "holderVisible", "imageViewPresent", "imageViewVisible", "imageViewReady", "errorVisible",
-    "windowSecure", "windowHasFocus",
+    "windowSecure", "windowHasFocus", "activeWindow",
 )
 READER_VIEWERS = {
     "NONE", "L2RPagerViewer", "R2LPagerViewer", "VerticalPagerViewer",
@@ -58,6 +58,7 @@ READER_VIEWERS = {
 }
 READER_PAGE_STATES = {"QUEUE", "LOAD_PAGE", "DOWNLOAD_IMAGE", "READY", "ERROR", "NONE"}
 READER_FOCUS_STATES = {"FOCUSED", "NO_FOCUS", "UNKNOWN"}
+READER_ACTIVE_WINDOWS = {"READER_APP", "SYSTEM_UI", "LAUNCHER", "OTHER", "UNAVAILABLE"}
 READER_INTERACTION_TARGETS = {"READER_PAGER", "NONE"}
 READER_EXPECTED_COLORS = {"RED", "BLUE", "NONE"}
 READER_DIAGNOSTIC_SCENARIOS = {*METHOD_SCENARIOS.values(), "PAGER_READINESS"}
@@ -311,6 +312,9 @@ def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
             records.append({"evidence": "MALFORMED"})
             continue
         if fields["interactionTarget"] not in READER_INTERACTION_TARGETS:
+            records.append({"evidence": "MALFORMED"})
+            continue
+        if "activeWindow" in fields and fields["activeWindow"] not in READER_ACTIVE_WINDOWS:
             records.append({"evidence": "MALFORMED"})
             continue
         if "expectedColor" in fields and fields["expectedColor"] not in READER_EXPECTED_COLORS:

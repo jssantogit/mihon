@@ -583,7 +583,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         var lastMatchingSampleCount = 0
         var lastMatchingRowCount = 0
         val imageEvidence = try {
-            awaitValue("Reader screenshot to contain the synthetic page color") {
+            awaitValue("Reader to own the focused window and render its synthetic image") {
+                if (!reader.window.decorView.hasWindowFocus()) return@awaitValue null
                 val screenshot = device.takeScreenshot() ?: return@awaitValue null
                 try {
                     val evidence = countImageColorSamples(screenshot, expectedColor)
@@ -706,10 +707,18 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         return ImageColorEvidence(matchingSamples, rowsWithLongRun)
     }
 
-    private fun isNearColor(actual: Int, expected: Int): Boolean =
-        kotlin.math.abs(Color.red(actual) - Color.red(expected)) < 45 &&
-            kotlin.math.abs(Color.green(actual) - Color.green(expected)) < 45 &&
-            kotlin.math.abs(Color.blue(actual) - Color.blue(expected)) < 45
+    // Detect a broad high-saturation color family across a contiguous page-sized
+    // area, not an exact RGB match (emulators and display pipelines recolor PNGs).
+    private fun isNearColor(actual: Int, expected: Int): Boolean {
+        val red = Color.red(actual)
+        val green = Color.green(actual)
+        val blue = Color.blue(actual)
+        return when (expected) {
+            Color.rgb(220, 40, 40) -> red >= 100 && red >= green * 3 / 2 && red >= blue * 3 / 2
+            Color.rgb(35, 70, 225) -> blue >= 100 && blue >= red * 3 / 2 && blue >= green * 4 / 3
+            else -> false
+        }
+    }
 
     private data class ImageColorEvidence(
         val sampleCount: Int,
@@ -881,6 +890,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         var focused = "UNKNOWN"
         var windowSecure = false
         var windowHasFocus = false
+        val activeWindow = activeWindowCategory()
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             windowSecure =
                 (reader.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
@@ -897,6 +907,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             focused = focused,
             windowSecure = windowSecure,
             windowHasFocus = windowHasFocus,
+            activeWindow = activeWindow,
             streamPresent = page?.stream != null,
             pagesLoaded = chapter?.state is ReaderChapter.State.Loaded,
             pageCount = pages?.size ?: 0,
@@ -904,6 +915,20 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             position = position,
             pager = pagerSnapshot(reader),
         )
+    }
+
+    private fun activeWindowCategory(): String {
+        val focusedPackage = runCatching {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
+                ?.packageName?.toString()
+        }.getOrNull().orEmpty()
+        return when {
+            focusedPackage == EXPECTED_TARGET_PACKAGE -> "READER_APP"
+            focusedPackage == "com.android.systemui" -> "SYSTEM_UI"
+            focusedPackage.contains("launcher", ignoreCase = true) -> "LAUNCHER"
+            focusedPackage.isBlank() -> "UNAVAILABLE"
+            else -> "OTHER"
+        }
     }
 
     private fun pageStateName(state: Page.State?): String = when (state) {
@@ -961,6 +986,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|errorVisible=${snapshot.pager.errorVisible.toWireBoolean()}" +
                         "|windowSecure=${snapshot.windowSecure.toWireBoolean()}" +
                         "|windowHasFocus=${snapshot.windowHasFocus.toWireBoolean()}" +
+                        "|activeWindow=${snapshot.activeWindow}" +
                         "|interactionInjected=${interactionInjected.toWireBoolean()}" +
                         "|interactionTarget=$interactionTarget$pixelDetails$imageRequests",
                 )
@@ -1718,6 +1744,7 @@ private data class ReaderViewSnapshot(
     val focused: String,
     val windowSecure: Boolean,
     val windowHasFocus: Boolean,
+    val activeWindow: String,
     val streamPresent: Boolean,
     val pagesLoaded: Boolean,
     val pageCount: Int,
