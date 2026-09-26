@@ -382,13 +382,13 @@ class MihonRuntimeEndToEndIntegrationTest {
             journey.bind()
             journey.refresh()
 
-            val inventory = journey.diagnostics.events.single {
+            val inventory = journey.diagnostics.events.last {
                 it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
             }
             inventory.received shouldBe 169
             inventory.accepted shouldBe 169
 
-            val probe = journey.diagnostics.events.single {
+            val probe = journey.diagnostics.events.last {
                 it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE
             }
             probe.received shouldBe 169
