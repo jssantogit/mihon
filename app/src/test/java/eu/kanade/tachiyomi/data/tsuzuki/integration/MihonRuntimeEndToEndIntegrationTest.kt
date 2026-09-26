@@ -453,8 +453,15 @@ class MihonRuntimeEndToEndIntegrationTest {
                 "/manga/death-note-original\tDeath Note",
                 "/manga/death-note-remix\tDeath Note",
             ).joinToString("\n")
-            repeat(3) { harness.enqueue(body = ambiguousEnglish, language = "en") }
-            repeat(3) { harness.enqueue(body = "", language = "pt-BR") }
+            harness.respondByPath(
+                "en",
+                mapOf(
+                    "/search" to ambiguousEnglish,
+                    "/manga/death-note-original" to "/chapter/1\tChapter 1\t1\tEnglish Group",
+                    "/chapter/1" to "/page/1\n/page/2",
+                ),
+            )
+            harness.respondByPath("pt-BR", mapOf("/search" to ""))
             val journey = RuntimeJourney(
                 harness = harness,
                 canonicalTitleId = "canonical-death-note-fixture",
@@ -484,7 +491,6 @@ class MihonRuntimeEndToEndIntegrationTest {
             confirmed.verifiedByUser shouldBe true
             val persistedBinding = journey.bindings.getByTitle(journey.canonicalTitleId).single()
             persistedBinding shouldBe confirmed
-            harness.enqueue(body = "/chapter/1\tChapter 1\t1\tEnglish Group", language = "en")
             journey.refreshBinding(confirmed)
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
@@ -494,14 +500,12 @@ class MihonRuntimeEndToEndIntegrationTest {
             val option = journey.options(chapter.id).single()
             option.language shouldBe "en"
             option.canonicalChapterId shouldBe chapter.id
-            harness.enqueue(body = "/page/1\n/page/2", language = "en")
             val ready = journey.prepare(option) as CanonicalReaderPreparation.Ready
             ready.canonicalChapterId shouldBe chapter.id
             val target = ready.target as PreparedChapterContent.MihonOperational
             journey.fetchReaderPages(target).map { it.url } shouldBe listOf("/page/1", "/page/2")
 
             // Only the selected edition is refreshed; an empty peer contributes no false chapter.
-            harness.enqueue(body = "/chapter/1\tChapter 1\t1\tEnglish Group", language = "en")
             journey.refreshBinding(confirmed)
             journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
                 .single().id shouldBe chapter.id
