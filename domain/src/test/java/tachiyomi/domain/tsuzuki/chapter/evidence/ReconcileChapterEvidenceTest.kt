@@ -666,13 +666,13 @@ class ReconcileChapterEvidenceTest {
             clock = { 100L },
         )
         fun inventory(sourceId: Long, url: String, label: String) = SourceChapterInventory(
-            sourceMappingId = "mapping-${sourceId}",
+            sourceMappingId = "mapping-$sourceId",
             sourceId = sourceId,
             canonicalTitleId = "title",
             chapters = listOf(
                 SourceChapterSnapshot(
                     sourceId = sourceId,
-                    sourceMappingId = "mapping-${sourceId}",
+                    sourceMappingId = "mapping-$sourceId",
                     sourceChapterId = url,
                     rawName = label,
                     rawNumberHint = 4.0,
@@ -741,7 +741,6 @@ class ReconcileChapterEvidenceTest {
         evidenceFixture.chapterRepository.getById(original.id)?.confirmation shouldBe
             CanonicalChapterConfirmation.PROVISIONAL
     }
-
 
     @Test
     fun `changed volume on stable key conflicts old chapter and rehomes evidence`() = runTest {
