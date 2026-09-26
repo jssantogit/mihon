@@ -140,7 +140,7 @@ class CanonicalTitleScreenModelTest {
     }
 
     @Test
-    fun `detail can add and remove canonical title from Library without replacing title` = runTest(dispatcher) {
+    fun `detail can add and remove canonical title from Library without replacing title`() = runTest(dispatcher) {
         val library = FakeLibraryRepository()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
