@@ -20,9 +20,9 @@ This acceptance work is based on `codex/tsuzuki-chapter-integrity` (PR #20) and 
 - [x] Implement bounded per-chapter replay with transactional acknowledgement, generation checks, capped backoff, launch-time recovery when not incognito, and at-most-four immediate local replay attempts after Reader checkpoints. Unit/database verification passed; Android process-restart scenario remains to be exercised.
 - [x] [Full CI 36260486323](https://github.com/jssantogit/mihon/actions/runs/36260486323) passed Domain, Data, App, Core Common, SQLDelight migrations, Format, Supabase, Release Compile and CI Gate; native gate and separate compile matrix skipped.
 
-## C. Real-flow source integration (not started)
+## C. Real-flow source integration (synthetic Death Note test verified; provider evidence pending)
 
-- [ ] A deterministic synthetic Death Note manual EN binding→targeted refresh→chapter 1→Reader page-list test is committed; [App CI](https://github.com/jssantogit/mihon/actions/runs/36260953209) still needs its result. This is not a real MangaDot 544-entry inventory or phone proof.
+- [x] Deterministic synthetic Death Note manual EN confirmation → targeted refresh → exact chapter 1 → Reader page-list, with an empty pt-BR peer and stable binding on repeat. The FIFO-fixture failure was reproduced and replaced with endpoint-routed HTTP replies. [App/Format/CI Gate pass on test branch](https://github.com/jssantogit/mihon/actions/runs/36262628210); the test and fixture source blobs match this PR. **This is not evidence about the live MangaDot 544-entry inventory or a physical device.**
 - [ ] Title- and session-correlated One-Punch Man raw 169 versus provisional 163 diagnostic; distinguish duplicate/filter/parse/special/low-confidence/unavailable causes without fabricating inventory.
 - [ ] Re-run volume, fractional, partial inventory, disabled source, exception and concurrent refresh scenarios.
 - [ ] Separate synthetic-fixture evidence from bounded opt-in real-provider and real-phone verification. Dandadan cropping still requires actual image/display evidence.
