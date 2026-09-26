@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs only synthetic Reader source-switch tests on a disposable CI emulator.
 set -euo pipefail
+umask 077
 
 readonly target_package='app.mihon.dev'
 readonly test_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.CanonicalReaderSourceSwitchInstrumentedTest'
@@ -91,8 +92,8 @@ echo 'ANDROID_SOURCE_SWITCH_SETUP|outcome=PASS|network=OFFLINE|fixture=SYNTHETIC
 
 run_one() {
   local method="$1"
-  local raw_output summary_file junit_file runner_exit=0 verifier_exit=0
-  raw_output="$(mktemp)"
+  local raw_output summary_file junit_file runner_exit=0 verifier_exit=0 method_status=0
+  raw_output="$(mktemp "${RUNNER_TEMP:-/tmp}/tsuzuki-reader-source-switch.XXXXXX")"
   summary_file="${results_dir}/${method}.txt"
   junit_file="${results_dir}/TEST-${method}.xml"
 
@@ -108,27 +109,38 @@ run_one() {
     "$runner" > "$raw_output" 2>&1 || runner_exit=$?
 
   python3 .github/scripts/verify_android_reader_source_switch.py \
-    "$raw_output" "$method" --summary "$summary_file" --junit "$junit_file" || verifier_exit=$?
+    "$raw_output" "$method" --summary "$summary_file" --junit "$junit_file" \
+    --runner-exit "$runner_exit" || verifier_exit=$?
   rm -f "$raw_output"
 
   if (( runner_exit != 0 || verifier_exit != 0 )); then
     echo "ANDROID_SOURCE_SWITCH_RESULT|method=${method}|outcome=FAIL|runnerExit=${runner_exit}|verifierExit=${verifier_exit}" >> "$summary_file"
-    return 1
+    method_status=1
+    cat "$summary_file"
   fi
 
   if ! clear_target_data; then
     echo "ANDROID_SOURCE_SWITCH_CLEANUP|method=${method}|outcome=FAIL|targetData=UNKNOWN" >> "$results_dir/cleanup.txt"
-    return 1
+    method_status=1
+  else
+    echo "ANDROID_SOURCE_SWITCH_CLEANUP|method=${method}|outcome=PASS|targetData=CLEARED" >> "$results_dir/cleanup.txt"
   fi
-  echo "ANDROID_SOURCE_SWITCH_CLEANUP|method=${method}|outcome=PASS|targetData=CLEARED" >> "$results_dir/cleanup.txt"
+  return "$method_status"
 }
 
+overall_status=0
 for method in \
   sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition \
   emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession \
   pageCountDifferenceClampsPositionToValidPage \
-  retiredSourceCallbackCannotChangePublishedSession; do
-  run_one "$method"
+  retiredSourceCallbackCannotChangePublishedSession \
+  activityRecreationRestoresObservedCanonicalPosition \
+  repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry \
+  slowSourceDoesNotBlockHealthySourceOption \
+  cancelledDiscoveryCannotMutateActiveReaderSession; do
+  if ! run_one "$method"; then
+    overall_status=1
+  fi
 done
 
-exit 0
+exit "$overall_status"

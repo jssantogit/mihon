@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+from contextlib import redirect_stderr, redirect_stdout
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,11 +45,50 @@ def output_for(method: str) -> str:
         fields.update(
             {
                 "sourceAPageCount": "10",
-                "pageCount": "3",
-                "positionIndex": "2",
-                "sourceBPageCount": "3",
+                "pageCount": "10",
+                "positionIndex": "4",
+                "sourceBPageCount": "10",
                 "positionBefore": "4",
+                "positionAfter": "4",
+            },
+        )
+    elif method == "activityRecreationRestoresObservedCanonicalPosition":
+        fields.update(
+            {
+                "pageCount": "10",
+                "positionIndex": "6",
+                "sourceAPageCount": "10",
+                "sourceBPageCount": "10",
+                "positionBefore": "6",
+                "positionAfter": "6",
+            },
+        )
+    elif method == "repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry":
+        fields.update(
+            {
+                "pageCount": "10",
+                "positionIndex": "2",
+                "sourceAPageCount": "10",
+                "sourceBPageCount": "10",
+                "positionBefore": "2",
                 "positionAfter": "2",
+                "historyRows": "1",
+            },
+        )
+    elif method == "slowSourceDoesNotBlockHealthySourceOption":
+        fields.update(
+            {
+                "sourceAHealthy": "true",
+                "sourceBPending": "true",
+                "session": "PREVIOUS_PRESERVED",
+            },
+        )
+    elif method == "cancelledDiscoveryCannotMutateActiveReaderSession":
+        fields.update(
+            {
+                "cancelled": "true",
+                "lateResponsesReleased": "true",
+                "session": "PREVIOUS_PRESERVED",
             },
         )
 
@@ -132,12 +173,56 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         valid = output_for(method)
         for invalid in (
             valid.replace("sourceAPageCount=10", "sourceAPageCount=1"),
-            valid.replace("positionAfter=2", "positionAfter=1"),
-            valid.replace("sourceBPageCount=3", "sourceBPageCount=0"),
+            valid.replace("positionAfter=4", "positionAfter=1"),
+            valid.replace("sourceBPageCount=10", "sourceBPageCount=0"),
         ):
             with self.subTest(invalid=invalid.split("ANDROID_SOURCE_SWITCH|")[-1]):
                 with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
                     verifier.verify(invalid, method)
+
+    def test_recreation_requires_restored_page_and_matching_observed_index(self):
+        method = "activityRecreationRestoresObservedCanonicalPosition"
+        valid = output_for(method)
+        verifier.verify(valid, method)
+        for invalid in (
+            valid.replace("positionAfter=6", "positionAfter=5"),
+            valid.replace("sourceBPageCount=10", "sourceBPageCount=0"),
+        ):
+            with self.subTest(invalid=invalid.split("ANDROID_SOURCE_SWITCH|")[-1]):
+                with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                    verifier.verify(invalid, method)
+
+    def test_history_scenario_requires_exactly_one_row_and_observable_position(self):
+        method = "repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry"
+        valid = output_for(method)
+        verifier.verify(valid, method)
+        for invalid in (
+            valid.replace("historyRows=1", "historyRows=2"),
+            valid.replace("positionIndex=2", "positionIndex=10"),
+        ):
+            with self.subTest(invalid=invalid.split("ANDROID_SOURCE_SWITCH|")[-1]):
+                with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                    verifier.verify(invalid, method)
+
+    def test_slow_and_cancelled_discovery_require_the_expected_state_evidence(self):
+        cases = (
+            (
+                "slowSourceDoesNotBlockHealthySourceOption",
+                "sourceBPending=true",
+                "sourceBPending=false",
+            ),
+            (
+                "cancelledDiscoveryCannotMutateActiveReaderSession",
+                "lateResponsesReleased=true",
+                "lateResponsesReleased=false",
+            ),
+        )
+        for method, expected, altered in cases:
+            with self.subTest(method=method):
+                valid = output_for(method)
+                verifier.verify(valid, method)
+                with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                    verifier.verify(valid.replace(expected, altered), method)
 
     def test_duplicate_evidence_is_not_green(self):
         method = "retiredSourceCallbackCannotChangePublishedSession"
@@ -147,19 +232,64 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
 
     def test_failure_summary_does_not_copy_raw_runner_output(self):
         method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
-        secret = "private-provider-title-token"
+        secret = "private-provider-title-token https://provider.invalid/read?token=do-not-leak"
+        raw = (
+            "INSTRUMENTATION_STATUS: numtests=1\n"
+            "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
+            "INSTRUMENTATION_STATUS: test=" + method + "\n"
+            "INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: " + secret + "\n"
+            "\tat " + verifier.TEST_CLASS + ".sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition(" + verifier.SAFE_TEST_SOURCE + ":117)\n"
+            "\tat org.junit.Assert.fail(Assert.java:88)\n"
+            "INSTRUMENTATION_STATUS_CODE: -2\n"
+            "INSTRUMENTATION_CODE: -1\n"
+        )
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             input_path = directory / "runner.txt"
             summary = directory / "summary.txt"
             junit = directory / "TEST-switch.xml"
-            input_path.write_text(secret, encoding="utf-8")
-            result = verifier.main(
-                [str(input_path), method, "--summary", str(summary), "--junit", str(junit)],
-            )
+            input_path.write_text(raw, encoding="utf-8")
+            captured = io.StringIO()
+            with redirect_stdout(captured), redirect_stderr(captured):
+                result = verifier.main(
+                    [str(input_path), method, "--summary", str(summary), "--junit", str(junit)],
+                )
             self.assertEqual(1, result)
             self.assertNotIn(secret, summary.read_text(encoding="utf-8"))
             self.assertNotIn(secret, junit.read_text(encoding="utf-8"))
+            self.assertNotIn(secret, captured.getvalue())
+            self.assertIn("category=ASSERTION_FAILURE", summary.read_text(encoding="utf-8"))
+            self.assertIn(
+                verifier.TEST_CLASS + ".sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition(" + verifier.SAFE_TEST_SOURCE + ":117)",
+                summary.read_text(encoding="utf-8"),
+            )
+            self.assertNotIn("Assert.java", summary.read_text(encoding="utf-8"))
+
+    def test_failure_diagnosis_distinguishes_unobserved_test_and_timeout(self):
+        method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
+        unobserved = verifier._failure_diagnosis("INSTRUMENTATION_STATUS: numtests=0\n", method, 0)
+        timeout = verifier._failure_diagnosis("", method, 124)
+        self.assertEqual("TEST_NOT_OBSERVED", unobserved["category"])
+        self.assertEqual("TIMEOUT", timeout["category"])
+
+    def test_nonzero_runner_exit_cannot_be_accepted_even_with_pass_marker(self):
+        method = "retiredSourceCallbackCannotChangePublishedSession"
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            input_path = directory / "runner.txt"
+            summary = directory / "summary.txt"
+            junit = directory / "TEST-switch.xml"
+            input_path.write_text(output_for(method), encoding="utf-8")
+            captured = io.StringIO()
+            with redirect_stdout(captured), redirect_stderr(captured):
+                result = verifier.main(
+                    [
+                        str(input_path), method, "--summary", str(summary), "--junit", str(junit),
+                        "--runner-exit", "1",
+                    ],
+                )
+            self.assertEqual(1, result)
+            self.assertIn("category=RUNNER_ERROR", summary.read_text(encoding="utf-8"))
 
     def test_workflow_has_manual_offline_suite_opt_in_and_preserves_navigation_default(self):
         workflow = (ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
@@ -170,6 +300,10 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("- reader-source-switch", workflow)
         self.assertIn("run_android_instrumentation_route.sh", workflow)
         self.assertIn("inputs.instrumentation_suite || 'navigation'", workflow)
+        runner = (ROOT / ".github/scripts/run_android_reader_source_switch.sh").read_text(encoding="utf-8")
+        self.assertIn("--runner-exit", runner)
+        self.assertIn("overall_status", runner)
+        self.assertNotIn("syntheticMihonSourceLoadsObservablePagesInReaderActivity", workflow)
         for method in verifier.METHOD_SCENARIOS:
             with self.subTest(method=method):
                 self.assertIn("public final void " + method + "();", workflow)

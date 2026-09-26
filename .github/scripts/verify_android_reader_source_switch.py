@@ -15,6 +15,22 @@ METHOD_SCENARIOS = {
     "emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession": "EMPTY_OR_FAILING",
     "pageCountDifferenceClampsPositionToValidPage": "PAGE_COUNT_CLAMP",
     "retiredSourceCallbackCannotChangePublishedSession": "RETIRED_CALLBACK",
+    "activityRecreationRestoresObservedCanonicalPosition": "ACTIVITY_RECREATE",
+    "repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry": "HISTORY_IDEMPOTENCE",
+    "slowSourceDoesNotBlockHealthySourceOption": "SLOW_TO_HEALTHY",
+    "cancelledDiscoveryCannotMutateActiveReaderSession": "DISCOVERY_CANCEL",
+}
+SAFE_TEST_CLASS_PREFIX = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation."
+SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
+SAFE_DIAGNOSTIC_CATEGORIES = {
+    "ASSERTION_FAILURE",
+    "EVIDENCE_NOT_EMITTED",
+    "INSTRUMENTATION_INCOMPLETE",
+    "POSITION_NOT_OBSERVABLE",
+    "RUNNER_ERROR",
+    "TEST_EXCEPTION",
+    "TEST_NOT_OBSERVED",
+    "TIMEOUT",
 }
 
 
@@ -122,15 +138,104 @@ def verify(output: str, method: str) -> dict[str, str]:
             raise ReaderSourceSwitchVerificationError("Valid-to-valid switch did not load pages from both sources")
         if before >= source_a_count or after >= source_b_count:
             raise ReaderSourceSwitchVerificationError("Valid-to-valid switch reported an out-of-range position")
-        if after != min(before, source_b_count - 1):
-            raise ReaderSourceSwitchVerificationError("Valid-to-valid switch did not apply the bounded replacement position policy")
+        if source_a_count != source_b_count or after != before:
+            raise ReaderSourceSwitchVerificationError("Equal-length valid source switch did not preserve the observed page position")
         if page_count != source_b_count or position_index != after:
             raise ReaderSourceSwitchVerificationError("Valid-to-valid switch reported an index outside the loaded replacement pages")
+
+    if method == "activityRecreationRestoresObservedCanonicalPosition":
+        source_a_count = _positive_int(fields, "sourceAPageCount")
+        source_b_count = _positive_int(fields, "sourceBPageCount")
+        before = _nonnegative_int(fields, "positionBefore")
+        after = _nonnegative_int(fields, "positionAfter")
+        if before >= source_a_count or after >= source_b_count:
+            raise ReaderSourceSwitchVerificationError("Activity recreation reported an index outside its loaded page list")
+        if after != before or page_count != source_b_count or position_index != after:
+            raise ReaderSourceSwitchVerificationError("Activity recreation did not preserve the observed page position")
+
+    if method == "repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry":
+        source_a_count = _positive_int(fields, "sourceAPageCount")
+        source_b_count = _positive_int(fields, "sourceBPageCount")
+        before = _nonnegative_int(fields, "positionBefore")
+        after = _nonnegative_int(fields, "positionAfter")
+        history_rows = _positive_int(fields, "historyRows")
+        if before >= source_b_count or after >= source_a_count:
+            raise ReaderSourceSwitchVerificationError("Repeated source switch reported an index outside its loaded page list")
+        if before != after or page_count != source_a_count or position_index != after or history_rows != 1:
+            raise ReaderSourceSwitchVerificationError("Repeated source switch did not prove one canonical history row and valid page evidence")
+
+    if method == "slowSourceDoesNotBlockHealthySourceOption":
+        if fields.get("sourceAHealthy") != "true" or fields.get("sourceBPending") != "true":
+            raise ReaderSourceSwitchVerificationError("Healthy source was not proven available while the other source remained pending")
+        if fields.get("session") != "PREVIOUS_PRESERVED":
+            raise ReaderSourceSwitchVerificationError("Slow-source scenario did not prove the active Reader session remained intact")
+
+    if method == "cancelledDiscoveryCannotMutateActiveReaderSession":
+        if fields.get("cancelled") != "true" or fields.get("lateResponsesReleased") != "true":
+            raise ReaderSourceSwitchVerificationError("Cancelled discovery did not prove cancellation and delivery of late responses")
+        if fields.get("session") != "PREVIOUS_PRESERVED":
+            raise ReaderSourceSwitchVerificationError("Cancelled discovery did not prove the active Reader session remained intact")
 
     return fields
 
 
-def sanitized_summary(method: str, fields: dict[str, str], passed: bool) -> str:
+def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, str]:
+    """Extract only fixed categories, numeric runner facts, and allowlisted test frames."""
+    class_seen = re.search(r"(?m)^INSTRUMENTATION_STATUS: class=" + re.escape(TEST_CLASS) + r"\s*$", output) is not None
+    test_seen = re.search(r"(?m)^INSTRUMENTATION_STATUS: test=" + re.escape(method) + r"\s*$", output) is not None
+    numtests = re.findall(r"(?m)^INSTRUMENTATION_STATUS: numtests=([0-9]{1,6})\s*$", output)
+    status_codes = re.findall(r"(?m)^INSTRUMENTATION_STATUS_CODE: (-?[0-9]{1,4})\s*$", output)
+    code = status_codes[-1] if status_codes else "UNKNOWN"
+    method_seen = class_seen and test_seen
+
+    frames: list[str] = []
+    for match in re.finditer(
+        r"(?m)^[ \t]*at ([A-Za-z_$][A-Za-z0-9_.$]*?)\(([^()/\\\s:]+):([0-9]{1,7})\)[ \t]*$",
+        output,
+    ):
+        class_name, filename, line = match.groups()
+        if class_name.startswith(SAFE_TEST_CLASS_PREFIX) and filename == SAFE_TEST_SOURCE:
+            safe_frame = class_name + "(" + filename + ":" + line + ")"
+            if safe_frame not in frames:
+                frames.append(safe_frame)
+        if len(frames) == 3:
+            break
+
+    if runner_exit in (124, 137, 143):
+        category = "TIMEOUT"
+    elif "POSITION_NOT_OBSERVABLE" in output:
+        category = "POSITION_NOT_OBSERVABLE"
+    elif "-2" in status_codes:
+        if re.search(r"(?i)\b(?:java\.lang\.)?AssertionError\b|\borg\.junit\.[A-Za-z]*ComparisonFailure\b", output):
+            category = "ASSERTION_FAILURE"
+        else:
+            category = "TEST_EXCEPTION"
+    elif runner_exit != 0:
+        category = "RUNNER_ERROR"
+    elif not method_seen or (numtests and numtests[-1] == "0"):
+        category = "TEST_NOT_OBSERVED"
+    elif "OK (1 test)" in output and "ANDROID_SOURCE_SWITCH|" not in output:
+        category = "EVIDENCE_NOT_EMITTED"
+    else:
+        category = "INSTRUMENTATION_INCOMPLETE"
+
+    if category not in SAFE_DIAGNOSTIC_CATEGORIES:
+        category = "INSTRUMENTATION_INCOMPLETE"
+    return {
+        "category": category,
+        "methodStatus": "SEEN" if method_seen else "NOT_SEEN",
+        "junitTests": numtests[-1] if numtests else "UNKNOWN",
+        "statusCode": code,
+        "frames": ",".join(frames),
+    }
+
+
+def sanitized_summary(
+    method: str,
+    fields: dict[str, str],
+    passed: bool,
+    diagnosis: dict[str, str] | None = None,
+) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
         "ANDROID_SOURCE_SWITCH_RESULT|method=" + method + "|scenario=" + METHOD_SCENARIOS[method] + "|outcome=" + result,
@@ -140,21 +245,32 @@ def sanitized_summary(method: str, fields: dict[str, str], passed: bool) -> str:
         page_count = fields.get("pageCount", "UNKNOWN")
         position = fields.get("positionIndex", "UNKNOWN")
         lines.append("ANDROID_SOURCE_SWITCH_RESULT|pages=LOADED|pageCount=" + page_count + "|position=OBSERVABLE|positionIndex=" + position)
-        if fields.get("session") == "PREVIOUS_PRESERVED":
-            lines.append("ANDROID_SOURCE_SWITCH_RESULT|session=PREVIOUS_PRESERVED")
-        if "sourceAPageCount" in fields and "sourceBPageCount" in fields:
-            lines.append(
-                "ANDROID_SOURCE_SWITCH_RESULT|sourceAPageCount=" + fields["sourceAPageCount"]
-                + "|sourceBPageCount=" + fields["sourceBPageCount"]
-                + "|positionBefore=" + fields.get("positionBefore", "UNKNOWN")
-                + "|positionAfter=" + fields.get("positionAfter", "UNKNOWN")
-            )
+        safe_keys = (
+            "sourceAPageCount", "sourceBPageCount", "positionBefore", "positionAfter", "historyRows",
+            "session", "sourceAHealthy", "sourceBPending", "cancelled", "lateResponsesReleased",
+        )
+        safe_fields = [
+            key + "=" + fields[key]
+            for key in safe_keys
+            if key in fields and re.fullmatch(r"[A-Za-z0-9_-]{1,40}", fields[key])
+        ]
+        if safe_fields:
+            lines.append("ANDROID_SOURCE_SWITCH_RESULT|" + "|".join(safe_fields))
     else:
         lines.append("ANDROID_SOURCE_SWITCH_RESULT|evidence=NOT_PROVEN")
+        if diagnosis is not None:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DIAGNOSTIC|category=" + diagnosis["category"]
+                + "|methodStatus=" + diagnosis["methodStatus"]
+                + "|junitTests=" + diagnosis["junitTests"]
+                + "|statusCode=" + diagnosis["statusCode"]
+            )
+            if diagnosis["frames"]:
+                lines.append("ANDROID_SOURCE_SWITCH_DIAGNOSTIC|frames=" + diagnosis["frames"])
     return "\n".join(lines) + "\n"
 
 
-def write_junit(path: Path, method: str, passed: bool) -> None:
+def write_junit(path: Path, method: str, passed: bool, diagnosis: dict[str, str] | None = None) -> None:
     suite = ET.Element(
         "testsuite",
         attrib={
@@ -167,8 +283,10 @@ def write_junit(path: Path, method: str, passed: bool) -> None:
     )
     case = ET.SubElement(suite, "testcase", attrib={"classname": TEST_CLASS, "name": method})
     if not passed:
-        error = ET.SubElement(case, "error", attrib={"message": "Reader source-switch evidence not proven"})
-        error.text = "Raw runner diagnostics intentionally omitted."
+        category = diagnosis["category"] if diagnosis else "INSTRUMENTATION_INCOMPLETE"
+        error = ET.SubElement(case, "error", attrib={"message": category})
+        frames = diagnosis["frames"] if diagnosis else ""
+        error.text = "Sanitized category=" + category + ("; frames=" + frames if frames else "; source frame unavailable")
     path.parent.mkdir(parents=True, exist_ok=True)
     ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
 
@@ -179,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("method", choices=METHOD_SCENARIOS)
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--junit", type=Path, required=True)
+    parser.add_argument("--runner-exit", type=int, default=0)
     args = parser.parse_args(argv)
 
     output = args.runner_output.read_text(encoding="utf-8", errors="replace")
@@ -186,13 +305,17 @@ def main(argv: list[str] | None = None) -> int:
     error = None
     try:
         fields = verify(output, args.method)
-    except ReaderSourceSwitchVerificationError as exception:
-        error = exception
+    except ReaderSourceSwitchVerificationError:
+        error = ReaderSourceSwitchVerificationError("Instrumented test or evidence failed validation")
+    if error is None and args.runner_exit != 0:
+        error = ReaderSourceSwitchVerificationError("Instrumentation runner exited unsuccessfully")
+    diagnosis = None if error is None else _failure_diagnosis(output, args.method, args.runner_exit)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
-    args.summary.write_text(sanitized_summary(args.method, fields, error is None), encoding="utf-8")
-    write_junit(args.junit, args.method, error is None)
+    args.summary.write_text(sanitized_summary(args.method, fields, error is None, diagnosis), encoding="utf-8")
+    write_junit(args.junit, args.method, error is None, diagnosis)
     if error is not None:
-        print("::error::" + str(error), file=sys.stderr)
+        print("::error::Reader source-switch test evidence was not accepted", file=sys.stderr)
+        print(args.summary.read_text(encoding="utf-8"), end="")
         return 1
     print(args.summary.read_text(encoding="utf-8"), end="")
     return 0
