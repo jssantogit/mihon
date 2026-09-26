@@ -41,6 +41,8 @@ import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerPageHolder
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import mihon.app.di.AppBindings
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -65,9 +67,9 @@ import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
-import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentPreference
@@ -77,8 +79,6 @@ import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.runBlocking
 
 /** Runs production canonical Reader and Mihon source adapters against a disposable local fixture. */
 @RunWith(AndroidJUnit4::class)
@@ -103,7 +103,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             val after = awaitReaderPages(reader, fixture.sourceB.name, expectedCount = 10)
-            assertEquals("An equal-length source switch must preserve the observed page index", positionBefore, after.first)
+            assertEquals(
+                "An equal-length source switch must preserve the observed page index",
+                positionBefore,
+                after.first,
+            )
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
             confirmPreferredSource(fixture, fixture.addonB)
             awaitImagePixels(reader, fixture, Color.rgb(35, 70, 225), "SOURCE_A_TO_B")
@@ -157,18 +161,34 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             awaitSourceRequest(fixture.dispatcher, fixture.sourceB.token, failedPagesBefore)
             assertReaderSession(reader, fixture, fixture.sourceA.name, initial.first, 10)
-            assertEquals("A failed replacement must not change the source preference", fixture.addonA, runBlocking {
-                fixture.preferences.get(fixture.title.id)?.preferredAddonId
-            })
-            assertEquals("A failed replacement must not change canonical progress", progressBefore, runBlocking {
-                fixture.reading.getProgress(fixture.chapter.id)
-            })
-            assertEquals("A failed replacement must not record history", historyBefore, runBlocking {
-                fixture.reading.getHistory(fixture.chapter.id)
-            })
+            assertEquals(
+                "A failed replacement must not change the source preference",
+                fixture.addonA,
+                runBlocking {
+                    fixture.preferences.get(fixture.title.id)?.preferredAddonId
+                },
+            )
+            assertEquals(
+                "A failed replacement must not change canonical progress",
+                progressBefore,
+                runBlocking {
+                    fixture.reading.getProgress(fixture.chapter.id)
+                },
+            )
+            assertEquals(
+                "A failed replacement must not record history",
+                historyBefore,
+                runBlocking {
+                    fixture.reading.getHistory(fixture.chapter.id)
+                },
+            )
             dismissSourceSelectorThroughReaderUi()
             awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
-            assertSame("Failure must not replace the published chapter object", retiredCandidate.chapter, reader.viewModel.state.value.currentChapter!!.pages!![initial.first].chapter)
+            assertSame(
+                "Failure must not replace the published chapter object",
+                retiredCandidate.chapter,
+                reader.viewModel.state.value.currentChapter!!.pages!![initial.first].chapter,
+            )
             report("EMPTY_OR_FAILING", 10, initial.first, details = "session=PREVIOUS_PRESERVED")
         }
     }
@@ -186,8 +206,15 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val after = awaitReaderPages(reader, fixture.sourceB.name, 3)
             confirmPreferredSource(fixture, fixture.addonB)
             awaitImagePixels(reader, fixture, Color.rgb(35, 70, 225), "PAGE_COUNT_CLAMP")
-            assertTrue("The published page index must be valid for the shorter source", after.first in 0 until after.second)
-            assertEquals("A shorter source must clamp the prior index", minOf(positionBefore, after.second - 1), after.first)
+            assertTrue(
+                "The published page index must be valid for the shorter source",
+                after.first in 0 until after.second,
+            )
+            assertEquals(
+                "A shorter source must clamp the prior index",
+                minOf(positionBefore, after.second - 1),
+                after.first,
+            )
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
             report(
                 scenario = "PAGE_COUNT_CLAMP",
@@ -230,7 +257,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 )
                 assertNotSame("The active viewer must keep the newly published chapter", retiredPage.chapter, current)
                 assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
-                assertEquals("Old callback must not change active page position", sourceB.first, reader.viewModel.state.value.currentPage - 1)
+                assertEquals(
+                    "Old callback must not change active page position",
+                    sourceB.first,
+                    reader.viewModel.state.value.currentPage - 1,
+                )
                 assertEquals(progressAfterPublish, runBlocking { fixture.reading.getProgress(fixture.chapter.id) })
                 assertTrue(
                     "A previously observed canonical progress value must remain available",
@@ -1048,7 +1079,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 putString(
                     "stream",
                     "ANDROID_SOURCE_SWITCH|scenario=$scenario|pages=LOADED|pageCount=$pageCount" +
-                    "|position=OBSERVABLE|positionIndex=$positionIndex$detailSuffix|outcome=PASS",
+                        "|position=OBSERVABLE|positionIndex=$positionIndex$detailSuffix|outcome=PASS",
                 )
             },
         )
@@ -1178,7 +1209,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 installedExtensions.value = priorExtensions
                 awaitSourceSwitchFixtureValue("test sources to be removed from the production SourceManager") {
                     runBlocking {
-                        app.graph.sourceManager.get(sourceA.id) == null && app.graph.sourceManager.get(sourceB.id) == null
+                        app.graph.sourceManager.get(sourceA.id) == null &&
+                            app.graph.sourceManager.get(sourceB.id) == null
                     }
                 }
                 runBlocking {
@@ -1289,7 +1321,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     icon = null,
                     isShared = false,
                 )
-                installedExtensions.value = priorExtensions + (addonA.value to extensionA) + (addonB.value to extensionB)
+                installedExtensions.value =
+                    priorExtensions + (addonA.value to extensionA) + (addonB.value to extensionB)
                 awaitSourceSwitchFixtureValue("synthetic sources and Add-ons registration") {
                     val registeredA = runBlocking { app.graph.sourceManager.get(sourceA.id) }
                     val registeredB = runBlocking { app.graph.sourceManager.get(sourceB.id) }
@@ -1558,7 +1591,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val bitmap = Bitmap.createBitmap(512, 768, Bitmap.Config.ARGB_8888).apply {
                 eraseColor(color)
             }
-            val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            val bytes = ByteArrayOutputStream().also {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }.toByteArray()
             bitmap.recycle()
             return MockResponse.Builder()
                 .code(200)
