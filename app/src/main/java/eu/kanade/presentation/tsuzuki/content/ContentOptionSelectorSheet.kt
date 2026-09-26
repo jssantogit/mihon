@@ -31,6 +31,7 @@ import java.util.Date
 /** Search can be offered only when the selected chapter has no real reading option. */
 internal fun ContentSelectorScreenState.sourceDiscoveryTitleId(): String? = when (this) {
     ContentSelectorScreenState.Loading -> null
+    is ContentSelectorScreenState.Discovering -> this.canonicalTitleId
     is ContentSelectorScreenState.Ready -> this.canonicalTitleId.takeIf { options.isEmpty() }
     is ContentSelectorScreenState.Empty -> this.canonicalTitleId
     is ContentSelectorScreenState.Error -> this.canonicalTitleId
@@ -57,6 +58,7 @@ fun ContentOptionSelectorSheet(
     onRetry: () -> Unit,
     onOpenAddonsSettings: () -> Unit,
     onFindOrAddSource: ((canonicalTitleId: String) -> Unit)? = null,
+    onCancelDiscovery: (() -> Unit)? = null,
     onDismissRequest: () -> Unit,
 ) {
     AdaptiveSheet(onDismissRequest = onDismissRequest) {
@@ -85,6 +87,45 @@ fun ContentOptionSelectorSheet(
                         horizontalArrangement = Arrangement.Center,
                     ) {
                         CircularProgressIndicator()
+                    }
+                }
+
+                is ContentSelectorScreenState.Discovering -> {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator()
+                            Text("Finding available chapters in up to ${state.addonCount} reading Add-ons…")
+                        }
+                        if (state.failedAttempts > 0) {
+                            Text(
+                                "${state.failedAttempts} source attempt(s) could not finish. Other sources are still being checked.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (state.confirmationRequired) {
+                            Text(
+                                "A possible edition needs your confirmation before it can be used.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            onCancelDiscovery?.let { onCancel ->
+                                OutlinedButton(onClick = onCancel) { Text("Stop searching") }
+                            }
+                        }
+                        sourceDiscoveryAction(state, onFindOrAddSource)?.let { onClick ->
+                            Button(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+                                Text("Choose a reading Add-on")
+                            }
+                        }
                     }
                 }
 
@@ -127,10 +168,16 @@ fun ContentOptionSelectorSheet(
 
                 is ContentSelectorScreenState.Empty -> {
                     SelectorUnavailableContent(
-                        message = if (state.noEnabledAddon) {
-                            "No reading Add-ons are enabled. Enable or install one to discover chapters."
-                        } else {
-                            stringResource(MR.strings.tsuzuki_content_no_options)
+                        message = when {
+                            state.noEnabledAddon ->
+                                "No reading Add-ons are enabled. Enable or install one to discover chapters."
+                            state.confirmationRequired ->
+                                "Possible editions were found, but you must confirm the correct one. Choose an Add-on."
+                            state.timedOut ->
+                                "The initial search has finished its time budget. Choose an Add-on to search further or retry."
+                            state.discoveryAttempted ->
+                                "No verified chapter was found in the initial sources. Choose another Add-on to search more."
+                            else -> stringResource(MR.strings.tsuzuki_content_no_options)
                         },
                         onRetry = onRetry,
                         onOpenAddonsSettings = onOpenAddonsSettings,

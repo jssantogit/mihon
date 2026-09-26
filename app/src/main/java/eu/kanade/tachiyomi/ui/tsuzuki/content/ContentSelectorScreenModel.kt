@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -22,6 +23,9 @@ import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
+import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableChapter
+import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryCompletion
+import tachiyomi.domain.tsuzuki.content.interactor.FastReadingDiscoveryEvent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import kotlin.time.Clock
@@ -50,10 +54,22 @@ sealed interface ContentSelectorScreenState {
         val failedProviderCount: Int = 0,
     ) : ContentSelectorScreenState
 
+    data class Discovering(
+        val canonicalTitleId: String,
+        val canonicalChapterId: String,
+        val addonCount: Int,
+        val failedAttempts: Int = 0,
+        val confirmationRequired: Boolean = false,
+    ) : ContentSelectorScreenState
+
     data class Empty(
         val canonicalTitleId: String,
         val canonicalChapterId: String,
         val noEnabledAddon: Boolean = false,
+        val discoveryAttempted: Boolean = false,
+        val confirmationRequired: Boolean = false,
+        val timedOut: Boolean = false,
+        val failedAttempts: Int = 0,
     ) : ContentSelectorScreenState
 
     data class Error(
@@ -80,6 +96,7 @@ class ContentSelectorScreenModel internal constructor(
     private val addonRepository: AddonRepository,
     private val clock: () -> Long,
     private val refreshChapterEvidence: RefreshChapterEvidence? = null,
+    private val discoverReadableChapter: DiscoverReadableChapter? = null,
 ) : ViewModel() {
 
     @Inject
@@ -88,12 +105,14 @@ class ContentSelectorScreenModel internal constructor(
         contentPreferenceRepository: ContentPreferenceRepository,
         addonRepository: AddonRepository,
         refreshChapterEvidence: RefreshChapterEvidence,
+        discoverReadableChapter: DiscoverReadableChapter,
     ) : this(
         resolveChapterContent = resolveChapterContent,
         contentPreferenceRepository = contentPreferenceRepository,
         addonRepository = addonRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
         refreshChapterEvidence = refreshChapterEvidence,
+        discoverReadableChapter = discoverReadableChapter,
     )
 
     private val _state = MutableStateFlow<ContentSelectorScreenState>(ContentSelectorScreenState.Loading)
@@ -127,6 +146,26 @@ class ContentSelectorScreenModel internal constructor(
             return pending
         }
         return load(refresh = false)
+    }
+
+    /**
+     * Stop only the user-visible automatic session. The existing Reader Activity
+     * and its selected chapter remain untouched when a sheet is dismissed.
+     */
+    fun cancelDiscovery() {
+        val current = _state.value
+        if (current is ContentSelectorScreenState.Discovering) {
+            loadJob?.cancel()
+            _state.value = ContentSelectorScreenState.Empty(
+                canonicalTitleId = current.canonicalTitleId,
+                canonicalChapterId = current.canonicalChapterId,
+                discoveryAttempted = true,
+                confirmationRequired = current.confirmationRequired,
+                failedAttempts = current.failedAttempts,
+            )
+        } else if (current is ContentSelectorScreenState.Ready || current is ContentSelectorScreenState.Loading) {
+            loadJob?.cancel()
+        }
     }
 
     fun retry(): Job? {
@@ -166,7 +205,7 @@ class ContentSelectorScreenModel internal constructor(
                 val chapterId = canonicalChapterId
                 if (chapterId != null) {
                     if (refreshed.isSuccess) {
-                        load(refresh = true).join()
+                        load(refresh = true, allowDiscovery = false).join()
                     } else {
                         _state.value = ContentSelectorScreenState.Error(
                             canonicalTitleId = changedTitleId,
@@ -192,6 +231,9 @@ class ContentSelectorScreenModel internal constructor(
         require(state.options.any { it.option.key == item.option.key }) {
             "Selected option is not part of the current selector"
         }
+        // Do not keep searching in the background once the reader has selected
+        // its verified content option.
+        cancelDiscovery()
         val hasExistingPreference = state.preferredAddonId != null
         // Selection is provisional until the Reader has successfully prepared
         // nonempty pages. Never persist an unavailable source as preferred.
@@ -260,13 +302,100 @@ class ContentSelectorScreenModel internal constructor(
         }
     }
 
-    private fun load(refresh: Boolean): Job {
+    /**
+     * One cold session per selected chapter. The first verified option is
+     * published immediately; later failures cannot replace a ready selector.
+     * Explicit manual links keep their existing refresh path.
+     */
+    private suspend fun runAutomaticDiscovery(titleId: String, chapterId: String) {
+        val discoverer = requireNotNull(discoverReadableChapter)
+        var failures = 0
+        var needsConfirmation = false
+        var addonCount = 0
+        discoverer.discover(titleId, chapterId).collect { event ->
+            when (event) {
+                is FastReadingDiscoveryEvent.Searching -> {
+                    addonCount = event.targets.size
+                    _state.value = ContentSelectorScreenState.Discovering(
+                        canonicalTitleId = titleId,
+                        canonicalChapterId = chapterId,
+                        addonCount = addonCount,
+                        failedAttempts = failures,
+                        confirmationRequired = needsConfirmation,
+                    )
+                }
+                is FastReadingDiscoveryEvent.Ready -> {
+                    if (event.options.isEmpty()) return@collect
+                    val preference = contentPreferenceRepository.get(titleId)
+                    val names = addonRepository.snapshot().associate { it.id to it.displayName }
+                    val options = event.options.distinctBy { it.key }
+                    val preferred = preference?.preferredAddonId
+                    _state.value = ContentSelectorScreenState.Ready(
+                        canonicalTitleId = titleId,
+                        canonicalChapterId = chapterId,
+                        options = options.map { option ->
+                            ContentOptionPresentation(
+                                option = option,
+                                addonDisplayName = names[option.addonId] ?: option.addonId.value,
+                                language = option.language,
+                                scanlationGroup = option.scanlationGroup,
+                                releaseDate = option.releaseDate,
+                            )
+                        },
+                        preferredAddonId = preferred,
+                        preferredOptionKey = options.firstOrNull { it.addonId == preferred }?.key,
+                        preferredLanguage = preference?.preferredLanguage,
+                        preferredUnavailable = preferred != null && options.none { it.addonId == preferred },
+                        failedProviderCount = failures,
+                    )
+                }
+                is FastReadingDiscoveryEvent.ConfirmationRequired -> {
+                    needsConfirmation = true
+                    val current = _state.value
+                    if (current is ContentSelectorScreenState.Discovering) {
+                        _state.value = current.copy(confirmationRequired = true)
+                    }
+                }
+                is FastReadingDiscoveryEvent.SourceFailed -> {
+                    failures++
+                    when (val current = _state.value) {
+                        is ContentSelectorScreenState.Discovering -> {
+                            _state.value = current.copy(failedAttempts = failures)
+                        }
+                        is ContentSelectorScreenState.Ready -> {
+                            _state.value = current.copy(failedProviderCount = failures)
+                        }
+                        else -> Unit
+                    }
+                }
+                is FastReadingDiscoveryEvent.Completed -> {
+                    if (_state.value is ContentSelectorScreenState.Ready) return@collect
+                    _state.value = ContentSelectorScreenState.Empty(
+                        canonicalTitleId = titleId,
+                        canonicalChapterId = chapterId,
+                        noEnabledAddon = addonRepository.snapshot().none { it.enabled },
+                        discoveryAttempted = true,
+                        confirmationRequired = needsConfirmation ||
+                            event.reason == FastDiscoveryCompletion.CONFIRMATION_REQUIRED,
+                        timedOut = event.reason == FastDiscoveryCompletion.TIME_BUDGET,
+                        failedAttempts = failures,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun load(refresh: Boolean, allowDiscovery: Boolean = true): Job {
         val titleId = requireNotNull(canonicalTitleId)
         val chapterId = requireNotNull(canonicalChapterId)
         loadJob?.cancel()
         _state.value = ContentSelectorScreenState.Loading
         loadJob = viewModelScope.launch {
             try {
+                if (allowDiscovery && discoverReadableChapter != null) {
+                    runAutomaticDiscovery(titleId, chapterId)
+                    return@launch
+                }
                 val preference = contentPreferenceRepository.get(titleId)
                 val lookup = resolveChapterContent.lookupOptions(
                     canonicalTitleId = titleId,

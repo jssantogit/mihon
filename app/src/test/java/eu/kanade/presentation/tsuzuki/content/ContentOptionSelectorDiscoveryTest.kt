@@ -26,6 +26,20 @@ class ContentOptionSelectorDiscoveryTest {
     }
 
     @Test
+    fun `discovery in progress still offers explicit Add-on selection`() {
+        val state = ContentSelectorScreenState.Discovering(
+            canonicalTitleId = "canonical-title",
+            canonicalChapterId = "canonical-chapter",
+            addonCount = 2,
+        )
+
+        state.sourceDiscoveryTitleId() shouldBe "canonical-title"
+        var chosen: String? = null
+        sourceDiscoveryAction(state) { chosen = it }?.invoke()
+        chosen shouldBe "canonical-title"
+    }
+
+    @Test
     fun `discovery is offered after provider errors without converting failure to empty content`() {
         val state = ContentSelectorScreenState.Error(
             canonicalTitleId = "canonical-title",

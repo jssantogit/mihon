@@ -5,12 +5,17 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.every
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -34,6 +39,10 @@ import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
+import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableChapter
+import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryCompletion
+import tachiyomi.domain.tsuzuki.content.interactor.FastReadingDiscoveryEvent
+import tachiyomi.domain.tsuzuki.content.interactor.PlannedAddonSearch
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
@@ -508,12 +517,120 @@ class ContentSelectorScreenModelTest {
         state.error.message shouldBe "addon repository failed"
     }
 
+    @Test
+    fun `automatic discovery exposes first verified option without waiting for remaining sources`() = runTest(dispatcher) {
+        val discovered = option("reader", "en", "Team", 10L)
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flow {
+            emit(
+                FastReadingDiscoveryEvent.Searching(
+                    listOf(PlannedAddonSearch(AddonId("reader"), setOf(7L), batchSize = 1)),
+                ),
+            )
+            emit(FastReadingDiscoveryEvent.Ready(listOf(discovered), alreadyAvailable = false))
+            awaitCancellation()
+        }
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("reader", "Reader")),
+            discovery = discovery,
+        )
+
+        val job = model.start("title-1", "chapter-1")
+        runCurrent()
+        val state = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        state.options.single().option shouldBe discovered
+        state.options.single().addonDisplayName shouldBe "Reader"
+        job.isActive shouldBe true
+
+        val selection = model.select(state.options.single())
+        selection.option shouldBe discovered
+        runCurrent()
+        job.isActive shouldBe false
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Ready>()
+        verify(exactly = 1) { discovery.discover("title-1", "chapter-1", any()) }
+    }
+
+    @Test
+    fun `auto search timeout leaves usable manual source actions instead of endless loading`() = runTest(dispatcher) {
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flowOf(
+            FastReadingDiscoveryEvent.Searching(
+                listOf(PlannedAddonSearch(AddonId("reader"), setOf(7L), batchSize = 1)),
+            ),
+            FastReadingDiscoveryEvent.Completed(FastDiscoveryCompletion.TIME_BUDGET, emptyMap()),
+        )
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("reader", "Reader")),
+            discovery = discovery,
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val empty = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+        empty.discoveryAttempted shouldBe true
+        empty.timedOut shouldBe true
+        empty.noEnabledAddon shouldBe false
+    }
+
+    @Test
+    fun `cancelling discovery keeps chapter and returns to explicit source selection`() = runTest(dispatcher) {
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flow {
+            emit(
+                FastReadingDiscoveryEvent.Searching(
+                    listOf(PlannedAddonSearch(AddonId("reader"), setOf(7L), batchSize = 1)),
+                ),
+            )
+            awaitCancellation()
+        }
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("reader", "Reader")),
+            discovery = discovery,
+        )
+        val pending = model.start("title-1", "chapter-1")
+        runCurrent()
+        model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Discovering>()
+
+        model.cancelDiscovery()
+        runCurrent()
+
+        pending.isActive shouldBe false
+        val empty = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+        empty.canonicalChapterId shouldBe "chapter-1"
+        empty.discoveryAttempted shouldBe true
+    }
+
+    @Test
+    fun `ambiguous discovery asks for manual edition confirmation instead of offering a chapter`() = runTest(dispatcher) {
+        val discovery = mockk<DiscoverReadableChapter>()
+        every { discovery.discover("title-1", "chapter-1", any()) } returns flowOf(
+            FastReadingDiscoveryEvent.Completed(FastDiscoveryCompletion.CONFIRMATION_REQUIRED, emptyMap()),
+        )
+        val model = model(
+            providers = emptyList(),
+            addons = listOf(addon("reader", "Reader")),
+            discovery = discovery,
+        )
+
+        model.start("title-1", "chapter-1")
+        advanceUntilIdle()
+
+        val empty = model.state.value.shouldBeInstanceOf<ContentSelectorScreenState.Empty>()
+        empty.confirmationRequired shouldBe true
+        empty.discoveryAttempted shouldBe true
+    }
+
     private fun model(
         providers: List<ContentProvider>,
         addons: List<InstalledAddon>,
         preferenceRepository: FakeContentPreferenceRepository = FakeContentPreferenceRepository(null),
         addonRepository: AddonRepository = FakeAddonRepository(addons),
         bindingRefresh: RefreshChapterEvidence? = null,
+        discovery: DiscoverReadableChapter? = null,
     ): ContentSelectorScreenModel {
         val readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore())
         val resolver = ResolveChapterContent(
@@ -530,6 +647,7 @@ class ContentSelectorScreenModelTest {
             addonRepository = addonRepository,
             clock = { 500L },
             refreshChapterEvidence = bindingRefresh,
+            discoverReadableChapter = discovery,
         )
     }
 

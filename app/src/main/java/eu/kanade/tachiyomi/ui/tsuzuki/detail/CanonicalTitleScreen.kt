@@ -143,9 +143,11 @@ data class CanonicalTitleScreen(
                 },
                 onRetry = { contentSelectorViewModel.retry() },
                 onFindOrAddSource = { sourceCanonicalTitleId ->
+                    contentSelectorViewModel.cancelDiscovery()
                     linkViewModel.start(sourceCanonicalTitleId)
                     linkSheetOpen = true
                 },
+                onCancelDiscovery = contentSelectorViewModel::cancelDiscovery,
                 onOpenAddonsSettings = {
                     context.startActivity(
                         Intent(context, MainActivity::class.java)
@@ -156,7 +158,10 @@ data class CanonicalTitleScreen(
                             ),
                     )
                 },
-                onDismissRequest = screenModel::dismissDownloadSelector,
+                onDismissRequest = {
+                    contentSelectorViewModel.cancelDiscovery()
+                    screenModel.dismissDownloadSelector()
+                },
             )
         }
     }

@@ -424,9 +424,14 @@ class ReaderActivity : BaseActivity() {
                             )
                         },
                         onFindOrAddSource = { canonicalTitleId ->
+                            contentSelectorViewModel.cancelDiscovery()
                             bindingLinkTitleId = canonicalTitleId
                         },
-                        onDismissRequest = viewModel::dismissContentSelector,
+                        onCancelDiscovery = contentSelectorViewModel::cancelDiscovery,
+                        onDismissRequest = {
+                            contentSelectorViewModel.cancelDiscovery()
+                            viewModel.dismissContentSelector()
+                        },
                     )
                 }
             }
