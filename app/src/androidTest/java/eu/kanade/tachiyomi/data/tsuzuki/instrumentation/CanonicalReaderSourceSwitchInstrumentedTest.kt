@@ -339,9 +339,23 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     fixture.dispatcher.heldRequestCount(fixture.sourceB.token).takeIf { it > 0 }
                 }
                 val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+                val healthySourceVisible = device.wait(
+                    Until.hasObject(By.text(fixture.sourceA.name)),
+                    8_000L,
+                )
+                val selectorSnapshot = when {
+                    healthySourceVisible -> "READY_WITH_A"
+                    device.hasObject(By.textContains("Finding available chapters")) ||
+                        device.hasObject(By.text("Stop searching")) -> "DISCOVERING"
+                    device.hasObject(By.text("Choose reading source")) -> "OPEN_WITHOUT_A"
+                    else -> "CLOSED_OR_OTHER"
+                }
+                reportDiscoveryDiagnostic(selectorSnapshot, fixture)
+                val routeSummary = fixture.dispatcher.sanitizedCounts(fixture.sourceA.token, fixture.sourceB.token)
                 assertTrue(
-                    "A healthy source option must appear while another source response is still pending",
-                    device.wait(Until.hasObject(By.text(fixture.sourceA.name)), 8_000L),
+                    "A healthy source option must appear while another source response is still pending " +
+                        "(selector=$selectorSnapshot; $routeSummary)",
+                    healthySourceVisible,
                 )
                 assertTrue(
                     "The slow synthetic source must still be pending when the healthy option is visible",
@@ -470,49 +484,111 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
     private fun awaitImagePixels(expectedColor: Int) {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        val observedColor = awaitValue("Reader to render the synthetic page image") {
-            val screenshot = device.takeScreenshot() ?: return@awaitValue null
-            val color = screenshot.getPixel(screenshot.width / 2, screenshot.height / 2)
-            screenshot.recycle()
-            val expectedRed = Color.red(expectedColor)
-            val expectedGreen = Color.green(expectedColor)
-            val expectedBlue = Color.blue(expectedColor)
-            if (
-                kotlin.math.abs(Color.red(color) - expectedRed) < 45 &&
-                kotlin.math.abs(Color.green(color) - expectedGreen) < 45 &&
-                kotlin.math.abs(Color.blue(color) - expectedBlue) < 45
-            ) {
-                color
-            } else {
-                null
+        var lastMatchingSampleCount = 0
+        var lastMatchingRowCount = 0
+        val imageEvidence = try {
+            awaitValue("Reader screenshot to contain the synthetic page color") {
+                val screenshot = device.takeScreenshot() ?: return@awaitValue null
+                try {
+                    val evidence = countImageColorSamples(screenshot, expectedColor)
+                    lastMatchingSampleCount = evidence.sampleCount
+                    lastMatchingRowCount = evidence.rowsWithLongRun
+                    evidence.takeIf {
+                        it.sampleCount >= MIN_IMAGE_COLOR_SAMPLES &&
+                            it.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS
+                    }
+                } finally {
+                    screenshot.recycle()
+                }
             }
+        } catch (error: AssertionError) {
+            throw AssertionError(
+                "Reader screenshot lacked a rendered synthetic image region " +
+                    "(matchingSamples=$lastMatchingSampleCount, rows=$lastMatchingRowCount)",
+                error,
+            )
         }
         assertTrue(
-            "Reader screenshot must contain the loaded fixture page color",
-            kotlin.math.abs(Color.red(observedColor) - Color.red(expectedColor)) < 45 &&
-                kotlin.math.abs(Color.green(observedColor) - Color.green(expectedColor)) < 45 &&
-                kotlin.math.abs(Color.blue(observedColor) - Color.blue(expectedColor)) < 45,
+            "Reader screenshot must contain a visible region of the loaded fixture page color",
+            imageEvidence.sampleCount >= MIN_IMAGE_COLOR_SAMPLES &&
+                imageEvidence.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS,
         )
     }
+
+    private fun countImageColorSamples(bitmap: Bitmap, expectedColor: Int): ImageColorEvidence {
+        val sampleStride = 4
+        val left = bitmap.width / 20
+        val right = bitmap.width - left
+        val top = bitmap.height / 20
+        val bottom = bitmap.height - top
+        var matchingSamples = 0
+        var rowsWithLongRun = 0
+
+        for (y in top until bottom step sampleStride) {
+            var matchingRun = 0
+            var longestRun = 0
+            for (x in left until right step sampleStride) {
+                if (isNearColor(bitmap.getPixel(x, y), expectedColor)) {
+                    matchingSamples++
+                    matchingRun++
+                    longestRun = maxOf(longestRun, matchingRun)
+                } else {
+                    matchingRun = 0
+                }
+            }
+            if (longestRun >= MIN_IMAGE_COLOR_RUN_SAMPLES) rowsWithLongRun++
+        }
+        return ImageColorEvidence(matchingSamples, rowsWithLongRun)
+    }
+
+    private fun isNearColor(actual: Int, expected: Int): Boolean =
+        kotlin.math.abs(Color.red(actual) - Color.red(expected)) < 45 &&
+            kotlin.math.abs(Color.green(actual) - Color.green(expected)) < 45 &&
+            kotlin.math.abs(Color.blue(actual) - Color.blue(expected)) < 45
+
+    private data class ImageColorEvidence(
+        val sampleCount: Int,
+        val rowsWithLongRun: Int,
+    )
 
     private fun advanceToPage(reader: ReaderActivity, requestedIndex: Int): Int {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val startIndex = reader.viewModel.state.value.currentPage - 1
         assertTrue("Current Reader page index must be observable before advancing", startIndex >= 0)
         if (requestedIndex > startIndex) {
-            repeat(requestedIndex - startIndex) {
+            for (expectedIndex in (startIndex + 1)..requestedIndex) {
                 assertTrue("Reader must accept a forward page key", device.pressKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT))
+                awaitObservedPage(reader, expectedIndex)
             }
         }
-        return awaitValue("Reader to display requested page $requestedIndex") {
-            val state = reader.viewModel.state.value
-            val chapter = state.currentChapter ?: return@awaitValue null
-            val pages = chapter.pages ?: return@awaitValue null
-            val index = state.currentPage - 1
-            if (index != requestedIndex || index !in pages.indices) return@awaitValue null
-            val page = pages[index]
-            if (page.status != Page.State.Ready || page.stream == null) return@awaitValue null
-            index
+        return awaitObservedPage(reader, requestedIndex)
+    }
+
+    private fun awaitObservedPage(reader: ReaderActivity, requestedIndex: Int): Int {
+        var observedIndex: Int? = null
+        var observedPageCount: Int? = null
+        var observedPageStatus: Page.State? = null
+        return try {
+            awaitValue("Reader to display requested page $requestedIndex") {
+                val state = reader.viewModel.state.value
+                val chapter = state.currentChapter ?: return@awaitValue null
+                val pages = chapter.pages ?: return@awaitValue null
+                val index = state.currentPage - 1
+                observedIndex = index
+                observedPageCount = pages.size
+                val page = pages.getOrNull(index) ?: return@awaitValue null
+                observedPageStatus = page.status
+                if (index != requestedIndex || page.status != Page.State.Ready || page.stream == null) {
+                    return@awaitValue null
+                }
+                index
+            }
+        } catch (error: AssertionError) {
+            throw AssertionError(
+                "Timed out observing Reader page (requestedIndex=$requestedIndex, " +
+                    "observedIndex=$observedIndex, pageCount=$observedPageCount, pageStatus=$observedPageStatus)",
+                error,
+            )
         }
     }
 
@@ -598,6 +674,19 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     "stream",
                     "ANDROID_SOURCE_SWITCH|scenario=$scenario|pages=LOADED|pageCount=$pageCount" +
                     "|position=OBSERVABLE|positionIndex=$positionIndex$detailSuffix|outcome=PASS",
+                )
+            },
+        )
+    }
+
+    private fun reportDiscoveryDiagnostic(selector: String, fixture: SourceSwitchFixture) {
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            1,
+            Bundle().apply {
+                putString(
+                    "stream",
+                    "READER_FIXTURE_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY|selector=$selector|" +
+                        fixture.dispatcher.sanitizedCounts(fixture.sourceA.token, fixture.sourceB.token),
                 )
             },
         )
@@ -964,6 +1053,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         private val behaviors = java.util.concurrent.ConcurrentHashMap(behaviors)
         private val pageRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        private val routeRequestCounts =
+            java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
         private val heldResponses = java.util.concurrent.ConcurrentHashMap<String, CountDownLatch>()
         private val heldRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
@@ -984,6 +1075,17 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
         fun pageRequestCount(token: String): Int = pageRequestCounts[token]?.get() ?: 0
 
+        fun sanitizedCounts(sourceAToken: String, sourceBToken: String): String =
+            listOf(sourceAToken, sourceBToken).flatMapIndexed { index, token ->
+                val source = if (index == 0) "a" else "b"
+                listOf("search", "inventory", "pages").map { route ->
+                    "$source${route.replaceFirstChar { it.uppercaseChar() }}=${routeRequestCount(token, route)}"
+                }
+            }.joinToString("|") + "|bHeld=${heldRequestCount(sourceBToken)}"
+
+        private fun routeRequestCount(token: String, route: String): Int =
+            routeRequestCounts["$token:$route"]?.get() ?: 0
+
         override fun dispatch(request: RecordedRequest): MockResponse {
             val path = request.url.encodedPath
             if (path.startsWith("/reader/")) {
@@ -992,6 +1094,15 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     .code(404)
                     .body("unknown fixture source")
                     .build()
+                val route = when (path) {
+                    "/reader/$token/search" -> "search"
+                    "/reader/$token/manga" -> "inventory"
+                    "/reader/$token/chapter-1" -> "pages"
+                    else -> "other"
+                }
+                routeRequestCounts.computeIfAbsent("$token:$route") {
+                    java.util.concurrent.atomic.AtomicInteger()
+                }.incrementAndGet()
                 val responseGate = heldResponses[token]
                 if (responseGate != null) {
                     heldRequestCounts.computeIfAbsent(token) {
@@ -1119,6 +1230,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
     private companion object {
         const val EXPECTED_TARGET_PACKAGE = "app.mihon.dev"
         const val UI_TIMEOUT_MS = 60_000L
+        const val MIN_IMAGE_COLOR_SAMPLES = 80
+        const val MIN_IMAGE_COLOR_ROWS = 10
+        const val MIN_IMAGE_COLOR_RUN_SAMPLES = 8
     }
 }
 
