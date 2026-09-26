@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.toList
@@ -93,7 +94,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             LocalMihonSourceHarness().use { harness ->
                 val canonicalTitleId = "canonical-opm"
                 enqueueJourney(harness)
-                val journey = RuntimeJourney(harness, canonicalTitleId)
+                val journey = RuntimeJourney(harness, canonicalTitleId, backgroundScope)
 
                 journey.installedSources().map { it.sourceId } shouldBe listOf(harness.source.id)
                 val binding = journey.bind().single()
@@ -144,7 +145,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             harness.sources.forEach { source ->
                 enqueueJourney(harness, source.lang)
             }
-            val journey = RuntimeJourney(harness, "canonical-opm-multilingual")
+            val journey = RuntimeJourney(harness, "canonical-opm-multilingual", backgroundScope)
             journey.bind().size shouldBe 2
             journey.refresh()
 
@@ -182,7 +183,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             repeat(3) { harness.enqueue(body = "", language = "ja") }
             harness.enqueue(status = 503, body = "upstream unavailable", language = "es")
 
-            val journey = RuntimeJourney(harness, "canonical-opm-progressive")
+            val journey = RuntimeJourney(harness, "canonical-opm-progressive", backgroundScope)
             val informationalBinding = journey.seedInformationalBinding(japanese)
             val initialEvents = journey.searchProgress(
                 ContentBindingSearchRequest(
@@ -308,7 +309,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             harness.enqueue(body = "/manga/unrelated\tNaruto")
             harness.enqueue(body = "/manga/unrelated\tNaruto")
             harness.enqueue(body = "/manga/unrelated\tNaruto")
-            val journey = RuntimeJourney(harness, "canonical-opm-unsafe")
+            val journey = RuntimeJourney(harness, "canonical-opm-unsafe", backgroundScope)
 
             journey.bindResult().isFailure shouldBe true
             journey.bindings.getByTitle(journey.canonicalTitleId) shouldBe emptyList()
@@ -321,7 +322,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         LocalMihonSourceHarness().use { harness ->
             enqueueJourney(harness)
             harness.enqueue(body = "")
-            val journey = RuntimeJourney(harness, "canonical-opm-reuse")
+            val journey = RuntimeJourney(harness, "canonical-opm-reuse", backgroundScope)
             val first = journey.bind().single()
             val requestsAfterFirstBinding = harness.server.requestCount
 
@@ -336,7 +337,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         LocalMihonSourceHarness().use { harness ->
             harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man")
             harness.enqueue(body = "")
-            val journey = RuntimeJourney(harness, "canonical-opm-empty")
+            val journey = RuntimeJourney(harness, "canonical-opm-empty", backgroundScope)
             journey.bind()
             journey.refresh()
 
@@ -356,7 +357,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         LocalMihonSourceHarness().use { harness ->
             harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man")
             harness.enqueue(body = "malformed")
-            val journey = RuntimeJourney(harness, "canonical-opm-malformed")
+            val journey = RuntimeJourney(harness, "canonical-opm-malformed", backgroundScope)
             journey.bind()
             journey.refresh()
 
@@ -375,7 +376,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             }
             harness.enqueue(status = 503, body = "server_error", language = "en")
             harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group", language = "pt-BR")
-            val journey = RuntimeJourney(harness, "canonical-opm-partial-source")
+            val journey = RuntimeJourney(harness, "canonical-opm-partial-source", backgroundScope)
             journey.bind()
             journey.refresh()
 
@@ -398,7 +399,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 }
                 harness.enqueue(body = "/chapter/2\tChapter 2\t2\tEnglish Group", language = "en")
                 harness.enqueue(body = "/chapter/1\tChapter 1\t1\tPortuguese Group", language = "pt-BR")
-                val journey = RuntimeJourney(harness, "canonical-opm-missing-source-chapter")
+                val journey = RuntimeJourney(harness, "canonical-opm-missing-source-chapter", backgroundScope)
                 journey.bind()
                 journey.refresh()
 
@@ -431,7 +432,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         LocalMihonSourceHarness().use { harness ->
             enqueueJourney(harness)
             harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group")
-            val journey = RuntimeJourney(harness, "canonical-opm-repeat")
+            val journey = RuntimeJourney(harness, "canonical-opm-repeat", backgroundScope)
             val originalBinding = journey.bind().single()
             journey.refresh()
             val firstChapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
@@ -453,6 +454,7 @@ class MihonRuntimeEndToEndIntegrationTest {
     private class RuntimeJourney(
         private val harness: LocalMihonSourceHarness,
         val canonicalTitleId: String,
+        private val workScope: CoroutineScope,
     ) {
         val addonId = AddonId("fixture-addon")
         val chapterRows = InMemoryMihonChapters()
@@ -557,7 +559,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 ),
                 rankContentOptions = RankContentOptions(),
                 contentOptionCache = ContentOptionCache(),
-                inFlightContentResolution = InFlightContentResolution(),
+                inFlightContentResolution = InFlightContentResolution(workScope),
                 addonRepository = addons,
                 diagnostics = diagnostics,
             )

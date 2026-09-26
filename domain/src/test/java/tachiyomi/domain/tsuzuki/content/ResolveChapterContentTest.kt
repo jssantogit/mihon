@@ -4,12 +4,16 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -31,6 +35,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.model.ContentResolution
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
+import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ResolveChapterContentTest {
@@ -197,8 +202,9 @@ class ResolveChapterContentTest {
     @Test
     fun `initial provider fanout is bounded when many Add-ons are enabled`() = runTest {
         val release = CompletableDeferred<Unit>()
-        var concurrent = 0
-        var peak = 0
+        val concurrent = AtomicInteger()
+        val peak = AtomicInteger()
+        val firstBatchStarted = CompletableDeferred<Unit>()
         val providers = (1..12).map { index ->
             object : ContentProvider {
                 override val addonId = AddonId("addon-$index")
@@ -207,13 +213,14 @@ class ResolveChapterContentTest {
                     canonicalTitleId: String,
                     canonicalChapterId: String,
                 ): Result<List<ContentOption>> {
-                    concurrent++
-                    peak = maxOf(peak, concurrent)
+                    val active = concurrent.incrementAndGet()
+                    peak.updateAndGet { maxOf(it, active) }
+                    if (active == 4) firstBatchStarted.complete(Unit)
                     try {
                         release.await()
                         return Result.success(listOf(option(addonId.value, "en")))
                     } finally {
-                        concurrent--
+                        concurrent.decrementAndGet()
                     }
                 }
             }
@@ -225,14 +232,13 @@ class ResolveChapterContentTest {
         )
 
         val pending = async { resolver.execute("title", "chapter-37") }
-        runCurrent()
-        peak shouldBe 4
+        firstBatchStarted.await()
+        peak.get() shouldBe 4
         release.complete(Unit)
-        advanceUntilIdle()
 
         pending.await().shouldBeInstanceOf<ContentResolution.NeedsSelection>()
             .options.size shouldBe 12
-        concurrent shouldBe 0
+        concurrent.get() shouldBe 0
     }
 
     @Test
@@ -264,6 +270,104 @@ class ResolveChapterContentTest {
         result.options shouldBe emptyList()
         result.failedProviders shouldBe listOf(AddonId("unavailable"))
         result.queriedProviderCount shouldBe 2
+    }
+
+    @Test
+    fun `healthy option is returned when sibling provider ignores cancellation`() = runTest {
+        val slowStarted = CompletableDeferred<Unit>()
+        val slowRelease = CompletableDeferred<Unit>()
+        val slowFinished = CompletableDeferred<Unit>()
+        val slow = object : ContentProvider {
+            override val addonId = AddonId("slow")
+
+            override suspend fun resolve(
+                canonicalTitleId: String,
+                canonicalChapterId: String,
+            ): Result<List<ContentOption>> {
+                slowStarted.complete(Unit)
+                try {
+                    withContext(NonCancellable) { slowRelease.await() }
+                    return Result.success(listOf(option("slow", "en")))
+                } finally {
+                    slowFinished.complete(Unit)
+                }
+            }
+        }
+        val healthy = provider("healthy", option("healthy", "en"))
+        val resolver = fixture(
+            preference = null,
+            automaticFallback = false,
+            providers = listOf(slow, healthy),
+        )
+
+        val pending = async { resolver.lookupOptions("title", "chapter-37") }
+        runCurrent()
+        slowStarted.await()
+
+        try {
+            advanceTimeBy(2_000L)
+            runCurrent()
+            pending.isCompleted shouldBe true
+            val result = pending.await()
+
+            result.options.map { it.addonId } shouldBe listOf(AddonId("healthy"))
+            result.failedProviders shouldBe listOf(AddonId("slow"))
+        } finally {
+            slowRelease.complete(Unit)
+            slowFinished.await()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun `concurrent lookup callers share one non-cooperative provider operation`() = runTest {
+        val slowRelease = CompletableDeferred<Unit>()
+        val slowStarted = CompletableDeferred<Unit>()
+        val slowFinished = CompletableDeferred<Unit>()
+        var calls = 0
+        val slow = object : ContentProvider {
+            override val addonId = AddonId("slow")
+
+            override suspend fun resolve(
+                canonicalTitleId: String,
+                canonicalChapterId: String,
+            ): Result<List<ContentOption>> {
+                calls++
+                slowStarted.complete(Unit)
+                try {
+                    withContext(NonCancellable) { slowRelease.await() }
+                    return Result.success(listOf(option("slow", "en")))
+                } finally {
+                    slowFinished.complete(Unit)
+                }
+            }
+        }
+        val resolver = fixture(
+            preference = null,
+            automaticFallback = false,
+            providers = listOf(slow),
+        )
+
+        val first = async { resolver.lookupOptions("title", "chapter-37") }
+        runCurrent()
+        slowStarted.await()
+        val second = async { resolver.lookupOptions("title", "chapter-37") }
+        runCurrent()
+        calls shouldBe 1
+
+        try {
+            advanceTimeBy(2_000L)
+            runCurrent()
+            first.isCompleted shouldBe true
+            second.isCompleted shouldBe true
+            first.await().failedProviders shouldBe listOf(AddonId("slow"))
+            second.await().failedProviders shouldBe listOf(AddonId("slow"))
+            calls shouldBe 1
+        } finally {
+            slowRelease.complete(Unit)
+            slowFinished.await()
+            advanceUntilIdle()
+        }
     }
 
     @Test
@@ -319,7 +423,7 @@ class ResolveChapterContentTest {
             readerPreferences = preferences,
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
         )
 
         val first = resolver.execute("title", "chapter-37")
@@ -336,7 +440,7 @@ class ResolveChapterContentTest {
         second.option.canonicalChapterId shouldBe first.option.canonicalChapterId
     }
 
-    private fun fixture(
+    private fun TestScope.fixture(
         preference: ContentPreference?,
         automaticFallback: Boolean,
         providers: List<ContentProvider>,
@@ -353,7 +457,7 @@ class ResolveChapterContentTest {
             readerPreferences = preferences,
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
             addonRepository = addonRepository,
             diagnostics = diagnostics,
         )

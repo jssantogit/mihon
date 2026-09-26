@@ -19,9 +19,10 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
         fixture_marker: str = "false",
         profile: str = "mangafire",
         mangaball_marker: str = "false",
+        suite: str = "navigation",
     ) -> str:
         result = subprocess.run(
-            ["bash", str(ROUTER), event, live, fixture_marker, "true", profile, mangaball_marker],
+            ["bash", str(ROUTER), event, live, fixture_marker, "true", profile, mangaball_marker, suite],
             check=False,
             capture_output=True,
             text=True,
@@ -34,6 +35,41 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
             "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=NAVIGATION_ONLY|liveProbe=false|providerCalls=0",
             self.route("workflow_dispatch", "false"),
         )
+
+    def test_reader_source_switch_is_explicit_offline_dispatch_with_no_provider_calls(self):
+        self.assertEqual(
+            "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=READER_SOURCE_SWITCH"
+            "|liveProbe=false|providerCalls=0|suite=reader-source-switch",
+            self.route("workflow_dispatch", "false", suite="reader-source-switch"),
+        )
+
+    def test_reader_source_switch_rejects_live_provider_mode(self):
+        result = subprocess.run(
+            [
+                "bash", str(ROUTER), "workflow_dispatch", "true", "false", "true",
+                "mangafire", "false", "reader-source-switch",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("reason=READER_SWITCH_REQUIRES_OFFLINE_DISPATCH", result.stderr)
+        self.assertNotIn("providerCalls=1", result.stdout)
+
+    def test_reader_source_switch_rejects_automatic_push_routes(self):
+        result = subprocess.run(
+            [
+                "bash", str(ROUTER), "push", "false", "true", "true",
+                "mangafire", "false", "reader-source-switch",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("reason=READER_SWITCH_REQUIRES_OFFLINE_DISPATCH", result.stderr)
+        self.assertNotIn("providerCalls=1", result.stdout)
 
     def test_dispatch_true_preserves_explicit_mangafire_live_route(self):
         self.assertEqual(

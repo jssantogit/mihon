@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
@@ -176,6 +177,7 @@ class ResolveChapterContent(
     ): ContentOptionLookup {
         addonRegistry.awaitReady()
         if (refresh) {
+            inFlightContentResolution.invalidateChapter(canonicalTitleId, canonicalChapterId)
             contentOptionCache.invalidateChapter(
                 canonicalTitleId = canonicalTitleId,
                 canonicalChapterId = canonicalChapterId,
@@ -201,6 +203,7 @@ class ResolveChapterContent(
                             provider = provider,
                             canonicalTitleId = canonicalTitleId,
                             canonicalChapterId = canonicalChapterId,
+                            callerWaitMillis = PROVIDER_OPTION_LOOKUP_WAIT_MILLIS,
                         )
                     }
                 }
@@ -236,6 +239,13 @@ class ResolveChapterContent(
         val provider = addonRegistry.contentProviders()
             .firstOrNull { it.addonId == binding.addonId } as? TargetedContentProvider
             ?: return ContentOptionLookup(emptyList(), listOf(binding.addonId), 0)
+        val cacheKey = ContentOptionCacheKey(
+            canonicalTitleId = binding.canonicalTitleId,
+            canonicalChapterId = canonicalChapterId,
+            addonId = binding.addonId,
+        )
+        inFlightContentResolution.invalidate(cacheKey)
+        contentOptionCache.invalidate(cacheKey)
         val result = try {
             provider.resolveBinding(binding, canonicalChapterId)
         } catch (error: CancellationException) {
@@ -261,6 +271,7 @@ class ResolveChapterContent(
     }
 
     suspend fun invalidateAddon(addonId: AddonId) {
+        inFlightContentResolution.invalidateAddon(addonId)
         contentOptionCache.invalidateAddon(addonId)
     }
 
@@ -302,6 +313,7 @@ class ResolveChapterContent(
         provider: ContentProvider,
         canonicalTitleId: String,
         canonicalChapterId: String,
+        callerWaitMillis: Long? = null,
     ): Result<List<ContentOption>> {
         val key = ContentOptionCacheKey(
             canonicalTitleId = canonicalTitleId,
@@ -310,6 +322,7 @@ class ResolveChapterContent(
         )
         contentOptionCache.get(key)?.let { cached ->
             if (eligibleOptions(provider.addonId, cached).size != cached.size) {
+                inFlightContentResolution.invalidateAddon(provider.addonId)
                 contentOptionCache.invalidateAddon(provider.addonId)
             } else {
                 recordSelector(
@@ -327,66 +340,28 @@ class ResolveChapterContent(
             }
         }
 
-        return inFlightContentResolution.execute(key) resolution@{
-            contentOptionCache.get(key)?.let { cached ->
-                if (eligibleOptions(provider.addonId, cached).size != cached.size) {
-                    contentOptionCache.invalidateAddon(provider.addonId)
-                } else {
-                    recordSelector(
-                        canonicalTitleId,
-                        provider.addonId,
-                        if (cached.isEmpty()) {
-                            ChapterInventoryDiagnosticOutcome.EMPTY
-                        } else {
-                            ChapterInventoryDiagnosticOutcome.SUCCESS
-                        },
-                        cached.size,
-                        ChapterInventoryDiagnosticReason.CACHED_OPTIONS,
-                    )
-                    return@resolution Result.success(cached)
+        val cacheToken = contentOptionCache.beginLookup(key)
+        try {
+            val resolution: suspend () -> Result<List<ContentOption>> = {
+                inFlightContentResolution.execute(key) {
+                    try {
+                        provider.resolve(canonicalTitleId, canonicalChapterId)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        Result.failure(error)
+                    }
                 }
             }
-            var receivedOptions = 0
-            val result = try {
-                provider.resolve(canonicalTitleId, canonicalChapterId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                Result.failure(error)
-            }.map { options ->
-                receivedOptions = options.size
-                eligibleOptions(provider.addonId, options).filter { option ->
-                    option.canonicalChapterId == canonicalChapterId &&
-                        option.addonId == provider.addonId
-                }
-            }
-            result.getOrNull()?.let { options ->
-                contentOptionCache.put(key, options)
-            }
-            val options = result.getOrNull()
-            if (options != null) {
-                val filtered = receivedOptions - options.size
-                val reason = when {
-                    filtered > 0 -> ChapterInventoryDiagnosticReason.FILTERED_FROM_UI
-                    options.isEmpty() -> ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT
-                    else -> null
-                }
-                recordSelector(
-                    canonicalTitleId,
-                    provider.addonId,
-                    when {
-                        filtered > 0 -> ChapterInventoryDiagnosticOutcome.PARTIAL
-                        options.isEmpty() -> ChapterInventoryDiagnosticOutcome.EMPTY
-                        else -> ChapterInventoryDiagnosticOutcome.SUCCESS
-                    },
-                    options.size,
-                    reason,
-                    received = receivedOptions,
-                    discarded = filtered,
-                    availabilityBlocked = options.isEmpty(),
-                    affectedSourceCount = if (options.isEmpty()) 1 else 0,
-                )
+            val result = if (callerWaitMillis == null) {
+                resolution()
             } else {
+                withTimeoutOrNull(callerWaitMillis) { resolution() }
+                    ?: Result.failure(ProviderOptionWaitTimeoutException())
+            }
+
+            val received = result.getOrNull()
+            if (received == null) {
                 val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(result.exceptionOrNull()!!)
                 recordSelector(
                     canonicalTitleId,
@@ -394,12 +369,42 @@ class ResolveChapterContent(
                     outcome,
                     0,
                     reason,
-                    received = receivedOptions,
                     availabilityBlocked = true,
                     affectedSourceCount = 1,
                 )
+                return result
             }
-            result
+
+            val options = eligibleOptions(provider.addonId, received).filter { option ->
+                option.canonicalChapterId == canonicalChapterId && option.addonId == provider.addonId
+            }
+            if (!contentOptionCache.putIfCurrent(cacheToken, options)) {
+                return Result.failure(ProviderOptionInvalidatedException())
+            }
+            val filtered = received.size - options.size
+            val reason = when {
+                filtered > 0 -> ChapterInventoryDiagnosticReason.FILTERED_FROM_UI
+                options.isEmpty() -> ChapterInventoryDiagnosticReason.NO_CHAPTER_VARIANT
+                else -> null
+            }
+            recordSelector(
+                canonicalTitleId,
+                provider.addonId,
+                when {
+                    filtered > 0 -> ChapterInventoryDiagnosticOutcome.PARTIAL
+                    options.isEmpty() -> ChapterInventoryDiagnosticOutcome.EMPTY
+                    else -> ChapterInventoryDiagnosticOutcome.SUCCESS
+                },
+                options.size,
+                reason,
+                received = received.size,
+                discarded = filtered,
+                availabilityBlocked = options.isEmpty(),
+                affectedSourceCount = if (options.isEmpty()) 1 else 0,
+            )
+            return Result.success(options)
+        } finally {
+            contentOptionCache.finishLookup(cacheToken)
         }
     }
 
@@ -469,7 +474,13 @@ class ResolveChapterContent(
 
     private companion object {
         const val MAX_CONCURRENT_PROVIDER_RESOLUTIONS = 4
+        const val PROVIDER_OPTION_LOOKUP_WAIT_MILLIS = 2_000L
     }
+
+    private class ProviderOptionWaitTimeoutException :
+        java.net.SocketTimeoutException("Provider option lookup timed out")
+
+    private class ProviderOptionInvalidatedException : IllegalStateException("Provider options were invalidated")
 
     private fun Result<List<ContentOption>>.optionsOrEmpty(): List<ContentOption> {
         return getOrElse { error ->
