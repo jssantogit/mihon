@@ -35,6 +35,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
@@ -1262,15 +1263,31 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             // a background instrumentation context can leave it RESUMED but
             // without window focus, with screenshots capturing another app.
             val foregroundResult = device.executeShellCommand(
-                "am start -n $EXPECTED_TARGET_PACKAGE/eu.kanade.tachiyomi.ui.main.MainActivity " +
+                "am start -W -n $EXPECTED_TARGET_PACKAGE/eu.kanade.tachiyomi.ui.main.MainActivity " +
                     "-a android.intent.action.MAIN -c android.intent.category.LAUNCHER",
             )
             assertTrue("Unable to foreground the isolated Reader test package", !foregroundResult.contains("Error"))
-            device.waitForIdle()
-            context.startActivity(
-                ReaderActivity.newCanonicalIntent(context, chapter.id)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
-            )
+            val main = awaitSourceSwitchFixtureValue("MainActivity to resume before launching Reader") {
+                var resumed: MainActivity? = null
+                instrumentation.runOnMainSync {
+                    resumed = ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(Stage.RESUMED)
+                        .filterIsInstance<MainActivity>()
+                        .firstOrNull()
+                }
+                resumed
+            }
+            // A RESUMED Activity can still be hidden by an Android-owned window.
+            // Establish focus on the actual foreground application before opening
+            // Reader from that Activity, keeping both in its real task.
+            awaitSourceSwitchFixtureValue("MainActivity to own the foreground window") {
+                var focused = false
+                instrumentation.runOnMainSync { focused = main.window.decorView.hasWindowFocus() }
+                focused.takeIf { it }
+            }
+            instrumentation.runOnMainSync {
+                main.startActivity(ReaderActivity.newCanonicalIntent(main, chapter.id))
+            }
         }
 
         fun close() {
