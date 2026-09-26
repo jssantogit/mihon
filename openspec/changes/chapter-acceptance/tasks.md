@@ -33,6 +33,7 @@ This acceptance work is based on `codex/tsuzuki-chapter-integrity` (PR #20) and 
 ## D. Single authoritative reconciliation (blocked on acceptance)
 
 - [x] Map production callers and write the gated [single-writer migration plan](../../../docs/research/TSUZUKI-CHAPTER-UNIFICATION-MAP.md): legacy Reader still invokes RefreshCanonicalChapters/ReconcileChapterInventory when variant mapping is missing, while canonical detail and targeted selection use RefreshChapterEvidence/ReconcileChapterEvidence. No unification is claimed.
+- [x] Add a first **pre-migration domain equivalence** fixture: both independent writers reuse the same preexisting canonical IDs for volume 1 vs volume 2, preserve source-specific mappings from two sources, and keep variant IDs stable on repeated refresh. The [Domain test job of CI 36267018356](https://github.com/jssantogit/mihon/actions/runs/36267018356) passed; the comparator, parsers and test source blob SHAs are identical to this PR.
 - [ ] Add behavioral-equivalence tests for legacy Reader entry and canonical detail/library refresh.
 - [ ] Make canonical evidence reconciliation authoritative; retain only required Mihon operational adapters. Remove duplicate decision/write flows once all callers pass.
 - [ ] Re-run 100/500/1000 observation benchmark; preserve stable IDs, transaction rollback, selective refresh, no extra all-source sweeps.
