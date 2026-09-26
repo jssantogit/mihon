@@ -22,6 +22,17 @@ METHOD_SCENARIOS = {
 }
 SAFE_TEST_CLASS_PREFIX = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation."
 SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
+FIXTURE_DIAGNOSTIC_PREFIXES = (
+    "INSTRUMENTATION_STATUS: stream=READER_FIXTURE_DIAGNOSTIC|",
+    "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_SWITCH_DIAGNOSTIC|",
+)
+FIXTURE_DIAGNOSTIC_KEYS = (
+    "scenario", "selector", "aSearch", "aInventory", "aPages",
+    "bSearch", "bInventory", "bPages", "bHeld",
+)
+FIXTURE_DIAGNOSTIC_SELECTORS = {
+    "READY_WITH_A", "DISCOVERING", "OPEN_WITHOUT_A", "CLOSED_OR_OTHER",
+}
 SAFE_DIAGNOSTIC_CATEGORIES = {
     "ASSERTION_FAILURE",
     "EVIDENCE_NOT_EMITTED",
@@ -179,6 +190,36 @@ def verify(output: str, method: str) -> dict[str, str]:
     return fields
 
 
+def _fixture_diagnostic(output: str, method: str) -> dict[str, str] | None:
+    if method != "slowSourceDoesNotBlockHealthySourceOption":
+        return None
+    records: list[str] = []
+    for line in output.splitlines():
+        for prefix in FIXTURE_DIAGNOSTIC_PREFIXES:
+            if line.startswith(prefix):
+                records.append(line[len(prefix):])
+                break
+    if not records:
+        return {"scenario": "SLOW_TO_HEALTHY", "evidence": "NOT_EMITTED"}
+    if len(records) != 1:
+        return {"scenario": "SLOW_TO_HEALTHY", "evidence": "DUPLICATE"}
+
+    fields: dict[str, str] = {}
+    for part in records[0].split("|"):
+        key, separator, value = part.partition("=")
+        if not separator or key not in FIXTURE_DIAGNOSTIC_KEYS or key in fields:
+            return {"scenario": "SLOW_TO_HEALTHY", "evidence": "MALFORMED"}
+        fields[key] = value
+    if set(fields) != set(FIXTURE_DIAGNOSTIC_KEYS):
+        return {"scenario": "SLOW_TO_HEALTHY", "evidence": "MALFORMED"}
+    if fields["scenario"] != "SLOW_TO_HEALTHY" or fields["selector"] not in FIXTURE_DIAGNOSTIC_SELECTORS:
+        return {"scenario": "SLOW_TO_HEALTHY", "evidence": "MALFORMED"}
+    for key in FIXTURE_DIAGNOSTIC_KEYS[2:]:
+        if not re.fullmatch(r"[0-9]{1,6}", fields[key]):
+            return {"scenario": "SLOW_TO_HEALTHY", "evidence": "MALFORMED"}
+    return {key: fields[key] for key in FIXTURE_DIAGNOSTIC_KEYS}
+
+
 def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, str]:
     """Extract only fixed categories, numeric runner facts, and allowlisted test frames."""
     class_seen = re.search(r"(?m)^INSTRUMENTATION_STATUS: class=" + re.escape(TEST_CLASS) + r"\s*$", output) is not None
@@ -235,6 +276,7 @@ def sanitized_summary(
     fields: dict[str, str],
     passed: bool,
     diagnosis: dict[str, str] | None = None,
+    fixture_diagnostic: dict[str, str] | None = None,
 ) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
@@ -267,6 +309,24 @@ def sanitized_summary(
             )
             if diagnosis["frames"]:
                 lines.append("ANDROID_SOURCE_SWITCH_DIAGNOSTIC|frames=" + diagnosis["frames"])
+    if fixture_diagnostic is not None:
+        if "evidence" in fixture_diagnostic:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY|evidence="
+                + fixture_diagnostic["evidence"]
+            )
+        else:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY|selector="
+                + fixture_diagnostic["selector"]
+                + "|aSearch=" + fixture_diagnostic["aSearch"]
+                + "|aInventory=" + fixture_diagnostic["aInventory"]
+                + "|aPages=" + fixture_diagnostic["aPages"]
+                + "|bSearch=" + fixture_diagnostic["bSearch"]
+                + "|bInventory=" + fixture_diagnostic["bInventory"]
+                + "|bPages=" + fixture_diagnostic["bPages"]
+                + "|bHeld=" + fixture_diagnostic["bHeld"]
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -310,8 +370,12 @@ def main(argv: list[str] | None = None) -> int:
     if error is None and args.runner_exit != 0:
         error = ReaderSourceSwitchVerificationError("Instrumentation runner exited unsuccessfully")
     diagnosis = None if error is None else _failure_diagnosis(output, args.method, args.runner_exit)
+    fixture_diagnostic = _fixture_diagnostic(output, args.method)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
-    args.summary.write_text(sanitized_summary(args.method, fields, error is None, diagnosis), encoding="utf-8")
+    args.summary.write_text(
+        sanitized_summary(args.method, fields, error is None, diagnosis, fixture_diagnostic),
+        encoding="utf-8",
+    )
     write_junit(args.junit, args.method, error is None, diagnosis)
     if error is not None:
         print("::error::Reader source-switch test evidence was not accepted", file=sys.stderr)

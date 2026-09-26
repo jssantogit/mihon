@@ -93,11 +93,20 @@ def output_for(method: str) -> str:
         )
 
     event = "ANDROID_SOURCE_SWITCH|" + "|".join(key + "=" + value for key, value in fields.items())
-    return (
+    diagnostic = ""
+    if method == "slowSourceDoesNotBlockHealthySourceOption":
+        diagnostic = (
+            "INSTRUMENTATION_STATUS: stream=READER_FIXTURE_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY"
+            "|selector=DISCOVERING|aSearch=1|aInventory=2|aPages=3|bSearch=4|bInventory=5|bPages=6|bHeld=1\n"
+        )
+    status = (
         "INSTRUMENTATION_STATUS: numtests=1\n"
         "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
         "INSTRUMENTATION_STATUS: test=" + method + "\n"
         "INSTRUMENTATION_STATUS_CODE: 1\n"
+    )
+    status += diagnostic
+    return status + (
         "INSTRUMENTATION_STATUS: stream=" + event + "\n"
         "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
         "INSTRUMENTATION_STATUS: test=" + method + "\n"
@@ -290,6 +299,49 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                 )
             self.assertEqual(1, result)
             self.assertIn("category=RUNNER_ERROR", summary.read_text(encoding="utf-8"))
+
+    def test_slow_source_diagnostic_is_sanitized_and_retained_when_test_fails(self):
+        method = "slowSourceDoesNotBlockHealthySourceOption"
+        raw = output_for(method).replace("|outcome=PASS", "|outcome=FAIL", 1)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            input_path = directory / "runner.txt"
+            summary = directory / "summary.txt"
+            junit = directory / "TEST-switch.xml"
+            input_path.write_text(raw, encoding="utf-8")
+            captured = io.StringIO()
+            with redirect_stdout(captured), redirect_stderr(captured):
+                result = verifier.main(
+                    [str(input_path), method, "--summary", str(summary), "--junit", str(junit)],
+                )
+            summary_text = summary.read_text(encoding="utf-8")
+            self.assertEqual(1, result)
+            self.assertIn(
+                "ANDROID_SOURCE_SWITCH_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY|selector=DISCOVERING"
+                "|aSearch=1|aInventory=2|aPages=3|bSearch=4|bInventory=5|bPages=6|bHeld=1",
+                summary_text,
+            )
+            self.assertNotIn("READER_FIXTURE_DIAGNOSTIC", summary_text)
+            self.assertNotIn("ANDROID_SOURCE_SWITCH_DIAGNOSTIC", junit.read_text(encoding="utf-8"))
+            self.assertNotIn("provider.invalid", captured.getvalue())
+
+    def test_slow_source_diagnostic_accepts_renamed_prefix_but_rejects_free_text(self):
+        method = "slowSourceDoesNotBlockHealthySourceOption"
+        output = output_for(method)
+        diagnostic_line = next(line for line in output.splitlines() if "READER_FIXTURE_DIAGNOSTIC|" in line)
+        renamed = output.replace("READER_FIXTURE_DIAGNOSTIC|", "ANDROID_SOURCE_SWITCH_DIAGNOSTIC|")
+        self.assertEqual(
+            verifier._fixture_diagnostic(output, method),
+            verifier._fixture_diagnostic(renamed, method),
+        )
+
+        private_value = "https://provider.invalid/title?token=private"
+        malformed = output.replace("selector=DISCOVERING", "selector=" + private_value)
+        diagnosis = verifier._fixture_diagnostic(malformed, method)
+        self.assertEqual("MALFORMED", diagnosis["evidence"])
+        sanitized = verifier.sanitized_summary(method, {}, False, fixture_diagnostic=diagnosis)
+        self.assertNotIn(private_value, sanitized)
+        self.assertNotIn(diagnostic_line.split("|selector=")[1].split("|")[0], sanitized)
 
     def test_workflow_has_manual_offline_suite_opt_in_and_preserves_navigation_default(self):
         workflow = (ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
