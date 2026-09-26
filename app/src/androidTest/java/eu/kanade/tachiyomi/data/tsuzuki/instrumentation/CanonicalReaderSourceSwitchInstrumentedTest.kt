@@ -776,11 +776,18 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val action = viewer.config.navigator.getAction(normalizedPoint)
             if (action != NavigationRegion.RIGHT && action != NavigationRegion.NEXT) return@runOnMainSync
             val location = IntArray(2)
+            val windowLocation = IntArray(2)
             pager.getLocationOnScreen(location)
+            pager.getLocationInWindow(windowLocation)
             if (pager.width > 0 && pager.height > 0) {
+                // PagerViewer converts event.rawX/Y back into navigator coordinates
+                // by adding its window-relative location. Invert that transform
+                // so the injected tap actually reaches the NEXT/RIGHT region.
                 tapPoint = PagerTapPoint(
-                    x = location[0] + (normalizedPoint.x * pager.width).toInt(),
-                    y = location[1] + (normalizedPoint.y * pager.height).toInt(),
+                    x = location[0] - windowLocation[0] +
+                        (normalizedPoint.x * pager.width).toInt(),
+                    y = location[1] - windowLocation[1] +
+                        (normalizedPoint.y * pager.height).toInt(),
                 )
             }
         }
