@@ -39,12 +39,12 @@ import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
-import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableChapter
 import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryCompletion
 import tachiyomi.domain.tsuzuki.content.interactor.FastDiscoveryFailureStage
 import tachiyomi.domain.tsuzuki.content.interactor.FastReadingDiscoveryEvent
 import tachiyomi.domain.tsuzuki.content.interactor.PlannedAddonSearch
+import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
