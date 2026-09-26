@@ -441,7 +441,8 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "|interactionInjected=TRUE|interactionTarget=READER_PAGER|matchingSamples=40|matchingRows=10"
             "|expectedColor=RED|imageRequestsA=1|imageRequestsB=1"
             "|holderPresent=TRUE|holderAttached=TRUE|holderVisible=TRUE"
-            "|imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE"\n            "|windowSecure=FALSE|windowHasFocus=TRUE\n"
+            "|imageViewPresent=TRUE|imageViewVisible=TRUE|imageViewReady=FALSE|errorVisible=FALSE"
+            "|windowSecure=FALSE|windowHasFocus=TRUE\n"
         )
         parsed = verifier._reader_view_diagnostics(line)
         self.assertEqual(1, len(parsed))
