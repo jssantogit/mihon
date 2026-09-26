@@ -388,13 +388,24 @@ class MihonRuntimeEndToEndIntegrationTest {
             inventory.received shouldBe 169
             inventory.accepted shouldBe 169
 
-            val probe = journey.diagnostics.events.last {
-                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE
+            // The low-level Add-on probe records 169 raw rows and six
+            // duplicates; RefreshChapterEvidence separately records the 163
+            // already-deduplicated observations at the SAME stage.
+            val probe = journey.diagnostics.events.single {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE &&
+                    it.reasons[ChapterInventoryDiagnosticReason.DUPLICATE] == 6
             }
             probe.received shouldBe 169
             probe.accepted shouldBe 163
+            probe.provisional shouldBe 163
             probe.discarded shouldBe 6
-            probe.reasons[ChapterInventoryDiagnosticReason.DUPLICATE] shouldBe 6
+
+            val refresh = journey.diagnostics.events.last {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE &&
+                    it.provisional == 0 && it.received == 163
+            }
+            refresh.accepted shouldBe 163
+            refresh.discarded shouldBe 0
 
             val chapters = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
             chapters.size shouldBe 163
