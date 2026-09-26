@@ -26,6 +26,9 @@ on:
       - '.github/scripts/mangaball_android_report.py'
       - '.github/scripts/test_mangaball_android.py'
       - '.github/scripts/run_mangaball_android.sh'
+      - '.github/scripts/run_android_reader_source_switch.sh'
+      - '.github/scripts/verify_android_reader_source_switch.py'
+      - '.github/scripts/test_verify_android_reader_source_switch.py'
       - '.github/workflows/mangafire-real-extension.yml'
   workflow_dispatch:
     inputs:
@@ -42,6 +45,14 @@ on:
         required: true
         default: false
         type: boolean
+      instrumentation_suite:
+        description: 'Select offline Reader source-switch tests or existing navigation/provider route'
+        required: true
+        default: navigation
+        type: choice
+        options:
+          - navigation
+          - reader-source-switch
 
 permissions:
   contents: read
@@ -63,6 +74,7 @@ jobs:
           python3 .github/scripts/test_android_instrumentation.py
           python3 .github/scripts/test_summarize_android_instrumentation.py
           python3 .github/scripts/test_verify_android_navigation_instrumentation.py
+          python3 .github/scripts/test_verify_android_reader_source_switch.py
           python3 .github/scripts/test_android_instrumentation_route.py
           python3 .github/scripts/test_mangaball_android.py
           python3 .github/scripts/test_mangaball_fixture.py
@@ -70,6 +82,7 @@ jobs:
           bash -n .github/scripts/run_mangaball_android.sh
           bash -n .github/scripts/run_android_instrumentation_route.sh
           bash -n .github/scripts/run_android_navigation.sh
+          bash -n .github/scripts/run_android_reader_source_switch.sh
           python3 .github/scripts/verify_extension_fixture.py
           python3 .github/scripts/verify_mangaball_fixture.py
 
@@ -90,7 +103,7 @@ jobs:
       - name: Verify JUnit methods have JVM void signatures
         run: |
           set -euo pipefail
-          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest MangaBallRealReadingJourneyInstrumentedTest CanonicalTitleSourceNavigationInstrumentedTest; do
+          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest MangaBallRealReadingJourneyInstrumentedTest CanonicalTitleSourceNavigationInstrumentedTest CanonicalReaderSourceSwitchInstrumentedTest; do
             class_file="$(find app/build -type f -name "${class}.class" -print -quit)"
             test -n "$class_file"
             suffix="/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/${class}.class"
@@ -105,6 +118,8 @@ jobs:
             elif [[ "$class" == 'MangaBallRealReadingJourneyInstrumentedTest' ]]; then
               grep -F 'public final void loadsRealExtensionAndRegistersInternalSourcesAndDisabledPeerIsExcluded();' junit-signatures.txt
               grep -F 'public final void optionalLivePtBrReadingJourney();' junit-signatures.txt
+            elif [[ "$class" == 'CanonicalReaderSourceSwitchInstrumentedTest' ]]; then
+              grep -F 'public final void syntheticMihonSourceLoadsObservablePagesInReaderActivity();' junit-signatures.txt
             else
               grep -F 'public final void coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
               grep -F 'public final void warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
@@ -113,9 +128,10 @@ jobs:
           done
 
   emulator:
-    name: Run navigation or real MangaFire test on isolated emulator
-    # The default explicit dispatch mode runs only offline navigation. Live
-    # MangaFire remains opt-in; existing push markers retain their old routing.
+    name: Run offline navigation/source-switch or real MangaFire test on isolated emulator
+    # The default dispatch mode remains offline navigation. The source-switch
+    # suite is a separate opt-in and refuses live mode. Provider probes retain
+    # their existing explicit opt-in and push markers.
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')))
     needs: compile-android-test
     runs-on: ubuntu-24.04
@@ -131,6 +147,9 @@ jobs:
         run: |
           python3 .github/scripts/verify_extension_fixture.py
           python3 .github/scripts/verify_mangaball_fixture.py
+      - name: Assemble app and instrumentation APKs for Reader source-switch route
+        if: github.event_name == 'workflow_dispatch' && inputs.instrumentation_suite == 'reader-source-switch'
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Enable KVM for Android emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -146,7 +165,7 @@ jobs:
           disable-animations: true
           # The emulator action runs individual YAML script lines in separate shells.
           # Keep setup and conditional logic within ONE invoked Bash script.
-          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')) }}" false "${{ inputs.extension_profile || (contains(github.event.head_commit.message, '[android-live-mangaball]') && 'mangaball' || 'mangafire') }}" "${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-mangaball]') }}"
+          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')) }}" false "${{ inputs.extension_profile || (contains(github.event.head_commit.message, '[android-live-mangaball]') && 'mangaball' || 'mangafire') }}" "${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ inputs.instrumentation_suite || 'navigation' }}"
       - name: Upload sanitized instrumentation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -156,5 +175,6 @@ jobs:
             .github/results/android-navigation/**
             .github/results/mangafire/**
             .github/results/mangaball/**
+            .github/results/android-reader-source-switch/**
           if-no-files-found: ignore
           retention-days: 3

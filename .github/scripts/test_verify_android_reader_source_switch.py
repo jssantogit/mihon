@@ -161,11 +161,15 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             self.assertNotIn(secret, summary.read_text(encoding="utf-8"))
             self.assertNotIn(secret, junit.read_text(encoding="utf-8"))
 
-    def test_workflow_is_manual_and_has_no_real_provider_input(self):
-        workflow = (ROOT / ".github/workflows/reader-source-switch-android.yml").read_text(encoding="utf-8")
+    def test_workflow_has_manual_offline_suite_opt_in_and_preserves_navigation_default(self):
+        workflow = (ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertNotIn("live_probe", workflow)
-        self.assertIn("run_android_reader_source_switch.sh", workflow)
+        self.assertIn("live_probe:", workflow)
+        self.assertIn("instrumentation_suite:", workflow)
+        self.assertIn("default: navigation", workflow)
+        self.assertIn("- reader-source-switch", workflow)
+        self.assertIn("run_android_instrumentation_route.sh", workflow)
+        self.assertIn("inputs.instrumentation_suite || 'navigation'", workflow)
 
 
 if __name__ == "__main__":
