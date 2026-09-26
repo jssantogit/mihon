@@ -24,7 +24,6 @@ import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkState
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.collectLatest
 
 data class CanonicalTitleScreen(
     val canonicalTitleId: String,
@@ -107,7 +106,7 @@ data class CanonicalTitleScreen(
 
         LaunchedEffect(linkViewModel, canonicalTitleId) {
             linkViewModel.bindingUpdates.collect { request ->
-                if (request.canonicalTitleId != canonicalTitleId) return@collectLatest
+                if (request.canonicalTitleId != canonicalTitleId) return@collect
                 // A manually linked edition should not re-fetch every existing
                 // source inventory before its chapter can be selected.
                 if (contentSelectorViewModel.refreshAfterBindings(request).isSuccess) {
