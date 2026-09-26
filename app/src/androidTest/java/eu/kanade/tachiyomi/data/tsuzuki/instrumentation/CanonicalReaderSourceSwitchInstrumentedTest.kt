@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.KeyEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -32,6 +31,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
 import mihon.app.di.AppBindings
@@ -469,17 +469,50 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         reader: ReaderActivity,
         expectedSource: String,
         expectedCount: Int,
-    ): Pair<Int, Int> = awaitValue("loaded Reader pages for $expectedSource") {
-        val state = reader.viewModel.state.value
-        val chapter = state.currentChapter ?: return@awaitValue null
-        val pages = chapter.pages ?: return@awaitValue null
-        if (state.source?.name != expectedSource || pages.size != expectedCount) return@awaitValue null
-        val index = state.currentPage - 1
-        if (index !in pages.indices || pages[index].status != Page.State.Ready || pages[index].stream == null) {
-            return@awaitValue null
+    ): Pair<Int, Int> {
+        var lastSnapshot: ReaderViewSnapshot? = null
+        return try {
+            awaitValue("loaded Reader pages for $expectedSource and an initialized pager") {
+                val snapshot = readerViewSnapshot(reader)
+                lastSnapshot = snapshot
+                val state = reader.viewModel.state.value
+                val chapter = state.currentChapter ?: return@awaitValue null
+                val pages = chapter.pages ?: return@awaitValue null
+                if (state.source?.name != expectedSource || pages.size != expectedCount) return@awaitValue null
+                val index = state.currentPage - 1
+                if (
+                    index !in pages.indices || pages[index].status != Page.State.Ready ||
+                    pages[index].stream == null || chapter.state !is ReaderChapter.State.Loaded
+                ) {
+                    return@awaitValue null
+                }
+                val pager = snapshot.pager
+                if (!pager.visible || pager.count < expectedCount || pager.currentItem !in 0 until pager.count || !pager.idle) {
+                    return@awaitValue null
+                }
+                index to pages.size
+            }
+        } catch (error: AssertionError) {
+            val snapshot = lastSnapshot ?: runCatching { readerViewSnapshot(reader) }.getOrNull()
+            snapshot?.let {
+                reportReaderViewDiagnostic(
+                    scenario = "PAGER_READINESS",
+                    phase = "PAGER_WAIT_TIMEOUT",
+                    snapshot = it,
+                    interactionInjected = false,
+                    interactionTarget = if (it.viewer == "NONE") "NONE" else "READER_PAGER",
+                )
+            }
+            throw AssertionError(
+                "Reader pages or pager did not reach a usable state " +
+                    "(expectedPageCount=$expectedCount, viewer=${snapshot?.viewer}, " +
+                    "pagesLoaded=${snapshot?.pagesLoaded}, pageCount=${snapshot?.pageCount}, " +
+                    "pageState=${snapshot?.pageState}, position=${snapshot?.position}, " +
+                    "pagerVisible=${snapshot?.pager?.visible}, pagerCount=${snapshot?.pager?.count}, " +
+                    "pagerCurrentItem=${snapshot?.pager?.currentItem}, pagerIdle=${snapshot?.pager?.idle})",
+                error,
+            )
         }
-        assertTrue("The Reader must publish a loaded chapter state", chapter.state is ReaderChapter.State.Loaded)
-        index to pages.size
     }
 
     private fun awaitImagePixels(reader: ReaderActivity, expectedColor: Int, scenario: String) {
@@ -545,8 +578,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             scenario = scenario,
             phase = "SCREENSHOT_TIMEOUT",
             snapshot = snapshot,
-            keyInjected = false,
-            keyTarget = "NONE",
+            interactionInjected = false,
+            interactionTarget = "NONE",
             expectedColor = colorName(expectedColor),
             matchingSamples = matchingSamples,
             matchingRows = matchingRows,
@@ -597,29 +630,76 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         if (requestedIndex > startIndex) {
             for (expectedIndex in (startIndex + 1)..requestedIndex) {
                 val before = readerViewSnapshot(reader)
-                val injected = device.pressKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT)
+                val pager = pagerSnapshot(reader)
+                val injected = if (pager.visible && pager.count > 0) {
+                    val bounds = pagerBounds(reader)
+                    bounds != null && device.swipe(
+                        bounds.left + bounds.width * 4 / 5,
+                        bounds.top + bounds.height / 2,
+                        bounds.left + bounds.width / 5,
+                        bounds.top + bounds.height / 2,
+                        12,
+                    )
+                } else {
+                    false
+                }
                 try {
-                    assertTrue("Reader must accept a forward page key", injected)
+                    assertTrue("Reader pager must accept a forward page swipe", injected)
                     awaitObservedPage(reader, expectedIndex)
                 } catch (error: AssertionError) {
                     val after = readerViewSnapshot(reader)
                     reportReaderViewDiagnostic(
                         scenario = scenario,
-                        phase = "PAGE_KEY_TIMEOUT",
+                        phase = "PAGE_SWIPE_TIMEOUT",
                         snapshot = after,
-                        keyInjected = injected,
-                        keyTarget = if (before.viewer == "NONE") "NONE" else "READER_VIEWER",
+                        interactionInjected = injected,
+                        interactionTarget = if (before.viewer == "NONE") "NONE" else "READER_PAGER",
                     )
                     throw AssertionError(
-                        "Reader page key did not reach the requested ready page " +
+                        "Reader pager swipe did not reach the requested ready page " +
                             "(requestedIndex=$expectedIndex, beforeIndex=${before.position}, " +
-                            "afterIndex=${after.position}, viewer=${after.viewer}, pageState=${after.pageState})",
+                            "afterIndex=${after.position}, viewer=${after.viewer}, pageState=${after.pageState}, " +
+                            "pagerVisible=${after.pager.visible}, pagerCount=${after.pager.count}, " +
+                            "pagerCurrentItem=${after.pager.currentItem}, pagerIdle=${after.pager.idle})",
                         error,
                     )
                 }
             }
         }
         return awaitObservedPage(reader, requestedIndex)
+    }
+
+    private fun pagerBounds(reader: ReaderActivity): PagerBounds? {
+        var bounds: PagerBounds? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val pager = (reader.viewModel.state.value.viewer as? PagerViewer)?.pager ?: return@runOnMainSync
+            val location = IntArray(2)
+            pager.getLocationOnScreen(location)
+            if (pager.width > 0 && pager.height > 0) {
+                bounds = PagerBounds(location[0], location[1], pager.width, pager.height)
+            }
+        }
+        return bounds
+    }
+
+    private fun pagerSnapshot(reader: ReaderActivity): PagerSnapshot {
+        var snapshot = PagerSnapshot(visible = false, count = 0, currentItem = -1, idle = false)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val viewer = reader.viewModel.state.value.viewer as? PagerViewer ?: return@runOnMainSync
+            val pager = viewer.pager
+            val idle = runCatching {
+                PagerViewer::class.java.getDeclaredField("isIdle")
+                    .apply { isAccessible = true }
+                    .getBoolean(viewer)
+            }.getOrDefault(false)
+            snapshot = PagerSnapshot(
+                visible = pager.visibility == android.view.View.VISIBLE,
+                count = pager.adapter?.count ?: 0,
+                currentItem = pager.currentItem,
+                idle = idle,
+            )
+        }
+        return snapshot
     }
 
     private fun awaitObservedPage(reader: ReaderActivity, requestedIndex: Int): Int {
@@ -637,6 +717,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 val page = pages.getOrNull(index) ?: return@awaitValue null
                 observedPageStatus = page.status
                 if (index != requestedIndex || page.status != Page.State.Ready || page.stream == null) {
+                    return@awaitValue null
+                }
+                val pager = pagerSnapshot(reader)
+                if (!pager.visible || !pager.idle || pager.currentItem !in 0 until pager.count) {
                     return@awaitValue null
                 }
                 index
@@ -673,6 +757,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             pageCount = pages?.size ?: 0,
             pageState = pageStateName(page?.status),
             position = position,
+            pager = pagerSnapshot(reader),
         )
     }
 
@@ -695,8 +780,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         scenario: String,
         phase: String,
         snapshot: ReaderViewSnapshot,
-        keyInjected: Boolean,
-        keyTarget: String,
+        interactionInjected: Boolean,
+        interactionTarget: String,
         expectedColor: String = "NONE",
         matchingSamples: Int? = null,
         matchingRows: Int? = null,
@@ -712,7 +797,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|focused=${snapshot.focused}|stream=${snapshot.streamPresent.toWireBoolean()}" +
                         "|pagesLoaded=${snapshot.pagesLoaded.toWireBoolean()}|pageCount=${snapshot.pageCount}" +
                         "|pageState=${snapshot.pageState}|position=${snapshot.position}" +
-                        "|keyInjected=${keyInjected.toWireBoolean()}|keyTarget=$keyTarget$pixelDetails",
+                        "|pagerVisible=${snapshot.pager.visible.toWireBoolean()}|pagerCount=${snapshot.pager.count}" +
+                        "|pagerCurrentItem=${snapshot.pager.currentItem}|pagerIdle=${snapshot.pager.idle.toWireBoolean()}" +
+                        "|interactionInjected=${interactionInjected.toWireBoolean()}" +
+                        "|interactionTarget=$interactionTarget$pixelDetails",
                 )
             },
         )
@@ -1455,6 +1543,21 @@ private data class ReaderViewSnapshot(
     val pageCount: Int,
     val pageState: String,
     val position: Int,
+    val pager: PagerSnapshot,
+)
+
+private data class PagerSnapshot(
+    val visible: Boolean,
+    val count: Int,
+    val currentItem: Int,
+    val idle: Boolean,
+)
+
+private data class PagerBounds(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
 )
 
 private data class SelectorSnapshot(

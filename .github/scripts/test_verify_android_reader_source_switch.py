@@ -282,15 +282,20 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "INSTRUMENTATION_STATUS: class=" + verifier.TEST_CLASS + "\n"
             "INSTRUMENTATION_STATUS: test=" + method + "\n"
             "INSTRUMENTATION_STATUS: numtests=1\n"
-            "INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: " + secret + "\n"
+            "INSTRUMENTATION_STATUS: stack=java.sql.SQLException: " + secret + "\n"
             "\tat eu.kanade.tachiyomi.ui.reader.ReaderActivity.dispatchKeyEvent(ReaderActivity.kt:579)\n"
+            "\tat tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl.upsertProgressInternal(CanonicalReadingRepositoryImpl.kt:81)\n"
             "INSTRUMENTATION_STATUS_CODE: -2\n"
             "INSTRUMENTATION_CODE: -1\n"
         )
         diagnosis = verifier._failure_diagnosis(raw, method, 0)
         self.assertEqual("TEST_EXCEPTION", diagnosis["category"])
-        self.assertEqual("IllegalStateException", diagnosis["exceptionType"])
+        self.assertEqual("SQLException", diagnosis["exceptionType"])
         self.assertIn("ReaderActivity.dispatchKeyEvent(ReaderActivity.kt:579)", diagnosis["frames"])
+        self.assertIn(
+            "CanonicalReadingRepositoryImpl.upsertProgressInternal(CanonicalReadingRepositoryImpl.kt:81)",
+            diagnosis["frames"],
+        )
         self.assertNotIn(secret, str(diagnosis))
 
     def test_failure_diagnosis_distinguishes_unobserved_test_and_timeout(self):
@@ -366,17 +371,19 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         method = "sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition"
         private_value = "https://provider.invalid/private-title?token=private"
         line = (
-            "INSTRUMENTATION_STATUS: stream=READER_VIEW_DIAGNOSTIC|scenario=SOURCE_A_TO_B"
-            "|phase=AFTER_PAGE_KEY|viewer=WebtoonViewer|focused=FOCUSED|stream=FALSE"
+            "INSTRUMENTATION_STATUS: stream=READER_VIEW_DIAGNOSTIC|scenario=PAGER_READINESS"
+            "|phase=PAGE_SWIPE_TIMEOUT|viewer=WebtoonViewer|focused=FOCUSED|stream=FALSE"
             "|pagesLoaded=TRUE|pageCount=10|pageState=READY|position=2"
-            "|keyInjected=TRUE|keyTarget=READER_VIEWER|matchingSamples=40|matchingRows=10"
+            "|pagerVisible=TRUE|pagerCount=12|pagerCurrentItem=3|pagerIdle=TRUE"
+            "|interactionInjected=TRUE|interactionTarget=READER_PAGER|matchingSamples=40|matchingRows=10"
             "|expectedColor=RED\n"
         )
         parsed = verifier._reader_view_diagnostics(line)
         self.assertEqual(1, len(parsed))
         summary = verifier.sanitized_summary(method, {}, False, reader_view_diagnostics=parsed)
         self.assertIn("viewer=WebtoonViewer|focused=FOCUSED|stream=FALSE", summary)
-        self.assertIn("keyInjected=TRUE|keyTarget=READER_VIEWER", summary)
+        self.assertIn("pagerVisible=TRUE|pagerCount=12|pagerCurrentItem=3|pagerIdle=TRUE", summary)
+        self.assertIn("interactionInjected=TRUE|interactionTarget=READER_PAGER", summary)
         self.assertIn("expectedColor=RED", summary)
 
         malformed = line.replace("viewer=WebtoonViewer", "viewer=" + private_value)

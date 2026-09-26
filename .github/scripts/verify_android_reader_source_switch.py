@@ -25,6 +25,9 @@ SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
 SAFE_FRAME_PREFIXES = (
     SAFE_TEST_CLASS_PREFIX,
     "eu.kanade.tachiyomi.ui.reader.",
+    "eu.kanade.tachiyomi.data.tsuzuki.",
+    "eu.kanade.tachiyomi.ui.tsuzuki.",
+    "tachiyomi.data.",
 )
 FIXTURE_DIAGNOSTIC_PREFIXES = (
     "INSTRUMENTATION_STATUS: stream=READER_FIXTURE_DIAGNOSTIC|",
@@ -40,7 +43,8 @@ FIXTURE_DIAGNOSTIC_SELECTORS = {
 READER_VIEW_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_VIEW_DIAGNOSTIC|"
 READER_VIEW_DIAGNOSTIC_KEYS = (
     "scenario", "phase", "viewer", "focused", "stream", "pagesLoaded",
-    "pageCount", "pageState", "position", "keyInjected", "keyTarget",
+    "pageCount", "pageState", "position", "pagerVisible", "pagerCount",
+    "pagerCurrentItem", "pagerIdle", "interactionInjected", "interactionTarget",
     "matchingSamples", "matchingRows",
 )
 READER_VIEW_OPTIONAL_KEYS = ("expectedColor",)
@@ -50,9 +54,10 @@ READER_VIEWERS = {
 }
 READER_PAGE_STATES = {"QUEUE", "LOAD_PAGE", "DOWNLOAD_IMAGE", "READY", "ERROR", "NONE"}
 READER_FOCUS_STATES = {"FOCUSED", "NO_FOCUS", "UNKNOWN"}
-READER_KEY_TARGETS = {"READER_VIEWER", "NONE"}
+READER_INTERACTION_TARGETS = {"READER_PAGER", "NONE"}
 READER_EXPECTED_COLORS = {"RED", "BLUE", "NONE"}
-READER_BOOL_FIELDS = {"stream", "pagesLoaded", "keyInjected"}
+READER_DIAGNOSTIC_SCENARIOS = {*METHOD_SCENARIOS.values(), "PAGER_READINESS"}
+READER_BOOL_FIELDS = {"stream", "pagesLoaded", "pagerVisible", "interactionInjected", "pagerIdle"}
 READER_SELECTOR_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=READER_SELECTOR_DIAGNOSTIC|"
 READER_SELECTOR_DIAGNOSTIC_KEYS = (
     "scenario", "state", "options", "aOption", "bOption", "chapterMatch",
@@ -283,7 +288,7 @@ def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
         if not fields:
             records.append({"evidence": "MALFORMED"})
             continue
-        if fields["scenario"] not in METHOD_SCENARIOS.values():
+        if fields["scenario"] not in READER_DIAGNOSTIC_SCENARIOS:
             records.append({"evidence": "MALFORMED"})
             continue
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,39}", fields["phase"]):
@@ -295,7 +300,7 @@ def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
         if fields["focused"] not in READER_FOCUS_STATES or fields["pageState"] not in READER_PAGE_STATES:
             records.append({"evidence": "MALFORMED"})
             continue
-        if fields["keyTarget"] not in READER_KEY_TARGETS:
+        if fields["interactionTarget"] not in READER_INTERACTION_TARGETS:
             records.append({"evidence": "MALFORMED"})
             continue
         if "expectedColor" in fields and fields["expectedColor"] not in READER_EXPECTED_COLORS:
@@ -304,11 +309,13 @@ def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
         if any(fields[key] not in {"TRUE", "FALSE"} for key in READER_BOOL_FIELDS):
             records.append({"evidence": "MALFORMED"})
             continue
-        numeric_keys = ("pageCount", "matchingSamples", "matchingRows")
+        numeric_keys = ("pageCount", "pagerCount", "matchingSamples", "matchingRows")
         if any(not re.fullmatch(r"[0-9]{1,7}", fields[key]) for key in numeric_keys):
             records.append({"evidence": "MALFORMED"})
             continue
-        if not re.fullmatch(r"-1|[0-9]{1,7}", fields["position"]):
+        if not re.fullmatch(r"-1|[0-9]{1,7}", fields["position"]) or not re.fullmatch(
+            r"-1|[0-9]{1,7}", fields["pagerCurrentItem"],
+        ):
             records.append({"evidence": "MALFORMED"})
             continue
         records.append(fields)
@@ -356,12 +363,13 @@ def _failure_diagnosis(output: str, method: str, runner_exit: int) -> dict[str, 
 
     frames: list[str] = []
     for match in re.finditer(
-        r"(?m)^[ \t]*at ([A-Za-z_$][A-Za-z0-9_.$]*?)\(([^()/\\\s:]+):([0-9]{1,7})\)[ \t]*$",
+        r"(?m)^[ \t]*at ([A-Za-z_$][A-Za-z0-9_.$]*)\.([A-Za-z_$][A-Za-z0-9_$<>]*)"
+        r"\(([^()/\\\s:]+):([0-9]{1,7})\)[ \t]*$",
         output,
     ):
-        class_name, filename, line = match.groups()
+        class_name, method_name, filename, line = match.groups()
         if any(class_name.startswith(prefix) for prefix in SAFE_FRAME_PREFIXES) and filename.endswith((".kt", ".java")):
-            safe_frame = class_name + "(" + filename + ":" + line + ")"
+            safe_frame = class_name + "." + method_name + "(" + filename + ":" + line + ")"
             if safe_frame not in frames:
                 frames.append(safe_frame)
         if len(frames) == 6:
