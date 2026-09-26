@@ -369,6 +369,46 @@ class MihonRuntimeEndToEndIntegrationTest {
     }
 
     @Test
+    fun `synthetic 169 raw entries with six repeated URLs yield 163 observed chapters`() = runTest {
+        // This verifies cross-stage accounting, NOT the cause of the historical
+        // One-Punch Man 169/163 discrepancy on a live MangaDex inventory.
+        LocalMihonSourceHarness().use { harness ->
+            harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man")
+            val distinct = (1..163).map { chapter ->
+                "/chapter/$chapter\tChapter $chapter\t$chapter\tFixture Group"
+            }
+            harness.enqueue(body = (distinct + distinct.take(6)).joinToString("\n"))
+            val journey = RuntimeJourney(harness, "canonical-opm-inventory-accounting", backgroundScope)
+            journey.bind()
+            journey.refresh()
+
+            val inventory = journey.diagnostics.events.single {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
+            }
+            inventory.received shouldBe 169
+            inventory.accepted shouldBe 169
+
+            val probe = journey.diagnostics.events.single {
+                it.stage == ChapterInventoryDiagnosticStage.CHAPTER_PROBE
+            }
+            probe.received shouldBe 169
+            probe.accepted shouldBe 163
+            probe.discarded shouldBe 6
+            probe.reasons[ChapterInventoryDiagnosticReason.DUPLICATE] shouldBe 6
+
+            val chapters = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
+            chapters.size shouldBe 163
+            chapters.mapNotNull { it.baseNumber }.toSet() shouldBe (1..163).toSet()
+            val evidence = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
+            evidence.size shouldBe 163
+            evidence.all { persisted ->
+                persisted.mappedCanonicalChapterId in chapters.map { it.id }
+            } shouldBe true
+            journey.bindings.getByTitle(journey.canonicalTitleId).size shouldBe 1
+        }
+    }
+
+    @Test
     fun `one source failure does not hide chapter option from another language source`() = runTest {
         LocalMihonSourceHarness(languages = listOf("en", "pt-BR")).use { harness ->
             harness.sources.forEach { source ->
