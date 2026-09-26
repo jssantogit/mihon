@@ -1,0 +1,88 @@
+import kotlin.Boolean;
+
+-- Durable, local-only Reader projection outbox. Progress events coalesce; history
+-- carries additive duration until legacy application and acknowledgement commit
+-- in the same SQLite transaction. Rows are retained only while work is pending.
+CREATE TABLE tsuzuki_mihon_projection_queue(
+    canonical_chapter_id TEXT NOT NULL,
+    mihon_chapter_id INTEGER NOT NULL,
+    has_pending_progress INTEGER AS Boolean NOT NULL DEFAULT 0,
+    progress_read INTEGER AS Boolean,
+    progress_page INTEGER,
+    has_pending_history INTEGER AS Boolean NOT NULL DEFAULT 0,
+    pending_duration INTEGER NOT NULL DEFAULT 0,
+    history_read_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    generation INTEGER NOT NULL DEFAULT 1,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(canonical_chapter_id, mihon_chapter_id),
+    FOREIGN KEY(canonical_chapter_id)
+        REFERENCES tsuzuki_canonical_chapters(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_mihon_projection_due_index
+ON tsuzuki_mihon_projection_queue(next_retry_at, updated_at);
+
+enqueueTsuzukiMihonProgress:
+INSERT INTO tsuzuki_mihon_projection_queue(
+    canonical_chapter_id, mihon_chapter_id, has_pending_progress,
+    progress_read, progress_page, updated_at
+)
+VALUES (:canonicalChapterId, :mihonChapterId, 1, :read, :lastPageRead, :updatedAt)
+ON CONFLICT(canonical_chapter_id, mihon_chapter_id) DO UPDATE SET
+    has_pending_progress = 1,
+    progress_read = excluded.progress_read,
+    progress_page = excluded.progress_page,
+    updated_at = excluded.updated_at,
+    generation = tsuzuki_mihon_projection_queue.generation + 1,
+    attempt_count = 0,
+    next_retry_at = 0;
+
+enqueueTsuzukiMihonHistory:
+INSERT INTO tsuzuki_mihon_projection_queue(
+    canonical_chapter_id, mihon_chapter_id, has_pending_history,
+    pending_duration, history_read_at, updated_at
+)
+VALUES (:canonicalChapterId, :mihonChapterId, 1, :sessionReadDuration, :readAt, :readAt)
+ON CONFLICT(canonical_chapter_id, mihon_chapter_id) DO UPDATE SET
+    has_pending_history = 1,
+    pending_duration = tsuzuki_mihon_projection_queue.pending_duration + excluded.pending_duration,
+    history_read_at = MAX(
+        COALESCE(tsuzuki_mihon_projection_queue.history_read_at, 0),
+        excluded.history_read_at
+    ),
+    updated_at = excluded.updated_at,
+    generation = tsuzuki_mihon_projection_queue.generation + 1,
+    attempt_count = 0,
+    next_retry_at = 0;
+
+listDueTsuzukiMihonProjections:
+SELECT canonical_chapter_id, mihon_chapter_id
+FROM tsuzuki_mihon_projection_queue
+WHERE (has_pending_progress = 1 OR has_pending_history = 1)
+  AND next_retry_at <= :nowMillis
+ORDER BY next_retry_at ASC, updated_at ASC,
+    canonical_chapter_id ASC, mihon_chapter_id ASC
+LIMIT :maxItems;
+
+getTsuzukiMihonProjection:
+SELECT *
+FROM tsuzuki_mihon_projection_queue
+WHERE canonical_chapter_id = :canonicalChapterId
+  AND mihon_chapter_id = :mihonChapterId
+LIMIT 1;
+
+acknowledgeTsuzukiMihonProjection:
+DELETE FROM tsuzuki_mihon_projection_queue
+WHERE canonical_chapter_id = :canonicalChapterId
+  AND mihon_chapter_id = :mihonChapterId
+  AND generation = :generation;
+
+retryTsuzukiMihonProjection:
+UPDATE tsuzuki_mihon_projection_queue SET
+    attempt_count = attempt_count + 1,
+    next_retry_at = :nextRetryAt
+WHERE canonical_chapter_id = :canonicalChapterId
+  AND mihon_chapter_id = :mihonChapterId
+  AND generation = :generation;
