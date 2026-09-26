@@ -59,7 +59,9 @@ READER_SELECTOR_DIAGNOSTIC_KEYS = (
     "failedProviders", "aSearchDelta", "aInventoryDelta", "aPagesDelta",
     "bSearchDelta", "bInventoryDelta", "bPagesDelta", "bHeld",
 )
-READER_SELECTOR_STATES = {"LOADING", "DISCOVERING", "READY", "EMPTY", "ERROR"}
+# UNKNOWN is retained as an explicitly inconclusive diagnostic state. It does
+# not satisfy or bypass the instrumented test's functional assertions.
+READER_SELECTOR_STATES = {"LOADING", "DISCOVERING", "READY", "EMPTY", "ERROR", "UNKNOWN"}
 SAFE_DIAGNOSTIC_CATEGORIES = {
     "ASSERTION_FAILURE",
     "EVIDENCE_NOT_EMITTED",
@@ -471,9 +473,11 @@ def sanitized_summary(
         if "evidence" in record:
             lines.append("ANDROID_SOURCE_SWITCH_READER_SELECTOR|evidence=" + record["evidence"])
         else:
+            interpretation = "|interpretation=INCONCLUSIVE" if record["state"] == "UNKNOWN" else ""
             lines.append(
                 "ANDROID_SOURCE_SWITCH_READER_SELECTOR|"
                 + "|".join(key + "=" + record[key] for key in READER_SELECTOR_DIAGNOSTIC_KEYS)
+                + interpretation
             )
     return "\n".join(lines) + "\n"
 

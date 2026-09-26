@@ -403,6 +403,26 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("aSearchDelta=0|aInventoryDelta=0|aPagesDelta=0", summary)
         self.assertNotIn("INSTRUMENTATION_STATUS: stream=", summary)
 
+    def test_unknown_selector_state_is_reported_as_inconclusive_only(self):
+        line = (
+            "INSTRUMENTATION_STATUS: stream=READER_SELECTOR_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY"
+            "|state=UNKNOWN|options=0|aOption=0|bOption=0|chapterMatch=0|failedProviders=0"
+            "|aSearchDelta=0|aInventoryDelta=0|aPagesDelta=0|bSearchDelta=0"
+            "|bInventoryDelta=0|bPagesDelta=0|bHeld=1\n"
+        )
+        parsed = verifier._reader_selector_diagnostics(line)
+        self.assertEqual("UNKNOWN", parsed[0]["state"])
+        summary = verifier.sanitized_summary(
+            "slowSourceDoesNotBlockHealthySourceOption", {}, False,
+            reader_selector_diagnostics=parsed,
+        )
+        self.assertIn("state=UNKNOWN", summary)
+        self.assertIn("interpretation=INCONCLUSIVE", summary)
+        self.assertNotIn("ANDROID_SOURCE_SWITCH_READER_SELECTOR|outcome=PASS", summary)
+
+        with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+            verifier.verify(line, "slowSourceDoesNotBlockHealthySourceOption")
+
     def test_workflow_has_manual_offline_suite_opt_in_and_preserves_navigation_default(self):
         workflow = (ROOT / ".github/workflows/mangafire-real-extension.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
