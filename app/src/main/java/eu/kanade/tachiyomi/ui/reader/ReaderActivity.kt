@@ -91,6 +91,7 @@ import eu.kanade.tachiyomi.util.system.readerBackgroundColor
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -295,7 +296,7 @@ class ReaderActivity : BaseActivity() {
             bindingLinkTitleId?.let(contentBindingLinkViewModel::start)
         }
         LaunchedEffect(contentBindingLinkViewModel) {
-            contentBindingLinkViewModel.bindingUpdates.collectLatest { request ->
+            contentBindingLinkViewModel.bindingUpdates.collect { request ->
                 // Keep the Reader and current page alive; reconcile only the
                 // newly persisted editions before retrying the current chapter.
                 contentSelectorViewModel.refreshAfterBindings(request)

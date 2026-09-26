@@ -49,6 +49,17 @@ internal fun sourceDiscoveryAction(
     return { action(canonicalTitleId) }
 }
 
+/** Existing readable options must not hide the ability to add other languages. */
+internal fun additionalSourcesAction(
+    state: ContentSelectorScreenState,
+    onFindOrAddSource: ((canonicalTitleId: String) -> Unit)?,
+): (() -> Unit)? {
+    val ready = state as? ContentSelectorScreenState.Ready ?: return null
+    if (ready.options.isEmpty()) return null
+    val action = onFindOrAddSource ?: return null
+    return { action(ready.canonicalTitleId) }
+}
+
 @Composable
 fun ContentOptionSelectorSheet(
     state: ContentSelectorScreenState,
@@ -162,6 +173,14 @@ fun ContentOptionSelectorSheet(
                                     active = activeOptionKey == item.option.key,
                                     onClick = { onSelect(item) },
                                 )
+                            }
+                        }
+                        additionalSourcesAction(state, onFindOrAddSource)?.let { onClick ->
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = onClick,
+                            ) {
+                                Text("Find more reading sources")
                             }
                         }
                     }

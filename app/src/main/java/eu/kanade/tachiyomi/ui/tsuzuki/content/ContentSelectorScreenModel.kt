@@ -9,10 +9,10 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -319,7 +319,9 @@ class ContentSelectorScreenModel internal constructor(
                     )
                 }
             }
-            if (successful.get() > 0) Result.success(Unit) else {
+            if (successful.get() > 0) {
+                Result.success(Unit)
+            } else {
                 Result.failure(
                     firstFailure.firstOrNull()
                         ?: IllegalStateException("No newly linked reading edition could be refreshed"),

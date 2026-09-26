@@ -82,6 +82,45 @@ class ContentOptionSelectorDiscoveryTest {
     }
 
     @Test
+    fun `ready chapter can explicitly search for additional language editions`() {
+        val ready = ContentSelectorScreenState.Ready(
+            canonicalTitleId = "canonical-title",
+            canonicalChapterId = "canonical-chapter",
+            options = listOf(
+                ContentOptionPresentation(
+                    option = ContentOption(
+                        key = "reader:chapter",
+                        canonicalChapterId = "canonical-chapter",
+                        addonId = AddonId("reader"),
+                        language = "en",
+                        scanlationGroup = null,
+                        releaseDate = null,
+                        delivery = ContentDelivery.LocalArchive("content://chapter"),
+                    ),
+                    addonDisplayName = "Reader",
+                    language = "en",
+                    scanlationGroup = null,
+                    releaseDate = null,
+                ),
+            ),
+            preferredAddonId = null,
+            preferredOptionKey = null,
+            preferredLanguage = null,
+            preferredUnavailable = false,
+        )
+        var requestedTitle: String? = null
+
+        ready.sourceDiscoveryTitleId() shouldBe null
+        additionalSourcesAction(ready) { requestedTitle = it }?.invoke()
+
+        requestedTitle shouldBe "canonical-title"
+        additionalSourcesAction(ready, null) shouldBe null
+        additionalSourcesAction(ContentSelectorScreenState.Loading) {
+            requestedTitle = it
+        } shouldBe null
+    }
+
+    @Test
     fun `empty ready state does not invent an option and still allows discovery`() {
         val state = ContentSelectorScreenState.Ready(
             canonicalTitleId = "canonical-title",
