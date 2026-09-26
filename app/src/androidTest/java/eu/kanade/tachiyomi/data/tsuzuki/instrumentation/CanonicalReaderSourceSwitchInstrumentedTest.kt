@@ -32,6 +32,8 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
 import mihon.app.di.AppBindings
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -83,8 +85,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val reader = awaitActivity(ReaderActivity::class.java)
             val first = awaitReaderPages(reader, expectedSource = fixture.sourceA.name, expectedCount = 10)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
-            awaitImagePixels(Color.rgb(220, 40, 40))
-            val positionBefore = advanceToPage(reader, 4)
+            awaitImagePixels(reader, Color.rgb(220, 40, 40), "SOURCE_A_TO_B")
+            val positionBefore = advanceToPage(reader, 4, "SOURCE_A_TO_B")
             val progressBefore = awaitValue("canonical progress for observed page 4") {
                 runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
                     ?.takeIf { it.lastPageRead >= positionBefore.toLong() }
@@ -96,7 +98,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val after = awaitReaderPages(reader, fixture.sourceB.name, expectedCount = 10)
             assertEquals("An equal-length source switch must preserve the observed page index", positionBefore, after.first)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
-            awaitImagePixels(Color.rgb(35, 70, 225))
+            awaitImagePixels(reader, Color.rgb(35, 70, 225), "SOURCE_A_TO_B")
 
             assertEquals("Switch must leave the preference provisional until user confirmation", fixture.addonA, runBlocking {
                 fixture.preferences.get(fixture.title.id)?.preferredAddonId
@@ -151,7 +153,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             awaitSourceRequest(fixture.dispatcher, fixture.sourceB.token, emptyPagesBefore)
             assertReaderSession(reader, fixture, fixture.sourceA.name, initial.first, 10)
-            awaitImagePixels(Color.rgb(220, 40, 40))
+            awaitImagePixels(reader, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
 
             fixture.dispatcher.setBehavior(fixture.sourceB.token, FixtureBehavior(pageCount = 10, pageListStatus = 503))
             val failedPagesBefore = fixture.dispatcher.pageRequestCount(fixture.sourceB.token)
@@ -168,7 +170,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 fixture.reading.getHistory(fixture.chapter.id)
             })
             dismissSourceSelectorThroughReaderUi()
-            awaitImagePixels(Color.rgb(220, 40, 40))
+            awaitImagePixels(reader, Color.rgb(220, 40, 40), "EMPTY_OR_FAILING")
             assertSame("Failure must not replace the published chapter object", retiredCandidate.chapter, reader.viewModel.state.value.currentChapter!!.pages!![initial.first].chapter)
             report("EMPTY_OR_FAILING", 10, initial.first, details = "session=PREVIOUS_PRESERVED")
         }
@@ -181,10 +183,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             val first = awaitReaderPages(reader, fixture.sourceA.name, 10)
-            val positionBefore = advanceToPage(reader, 8)
+            val positionBefore = advanceToPage(reader, 8, "PAGE_COUNT_CLAMP")
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             val after = awaitReaderPages(reader, fixture.sourceB.name, 3)
-            awaitImagePixels(Color.rgb(35, 70, 225))
+            awaitImagePixels(reader, Color.rgb(35, 70, 225), "PAGE_COUNT_CLAMP")
             assertTrue("The published page index must be valid for the shorter source", after.first in 0 until after.second)
             assertEquals("A shorter source must clamp the prior index", minOf(positionBefore, after.second - 1), after.first)
             assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
@@ -207,7 +209,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val sourceA = awaitReaderPages(reader, fixture.sourceA.name, 10)
             val retiredPage = reader.viewModel.state.value.currentChapter!!.pages!![sourceA.first]
             retiredPage.chapter.ref()
-            advanceToPage(reader, 3)
+            advanceToPage(reader, 3, "RETIRED_CALLBACK")
             val progressBefore = awaitValue("canonical progress before switching source") {
                 runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
                     ?.takeIf { it.lastPageRead >= 3L }
@@ -248,13 +250,13 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val original = awaitActivity(ReaderActivity::class.java)
             awaitReaderPages(original, fixture.sourceA.name, expectedCount = 10)
-            val positionBefore = advanceToPage(original, 6)
+            val positionBefore = advanceToPage(original, 6, "ACTIVITY_RECREATE")
 
             chooseSourceThroughReaderUi(original, fixture.sourceB.name)
             val switched = awaitReaderPages(original, fixture.sourceB.name, expectedCount = 10)
             assertEquals(positionBefore, switched.first)
             confirmPreferredSource(fixture, fixture.addonB)
-            awaitImagePixels(Color.rgb(35, 70, 225))
+            awaitImagePixels(original, Color.rgb(35, 70, 225), "ACTIVITY_RECREATE")
 
             InstrumentationRegistry.getInstrumentation().runOnMainSync { original.recreate() }
             val recreated = awaitReplacementReaderActivity(original)
@@ -262,7 +264,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val restored = awaitReaderPages(recreated, fixture.sourceB.name, expectedCount = 10)
             assertEquals("Recreated Reader must restore the observed page position", positionBefore, restored.first)
             assertEquals(fixture.chapter.id, recreated.intent.getStringExtra("canonical_chapter"))
-            awaitImagePixels(Color.rgb(35, 70, 225))
+            awaitImagePixels(recreated, Color.rgb(35, 70, 225), "ACTIVITY_RECREATE")
             assertEquals(fixture.addonB, runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId })
             assertEquals(
                 fixture.chapter.id,
@@ -285,17 +287,17 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
-            advanceToPage(reader, 2)
+            advanceToPage(reader, 2, "HISTORY_IDEMPOTENCE")
 
             chooseSourceThroughReaderUi(reader, fixture.sourceB.name)
             val firstSwitch = awaitReaderPages(reader, fixture.sourceB.name, expectedCount = 10)
             confirmPreferredSource(fixture, fixture.addonB)
-            awaitImagePixels(Color.rgb(35, 70, 225))
+            awaitImagePixels(reader, Color.rgb(35, 70, 225), "HISTORY_IDEMPOTENCE")
 
             chooseSourceThroughReaderUi(reader, fixture.sourceA.name)
             val secondSwitch = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
             confirmPreferredSource(fixture, fixture.addonA)
-            awaitImagePixels(Color.rgb(220, 40, 40))
+            awaitImagePixels(reader, Color.rgb(220, 40, 40), "HISTORY_IDEMPOTENCE")
 
             val preference = runBlocking { fixture.preferences.get(fixture.title.id) }
             assertEquals(
@@ -332,6 +334,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             val current = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
+            val sourceARoutesBeforeDiscovery = fixture.dispatcher.routeCounts(fixture.sourceA.token)
+            val sourceBRoutesBeforeDiscovery = fixture.dispatcher.routeCounts(fixture.sourceB.token)
             fixture.dispatcher.holdResponses(fixture.sourceB.token)
             try {
                 openSourceSelectorThroughReaderUi(reader)
@@ -350,11 +354,16 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     device.hasObject(By.text("Choose reading source")) -> "OPEN_WITHOUT_A"
                     else -> "CLOSED_OR_OTHER"
                 }
-                reportDiscoveryDiagnostic(selectorSnapshot, fixture)
-                val routeSummary = fixture.dispatcher.sanitizedCounts(fixture.sourceA.token, fixture.sourceB.token)
+                val typedSelector = typedSelectorSnapshot(reader, fixture)
+                val routeSummary = reportDiscoveryDiagnostic(
+                    typedSelector = typedSelector,
+                    fixture = fixture,
+                    sourceARoutesBefore = sourceARoutesBeforeDiscovery,
+                    sourceBRoutesBefore = sourceBRoutesBeforeDiscovery,
+                )
                 assertTrue(
                     "A healthy source option must appear while another source response is still pending " +
-                        "(selector=$selectorSnapshot; $routeSummary)",
+                        "(selector=$selectorSnapshot; state=${typedSelector.state}; $routeSummary)",
                     healthySourceVisible,
                 )
                 assertTrue(
@@ -370,7 +379,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 assertEquals(current.first, unchanged.first)
                 assertEquals(fixture.chapter.id, reader.intent.getStringExtra("canonical_chapter"))
                 dismissSourceSelectorThroughReaderUi()
-                awaitImagePixels(Color.rgb(220, 40, 40))
+                awaitImagePixels(reader, Color.rgb(220, 40, 40), "SLOW_TO_HEALTHY")
                 report(
                     scenario = "SLOW_TO_HEALTHY",
                     pageCount = unchanged.second,
@@ -390,7 +399,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             fixture.launchReader()
             val reader = awaitActivity(ReaderActivity::class.java)
             val initial = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
-            val positionBefore = advanceToPage(reader, 3)
+            val positionBefore = advanceToPage(reader, 3, "DISCOVERY_CANCEL")
             fixture.dispatcher.holdResponses(fixture.sourceA.token)
             fixture.dispatcher.holdResponses(fixture.sourceB.token)
             try {
@@ -420,7 +429,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     fixture.addonA,
                     runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId },
                 )
-                awaitImagePixels(Color.rgb(220, 40, 40))
+                awaitImagePixels(reader, Color.rgb(220, 40, 40), "DISCOVERY_CANCEL")
                 assertEquals(
                     "The previous page position must remain observable after late responses return",
                     initial.second,
@@ -482,7 +491,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         index to pages.size
     }
 
-    private fun awaitImagePixels(expectedColor: Int) {
+    private fun awaitImagePixels(reader: ReaderActivity, expectedColor: Int, scenario: String) {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         var lastMatchingSampleCount = 0
         var lastMatchingRowCount = 0
@@ -502,17 +511,56 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 }
             }
         } catch (error: AssertionError) {
+            val snapshot = reportScreenshotFailure(
+                reader = reader,
+                scenario = scenario,
+                expectedColor = expectedColor,
+                matchingSamples = lastMatchingSampleCount,
+                matchingRows = lastMatchingRowCount,
+            )
             throw AssertionError(
                 "Reader screenshot lacked a rendered synthetic image region " +
-                    "(matchingSamples=$lastMatchingSampleCount, rows=$lastMatchingRowCount)",
+                    "(matchingSamples=$lastMatchingSampleCount, rows=$lastMatchingRowCount, " +
+                    "viewer=${snapshot?.viewer}, position=${snapshot?.position}, " +
+                    "pageState=${snapshot?.pageState}, stream=${snapshot?.streamPresent})",
                 error,
             )
+        } catch (error: RuntimeException) {
+            reportScreenshotFailure(
+                reader = reader,
+                scenario = scenario,
+                expectedColor = expectedColor,
+                matchingSamples = lastMatchingSampleCount,
+                matchingRows = lastMatchingRowCount,
+            )
+            throw error
         }
         assertTrue(
             "Reader screenshot must contain a visible region of the loaded fixture page color",
             imageEvidence.sampleCount >= MIN_IMAGE_COLOR_SAMPLES &&
                 imageEvidence.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS,
         )
+    }
+
+    private fun reportScreenshotFailure(
+        reader: ReaderActivity,
+        scenario: String,
+        expectedColor: Int,
+        matchingSamples: Int,
+        matchingRows: Int,
+    ): ReaderViewSnapshot? {
+        val snapshot = runCatching { readerViewSnapshot(reader) }.getOrNull() ?: return null
+        reportReaderViewDiagnostic(
+            scenario = scenario,
+            phase = "SCREENSHOT_TIMEOUT",
+            snapshot = snapshot,
+            keyInjected = false,
+            keyTarget = "NONE",
+            expectedColor = colorName(expectedColor),
+            matchingSamples = matchingSamples,
+            matchingRows = matchingRows,
+        )
+        return snapshot
     }
 
     private fun countImageColorSamples(bitmap: Bitmap, expectedColor: Int): ImageColorEvidence {
@@ -551,14 +599,33 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val rowsWithLongRun: Int,
     )
 
-    private fun advanceToPage(reader: ReaderActivity, requestedIndex: Int): Int {
+    private fun advanceToPage(reader: ReaderActivity, requestedIndex: Int, scenario: String): Int {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        val startIndex = reader.viewModel.state.value.currentPage - 1
+        val startIndex = readerViewSnapshot(reader).position
         assertTrue("Current Reader page index must be observable before advancing", startIndex >= 0)
         if (requestedIndex > startIndex) {
             for (expectedIndex in (startIndex + 1)..requestedIndex) {
-                assertTrue("Reader must accept a forward page key", device.pressKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT))
-                awaitObservedPage(reader, expectedIndex)
+                val before = readerViewSnapshot(reader)
+                val injected = device.pressKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT)
+                try {
+                    assertTrue("Reader must accept a forward page key", injected)
+                    awaitObservedPage(reader, expectedIndex)
+                } catch (error: AssertionError) {
+                    val after = readerViewSnapshot(reader)
+                    reportReaderViewDiagnostic(
+                        scenario = scenario,
+                        phase = "PAGE_KEY_TIMEOUT",
+                        snapshot = after,
+                        keyInjected = injected,
+                        keyTarget = if (before.viewer == "NONE") "NONE" else "READER_VIEWER",
+                    )
+                    throw AssertionError(
+                        "Reader page key did not reach the requested ready page " +
+                            "(requestedIndex=$expectedIndex, beforeIndex=${before.position}, " +
+                            "afterIndex=${after.position}, viewer=${after.viewer}, pageState=${after.pageState})",
+                        error,
+                    )
+                }
             }
         }
         return awaitObservedPage(reader, requestedIndex)
@@ -588,6 +655,130 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 "Timed out observing Reader page (requestedIndex=$requestedIndex, " +
                     "observedIndex=$observedIndex, pageCount=$observedPageCount, pageStatus=$observedPageStatus)",
                 error,
+            )
+        }
+    }
+
+    private fun readerViewSnapshot(reader: ReaderActivity): ReaderViewSnapshot {
+        val state = reader.viewModel.state.value
+        val chapter = state.currentChapter
+        val pages = chapter?.pages
+        val position = (state.currentPage - 1).takeIf { it >= 0 } ?: -1
+        val page = pages?.getOrNull(position)
+        var focused = "UNKNOWN"
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val focusedView = reader.currentFocus
+            focused = when {
+                focusedView == null -> "UNKNOWN"
+                focusedView.hasFocus() -> "FOCUSED"
+                else -> "NO_FOCUS"
+            }
+        }
+        return ReaderViewSnapshot(
+            viewer = state.viewer?.javaClass?.simpleName ?: "NONE",
+            focused = focused,
+            streamPresent = page?.stream != null,
+            pagesLoaded = chapter?.state is ReaderChapter.State.Loaded,
+            pageCount = pages?.size ?: 0,
+            pageState = pageStateName(page?.status),
+            position = position,
+        )
+    }
+
+    private fun pageStateName(state: Page.State?): String = when (state) {
+        null -> "NONE"
+        Page.State.Queue -> "QUEUE"
+        Page.State.LoadPage -> "LOAD_PAGE"
+        Page.State.DownloadImage -> "DOWNLOAD_IMAGE"
+        Page.State.Ready -> "READY"
+        is Page.State.Error -> "ERROR"
+    }
+
+    private fun colorName(color: Int): String = when (color) {
+        Color.rgb(220, 40, 40) -> "RED"
+        Color.rgb(35, 70, 225) -> "BLUE"
+        else -> "NONE"
+    }
+
+    private fun reportReaderViewDiagnostic(
+        scenario: String,
+        phase: String,
+        snapshot: ReaderViewSnapshot,
+        keyInjected: Boolean,
+        keyTarget: String,
+        expectedColor: String = "NONE",
+        matchingSamples: Int? = null,
+        matchingRows: Int? = null,
+    ) {
+        val colorDetail = expectedColor.takeIf { it != "NONE" }?.let { "|expectedColor=$it" }.orEmpty()
+        val pixelDetails = "|matchingSamples=${matchingSamples ?: 0}|matchingRows=${matchingRows ?: 0}$colorDetail"
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            1,
+            Bundle().apply {
+                putString(
+                    "stream",
+                    "READER_VIEW_DIAGNOSTIC|scenario=$scenario|phase=$phase|viewer=${snapshot.viewer}" +
+                        "|focused=${snapshot.focused}|stream=${snapshot.streamPresent.toWireBoolean()}" +
+                        "|pagesLoaded=${snapshot.pagesLoaded.toWireBoolean()}|pageCount=${snapshot.pageCount}" +
+                        "|pageState=${snapshot.pageState}|position=${snapshot.position}" +
+                        "|keyInjected=${keyInjected.toWireBoolean()}|keyTarget=$keyTarget$pixelDetails",
+                )
+            },
+        )
+    }
+
+    private fun Boolean.toWireBoolean(): String = if (this) "TRUE" else "FALSE"
+
+    private fun Boolean.toWireDigit(): String = if (this) "1" else "0"
+
+    private fun typedSelectorSnapshot(reader: ReaderActivity, fixture: SourceSwitchFixture): SelectorSnapshot {
+        val state = runCatching {
+            ReaderActivity::class.java.getDeclaredMethod("getContentSelectorViewModel")
+                .apply { isAccessible = true }
+                .invoke(reader)
+                .let { it as ContentSelectorScreenModel }
+                .state
+                .value
+        }.getOrNull() ?: return SelectorSnapshot("UNKNOWN", 0, false, false, false, 0)
+
+        return when (state) {
+            ContentSelectorScreenState.Loading -> SelectorSnapshot("LOADING", 0, false, false, false, 0)
+            is ContentSelectorScreenState.Discovering -> SelectorSnapshot(
+                "DISCOVERING",
+                0,
+                false,
+                false,
+                state.canonicalTitleId == fixture.title.id && state.canonicalChapterId == fixture.chapter.id,
+                state.failedAttempts,
+            )
+            is ContentSelectorScreenState.Ready -> SelectorSnapshot(
+                "READY",
+                state.options.size,
+                state.options.any {
+                    it.option.addonId == fixture.addonA && it.option.canonicalChapterId == fixture.chapter.id
+                },
+                state.options.any {
+                    it.option.addonId == fixture.addonB && it.option.canonicalChapterId == fixture.chapter.id
+                },
+                state.canonicalTitleId == fixture.title.id && state.canonicalChapterId == fixture.chapter.id &&
+                    state.options.any { it.option.canonicalChapterId == fixture.chapter.id },
+                state.failedProviderCount,
+            )
+            is ContentSelectorScreenState.Empty -> SelectorSnapshot(
+                "EMPTY",
+                0,
+                false,
+                false,
+                state.canonicalTitleId == fixture.title.id && state.canonicalChapterId == fixture.chapter.id,
+                state.failedAttempts,
+            )
+            is ContentSelectorScreenState.Error -> SelectorSnapshot(
+                "ERROR",
+                0,
+                false,
+                false,
+                state.canonicalTitleId == fixture.title.id && state.canonicalChapterId == fixture.chapter.id,
+                0,
             )
         }
     }
@@ -679,17 +870,34 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         )
     }
 
-    private fun reportDiscoveryDiagnostic(selector: String, fixture: SourceSwitchFixture) {
+    private fun reportDiscoveryDiagnostic(
+        typedSelector: SelectorSnapshot,
+        fixture: SourceSwitchFixture,
+        sourceARoutesBefore: FixtureRouteCounts,
+        sourceBRoutesBefore: FixtureRouteCounts,
+    ): String {
+        // Kept separate from the success marker. The state is read from the
+        // production ViewModel only to explain which branch the UI rendered.
+        val sourceADelta = fixture.dispatcher.routeCounts(fixture.sourceA.token) - sourceARoutesBefore
+        val sourceBDelta = fixture.dispatcher.routeCounts(fixture.sourceB.token) - sourceBRoutesBefore
+        val routeSummary = "aSearchDelta=${sourceADelta.search}|aInventoryDelta=${sourceADelta.inventory}" +
+            "|aPagesDelta=${sourceADelta.pages}|bSearchDelta=${sourceBDelta.search}" +
+            "|bInventoryDelta=${sourceBDelta.inventory}|bPagesDelta=${sourceBDelta.pages}" +
+            "|bHeld=${fixture.dispatcher.heldRequestCount(fixture.sourceB.token)}"
         InstrumentationRegistry.getInstrumentation().sendStatus(
             1,
             Bundle().apply {
                 putString(
                     "stream",
-                    "READER_FIXTURE_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY|selector=$selector|" +
-                        fixture.dispatcher.sanitizedCounts(fixture.sourceA.token, fixture.sourceB.token),
+                    "READER_SELECTOR_DIAGNOSTIC|scenario=SLOW_TO_HEALTHY|state=${typedSelector.state}" +
+                        "|options=${typedSelector.options}|aOption=${typedSelector.aOption.toWireDigit()}" +
+                        "|bOption=${typedSelector.bOption.toWireDigit()}" +
+                        "|chapterMatch=${typedSelector.chapterMatch.toWireDigit()}" +
+                        "|failedProviders=${typedSelector.failedProviders}|$routeSummary",
                 )
             },
         )
+        return routeSummary
     }
 
     private fun finishActivities() {
@@ -1075,13 +1283,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
         fun pageRequestCount(token: String): Int = pageRequestCounts[token]?.get() ?: 0
 
-        fun sanitizedCounts(sourceAToken: String, sourceBToken: String): String =
-            listOf(sourceAToken, sourceBToken).flatMapIndexed { index, token ->
-                val source = if (index == 0) "a" else "b"
-                listOf("search", "inventory", "pages").map { route ->
-                    "$source${route.replaceFirstChar { it.uppercaseChar() }}=${routeRequestCount(token, route)}"
-                }
-            }.joinToString("|") + "|bHeld=${heldRequestCount(sourceBToken)}"
+        fun routeCounts(token: String): FixtureRouteCounts = FixtureRouteCounts(
+            search = routeRequestCount(token, "search"),
+            inventory = routeRequestCount(token, "inventory"),
+            pages = routeRequestCount(token, "pages"),
+        )
 
         private fun routeRequestCount(token: String, route: String): Int =
             routeRequestCounts["$token:$route"]?.get() ?: 0
@@ -1243,4 +1449,35 @@ private fun <T> awaitSourceSwitchFixtureValue(description: String, query: () -> 
         SystemClock.sleep(100L)
     }
     throw AssertionError("Timed out waiting for $description")
+}
+
+private data class ReaderViewSnapshot(
+    val viewer: String,
+    val focused: String,
+    val streamPresent: Boolean,
+    val pagesLoaded: Boolean,
+    val pageCount: Int,
+    val pageState: String,
+    val position: Int,
+)
+
+private data class SelectorSnapshot(
+    val state: String,
+    val options: Int,
+    val aOption: Boolean,
+    val bOption: Boolean,
+    val chapterMatch: Boolean,
+    val failedProviders: Int,
+)
+
+private data class FixtureRouteCounts(
+    val search: Int,
+    val inventory: Int,
+    val pages: Int,
+) {
+    operator fun minus(previous: FixtureRouteCounts) = FixtureRouteCounts(
+        search = (search - previous.search).coerceAtLeast(0),
+        inventory = (inventory - previous.inventory).coerceAtLeast(0),
+        pages = (pages - previous.pages).coerceAtLeast(0),
+    )
 }
