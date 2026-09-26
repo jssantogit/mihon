@@ -110,16 +110,13 @@ class MihonChapterProbeProviderTest {
         val unique = (1..163).map { number ->
             snapshot(binding.id, 7L, "/chapter/$number", "Chapter $number", number.toDouble())
         }
+        val missingKeys = (1..6).map { number ->
+            snapshot(binding.id, 7L, "", "Special $number", 0.0)
+                .copy(sourceChapterUrl = "")
+        }
         val inventories = listOf(
             ("duplicates" to (unique + unique.take(6))) to ChapterInventoryDiagnosticReason.DUPLICATE,
-            (
-                "missing keys" to (
-                    unique + (1..6).map { number ->
-                        snapshot(binding.id, 7L, "", "Special $number", 0.0)
-                            .copy(sourceChapterUrl = "")
-                    }
-                )
-            ) to ChapterInventoryDiagnosticReason.MISSING_SOURCE_ID,
+            ("missing keys" to (unique + missingKeys)) to ChapterInventoryDiagnosticReason.MISSING_SOURCE_ID,
         )
 
         inventories.forEach { (scenario, expectedReason) ->
