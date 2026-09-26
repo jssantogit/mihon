@@ -1249,6 +1249,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         private val originalReaderMode: Int,
         private val originalNavigateToPan: Boolean,
         private val originalSecureScreen: SecurityPreferences.SecureScreenMode,
+        private val originalOnboardingCompleted: Boolean,
         private val installedExtensions: MutableStateFlow<Map<String, Extension.Installed>>,
         private val priorExtensions: Map<String, Extension.Installed>,
     ) {
@@ -1310,6 +1311,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 app.graph.readerPreferences.defaultReadingMode.set(originalReaderMode)
                 app.graph.readerPreferences.navigateToPan.set(originalNavigateToPan)
                 app.graph.securityPreferences.secureScreen.set(originalSecureScreen)
+                app.graph.basePreferences.shownOnboardingFlow.set(originalOnboardingCompleted)
                 server.close()
                 driver.close()
             }
@@ -1525,6 +1527,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     val originalReaderMode = app.graph.readerPreferences.defaultReadingMode.get()
                     val originalNavigateToPan = app.graph.readerPreferences.navigateToPan.get()
                     val originalSecureScreen = app.graph.securityPreferences.secureScreen.get()
+                    val originalOnboardingCompleted = app.graph.basePreferences.shownOnboardingFlow.get()
+                    // The successful legacy navigation fixture completes onboarding;
+                    // source-switch tests require the same foreground precondition.
+                    app.graph.basePreferences.shownOnboardingFlow.set(true)
                     app.graph.securityPreferences.secureScreen.set(SecurityPreferences.SecureScreenMode.NEVER)
                     app.graph.readerPreferences.defaultReadingMode.set(ReadingMode.LEFT_TO_RIGHT.flagValue)
                     app.graph.readerPreferences.navigateToPan.set(false)
@@ -1545,6 +1551,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         originalReaderMode = originalReaderMode,
                         originalNavigateToPan = originalNavigateToPan,
                         originalSecureScreen = originalSecureScreen,
+                        originalOnboardingCompleted = originalOnboardingCompleted,
                         installedExtensions = installedExtensions,
                         priorExtensions = priorExtensions,
                     )
