@@ -298,6 +298,13 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             InstrumentationRegistry.getInstrumentation().runOnMainSync { original.recreate() }
             val recreated = awaitReplacementReaderActivity(original)
             assertNotSame("Activity recreation must produce a new Activity instance", original, recreated)
+            awaitValue("recreated Reader to own a newly attached Viewer") {
+                val viewer = recreated.viewModel.state.value.viewer
+                viewer?.takeIf {
+                    it.getView().parent === recreated.binding.viewerContainer &&
+                        it.getView().isAttachedToWindow
+                }
+            }
             val restored = awaitReaderPages(recreated, fixture.sourceB.name, expectedCount = 10)
             assertEquals("Recreated Reader must restore the observed page position", positionBefore, restored.first)
             assertEquals(fixture.chapter.id, recreated.intent.getStringExtra("canonical_chapter"))
@@ -603,14 +610,20 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val imageEvidence = try {
             awaitValue("Reader to own the focused window and render its synthetic image") {
                 if (!reader.window.decorView.hasWindowFocus()) return@awaitValue null
+                val before = readerViewSnapshot(reader)
+                if (!isCurrentPageImageVisible(before.pager)) return@awaitValue null
                 val screenshot = device.takeScreenshot() ?: return@awaitValue null
                 try {
                     val evidence = countImageColorSamples(screenshot, expectedColor)
                     lastMatchingSampleCount = evidence.sampleCount
                     lastMatchingRowCount = evidence.rowsWithLongRun
+                    val after = readerViewSnapshot(reader)
                     evidence.takeIf {
                         it.sampleCount >= MIN_IMAGE_COLOR_SAMPLES &&
-                            it.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS
+                            it.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS &&
+                            isCurrentPageImageVisible(after.pager) &&
+                            before.position == after.position &&
+                            before.pager.currentItem == after.pager.currentItem
                     }
                 } finally {
                     screenshot.recycle()
@@ -648,31 +661,14 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             imageEvidence.sampleCount >= MIN_IMAGE_COLOR_SAMPLES &&
                 imageEvidence.rowsWithLongRun >= MIN_IMAGE_COLOR_ROWS,
         )
-        val snapshot = readerViewSnapshot(reader)
-        val pager = snapshot.pager
-        val currentImageVisible =
-            pager.visible && pager.holderAttached && pager.holderVisible &&
-                pager.imageViewPresent && pager.imageViewVisible && pager.imageViewReady && !pager.errorVisible
-        if (!currentImageVisible) {
-            val imageCounts = fixture.imageRequestCounts()
-            reportReaderViewDiagnostic(
-                scenario = scenario,
-                phase = "IMAGE_VIEW_NOT_READY",
-                snapshot = snapshot,
-                interactionInjected = false,
-                interactionTarget = "READER_PAGER",
-                expectedColor = colorName(expectedColor),
-                matchingSamples = imageEvidence.sampleCount,
-                matchingRows = imageEvidence.rowsWithLongRun,
-                imageRequestsA = imageCounts.first,
-                imageRequestsB = imageCounts.second,
-            )
-        }
-        assertTrue(
-            "The current Reader page image must be attached, visible, decoded, and free of an error view",
-            currentImageVisible,
-        )
+        // The polling loop proved an attached, decoded current-page view both
+        // before and after capturing the expected on-screen image pixels.
+        // Do not accept a screenshot of an unrelated or detached old holder.
     }
+
+    private fun isCurrentPageImageVisible(pager: PagerSnapshot): Boolean =
+        pager.visible && pager.holderAttached && pager.holderVisible &&
+            pager.imageViewPresent && pager.imageViewVisible && pager.imageViewReady && !pager.errorVisible
 
     private fun reportScreenshotFailure(
         reader: ReaderActivity,
