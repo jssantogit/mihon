@@ -9,8 +9,8 @@ import dev.zacsweers.metro.SingleIn
 import tachiyomi.data.Database
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
-import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 
@@ -118,7 +118,11 @@ class ChapterEvidenceRepositoryImpl(
                 existing?.evidence?.externalChapterKey?.let { previousKey ->
                     if (previousKey != stableEvidence.externalChapterKey) {
                         byExternalKey.remove(
-                            ExternalEvidenceKey(existing.evidence.producerKind, existing.evidence.producerId, previousKey),
+                            ExternalEvidenceKey(
+                                existing.evidence.producerKind,
+                                existing.evidence.producerId,
+                                previousKey,
+                            ),
                         )
                     }
                 }

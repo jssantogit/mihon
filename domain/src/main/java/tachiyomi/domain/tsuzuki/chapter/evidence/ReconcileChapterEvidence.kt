@@ -109,14 +109,42 @@ class ReconcileChapterEvidence internal constructor(
             }
             .toMap()
             .toMutableMap()
-        val chaptersByIdentity = linkedMapOf<CanonicalChapterIdentity, CanonicalChapter>()
+        val chaptersByIdentity = linkedMapOf<CanonicalChapterIdentity, MutableList<CanonicalChapter>>()
         chapters.values.forEach { chapter ->
-            if (chapter.identity.isSpecific && chapter.identity !in chaptersByIdentity) {
-                chaptersByIdentity[chapter.identity] = chapter
+            if (chapter.identity.isSpecific) {
+                chaptersByIdentity.getOrPut(chapter.identity) { mutableListOf() }.add(chapter)
             }
         }
         val chapterUpserts = linkedMapOf<String, CanonicalChapter>()
         val evidenceUpserts = mutableListOf<ChapterEvidenceWrite>()
+
+        fun indexChapter(chapter: CanonicalChapter) {
+            if (!chapter.identity.isSpecific) return
+            val candidates = chaptersByIdentity.getOrPut(chapter.identity) { mutableListOf() }
+            val index = candidates.indexOfFirst { it.id == chapter.id }
+            if (index < 0) {
+                candidates += chapter
+            } else {
+                candidates[index] = chapter
+            }
+        }
+
+        fun reusableChapter(
+            candidates: List<CanonicalChapter>,
+            observedVolume: Int?,
+        ): CanonicalChapter? {
+            if (candidates.isEmpty()) return null
+            if (observedVolume == null) {
+                return candidates.first().takeIf { candidates.all { it.volume == null } }
+            }
+            return candidates.firstOrNull { it.volume == observedVolume }
+                ?: candidates.firstOrNull { it.volume == null }
+                    ?.takeIf {
+                        candidates.none { candidate ->
+                            candidate.volume != null && candidate.volume != observedVolume
+                        }
+                    }
+        }
 
         fun stageEvidence(observation: ChapterEvidence, mappedCanonicalChapterId: String?) {
             val externalKey = observation.externalChapterKey?.let {
@@ -203,29 +231,48 @@ class ReconcileChapterEvidence internal constructor(
                 null
             }
 
+            val mappedVolumeConflicts = mappedChapter != null &&
+                mappedChapter.volume != null &&
+                observation.volume != null &&
+                mappedChapter.volume != observation.volume
             val mappedIdentityConflicts = mappedChapter != null &&
                 parsedIdentityIsReliable &&
                 mappedChapter.identity.isSpecific &&
-                mappedChapter.identity != parsed.identity
+                (mappedChapter.identity != parsed.identity || mappedVolumeConflicts)
             if (mappedIdentityConflicts) {
                 reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
             }
 
+            val identityCandidates = chaptersByIdentity[parsed.identity].orEmpty()
+            val ambiguousWithoutVolume = observation.volume == null &&
+                identityCandidates.any { it.volume != null } &&
+                (mappedChapter == null || mappedIdentityConflicts)
             val reusableByIdentity = if (
                 parsedIdentityIsReliable &&
-                (mappedChapter == null || mappedIdentityConflicts)
+                (mappedChapter == null || mappedIdentityConflicts) &&
+                !ambiguousWithoutVolume
             ) {
-                chaptersByIdentity[parsed.identity]
+                reusableChapter(identityCandidates, observation.volume)
             } else {
                 null
             }
 
+            val mappedChapterHasVolumeVariants = mappedChapter != null &&
+                chaptersByIdentity[mappedChapter.identity]
+                    .orEmpty()
+                    .map(CanonicalChapter::volume)
+                    .distinct()
+                    .size > 1
             val hasIndependentMappedSupport = mappedChapter != null &&
                 mappedIdentityConflicts &&
                 persistedEvidence.values.any { support ->
                     support.evidence.id != previousEvidence?.evidence?.id &&
                         support.mappedCanonicalChapterId == mappedChapter.id &&
-                        isReliableSupportFor(support.evidence, mappedChapter)
+                        isReliableSupportFor(
+                            evidence = support.evidence,
+                            chapter = mappedChapter,
+                            volumeIsAmbiguous = mappedChapterHasVolumeVariants,
+                        )
                 }
 
             if (mappedIdentityConflicts && mappedChapter != null && !hasIndependentMappedSupport) {
@@ -234,8 +281,15 @@ class ReconcileChapterEvidence internal constructor(
                     updatedAt = clock(),
                 )
                 chapters[conflicted.id] = conflicted
-                chaptersByIdentity[conflicted.identity] = conflicted
+                indexChapter(conflicted)
                 chapterUpserts[conflicted.id] = conflicted
+            }
+
+            if (ambiguousWithoutVolume) {
+                provisionalCount++
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+                stageEvidence(observation, mappedCanonicalChapterId = null)
+                continue
             }
 
             // A reliable observation whose stable external key changed semantic
@@ -277,7 +331,7 @@ class ReconcileChapterEvidence internal constructor(
             )
 
             chapters[reconciled.id] = reconciled
-            if (reconciled.identity.isSpecific) chaptersByIdentity[reconciled.identity] = reconciled
+            indexChapter(reconciled)
             chapterUpserts[reconciled.id] = reconciled
 
             stageEvidence(observation, mappedCanonicalChapterId = reconciled.id)
@@ -347,12 +401,18 @@ class ReconcileChapterEvidence internal constructor(
     private fun isReliableSupportFor(
         evidence: ChapterEvidence,
         chapter: CanonicalChapter,
+        volumeIsAmbiguous: Boolean,
     ): Boolean {
         val parsed = parser.execute(evidence.rawLabel, evidence.rawNumber)
         return evidence.confidence >= RELIABLE_CONFIDENCE &&
             parsed.confidence >= RELIABLE_CONFIDENCE &&
             parsed.identity.isSpecific &&
-            parsed.identity == chapter.identity
+            parsed.identity == chapter.identity &&
+            when {
+                evidence.volume == null -> !volumeIsAmbiguous
+                chapter.volume == null -> true
+                else -> evidence.volume == chapter.volume
+            }
     }
 
     private fun newChapter(

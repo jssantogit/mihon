@@ -102,8 +102,9 @@ class ChapterEvidenceRepositoryImplTest {
             mappedCanonicalChapterId = "chapter-1",
         )
         val firstRefresh = evidenceRepository.upsertBatch(listOf(refresh)).single()
-        val secondRefresh = evidenceRepository.upsertBatch(listOf(refresh.copy(evidence = refresh.evidence.copy(id = "third-id"))))
-            .single()
+        val secondRefresh = evidenceRepository.upsertBatch(
+            listOf(refresh.copy(evidence = refresh.evidence.copy(id = "third-id"))),
+        ).single()
 
         firstRefresh.evidence.id shouldBe "stable-id"
         secondRefresh.evidence.id shouldBe "stable-id"
@@ -113,7 +114,7 @@ class ChapterEvidenceRepositoryImplTest {
     }
 
     @Test
-    fun `reconciliation rolls back chapter and evidence writes together after injected evidence failure`() = runBlocking<Unit> {
+    fun `reconciliation rolls back chapter and evidence after injected write failure`() = runBlocking<Unit> {
         val failingEvidenceRepository = object : ChapterEvidenceRepository by evidenceRepository {
             override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>) =
                 evidenceRepository.upsertBatch(writes.take(1)).also {
