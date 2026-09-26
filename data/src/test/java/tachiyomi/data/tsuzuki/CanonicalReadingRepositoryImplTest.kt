@@ -290,6 +290,42 @@ class CanonicalReadingRepositoryImplTest {
         legacyState() shouldBe Triple(0L, 3L, 10L)
     }
 
+    @Test
+    fun `failed outbox insert rolls back canonical history without losing older reading data`() = runBlocking<Unit> {
+        seedOperationalChapter()
+        repository.recordHistory(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 100L, sessionReadDuration = 20L),
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TRIGGER fail_tsuzuki_projection_enqueue
+            BEFORE INSERT ON tsuzuki_mihon_projection_queue
+            BEGIN SELECT RAISE(ABORT, 'synthetic outbox failure'); END
+            """.trimIndent(),
+            0,
+        ).await()
+        try {
+            shouldThrow<Exception> {
+                repository.recordHistoryWithProjection(
+                    CanonicalChapterHistoryUpdate("chapter-1", readAt = 200L, sessionReadDuration = 10L),
+                    mihonChapterId = 77L,
+                )
+            }
+            repository.getHistory("chapter-1")?.totalReadDuration shouldBe 20L
+            legacyState() shouldBe Triple(0L, 0L, 0L)
+        } finally {
+            driver.execute(null, "DROP TRIGGER fail_tsuzuki_projection_enqueue", 0).await()
+        }
+        repository.recordHistoryWithProjection(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 300L, sessionReadDuration = 10L),
+            mihonChapterId = 77L,
+        )
+        repository.drainPendingProjectionsAt(limit = 1, nowMillis = 1_000L) shouldBe 1
+        repository.getHistory("chapter-1")?.totalReadDuration shouldBe 30L
+        legacyState() shouldBe Triple(0L, 0L, 10L)
+    }
+
     private suspend fun seedOperationalChapter() {
         driver.execute(
             null,
