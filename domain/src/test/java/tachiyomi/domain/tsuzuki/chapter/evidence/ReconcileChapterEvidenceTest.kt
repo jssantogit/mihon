@@ -526,20 +526,27 @@ class ReconcileChapterEvidenceTest {
         evidenceFixture.chapterRepository.getByCanonicalTitleId("title")
             .map { it.displayNumber }.toSet() shouldBe expectedLabels
         val previousVariants = rows.associate { (url, _, _) ->
-            url to legacyChapters.getVariantBySourceIdentity(101L, url)?.id
+            url to requireNotNull(legacyChapters.getVariantBySourceIdentity(101L, url)).id
         }
         val previousEvidence = rows.associate { (url, _, _) ->
-            url to evidenceFixture.evidenceRepository.getByProducerExternalKey(
-                ProducerKind.ADDON,
-                "addon-101",
-                "101:$url",
-            )?.mappedCanonicalChapterId
+            url to requireNotNull(
+                evidenceFixture.evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "addon-101",
+                    "101:$url",
+                )?.mappedCanonicalChapterId,
+            )
         }
         rows.forEach { (url, _, _) ->
-            val legacyMapped = legacyChapters.getVariantBySourceIdentity(101L, url)
-                ?.canonicalChapterId?.let { legacyChapters.getById(it) }
-            val evidenceMapped = previousEvidence[url]?.let { evidenceFixture.chapterRepository.getById(it) }
-            legacyMapped?.identity shouldBe evidenceMapped?.identity
+            val legacyMapped = requireNotNull(
+                legacyChapters.getById(
+                    requireNotNull(legacyChapters.getVariantBySourceIdentity(101L, url)).canonicalChapterId,
+                ),
+            )
+            val evidenceMapped = requireNotNull(
+                evidenceFixture.chapterRepository.getById(requireNotNull(previousEvidence[url])),
+            )
+            legacyMapped.identity shouldBe evidenceMapped.identity
         }
 
         // The provider omits chapter 0.5 on its next refresh. Neither writer
