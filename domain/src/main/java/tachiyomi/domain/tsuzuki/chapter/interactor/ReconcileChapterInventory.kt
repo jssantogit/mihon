@@ -80,21 +80,6 @@ class ReconcileChapterInventory internal constructor(
             }
         }
 
-        fun reusableChapter(
-            candidates: List<CanonicalChapter>,
-            observedVolume: Int?,
-            hasExplicitVolumePrefix: Boolean,
-        ): CanonicalChapter? {
-            if (candidates.isEmpty()) return null
-            if (observedVolume == null) {
-                if (hasExplicitVolumePrefix || candidates.any { it.volume != null }) return null
-                return candidates.singleOrNull()
-            }
-            candidates.filter { it.volume == observedVolume }.singleOrNull()?.let { return it }
-            if (candidates.any { it.volume != null }) return null
-            return candidates.singleOrNull()
-        }
-
         val chaptersToPersist = linkedMapOf<String, CanonicalChapter>()
 
         for (inventory in inventories) {
@@ -131,12 +116,15 @@ class ReconcileChapterInventory internal constructor(
                 } else {
                     val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
                     val matched = parsed.identity.takeIf { it.isSpecific }
-                        ?.let {
-                            reusableChapter(
-                                candidates = identities[it].orEmpty(),
+                        ?.let { identity ->
+                            CanonicalChapterCandidateResolver.resolve(
+                                candidates = identities[identity].orEmpty(),
                                 observedVolume = observedVolume,
                                 hasExplicitVolumePrefix = hasExplicitVolumePrefix,
                             )
+                        }
+                        ?.let { resolution ->
+                            (resolution as? CanonicalChapterCandidateResolution.UniqueMatch)?.chapter
                         }
                     matched ?: CanonicalChapter(
                         id = idFactory(),

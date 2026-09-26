@@ -9,8 +9,11 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.chapter.interactor.CanonicalChapterCandidateResolution
+import tachiyomi.domain.tsuzuki.chapter.interactor.CanonicalChapterCandidateResolver
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -25,6 +28,7 @@ class ReconcileChapterEvidence internal constructor(
     private val clock: () -> Long,
     private val mutationGate: ChapterMutationGate = ChapterMutationGate(),
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
+    private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
 ) {
 
     @Inject
@@ -129,23 +133,6 @@ class ReconcileChapterEvidence internal constructor(
             }
         }
 
-        fun reusableChapter(
-            candidates: List<CanonicalChapter>,
-            observedVolume: Int?,
-        ): CanonicalChapter? {
-            if (candidates.isEmpty()) return null
-            if (observedVolume == null) {
-                return candidates.first().takeIf { candidates.all { it.volume == null } }
-            }
-            return candidates.firstOrNull { it.volume == observedVolume }
-                ?: candidates.firstOrNull { it.volume == null }
-                    ?.takeIf {
-                        candidates.none { candidate ->
-                            candidate.volume != null && candidate.volume != observedVolume
-                        }
-                    }
-        }
-
         fun stageEvidence(observation: ChapterEvidence, mappedCanonicalChapterId: String?) {
             val externalKey = observation.externalChapterKey?.let {
                 EvidenceExternalKey(observation.producerKind, observation.producerId, it)
@@ -244,15 +231,24 @@ class ReconcileChapterEvidence internal constructor(
             }
 
             val identityCandidates = chaptersByIdentity[parsed.identity].orEmpty()
-            val ambiguousWithoutVolume = observation.volume == null &&
-                identityCandidates.any { it.volume != null } &&
+            val candidateResolution = if (parsedIdentityIsReliable) {
+                CanonicalChapterCandidateResolver.resolve(
+                    candidates = identityCandidates,
+                    observedVolume = observation.volume,
+                    hasExplicitVolumePrefix = observation.volume == null &&
+                        volumeParser.hasExplicitVolumePrefix(observation.rawLabel),
+                )
+            } else {
+                CanonicalChapterCandidateResolution.NoMatch
+            }
+            val ambiguousIdentity = candidateResolution == CanonicalChapterCandidateResolution.Ambiguous &&
                 (mappedChapter == null || mappedIdentityConflicts)
             val reusableByIdentity = if (
                 parsedIdentityIsReliable &&
                 (mappedChapter == null || mappedIdentityConflicts) &&
-                !ambiguousWithoutVolume
+                !ambiguousIdentity
             ) {
-                reusableChapter(identityCandidates, observation.volume)
+                (candidateResolution as? CanonicalChapterCandidateResolution.UniqueMatch)?.chapter
             } else {
                 null
             }
@@ -285,7 +281,7 @@ class ReconcileChapterEvidence internal constructor(
                 chapterUpserts[conflicted.id] = conflicted
             }
 
-            if (ambiguousWithoutVolume) {
+            if (ambiguousIdentity) {
                 provisionalCount++
                 reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
                 stageEvidence(observation, mappedCanonicalChapterId = null)
