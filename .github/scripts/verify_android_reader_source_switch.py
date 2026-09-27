@@ -19,6 +19,7 @@ METHOD_SCENARIOS = {
     "repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry": "HISTORY_IDEMPOTENCE",
     "slowSourceDoesNotBlockHealthySourceOption": "SLOW_TO_HEALTHY",
     "cancelledDiscoveryCannotMutateActiveReaderSession": "DISCOVERY_CANCEL",
+    "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress": "LEGACY_ATTACH",
 }
 SAFE_TEST_CLASS_PREFIX = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation."
 SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
@@ -266,6 +267,14 @@ def verify(output: str, method: str) -> dict[str, str]:
             raise ReaderSourceSwitchVerificationError("Cancelled discovery did not prove cancellation and delivery of late responses")
         if fields.get("session") != "PREVIOUS_PRESERVED":
             raise ReaderSourceSwitchVerificationError("Cancelled discovery did not prove the active Reader session remained intact")
+
+    if method == "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress":
+        for key in (
+            "legacySessionAttached", "canonicalIdStable", "mappingPreserved",
+            "variantPreserved", "preferencePreserved", "canonicalHistory",
+        ):
+            if fields.get(key) != "true":
+                raise ReaderSourceSwitchVerificationError("Legacy Reader attach did not prove " + key)
 
     return fields
 
@@ -584,6 +593,8 @@ def sanitized_summary(
         safe_keys = (
             "sourceAPageCount", "sourceBPageCount", "positionBefore", "positionAfter", "historyRows",
             "session", "sourceAHealthy", "sourceBPending", "cancelled", "lateResponsesReleased",
+            "legacySessionAttached", "canonicalIdStable", "mappingPreserved", "variantPreserved",
+            "preferencePreserved", "canonicalHistory",
         )
         safe_fields = [
             key + "=" + fields[key]

@@ -91,6 +91,17 @@ def output_for(method: str) -> str:
                 "session": "PREVIOUS_PRESERVED",
             },
         )
+    elif method == "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress":
+        fields.update(
+            {
+                "legacySessionAttached": "true",
+                "canonicalIdStable": "true",
+                "mappingPreserved": "true",
+                "variantPreserved": "true",
+                "preferencePreserved": "true",
+                "canonicalHistory": "true",
+            },
+        )
 
     event = "ANDROID_SOURCE_SWITCH|" + "|".join(key + "=" + value for key, value in fields.items())
     diagnostic = ""
@@ -130,6 +141,19 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                 fields = verifier.verify(output_for(method), method)
                 self.assertEqual("OBSERVABLE", fields["position"])
                 self.assertGreater(int(fields["pageCount"]), 0)
+
+    def test_legacy_attach_requires_mapping_variant_preference_and_history_evidence(self):
+        method = "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress"
+        output = output_for(method)
+        verifier.verify(output, method)
+        for key in (
+            "legacySessionAttached", "canonicalIdStable", "mappingPreserved",
+            "variantPreserved", "preferencePreserved", "canonicalHistory",
+        ):
+            with self.subTest(key=key):
+                changed = output.replace(key + "=true", key + "=false")
+                with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                    verifier.verify(changed, method)
 
     def test_real_runner_repeats_numtests_in_the_terminal_status_bundle(self):
         # AndroidJUnitRunner sends numtests=1 both when the test starts and

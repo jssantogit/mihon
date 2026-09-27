@@ -130,6 +130,7 @@ jobs:
               grep -F 'public final void repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry();' junit-signatures.txt
               grep -F 'public final void slowSourceDoesNotBlockHealthySourceOption();' junit-signatures.txt
               grep -F 'public final void cancelledDiscoveryCannotMutateActiveReaderSession();' junit-signatures.txt
+              grep -F 'public final void legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress();' junit-signatures.txt
             else
               grep -F 'public final void coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
               grep -F 'public final void warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt

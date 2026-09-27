@@ -168,7 +168,8 @@ for method in \
   activityRecreationRestoresObservedCanonicalPosition \
   repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry \
   slowSourceDoesNotBlockHealthySourceOption \
-  cancelledDiscoveryCannotMutateActiveReaderSession; do
+  cancelledDiscoveryCannotMutateActiveReaderSession \
+  legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress; do
   if ! run_one "$method"; then
     overall_status=1
   fi

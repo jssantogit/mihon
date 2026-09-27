@@ -64,22 +64,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import tachiyomi.data.Database
+import tachiyomi.data.chapter.ChapterRepositoryImpl
 import tachiyomi.data.manga.MangaRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
+import tachiyomi.data.tsuzuki.SourceTitleMappingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
+import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
+import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -493,6 +499,69 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 fixture.dispatcher.releaseResponses(fixture.sourceA.token)
                 fixture.dispatcher.releaseResponses(fixture.sourceB.token)
             }
+        }
+    }
+
+    @Test(timeout = 240_000L)
+    fun legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress() {
+        requireOptIn()
+        withFixture { fixture ->
+            val legacy = fixture.seedLegacyEntry()
+            fixture.launchReader(legacy)
+            val reader = awaitActivity(ReaderActivity::class.java)
+            val initial = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
+
+            assertTrue(
+                "ReaderActivity.newIntent must attach its persisted source mapping to a canonical session",
+                reader.viewModel.canChangeCanonicalSource(),
+            )
+            assertEquals(legacy.manga.id, reader.viewModel.mangaId)
+            assertEquals(legacy.chapter.id, reader.viewModel.state.value.currentChapter?.chapter?.id)
+            assertEquals(0, initial.first)
+            assertEquals(
+                "Legacy attach must preserve the existing preferred Add-on",
+                fixture.addonA,
+                runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId },
+            )
+
+            val position = advanceToPage(reader, fixture, 2, "LEGACY_ATTACH")
+            awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "LEGACY_ATTACH")
+            val progress = awaitValue("canonical progress recorded from the legacy Reader entry") {
+                runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
+                    ?.takeIf { it.lastPageRead >= position.toLong() }
+            }
+            val history = runBlocking { fixture.reading.getHistory(fixture.chapter.id) }
+            assertEquals(fixture.chapter.id, progress.canonicalChapterId)
+            assertEquals(fixture.chapter.id, history?.canonicalChapterId)
+            assertEquals(1L, fixture.canonicalHistoryRowCount())
+            assertEquals(
+                "Reader attach must not replace the source mapping",
+                legacy.mapping,
+                runBlocking {
+                    SourceTitleMappingRepositoryImpl(fixture.database)
+                        .getBySource(fixture.sourceA.id, legacy.manga.url)
+                },
+            )
+            assertEquals(
+                "Reader attach must keep the mapped operational variant stable",
+                legacy.variant,
+                runBlocking {
+                    CanonicalChapterRepositoryImpl(fixture.database)
+                        .getVariantBySourceIdentity(fixture.sourceA.id, legacy.chapter.url)
+                },
+            )
+            assertEquals(
+                "Legacy progress recording must not change the preferred Add-on",
+                fixture.addonA,
+                runBlocking { fixture.preferences.get(fixture.title.id)?.preferredAddonId },
+            )
+            report(
+                scenario = "LEGACY_ATTACH",
+                pageCount = initial.second,
+                positionIndex = position,
+                details = "legacySessionAttached=true|canonicalIdStable=true|mappingPreserved=true" +
+                    "|variantPreserved=true|preferencePreserved=true|canonicalHistory=true",
+            )
         }
     }
 
@@ -1323,6 +1392,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val dispatcher: ReaderFixtureDispatcher,
         val sourceA: ReaderFixtureHttpSource,
         val sourceB: ReaderFixtureHttpSource,
+        private val sourceMangaA: Manga,
         val addonA: AddonId,
         val addonB: AddonId,
         val title: CanonicalTitle,
@@ -1337,7 +1407,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         private val priorExtensions: Map<String, Extension.Installed>,
     ) {
 
-        fun launchReader() {
+        fun launchReader(legacyEntry: LegacyReaderEntry? = null) {
             val instrumentation = InstrumentationRegistry.getInstrumentation()
             val context = instrumentation.targetContext
             val device = UiDevice.getInstance(instrumentation)
@@ -1386,9 +1456,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             // Instrumentation starts the separate singleTask Reader as a
             // foreground Activity and waits for creation. A plain startActivity
             // returned RESUMED with the emulator still focused on another app.
+            val readerIntent = legacyEntry?.let {
+                ReaderActivity.newIntent(context, it.manga.id, it.chapter.id)
+            } ?: ReaderActivity.newCanonicalIntent(context, chapter.id)
             val launched = instrumentation.startActivitySync(
-                ReaderActivity.newCanonicalIntent(context, chapter.id)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                readerIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
             assertTrue("Foreground launch must create ReaderActivity", launched is ReaderActivity)
             // The disposable emulator can show Android's first-use immersive-mode
@@ -1426,6 +1498,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     }
                 }
                 runBlocking {
+                    legacyEntry?.let {
+                        SourceTitleMappingRepositoryImpl(database).remove(it.mapping.id)
+                    }
                     database.tsuzuki_titlesQueries.deleteTsuzukiTitle(title.id)
                     database.mangasQueries.deleteNonLibraryManga(
                         listOf(sourceA.id, sourceB.id),
@@ -1454,6 +1529,75 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 1,
             ) { bindString(0, chapter.id) }.await()
         }
+
+        private var legacyEntry: LegacyReaderEntry? = null
+
+        fun seedLegacyEntry(): LegacyReaderEntry {
+            check(legacyEntry == null) { "Legacy Reader fixture entry was already seeded" }
+            val now = System.currentTimeMillis()
+            val mapping = SourceTitleMapping(
+                id = "legacy-mapping-${title.id}",
+                canonicalTitleId = title.id,
+                mihonMangaId = sourceMangaA.id,
+                sourceId = sourceA.id,
+                sourceUrl = sourceMangaA.url,
+                language = sourceA.lang,
+                matchConfidence = 1.0,
+                verifiedByUser = true,
+                availability = SourceMappingAvailability.AVAILABLE,
+                preferredOverride = true,
+                createdAt = now,
+                updatedAt = now,
+            )
+            val chapterUrl = "/reader/${sourceA.token}/chapter-1"
+            val operationalChapter = runBlocking {
+                ChapterRepositoryImpl(database).addAll(
+                    listOf(
+                        Chapter.create().copy(
+                            mangaId = sourceMangaA.id,
+                            url = chapterUrl,
+                            name = "Chapter 1",
+                            chapterNumber = 1.0,
+                            sourceOrder = 1L,
+                            dateUpload = now,
+                        ),
+                    ),
+                ).single()
+            }
+            val variant = ChapterVariant(
+                id = "legacy-variant-${title.id}",
+                canonicalChapterId = chapter.id,
+                sourceMappingId = mapping.id,
+                sourceId = sourceA.id,
+                mihonMangaId = sourceMangaA.id,
+                mihonChapterId = operationalChapter.id,
+                sourceChapterId = chapterUrl,
+                sourceChapterUrl = chapterUrl,
+                language = sourceA.lang,
+                scanlationGroup = "Synthetic group",
+                version = 1L,
+                releaseDate = now,
+                rawName = "Chapter 1",
+                rawNumberHint = 1.0,
+                rawSourceOrder = 1L,
+                createdAt = now,
+                updatedAt = now,
+            )
+            runBlocking {
+                SourceTitleMappingRepositoryImpl(database).upsert(mapping)
+                CanonicalChapterRepositoryImpl(database).upsertVariant(variant)
+            }
+            return LegacyReaderEntry(sourceMangaA, operationalChapter, mapping, variant).also {
+                legacyEntry = it
+            }
+        }
+
+        data class LegacyReaderEntry(
+            val manga: Manga,
+            val chapter: Chapter,
+            val mapping: SourceTitleMapping,
+            val variant: ChapterVariant,
+        )
 
         companion object {
             fun create(sourceBBehavior: FixtureBehavior = FixtureBehavior(pageCount = 10)): SourceSwitchFixture {
@@ -1668,6 +1812,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         dispatcher = dispatcher,
                         sourceA = sourceA,
                         sourceB = sourceB,
+                        sourceMangaA = sourceMangas.getValue(sourceA.id),
                         addonA = addonA,
                         addonB = addonB,
                         title = title,
