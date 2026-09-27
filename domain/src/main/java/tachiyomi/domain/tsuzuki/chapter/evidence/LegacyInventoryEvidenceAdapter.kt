@@ -34,8 +34,10 @@ class LegacyInventoryEvidenceAdapter(
             val previous = uniqueBySourceKey.putIfAbsent(key, snapshot)
             require(
                 previous == null ||
-                    (previous.rawName.trim() == snapshot.rawName.trim() &&
-                        previous.rawNumberHint == snapshot.rawNumberHint),
+                    (
+                        previous.rawName.trim() == snapshot.rawName.trim() &&
+                            previous.rawNumberHint == snapshot.rawNumberHint
+                        ),
             ) { "Conflicting chapter observations reuse one source key" }
         }
 
