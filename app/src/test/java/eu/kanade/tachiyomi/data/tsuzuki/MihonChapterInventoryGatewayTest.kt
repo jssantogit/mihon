@@ -158,6 +158,7 @@ class MihonChapterInventoryGatewayTest {
         source.lastFetchChapters shouldBe true
         inventory.sourceMappingId shouldBe "mapping-7"
         inventory.canonicalTitleId shouldBe "title-1"
+        inventory.sourceUrl shouldBe "/title"
         inventory.chapters.map { it.sourceChapterId } shouldContainExactly listOf("/new", "/known")
         inventory.chapters.map { it.rawNumberHint } shouldContainExactly listOf(4.5, 3.0)
         inventory.chapters[0].rawSourceOrder shouldBe 0L

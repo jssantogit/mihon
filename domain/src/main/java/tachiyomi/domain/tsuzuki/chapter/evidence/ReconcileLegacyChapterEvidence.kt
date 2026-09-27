@@ -59,32 +59,18 @@ class ReconcileLegacyChapterEvidence(
                 ) { "Duplicate source evidence identity in a legacy reconciliation batch" }
             }
         }
-        if (evidence.isEmpty()) return emptyList()
+        // Empty provider inventories are non-destructive, but an obsolete
+        // source mapping must still fail instead of masquerading as success.
+        if (evidence.isEmpty()) {
+            validateMappings(canonicalTitleId, inventories)
+            return emptyList()
+        }
 
         return reconciler.executeAndProject(canonicalTitleId, evidence) { persisted ->
             // Read authoritative materialized mappings *inside* the chapter/evidence
             // transaction. An old inventory or a mapping reassigned during fetch
             // may never publish a cross-title or cross-source operational variant.
-            val mappingsById = sourceMappings.getByCanonicalTitleId(canonicalTitleId).associateBy { it.id }
-            for (inventory in inventories) {
-                val mapping = mappingsById[inventory.sourceMappingId]
-                    ?: throw IllegalArgumentException("Legacy source mapping is missing or owned by another title")
-                require(mapping.sourceId == inventory.sourceId) {
-                    "Legacy source ID does not match the persisted source mapping"
-                }
-                require(mapping.availability != SourceMappingAvailability.UNAVAILABLE) {
-                    "Unavailable source mapping cannot publish chapters"
-                }
-                require(mapping.mihonMangaId != null && mapping.mihonMangaId == inventory.mihonMangaId) {
-                    "Legacy inventory must match a materialized Mihon manga"
-                }
-                require(inventory.language.isBlank() || inventory.language == mapping.language) {
-                    "Legacy inventory language does not match the source mapping"
-                }
-                require(inventory.chapters.all { it.mihonMangaId == null || it.mihonMangaId == mapping.mihonMangaId }) {
-                    "Legacy chapter observation belongs to another Mihon manga"
-                }
-            }
+            validateMappings(canonicalTitleId, inventories)
 
             val variants = mutableListOf<ChapterVariant>()
             for (record in persisted) {
@@ -137,6 +123,40 @@ class ReconcileLegacyChapterEvidence(
             // per-title mutation gate. The repository's nested batch joins it.
             chapters.upsertBatch(emptyList(), variants)
             variants
+        }
+    }
+
+    /**
+     * Re-read the persisted mapping after inventory fetch. Nonempty batches call
+     * this inside executeAndProject's transaction; empty batches have no writes.
+     * The source *title* URL must match even when manga/source IDs were reused.
+     */
+    private suspend fun validateMappings(
+        canonicalTitleId: String,
+        inventories: List<SourceChapterInventory>,
+    ) {
+        val mappingsById = sourceMappings.getByCanonicalTitleId(canonicalTitleId).associateBy { it.id }
+        for (inventory in inventories) {
+            val mapping = mappingsById[inventory.sourceMappingId]
+                ?: throw IllegalArgumentException("Legacy source mapping is missing or owned by another title")
+            require(mapping.sourceId == inventory.sourceId) {
+                "Legacy source ID does not match the persisted source mapping"
+            }
+            require(inventory.sourceUrl.isNotBlank() && inventory.sourceUrl == mapping.sourceUrl) {
+                "Legacy inventory source URL changed since fetch"
+            }
+            require(mapping.availability != SourceMappingAvailability.UNAVAILABLE) {
+                "Unavailable source mapping cannot publish chapters"
+            }
+            require(mapping.mihonMangaId != null && mapping.mihonMangaId == inventory.mihonMangaId) {
+                "Legacy inventory must match a materialized Mihon manga"
+            }
+            require(inventory.language.isBlank() || inventory.language == mapping.language) {
+                "Legacy inventory language does not match the source mapping"
+            }
+            require(inventory.chapters.all { it.mihonMangaId == null || it.mihonMangaId == mapping.mihonMangaId }) {
+                "Legacy chapter observation belongs to another Mihon manga"
+            }
         }
     }
 }

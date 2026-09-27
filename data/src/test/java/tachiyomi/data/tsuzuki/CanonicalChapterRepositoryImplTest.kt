@@ -409,6 +409,52 @@ class CanonicalChapterRepositoryImplTest {
         }
 
     @Test
+    fun `staged projection rejects a stale source title URL despite matching manga and source IDs`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val stale = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+                .copy(sourceUrl = "/stale-title")
+            shouldThrow<IllegalArgumentException> {
+                projection.execute(listOf(stale), observedAt = 200L)
+            }
+            repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            repository.getVariantsBySourceMappingId("mapping-1") shouldBe emptyList()
+        }
+
+    @Test
+    fun `empty inventories still validate mapping ownership before reporting success`() = runBlocking<Unit> {
+        val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+        val projection = ReconcileLegacyChapterEvidence(
+            LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+            repository,
+            SourceTitleMappingRepositoryImpl(database),
+        )
+        val invalid = legacyInventory(7L, "missing-mapping", "en", "Chapter 4")
+            .copy(sourceUrl = "/title", chapters = emptyList())
+        shouldThrow<IllegalArgumentException> {
+            projection.execute(listOf(invalid), observedAt = 200L)
+        }
+        projection.execute(
+            listOf(
+                legacyInventory(7L, "mapping-1", "en", "Chapter 4").copy(
+                    sourceUrl = "/title",
+                    chapters = emptyList(),
+                ),
+            ),
+            observedAt = 300L,
+        ) shouldBe emptyList()
+        evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+    }
+
+    @Test
     fun `staged projection rejects a source id that does not own the materialized mapping`() =
         runBlocking<Unit> {
             val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
@@ -470,6 +516,12 @@ class CanonicalChapterRepositoryImplTest {
             else -> 13L
         },
         language = language,
+        sourceUrl = when (mappingId) {
+            "mapping-1" -> "/title"
+            "mapping-2" -> "/title-2"
+            "foreign-mapping" -> "/foreign"
+            else -> ""
+        },
         chapters = listOf(
             SourceChapterSnapshot(
                 sourceId = sourceId,

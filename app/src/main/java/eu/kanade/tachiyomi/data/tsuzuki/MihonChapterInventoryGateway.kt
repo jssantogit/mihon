@@ -157,6 +157,7 @@ class MihonChapterInventoryGateway(
                     chapters = snapshots,
                     mihonMangaId = mihonMangaId,
                     language = mapping.language,
+                    sourceUrl = mapping.sourceUrl,
                 ),
             )
         } catch (error: CancellationException) {
