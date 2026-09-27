@@ -209,6 +209,8 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|startJob=COMPLETED|stateError=NO_SUCH_ELEMENT|refreshError=NONE"
             + "|integrationReady=TRUE|addonReady=TRUE|providerCount=2"
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+            + "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING"
         )
         fields = verifier._detail_setup_diagnostic(diagnostic, method)
         self.assertIsNotNone(fields)
@@ -217,6 +219,8 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertEqual("ELIGIBLE", fields["bindingGate"])
         self.assertEqual("TRUE", fields["sourceEligible"])
         self.assertEqual("SELECTED", fields["bindingSelection"])
+        self.assertEqual("SCREEN", fields["routeModel"])
+        self.assertEqual("CHAPTER_PROBE:NO_BINDING:NO_BINDING", fields["probe"])
         summary = verifier.sanitized_summary(
             method,
             {},
@@ -226,7 +230,9 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("state=ERROR|localLoad=FAILED", summary)
         self.assertIn(
             "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
-            "|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0",
+            "|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+            "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING",
             summary,
         )
 
@@ -238,6 +244,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
             + "|providerCount=1"
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
         )
         with_title = base + "|title=private-title"
         self.assertEqual(
@@ -253,6 +260,11 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertEqual(
             {"evidence": "MALFORMED"},
             verifier._detail_setup_diagnostic(with_unbounded_source_state, method),
+        )
+        with_unbounded_probe = base.replace("probe=NONE", "probe=CHAPTER_PROBE:OTHER:private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_probe, method),
         )
 
     def test_real_runner_repeats_numtests_in_the_terminal_status_bundle(self):

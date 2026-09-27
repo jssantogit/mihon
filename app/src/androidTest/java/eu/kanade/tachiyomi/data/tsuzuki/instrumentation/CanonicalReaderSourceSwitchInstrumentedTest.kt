@@ -14,6 +14,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -55,6 +56,7 @@ import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -618,13 +620,27 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             routePushed = false,
                             readiness = readiness,
                             token = token,
+                            owner = main,
+                            observerModel = observerModel,
                             diagnostics = inventoryDiagnostics,
                         )
                         throw AssertionError("Detail refresh prerequisites were not ready")
                     }
-                    inventoryDiagnostics = fixture.startInventoryDiagnostics(observerModel)
                     // Compose the actual Voyager route so its own ScreenModel calls start().
-                    fixture.pushCanonicalTitleScreen(main)
+                    val detailScreen = CanonicalTitleScreen(fixture.title.id)
+                    val routeModel = fixture.canonicalTitleScreenModel(detailScreen)
+                    assertNotSame(
+                        "The actual Voyager route must own its own ScreenModel",
+                        observerModel,
+                        routeModel,
+                    )
+                    assertSame(
+                        "The detail route and observer must share AppScope diagnostics",
+                        fixture.chapterInventoryDiagnostics(observerModel),
+                        fixture.chapterInventoryDiagnostics(routeModel),
+                    )
+                    inventoryDiagnostics = fixture.startInventoryDiagnostics(routeModel)
+                    fixture.pushCanonicalTitleScreen(main, detailScreen)
                     try {
                         awaitValue("real canonical title route to render") {
                             UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
@@ -634,6 +650,16 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         awaitValue("real detail route to own the MainActivity navigator") {
                             fixture.isCanonicalTitleScreenActive(main).takeIf { it }
                         }
+                        assertSame(
+                            "The active route must use the prepared Voyager ScreenModel",
+                            detailScreen,
+                            fixture.activeCanonicalTitleScreen(main),
+                        )
+                        assertSame(
+                            "The active route must use its prepared ScreenModel",
+                            routeModel,
+                            fixture.canonicalTitleScreenModel(main),
+                        )
                         awaitValue<Boolean>("detail ScreenModel to own the held source A inventory") {
                             val routes = fixture.dispatcher.routeCounts(token)
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
@@ -645,6 +671,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             routePushed = true,
                             readiness = requireNotNull(detailReadiness),
                             token = token,
+                            owner = main,
+                            observerModel = requireNotNull(appScopeObserverModel),
                             diagnostics = inventoryDiagnostics,
                         )
                         throw error
@@ -773,13 +801,27 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             routePushed = false,
                             readiness = readiness,
                             token = token,
+                            owner = main,
+                            observerModel = observerModel,
                             diagnostics = inventoryDiagnostics,
                         )
                         throw AssertionError("Detail refresh prerequisites were not ready")
                     }
-                    inventoryDiagnostics = fixture.startInventoryDiagnostics(observerModel)
                     // Compose the actual Voyager route so its own ScreenModel calls start().
-                    fixture.pushCanonicalTitleScreen(main)
+                    val detailScreen = CanonicalTitleScreen(fixture.title.id)
+                    val routeModel = fixture.canonicalTitleScreenModel(detailScreen)
+                    assertNotSame(
+                        "The actual Voyager route must own its own ScreenModel",
+                        observerModel,
+                        routeModel,
+                    )
+                    assertSame(
+                        "The detail route and observer must share AppScope diagnostics",
+                        fixture.chapterInventoryDiagnostics(observerModel),
+                        fixture.chapterInventoryDiagnostics(routeModel),
+                    )
+                    inventoryDiagnostics = fixture.startInventoryDiagnostics(routeModel)
+                    fixture.pushCanonicalTitleScreen(main, detailScreen)
                     try {
                         awaitValue("real canonical title route to render") {
                             UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
@@ -789,6 +831,16 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         awaitValue("real detail route to own the MainActivity navigator") {
                             fixture.isCanonicalTitleScreenActive(main).takeIf { it }
                         }
+                        assertSame(
+                            "The active route must use the prepared Voyager ScreenModel",
+                            detailScreen,
+                            fixture.activeCanonicalTitleScreen(main),
+                        )
+                        assertSame(
+                            "The active route must use its prepared ScreenModel",
+                            routeModel,
+                            fixture.canonicalTitleScreenModel(main),
+                        )
                         awaitValue<Boolean>("detail ScreenModel to own the held source A inventory") {
                             val routes = fixture.dispatcher.routeCounts(token)
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
@@ -800,6 +852,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             routePushed = true,
                             readiness = requireNotNull(detailReadiness),
                             token = token,
+                            owner = main,
+                            observerModel = requireNotNull(appScopeObserverModel),
                             diagnostics = inventoryDiagnostics,
                         )
                         throw error
@@ -2099,16 +2153,50 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             routePushed: Boolean,
             readiness: DetailRefreshPrerequisites,
             token: String,
+            owner: MainActivity,
+            observerModel: CanonicalTitleScreenModel,
             diagnostics: ChapterInventoryDiagnostics?,
         ) {
-            val probeSummary = sanitizedProbeSummary(diagnostics?.report().orEmpty())
+            val navigator = exactPrivateField(owner, "navigator", Navigator::class.java)
+            val route = navigator.lastItem as? CanonicalTitleScreen
+            val routeModel = route?.let { runCatching { canonicalTitleScreenModel(owner) }.getOrNull() }
+            val state = routeModel?.state?.value
+            val loaded = state as? CanonicalTitleScreenState.Loaded
+            val stateName = when (state) {
+                is CanonicalTitleScreenState.Loaded -> "LOADED"
+                is CanonicalTitleScreenState.Error -> "ERROR"
+                CanonicalTitleScreenState.Loading, null -> "LOADING"
+            }
+            val stateError = when (state) {
+                is CanonicalTitleScreenState.Error -> safeErrorCategory(state.error)
+                else -> "NONE"
+            }
+            val refreshError = safeErrorCategory(loaded?.refreshError)
+            val operation = routeModel?.let { optionalPrivateField(it, "operation") as? kotlinx.coroutines.Job }
+            val startJob = when {
+                operation == null -> "NOT_STARTED"
+                operation.isCancelled -> "CANCELLED"
+                operation.isActive -> "ACTIVE"
+                else -> "COMPLETED"
+            }
+            val localLoad = when {
+                loaded?.title?.id == title.id -> "PASSED"
+                state is CanonicalTitleScreenState.Error -> "FAILED"
+                else -> "INCOMPLETE"
+            }
+            val probeSummary = sanitizedProbeSummary(
+                diagnostics?.report().orEmpty(),
+            )
+            val actualModel = routeModel != null && routeModel !== observerModel
             InstrumentationRegistry.getInstrumentation().sendStatus(
                 1,
                 Bundle().apply {
                     putString(
                         "stream",
                         "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|scenario=$scenario" +
-                            "|detailRoute=${if (routePushed) "CANONICAL_TITLE" else "NOT_OPENED"}" +
+                            "|state=$stateName|localLoad=$localLoad" +
+                            "|refreshing=${loaded?.isRefreshing?.let { if (it) "TRUE" else "FALSE" } ?: "UNKNOWN"}" +
+                            "|startJob=$startJob|stateError=$stateError|refreshError=$refreshError" +
                             "|integrationReady=${if (readiness.integrationReady) "TRUE" else "FALSE"}" +
                             "|addonReady=${if (readiness.addonRegistryReady) "TRUE" else "FALSE"}" +
                             "|providerCount=${readiness.providerCount?.toString() ?: "UNKNOWN"}" +
@@ -2117,10 +2205,32 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             "|bindingSelection=${readiness.bindingSelection}" +
                             "|aInventory=${dispatcher.routeCounts(token).inventory}" +
                             "|aHeld=${dispatcher.heldInventoryRequestCount(token)}" +
+                            "|routeRendered=${if (routePushed) "TRUE" else "FALSE"}" +
+                            "|routeTitleMatches=${if (route?.canonicalTitleId == title.id) "TRUE" else "FALSE"}" +
+                            "|routeModel=${if (actualModel) "SCREEN" else "UNKNOWN"}" +
                             "|probe=$probeSummary",
                     )
                 },
             )
+        }
+
+        private fun safeErrorCategory(error: Throwable?): String = when (error) {
+            null -> "NONE"
+            is NoSuchElementException -> "NO_SUCH_ELEMENT"
+            is IllegalArgumentException -> "ILLEGAL_ARGUMENT"
+            is IllegalStateException -> "ILLEGAL_STATE"
+            is java.io.IOException -> "IO"
+            else -> "OTHER"
+        }
+
+        private fun optionalPrivateField(instance: Any, name: String): Any? {
+            val field = try {
+                instance.javaClass.getDeclaredField(name)
+            } catch (error: NoSuchFieldException) {
+                throw AssertionError("Expected exact field ${instance.javaClass.name}.$name", error)
+            }
+            field.isAccessible = true
+            return field.get(instance)
         }
 
         fun startInventoryDiagnostics(model: CanonicalTitleScreenModel): ChapterInventoryDiagnostics {
@@ -2132,6 +2242,32 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             diagnostics.start(title.id)
             return diagnostics
         }
+
+        fun chapterInventoryDiagnostics(model: CanonicalTitleScreenModel): ChapterInventoryDiagnostics =
+            exactPrivateField(model, "diagnostics", ChapterInventoryDiagnostics::class.java)
+
+        fun canonicalTitleScreenModel(owner: MainActivity): CanonicalTitleScreenModel =
+            canonicalTitleScreenModel(activeCanonicalTitleScreen(owner))
+
+        fun canonicalTitleScreenModel(screen: CanonicalTitleScreen): CanonicalTitleScreenModel {
+            assertEquals("The active detail route must match the fixture title", title.id, screen.canonicalTitleId)
+
+            // Voyager owns a ViewModelStore per screen. Resolve that exact owner so the test
+            // observes the ScreenModel used by CanonicalTitleScreen.Content, not an Activity model.
+            val ownerClass = Class.forName("cafe.adriel.voyager.androidx.AndroidScreenLifecycleOwner")
+            val companion = ownerClass.getField("Companion").get(null)
+            val screenInterface = Class.forName("cafe.adriel.voyager.core.screen.Screen")
+            val screenOwner = companion.javaClass
+                .getMethod("get", screenInterface)
+                .invoke(companion, screen) as? ViewModelStoreOwner
+                ?: throw AssertionError("Voyager did not provide a ViewModelStoreOwner for the active screen")
+            return ViewModelProvider(screenOwner, app.graph.viewModelFactory)
+                .get(CanonicalTitleScreenModel::class.java)
+        }
+
+        fun activeCanonicalTitleScreen(owner: MainActivity): CanonicalTitleScreen =
+            exactPrivateField(owner, "navigator", Navigator::class.java).lastItem as? CanonicalTitleScreen
+                ?: throw AssertionError("Expected the active Voyager route to be CanonicalTitleScreen")
 
         fun sanitizedProbeSummary(diagnostics: ChapterInventoryDiagnostics?): String =
             sanitizedProbeSummary(diagnostics?.report().orEmpty())
@@ -2145,17 +2281,21 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             .map { line ->
                 val stage = line.substringBefore('|')
                 val outcome = line.substringAfter("outcome=", "UNKNOWN").substringBefore('|')
-                val reason = line.substringAfter("reasons=", "").substringBefore('|')
+                val reason = line.substringAfter("reasons=", "")
+                    .substringBefore('|')
+                    .substringBefore(',')
+                    .substringBefore(':')
+                    .ifBlank { "NONE" }
                 listOf(stage, outcome, reason.takeIf(String::isNotBlank)).filterNotNull().joinToString(":")
             }
-            .take(12)
+            .take(8)
             .joinToString(",")
             .ifBlank { "NONE" }
 
-        fun pushCanonicalTitleScreen(owner: MainActivity) {
+        fun pushCanonicalTitleScreen(owner: MainActivity, screen: CanonicalTitleScreen) {
             val navigator = exactPrivateField(owner, "navigator", Navigator::class.java)
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                navigator.push(CanonicalTitleScreen(title.id))
+                navigator.push(screen)
             }
         }
 

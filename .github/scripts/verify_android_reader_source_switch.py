@@ -108,7 +108,7 @@ DETAIL_SETUP_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_
 DETAIL_SETUP_DIAGNOSTIC_KEYS = (
     "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
     "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
-    "bindingSelection", "aInventory", "aHeld",
+    "bindingSelection", "aInventory", "aHeld", "routeRendered", "routeTitleMatches", "routeModel", "probe",
 )
 DETAIL_SETUP_STATES = {"LOADING", "LOADED", "ERROR"}
 DETAIL_SETUP_LOCAL_LOAD = {"INCOMPLETE", "PASSED", "FAILED"}
@@ -122,6 +122,23 @@ DETAIL_SETUP_BINDING_GATES = {
     "INVALID_SOURCE_KEY", "SOURCE_NOT_ENABLED", "ELIGIBLE", "UNKNOWN",
 }
 DETAIL_SETUP_BINDING_SELECTIONS = {"MISSING", "SELECTED", "ERROR"}
+DETAIL_SETUP_ROUTE_MODELS = {"SCREEN", "UNKNOWN"}
+DETAIL_SETUP_PROBE_STAGES = {"UI", "CHAPTER_PROBE", "CHAPTER_INVENTORY"}
+DETAIL_SETUP_PROBE_OUTCOMES = {
+    "SUCCESS", "EMPTY", "DISABLED", "NO_MATCH", "AMBIGUOUS", "CAPTCHA_REQUIRED", "NETWORK_ERROR",
+    "EXTENSION_ERROR", "HTTP_ERROR", "SOURCE_UNAVAILABLE", "MALFORMED_RESPONSE", "INDETERMINATE",
+    "TIMEOUT", "NO_BINDING", "LOW_CONFIDENCE", "PARTIAL",
+}
+DETAIL_SETUP_PROBE_REASONS = {
+    "NONE", "DUPLICATE", "MISSING_SOURCE_ID", "MISSING_SOURCE_URL", "INVALID_LABEL", "PARSER_ERROR",
+    "LOW_CONFIDENCE", "IDENTITY_MISMATCH", "NO_BINDING", "INVENTORY_EMPTY", "BINDING_NOT_MATERIALIZED",
+    "BINDING_CONFIRMATION_REQUIRED", "ADDON_NOT_INSTALLED", "ALL_SOURCES_DISABLED", "SOURCE_DISABLED",
+    "REUSED_BINDING", "SOURCE_SEARCH_FAILED", "NO_SEARCH_RESULTS", "MATCH_BELOW_THRESHOLD",
+    "AMBIGUOUS_CANDIDATES", "MATERIALIZATION_FAILED", "BINDING_PERSISTENCE_FAILED", "CAPTCHA_CHALLENGE",
+    "NETWORK_FAILURE", "TIMEOUT_FAILURE", "EXTENSION_FAILURE", "HTTP_RESPONSE", "HTTP_FORBIDDEN",
+    "HTTP_RATE_LIMITED", "HTTP_SERVER_ERROR", "SOURCE_UNAVAILABLE", "MALFORMED_RESPONSE",
+    "INDETERMINATE_FAILURE",
+}
 
 
 class ReaderSourceSwitchVerificationError(ValueError):
@@ -403,6 +420,9 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         or fields["bindingGate"] not in DETAIL_SETUP_BINDING_GATES
         or fields["sourceEligible"] not in {"TRUE", "FALSE"}
         or fields["bindingSelection"] not in DETAIL_SETUP_BINDING_SELECTIONS
+        or fields["routeRendered"] not in {"TRUE", "FALSE"}
+        or fields["routeTitleMatches"] not in {"TRUE", "FALSE"}
+        or fields["routeModel"] not in DETAIL_SETUP_ROUTE_MODELS
     ):
         return {"evidence": "MALFORMED"}
     provider_count = fields["providerCount"]
@@ -410,6 +430,19 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         return {"evidence": "MALFORMED"}
     if any(not re.fullmatch(r"[0-9]{1,6}", fields[key]) for key in ("aInventory", "aHeld")):
         return {"evidence": "MALFORMED"}
+    if fields["probe"] != "NONE":
+        records = fields["probe"].split(",")
+        if len(records) > 8 or len(fields["probe"]) > 512:
+            return {"evidence": "MALFORMED"}
+        for record in records:
+            parts = record.split(":")
+            if (
+                len(parts) != 3
+                or parts[0] not in DETAIL_SETUP_PROBE_STAGES
+                or parts[1] not in DETAIL_SETUP_PROBE_OUTCOMES
+                or parts[2] not in DETAIL_SETUP_PROBE_REASONS
+            ):
+                return {"evidence": "MALFORMED"}
     return {key: fields[key] for key in DETAIL_SETUP_DIAGNOSTIC_KEYS}
 
 
