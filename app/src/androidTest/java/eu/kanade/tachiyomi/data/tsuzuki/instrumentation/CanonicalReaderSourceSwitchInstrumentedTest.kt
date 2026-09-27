@@ -530,7 +530,14 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
                     ?.takeIf { it.lastPageRead >= position.toLong() }
             }
-            val history = runBlocking { fixture.reading.getHistory(fixture.chapter.id) }
+            // ReaderActivity persists the active chapter's history on pause. Use the real
+            // back navigation path before asserting history so this proves the legacy
+            // session's canonical identity reached the production lifecycle callback.
+            UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+            awaitActivity(MainActivity::class.java)
+            val history = awaitValue("canonical history recorded when the legacy Reader pauses") {
+                runBlocking { fixture.reading.getHistory(fixture.chapter.id) }
+            }
             assertEquals(fixture.chapter.id, progress.canonicalChapterId)
             assertEquals(fixture.chapter.id, history?.canonicalChapterId)
             assertEquals(1L, fixture.canonicalHistoryRowCount())
