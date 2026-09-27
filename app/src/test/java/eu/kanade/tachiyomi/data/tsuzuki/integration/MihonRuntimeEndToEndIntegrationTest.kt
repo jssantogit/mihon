@@ -4,6 +4,7 @@ import eu.kanade.domain.chapter.model.toSChapter
 import eu.kanade.tachiyomi.data.tsuzuki.MihonCanonicalReaderGateway
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterContentPreparer
 import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
+import eu.kanade.tachiyomi.data.tsuzuki.MihonInventorySnapshotCache
 import eu.kanade.tachiyomi.data.tsuzuki.addon.DefaultAddonRegistry
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
@@ -11,7 +12,9 @@ import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.toList
@@ -39,12 +42,17 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
+import tachiyomi.domain.tsuzuki.chapter.interactor.ReconcileChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
@@ -74,6 +82,9 @@ import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
+import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistory
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
@@ -498,6 +509,101 @@ class MihonRuntimeEndToEndIntegrationTest {
     }
 
     @Test
+    fun `late legacy reader inventory cannot publish a variant behind newer detail evidence`() = runTest {
+        LocalMihonSourceHarness().use { harness ->
+            val titlePath = "/manga/one-punch-man"
+            harness.respondByPath(
+                language = "en",
+                responses = mapOf(
+                    "/search" to "$titlePath\tOne-Punch Man",
+                    titlePath to "/chapter/shared\tChapter 1\t1\tFixture Group",
+                ),
+            )
+            val journey = RuntimeJourney(harness, "canonical-concurrent-reader-detail", backgroundScope)
+            val binding = journey.bind().single()
+            val legacyMapping = legacyMapping(binding)
+            val legacyMappings = mockk<SourceTitleMappingRepository> {
+                coEvery { getByCanonicalTitleId(journey.canonicalTitleId) } returns listOf(legacyMapping)
+            }
+
+            val warmInventory = journey.chapterGateway.fetch(legacyMapping).getOrThrow()
+            warmInventory.chapters.single().rawName shouldBe "Chapter 1"
+            harness.respondByPath(
+                language = "en",
+                responses = mapOf(
+                    "/search" to "$titlePath\tOne-Punch Man",
+                    titlePath to "/chapter/shared\tChapter 2\t2\tFixture Group",
+                ),
+            )
+
+            val staleInventoryReturned = CompletableDeferred<SourceChapterInventory>()
+            val resumeLegacyRefresh = CompletableDeferred<Unit>()
+            val delayedReaderGateway = object : ChapterInventoryGateway {
+                override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> {
+                    val result = journey.chapterGateway.fetch(mapping)
+                    staleInventoryReturned.complete(result.getOrThrow())
+                    resumeLegacyRefresh.await()
+                    return result
+                }
+            }
+
+            val readerRefresh = async {
+                journey.refreshLegacy(legacyMappings, legacyMapping.id, delayedReaderGateway).getOrThrow()
+            }
+            staleInventoryReturned.await().chapters.single().rawName shouldBe "Chapter 1"
+
+            journey.refresh()
+            val latestEvidence = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            latestEvidence.evidence.rawLabel shouldBe "Chapter 2"
+            latestEvidence.evidence.externalChapterKey shouldBe "${legacyMapping.sourceId}:/chapter/shared"
+            val latestCanonicalChapterId = requireNotNull(latestEvidence.mappedCanonicalChapterId)
+            journey.canonicalChapters.getById(latestCanonicalChapterId)?.displayNumber shouldBe "2"
+            val chapterIdsAtDetailRefresh = journey.canonicalChapters
+                .getByCanonicalTitleId(journey.canonicalTitleId)
+                .map { it.id }
+                .toSet()
+            val legacyPreferenceBefore = legacyMappings.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            legacyPreferenceBefore shouldBe legacyMapping
+            legacyPreferenceBefore.preferredOverride shouldBe true
+
+            val existingProgress = CanonicalChapterProgress(
+                canonicalChapterId = latestCanonicalChapterId,
+                read = true,
+                lastPageRead = 17,
+                lastVariantId = "existing-reader-variant",
+                updatedAt = 101L,
+            )
+            val existingHistory = CanonicalChapterHistory(
+                canonicalChapterId = latestCanonicalChapterId,
+                lastVariantId = "existing-reader-variant",
+                lastReadAt = 202L,
+                totalReadDuration = 303L,
+            )
+            journey.readingRepository.seed(existingProgress, existingHistory)
+
+            resumeLegacyRefresh.complete(Unit)
+            readerRefresh.await()
+
+            val lateVariant = requireNotNull(
+                journey.canonicalChapters.getVariantBySourceIdentity(
+                    sourceId = legacyMapping.sourceId,
+                    sourceChapterId = "/chapter/shared",
+                ),
+            )
+            lateVariant.sourceMappingId shouldBe legacyMapping.id
+            lateVariant.canonicalChapterId shouldBe latestEvidence.mappedCanonicalChapterId
+            journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
+                .map { it.id }
+                .toSet() shouldBe chapterIdsAtDetailRefresh
+            journey.canonicalChapters.getById(latestCanonicalChapterId)?.displayNumber shouldBe "2"
+            journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).single() shouldBe latestEvidence
+            journey.readingRepository.getProgress(latestCanonicalChapterId) shouldBe existingProgress
+            journey.readingRepository.getHistory(latestCanonicalChapterId) shouldBe existingHistory
+            legacyMappings.getByCanonicalTitleId(journey.canonicalTitleId).single() shouldBe legacyPreferenceBefore
+        }
+    }
+
+    @Test
     fun `synthetic Death Note manual English binding survives empty peer and opens exact chapter one`() = runTest {
         LocalMihonSourceHarness(languages = listOf("en", "pt-BR")).use { harness ->
             val ambiguousEnglish = listOf(
@@ -569,6 +675,24 @@ class MihonRuntimeEndToEndIntegrationTest {
         harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group", language = language)
     }
 
+    private fun legacyMapping(binding: ContentBinding): SourceTitleMapping {
+        val payload = MihonContentBindingPayloadCodec.decode(binding.runtimePayload)
+        return SourceTitleMapping(
+            id = "legacy-mapping-${payload.sourceId}",
+            canonicalTitleId = binding.canonicalTitleId,
+            mihonMangaId = payload.mihonMangaId,
+            sourceId = payload.sourceId,
+            sourceUrl = payload.sourceUrl,
+            language = payload.language,
+            matchConfidence = binding.matchConfidence,
+            verifiedByUser = binding.verifiedByUser,
+            availability = SourceMappingAvailability.valueOf(binding.availability.name),
+            preferredOverride = true,
+            createdAt = binding.createdAt,
+            updatedAt = binding.updatedAt,
+        )
+    }
+
     private class RuntimeJourney(
         private val harness: LocalMihonSourceHarness,
         val canonicalTitleId: String,
@@ -615,14 +739,18 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val refresh: RefreshChapterEvidence
         private val selector: ResolveChapterContent
         private val readerPreparation: PrepareCanonicalChapterForReader
+        private val mutationGate = ChapterMutationGate()
+        val readingRepository = InMemoryCanonicalReadingRepository()
+        val chapterGateway: MihonChapterInventoryGateway
 
         init {
             diagnostics.start(canonicalTitleId)
             everyInsertAndReadManga()
-            val chapterGateway = MihonChapterInventoryGateway(
+            chapterGateway = MihonChapterInventoryGateway(
                 mangaRepository = harness.mangaRepository,
                 chapterRepository = chapterRows.repository,
                 sourceManager = harness.sourceManager,
+                inventoryCache = MihonInventorySnapshotCache({ 0L }, 120_000L, 16),
                 diagnostics = diagnostics,
             )
             val providerFactory = MihonAddonProviderFactory(
@@ -664,6 +792,8 @@ class MihonRuntimeEndToEndIntegrationTest {
                     parser = parser,
                     canonicalChapterRepository = canonicalChapters,
                     evidenceRepository = evidence,
+                    mutationGate = mutationGate,
+                    diagnostics = diagnostics,
                 ),
                 addonRegistry = registry,
                 resolveContentBinding = bindingResolver,
@@ -685,7 +815,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             readerPreparation = PrepareCanonicalChapterForReader(
                 resolveChapterContent = selector,
                 canonicalChapterRepository = canonicalChapters,
-                canonicalReadingRepository = EmptyCanonicalReadingRepository,
+                canonicalReadingRepository = readingRepository,
                 canonicalDownloadRepository = EmptyCanonicalDownloadRepository,
                 chapterContentPreparer = MihonChapterContentPreparer(
                     MihonCanonicalReaderGateway(chapterRows.repository),
@@ -711,6 +841,20 @@ class MihonRuntimeEndToEndIntegrationTest {
             bindingResolver.searchProgress(request).toList()
         suspend fun confirmBinding(candidate: ScoredSourceCandidate) =
             confirmContentBinding.execute(canonicalTitleId, addonId, candidate).getOrThrow()
+        suspend fun refreshLegacy(
+            mappings: SourceTitleMappingRepository,
+            mappingId: String,
+            gateway: ChapterInventoryGateway = chapterGateway,
+        ) = RefreshCanonicalChapters(
+            sourceTitleMappingRepository = mappings,
+            chapterInventoryGateway = gateway,
+            reconcileChapterInventory = ReconcileChapterInventory(
+                parser = parser,
+                volumeParser = ParseCanonicalChapterVolume(),
+                canonicalChapterRepository = canonicalChapters,
+                mutationGate = mutationGate,
+            ),
+        ).execute(canonicalTitleId, mappingId)
         suspend fun seedInformationalBinding(source: FixtureHttpSource): ContentBinding {
             val mangaId = 8000L
             persistedManga[mangaId] = Manga.create().copy(
@@ -891,20 +1035,43 @@ class MihonRuntimeEndToEndIntegrationTest {
         override suspend fun deleteOriginMetadata(addonId: AddonId) = Unit
     }
 
-    private object EmptyCanonicalReadingRepository : CanonicalReadingRepository {
-        override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? = null
+    private class InMemoryCanonicalReadingRepository : CanonicalReadingRepository {
+        private val progress = linkedMapOf<String, CanonicalChapterProgress>()
+        private val history = linkedMapOf<String, CanonicalChapterHistory>()
+
+        fun seed(progress: CanonicalChapterProgress, history: CanonicalChapterHistory) {
+            this.progress[progress.canonicalChapterId] = progress
+            this.history[history.canonicalChapterId] = history
+        }
+
+        override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? =
+            progress[canonicalChapterId]
         override fun observeProgress(
             canonicalChapterId: String,
-        ): Flow<CanonicalChapterProgress?> = MutableStateFlow(null)
+        ): Flow<CanonicalChapterProgress?> = MutableStateFlow(progress[canonicalChapterId])
         override suspend fun getProgressByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapterProgress> =
-            emptyList()
-        override suspend fun upsertProgress(progress: CanonicalChapterProgress) = Unit
-        override suspend fun getHistory(canonicalChapterId: String): CanonicalChapterHistory? = null
-        override suspend fun recordHistory(update: CanonicalChapterHistoryUpdate) = Unit
+            progress.values.toList()
+        override suspend fun upsertProgress(progress: CanonicalChapterProgress) {
+            this.progress[progress.canonicalChapterId] = progress
+        }
+        override suspend fun getHistory(canonicalChapterId: String): CanonicalChapterHistory? =
+            history[canonicalChapterId]
+        override suspend fun recordHistory(update: CanonicalChapterHistoryUpdate) {
+            val current = history[update.canonicalChapterId]
+            history[update.canonicalChapterId] = CanonicalChapterHistory(
+                canonicalChapterId = update.canonicalChapterId,
+                lastVariantId = update.variantId,
+                lastReadAt = update.readAt,
+                totalReadDuration = (current?.totalReadDuration ?: 0L) + update.sessionReadDuration,
+            )
+        }
         override suspend fun recordCheckpoint(
             progress: CanonicalChapterProgress,
             history: CanonicalChapterHistoryUpdate?,
-        ) = Unit
+        ) {
+            upsertProgress(progress)
+            if (history != null) recordHistory(history)
+        }
     }
 
     private object EmptyIntegrationRegistry : IntegrationRegistry {
