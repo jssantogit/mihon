@@ -3,6 +3,7 @@ package tachiyomi.domain.tsuzuki.chapter.interactor
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -70,10 +71,10 @@ class RefreshCanonicalChapters internal constructor(
             }
 
             val variants = reconcileLegacyChapterEvidence.execute(inventories, clock())
-            val canonicalChapters = variants
-                .map(ChapterVariant::canonicalChapterId)
-                .distinct()
-                .mapNotNull(canonicalChapterRepository::getById)
+            val canonicalChapters = mutableListOf<CanonicalChapter>()
+            for (canonicalChapterId in variants.map(ChapterVariant::canonicalChapterId).distinct()) {
+                canonicalChapterRepository.getById(canonicalChapterId)?.let(canonicalChapters::add)
+            }
             Result.success(
                 ChapterReconciliationReport(
                     canonicalTitleId = canonicalTitleId,

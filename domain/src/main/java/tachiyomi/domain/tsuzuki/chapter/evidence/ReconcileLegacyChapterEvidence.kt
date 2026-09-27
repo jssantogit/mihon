@@ -80,7 +80,8 @@ class ReconcileLegacyChapterEvidence(
                 val (inventory, snapshot) = requireNotNull(
                     snapshotsByEvidenceKey[record.evidence.producerId to key],
                 ) { "Persisted chapter evidence has no corresponding source observation" }
-                val existing = chapters.getVariantBySourceIdentity(inventory.sourceId, key)
+                val sourceKey = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
+                val existing = chapters.getVariantBySourceIdentity(inventory.sourceId, sourceKey)
                 if (existing != null) {
                     check(existing.sourceMappingId == inventory.sourceMappingId) {
                         "Existing operational variant belongs to another source mapping"
@@ -107,8 +108,8 @@ class ReconcileLegacyChapterEvidence(
                     sourceId = inventory.sourceId,
                     mihonMangaId = snapshot.mihonMangaId ?: inventory.mihonMangaId ?: existing?.mihonMangaId,
                     mihonChapterId = snapshot.mihonChapterId ?: existing?.mihonChapterId,
-                    sourceChapterId = key,
-                    sourceChapterUrl = snapshot.sourceChapterUrl.ifBlank { key },
+                    sourceChapterId = sourceKey,
+                    sourceChapterUrl = snapshot.sourceChapterUrl.ifBlank { sourceKey },
                     language = snapshot.language.ifBlank { inventory.language },
                     scanlationGroup = snapshot.scanlationGroup ?: existing?.scanlationGroup,
                     version = snapshot.version ?: existing?.version,

@@ -794,6 +794,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         private val registry: DefaultAddonRegistry
         private val bindingResolver: ResolveContentBinding
         private val refresh: RefreshChapterEvidence
+        private val evidenceReconciler: ReconcileChapterEvidence
         private val selector: ResolveChapterContent
         private val readerPreparation: PrepareCanonicalChapterForReader
         private val mutationGate = ChapterMutationGate()
@@ -843,7 +844,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
                 diagnostics = diagnostics,
             )
-            val evidenceReconciler = ReconcileChapterEvidence(
+            evidenceReconciler = ReconcileChapterEvidence(
                 parser = parser,
                 canonicalChapterRepository = canonicalChapters,
                 evidenceRepository = evidence,
@@ -908,13 +909,7 @@ class MihonRuntimeEndToEndIntegrationTest {
             chapterInventoryGateway = gateway,
             reconcileLegacyChapterEvidence = ReconcileLegacyChapterEvidence(
                 adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
-                reconciler = ReconcileChapterEvidence(
-                    parser = parser,
-                    canonicalChapterRepository = canonicalChapters,
-                    evidenceRepository = evidence,
-                    mutationGate = mutationGate,
-                    diagnostics = diagnostics,
-                ),
+                reconciler = evidenceReconciler,
                 chapters = canonicalChapters,
                 sourceMappings = mappings,
             ),

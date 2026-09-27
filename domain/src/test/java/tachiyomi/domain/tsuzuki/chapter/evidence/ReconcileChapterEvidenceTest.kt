@@ -383,6 +383,68 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `stale legacy observation from another producer cannot fork newer mapped chapter evidence`() = runTest {
+        val fixture = fixture()
+        val detailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(detailObservation))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        val staleLegacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(staleLegacyObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 1
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe chapterTwo.id
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        ) shouldBe null
+    }
+
+    @Test
+    fun `older legacy observation matching newer detail identity may reuse its canonical mapping`() = runTest {
+        val fixture = fixture()
+        val detailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(detailObservation))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        val legacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(legacyObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe chapterTwo.id
+    }
+
+    @Test
     fun `legacy and evidence writers reuse the same volume scoped chapters and source mappings`() = runTest {
         val legacyChapters = FakeCanonicalChapterRepository()
         val evidenceFixture = fixture()
@@ -769,7 +831,7 @@ class ReconcileChapterEvidenceTest {
                 fixture.evidenceRepository.getByProducerExternalKey(
                     ProducerKind.ADDON,
                     "mihon-legacy:title:" + sourceId,
-                    "${sourceId}:/reused-key",
+                    "$sourceId:/reused-key",
                 )?.mappedCanonicalChapterId
             mappedChapter(101L) shouldBe volumeOne.id
             mappedChapter(202L) shouldBe volumeOne.id
