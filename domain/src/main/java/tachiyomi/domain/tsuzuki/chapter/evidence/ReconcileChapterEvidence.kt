@@ -171,7 +171,7 @@ class ReconcileChapterEvidence internal constructor(
                 // subject to this source-inventory rule.
                 val hasStableAddonSourceIdentity =
                     observation.producerKind == ProducerKind.ADDON &&
-                    !observation.externalChapterKey.isNullOrBlank()
+                        !observation.externalChapterKey.isNullOrBlank()
                 if (hasStableAddonSourceIdentity) {
                     require(
                         observation.observedAt != previousObservation.observedAt ||
