@@ -23,6 +23,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
+import cafe.adriel.voyager.navigator.Navigator
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.tachiyomi.App
 import eu.kanade.tachiyomi.R
@@ -52,11 +53,9 @@ import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerPageHolder
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenModel
-import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -88,6 +87,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
@@ -598,33 +598,42 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val preferenceBefore = runBlocking { fixture.preferences.get(fixture.title.id) }
             val token = fixture.sourceA.token
             fixture.dispatcher.holdInventoryResponse(token)
-            var detailModel: CanonicalTitleScreenModel? = null
-            var detailJob: Job? = null
+            var appScopeObserverModel: CanonicalTitleScreenModel? = null
+            var detailMainActivity: MainActivity? = null
+            var inventoryDiagnostics: ChapterInventoryDiagnostics? = null
             var detailReadiness: SourceSwitchFixture.DetailRefreshPrerequisites? = null
 
             try {
                 fixture.launchReader(legacyEntry = legacy) { main ->
+                    detailMainActivity = main
                     InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        val model = fixture.canonicalTitleScreenModel(main)
-                        detailModel = model
+                        appScopeObserverModel = fixture.appScopeObserverModel(main)
                     }
-                    val model = requireNotNull(detailModel)
-                    val readiness = fixture.awaitDetailRefreshPrerequisites(model, legacy)
+                    val observerModel = requireNotNull(appScopeObserverModel)
+                    val readiness = fixture.awaitDetailRefreshPrerequisites(observerModel, legacy)
                     detailReadiness = readiness
                     if (!readiness.canRefreshAddonA) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_OWNER_CANCEL",
-                            model = model,
-                            startJob = null,
+                            routePushed = false,
                             readiness = readiness,
                             token = token,
+                            diagnostics = inventoryDiagnostics,
                         )
                         throw AssertionError("Detail refresh prerequisites were not ready")
                     }
-                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        detailJob = model.start(fixture.title.id)
-                    }
+                    inventoryDiagnostics = fixture.startInventoryDiagnostics(observerModel)
+                    // Compose the actual Voyager route so its own ScreenModel calls start().
+                    fixture.pushCanonicalTitleScreen(main)
                     try {
+                        awaitValue("real canonical title route to render") {
+                            UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+                                .hasObject(By.text("Title details"))
+                                .takeIf { it }
+                        }
+                        awaitValue("real detail route to own the MainActivity navigator") {
+                            fixture.isCanonicalTitleScreenActive(main).takeIf { it }
+                        }
                         awaitValue<Boolean>("detail ScreenModel to own the held source A inventory") {
                             val routes = fixture.dispatcher.routeCounts(token)
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
@@ -633,21 +642,21 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     } catch (error: AssertionError) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_OWNER_CANCEL",
-                            model = model,
-                            startJob = detailJob,
+                            routePushed = true,
                             readiness = requireNotNull(detailReadiness),
                             token = token,
+                            diagnostics = inventoryDiagnostics,
                         )
                         throw error
                     }
                 }
 
                 val reader = awaitActivity(ReaderActivity::class.java)
-                val model = requireNotNull(detailModel)
+                val observerModel = requireNotNull(appScopeObserverModel)
                 assertSame(
                     "Reader and detail callers must use the same AppScope inventory cache",
                     fixture.readerInventorySnapshotCache(reader),
-                    fixture.detailInventorySnapshotCache(model, fixture.addonA),
+                    fixture.detailInventorySnapshotCache(observerModel, fixture.addonA),
                 )
                 awaitValue("legacy Reader attach to wait on the detail-owned inventory") {
                     val state = reader.viewModel.state.value
@@ -674,12 +683,20 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     fixture.dispatcher.pageRequestCount(token),
                 )
 
-                runBlocking { requireNotNull(detailJob).cancelAndJoin() }
+                fixture.popCanonicalTitleScreen(requireNotNull(detailMainActivity))
+                awaitValue("detail route removal to cancel its inventory owner") {
+                    (!fixture.isCanonicalTitleScreenActive(requireNotNull(detailMainActivity))).takeIf { it }
+                }
+                val loaded = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
+                assertEquals(
+                    "Reader joiner must continue while the cancelled detail response is still held",
+                    1,
+                    fixture.dispatcher.heldInventoryRequestCount(token),
+                )
                 fixture.dispatcher.releaseInventoryResponse(token)
                 awaitValue("cancelled inventory response to leave the fixture server") {
                     fixture.dispatcher.heldInventoryRequestCount(token).takeIf { it == 0 }
                 }
-                val loaded = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
                 awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "DETAIL_OWNER_CANCEL")
 
                 assertEquals(0, loaded.first)
@@ -713,10 +730,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     details = "detailOwnerCancelled=true|readerAttachWaited=true|readerPagesPreserved=true" +
                         "|sharedCacheIdentity=true|mappingPreserved=true|priorVariantPreserved=true" +
                         "|canonicalIdsPreserved=true|progressPreserved=true|historyPreserved=true" +
-                        "|preferencePreserved=true|staleTargetVariantAbsent=true|cancelledResponseReleased=true",
+                        "|preferencePreserved=true|staleTargetVariantAbsent=true|cancelledResponseReleased=true" +
+                        "|detailRoute=CanonicalTitleScreen|probe=${fixture.sanitizedProbeSummary(inventoryDiagnostics)}",
                 )
             } finally {
-                detailJob?.cancel()
+                inventoryDiagnostics?.stop()
+                inventoryDiagnostics?.clear()
                 fixture.dispatcher.releaseInventoryResponse(token)
             }
         }
@@ -734,33 +753,42 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val preferenceBefore = runBlocking { fixture.preferences.get(fixture.title.id) }
             val token = fixture.sourceA.token
             fixture.dispatcher.holdInventoryResponse(token)
-            var detailModel: CanonicalTitleScreenModel? = null
-            var detailJob: Job? = null
+            var appScopeObserverModel: CanonicalTitleScreenModel? = null
+            var detailMainActivity: MainActivity? = null
+            var inventoryDiagnostics: ChapterInventoryDiagnostics? = null
             var detailReadiness: SourceSwitchFixture.DetailRefreshPrerequisites? = null
 
             try {
                 fixture.launchReader(legacyEntry = legacy) { main ->
+                    detailMainActivity = main
                     InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        val model = fixture.canonicalTitleScreenModel(main)
-                        detailModel = model
+                        appScopeObserverModel = fixture.appScopeObserverModel(main)
                     }
-                    val model = requireNotNull(detailModel)
-                    val readiness = fixture.awaitDetailRefreshPrerequisites(model, legacy)
+                    val observerModel = requireNotNull(appScopeObserverModel)
+                    val readiness = fixture.awaitDetailRefreshPrerequisites(observerModel, legacy)
                     detailReadiness = readiness
                     if (!readiness.canRefreshAddonA) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_INVENTORY_INVALIDATE",
-                            model = model,
-                            startJob = null,
+                            routePushed = false,
                             readiness = readiness,
                             token = token,
+                            diagnostics = inventoryDiagnostics,
                         )
                         throw AssertionError("Detail refresh prerequisites were not ready")
                     }
-                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        detailJob = model.start(fixture.title.id)
-                    }
+                    inventoryDiagnostics = fixture.startInventoryDiagnostics(observerModel)
+                    // Compose the actual Voyager route so its own ScreenModel calls start().
+                    fixture.pushCanonicalTitleScreen(main)
                     try {
+                        awaitValue("real canonical title route to render") {
+                            UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+                                .hasObject(By.text("Title details"))
+                                .takeIf { it }
+                        }
+                        awaitValue("real detail route to own the MainActivity navigator") {
+                            fixture.isCanonicalTitleScreenActive(main).takeIf { it }
+                        }
                         awaitValue<Boolean>("detail ScreenModel to own the held source A inventory") {
                             val routes = fixture.dispatcher.routeCounts(token)
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
@@ -769,22 +797,22 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     } catch (error: AssertionError) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_INVENTORY_INVALIDATE",
-                            model = model,
-                            startJob = detailJob,
+                            routePushed = true,
                             readiness = requireNotNull(detailReadiness),
                             token = token,
+                            diagnostics = inventoryDiagnostics,
                         )
                         throw error
                     }
                 }
 
                 val reader = awaitActivity(ReaderActivity::class.java)
-                val model = requireNotNull(detailModel)
+                val observerModel = requireNotNull(appScopeObserverModel)
                 val readerCache = fixture.readerInventorySnapshotCache(reader)
                 assertSame(
                     "Reader and detail callers must use the same AppScope inventory cache",
                     readerCache,
-                    fixture.detailInventorySnapshotCache(model, fixture.addonA),
+                    fixture.detailInventorySnapshotCache(observerModel, fixture.addonA),
                 )
                 awaitValue("legacy Reader attach to wait on the detail-owned inventory") {
                     val state = reader.viewModel.state.value
@@ -826,10 +854,14 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 )
 
                 fixture.dispatcher.releaseInventoryResponse(token)
-                runBlocking { requireNotNull(detailJob).join() }
                 awaitValue("invalidated late inventory response to leave the fixture server") {
                     fixture.dispatcher.heldInventoryRequestCount(token).takeIf { it == 0 }
                 }
+                awaitValue("detail probe to finish after the invalidated response") {
+                    fixture.sanitizedProbeSummary(inventoryDiagnostics)
+                        .takeIf { it.contains("CHAPTER_PROBE") }
+                }
+                fixture.popCanonicalTitleScreen(requireNotNull(detailMainActivity))
 
                 assertEquals(0, loaded.first)
                 assertEquals(false, reader.viewModel.canChangeCanonicalSource())
@@ -853,10 +885,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     details = "inventoryInvalidated=true|readerAttachWaited=true|readerPagesPreserved=true" +
                         "|sharedCacheIdentity=true|mappingPreserved=true|priorVariantPreserved=true" +
                         "|canonicalIdsPreserved=true|progressPreserved=true|historyPreserved=true" +
-                        "|preferencePreserved=true|staleTargetVariantAbsent=true|lateResponseReleased=true",
+                        "|preferencePreserved=true|staleTargetVariantAbsent=true|lateResponseReleased=true" +
+                        "|detailRoute=CanonicalTitleScreen|probe=${fixture.sanitizedProbeSummary(inventoryDiagnostics)}",
                 )
             } finally {
-                detailJob?.cancel()
+                inventoryDiagnostics?.stop()
+                inventoryDiagnostics?.clear()
                 fixture.dispatcher.releaseInventoryResponse(token)
             }
         }
@@ -1941,7 +1975,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             CanonicalChapterRepositoryImpl(database).getById(chapter.id)
         }
 
-        fun canonicalTitleScreenModel(owner: MainActivity): CanonicalTitleScreenModel =
+        fun appScopeObserverModel(owner: MainActivity): CanonicalTitleScreenModel =
             ViewModelProvider(owner, app.graph.viewModelFactory).get(CanonicalTitleScreenModel::class.java)
 
         fun readerInventorySnapshotCache(reader: ReaderActivity): MihonInventorySnapshotCache {
@@ -2062,54 +2096,19 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
         fun reportDetailInventorySetup(
             scenario: String,
-            model: CanonicalTitleScreenModel,
-            startJob: Job?,
+            routePushed: Boolean,
             readiness: DetailRefreshPrerequisites,
             token: String,
+            diagnostics: ChapterInventoryDiagnostics?,
         ) {
-            val state = model.state.value
-            val stateName: String
-            val localLoad: String
-            val refreshing: String
-            val stateError: String
-            val refreshError: String
-            when (state) {
-                CanonicalTitleScreenState.Loading -> {
-                    stateName = "LOADING"
-                    localLoad = "INCOMPLETE"
-                    refreshing = "UNKNOWN"
-                    stateError = "NONE"
-                    refreshError = "NONE"
-                }
-                is CanonicalTitleScreenState.Loaded -> {
-                    stateName = "LOADED"
-                    localLoad = "PASSED"
-                    refreshing = if (state.isRefreshing) "TRUE" else "FALSE"
-                    stateError = "NONE"
-                    refreshError = detailErrorCategory(state.refreshError)
-                }
-                is CanonicalTitleScreenState.Error -> {
-                    stateName = "ERROR"
-                    localLoad = "FAILED"
-                    refreshing = "UNKNOWN"
-                    stateError = detailErrorCategory(state.error)
-                    refreshError = "NONE"
-                }
-            }
-            val jobState = when {
-                startJob == null -> "NOT_STARTED"
-                startJob.isCancelled -> "CANCELLED"
-                startJob.isCompleted -> "COMPLETED"
-                else -> "ACTIVE"
-            }
+            val probeSummary = sanitizedProbeSummary(diagnostics?.report().orEmpty())
             InstrumentationRegistry.getInstrumentation().sendStatus(
                 1,
                 Bundle().apply {
                     putString(
                         "stream",
-                        "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|scenario=$scenario|state=$stateName" +
-                            "|localLoad=$localLoad|refreshing=$refreshing|startJob=$jobState" +
-                            "|stateError=$stateError|refreshError=$refreshError" +
+                        "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|scenario=$scenario" +
+                            "|detailRoute=${if (routePushed) "CANONICAL_TITLE" else "NOT_OPENED"}" +
                             "|integrationReady=${if (readiness.integrationReady) "TRUE" else "FALSE"}" +
                             "|addonReady=${if (readiness.addonRegistryReady) "TRUE" else "FALSE"}" +
                             "|providerCount=${readiness.providerCount?.toString() ?: "UNKNOWN"}" +
@@ -2117,10 +2116,63 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             "|sourceEligible=${if (readiness.sourceEligible) "TRUE" else "FALSE"}" +
                             "|bindingSelection=${readiness.bindingSelection}" +
                             "|aInventory=${dispatcher.routeCounts(token).inventory}" +
-                            "|aHeld=${dispatcher.heldInventoryRequestCount(token)}",
+                            "|aHeld=${dispatcher.heldInventoryRequestCount(token)}" +
+                            "|probe=$probeSummary",
                     )
                 },
             )
+        }
+
+        fun startInventoryDiagnostics(model: CanonicalTitleScreenModel): ChapterInventoryDiagnostics {
+            val diagnostics = exactPrivateField(
+                model,
+                "diagnostics",
+                ChapterInventoryDiagnostics::class.java,
+            )
+            diagnostics.start(title.id)
+            return diagnostics
+        }
+
+        fun sanitizedProbeSummary(diagnostics: ChapterInventoryDiagnostics?): String =
+            sanitizedProbeSummary(diagnostics?.report().orEmpty())
+
+        private fun sanitizedProbeSummary(report: String): String = report.lineSequence()
+            .filter { line ->
+                line.startsWith("UI|") ||
+                    line.startsWith("CHAPTER_PROBE|") ||
+                    line.startsWith("CHAPTER_INVENTORY|")
+            }
+            .map { line ->
+                val stage = line.substringBefore('|')
+                val outcome = line.substringAfter("outcome=", "UNKNOWN").substringBefore('|')
+                val reason = line.substringAfter("reasons=", "").substringBefore('|')
+                listOf(stage, outcome, reason.takeIf(String::isNotBlank)).filterNotNull().joinToString(":")
+            }
+            .take(12)
+            .joinToString(",")
+            .ifBlank { "NONE" }
+
+        fun pushCanonicalTitleScreen(owner: MainActivity) {
+            val navigator = exactPrivateField(owner, "navigator", Navigator::class.java)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                navigator.push(CanonicalTitleScreen(title.id))
+            }
+        }
+
+        fun popCanonicalTitleScreen(owner: MainActivity) {
+            val navigator = exactPrivateField(owner, "navigator", Navigator::class.java)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                navigator.pop()
+            }
+        }
+
+        fun isCanonicalTitleScreenActive(owner: MainActivity): Boolean {
+            val navigator = exactPrivateField(owner, "navigator", Navigator::class.java)
+            var active = false
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                active = navigator.lastItem is CanonicalTitleScreen
+            }
+            return active
         }
 
         private suspend fun detailBindingGate(legacyEntry: LegacyReaderEntry): String {
@@ -2191,15 +2243,6 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
         fun invalidateSharedInventoryTitle(reader: ReaderActivity, titleId: String) {
             runBlocking { readerInventorySnapshotCache(reader).invalidateTitle(titleId) }
-        }
-
-        private fun detailErrorCategory(error: Throwable?): String = when (error) {
-            null -> "NONE"
-            is NoSuchElementException -> "NO_SUCH_ELEMENT"
-            is IllegalArgumentException -> "ILLEGAL_ARGUMENT"
-            is IllegalStateException -> "ILLEGAL_STATE"
-            is java.io.IOException -> "IO"
-            else -> "OTHER"
         }
 
         private fun <T : Any> exactPrivateField(instance: Any, name: String, expectedType: Class<T>): T {
