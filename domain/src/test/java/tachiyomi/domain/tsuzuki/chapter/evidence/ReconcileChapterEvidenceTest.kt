@@ -444,6 +444,62 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `conflicting addon observations with the same fetch start fail closed`() = runTest {
+        val fixture = fixture()
+        val firstObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(firstObservation))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        val contradictoryReplay = fixture.addonEvidence(
+            id = "detail-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        shouldThrow<IllegalArgumentException> {
+            fixture.reconciler.execute("title", listOf(contradictoryReplay))
+        }
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        val persisted = fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )
+        persisted?.evidence?.rawLabel shouldBe "Chapter 2"
+        persisted?.mappedCanonicalChapterId shouldBe chapterTwo.id
+    }
+
+    @Test
+    fun `identical addon observation replay at the same fetch start remains idempotent`() = runTest {
+        val fixture = fixture()
+        val original = fixture.addonEvidence(
+            id = "detail-observation-original",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(original))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute("title", listOf(original.copy(id = "detail-observation-replay")))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        val persisted = fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )
+        persisted?.evidence shouldBe original
+        persisted?.mappedCanonicalChapterId shouldBe chapterTwo.id
+    }
+
+    @Test
     fun `legacy evidence adapter rehomes a reused URL without losing an independently supported chapter`() =
         runTest {
             val fixture = fixture()
