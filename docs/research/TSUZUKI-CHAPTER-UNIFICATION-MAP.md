@@ -97,6 +97,14 @@ The [RED JDBC CI 36284495531](https://github.com/jssantogit/mihon/actions/runs/3
 
 This is the transaction building block, **not single-writer cutover**. Validate mapping/title ownership, concurrent refresh, legacy Reader missing-mapping entry and process-restart recovery, performance and final Android 8/8 before deleting the independent legacy writer. No distribution APK or merge is authorized by the staged API.
 
+## Mapping authority and cross-writer serialization — scoped regression evidence
+
+The staged legacy projection now reads the persisted `SourceTitleMapping` **inside** its canonical/evidence/variant transaction. It accepts an inventory only if the mapping ID belongs to the same canonical title, the Mihon source ID and materialized manga ID match, the mapping is not unavailable and nonblank inventory language matches. A rejected inventory rolls back staged canonical/evidence writes and never publishes an operational variant. [RED JDBC CI 36285954535](https://github.com/jssantogit/mihon/actions/runs/36285954535) reproduced three previously accepted invalid inventories; [GREEN scoped CI 36286206067](https://github.com/jssantogit/mihon/actions/runs/36286206067) passed Data, Domain, App, Format and CI Gate.
+
+While both writers coexist, the injected `ReconcileChapterInventory` now locks the same AppScope `ChapterMutationGate` already used by `ReconcileChapterEvidence`. A deterministic test held the gate to simulate an active competing reconciliation: the unprotected legacy writer wrongly completed before release ([RED Domain 36286180551](https://github.com/jssantogit/mihon/actions/runs/36286180551)); the corrected writer waited and Domain/App/CI Gate passed in [scoped GREEN 36286381163](https://github.com/jssantogit/mihon/actions/runs/36286381163). This is serialization proof, **not** full end-to-end proof of simultaneous Reader/detail UI refresh.
+
+**Residual identity gates:** the neutral inventory DTO does not yet carry a separately checkable source *title URL*; a stale fetch after URL reassignment with otherwise unchanged IDs is not distinguished. Empty incoming inventories currently return before the projector's persisted-mapping validation. Explicit source URL validation, invalid empty-inventory handling, stale response ordering, reader lifecycle, real provider evidence and the post-cutover Android battery remain prerequisites. The initial [full combined CI 36286502147](https://github.com/jssantogit/mihon/actions/runs/36286502147) found a Spotless-only import order difference now corrected on the PR; full rerun pending. Do **not** merge or route Reader based only on scoped unit/JDBC passes.
+
 ## Acceptance checks
 
 - Fault-inject between canonical chapter, evidence and operational variant
