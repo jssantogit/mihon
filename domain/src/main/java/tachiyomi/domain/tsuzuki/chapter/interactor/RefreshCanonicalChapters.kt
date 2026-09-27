@@ -22,6 +22,7 @@ class RefreshCanonicalChapters internal constructor(
     private val chapterInventoryGateway: ChapterInventoryGateway,
     private val reconcileChapterInventory: ReconcileChapterInventory,
     private val reconcileLegacyChapterEvidence: ReconcileLegacyChapterEvidence?,
+    @Suppress("unused") private val constructorDiscriminator: Boolean,
 ) {
 
     @Inject
@@ -35,6 +36,7 @@ class RefreshCanonicalChapters internal constructor(
         chapterInventoryGateway,
         reconcileChapterInventory,
         reconcileLegacyChapterEvidence as ReconcileLegacyChapterEvidence?,
+        true,
     )
 
     constructor(
@@ -46,6 +48,7 @@ class RefreshCanonicalChapters internal constructor(
         chapterInventoryGateway,
         reconcileChapterInventory,
         null,
+        false,
     )
 
     suspend fun execute(
