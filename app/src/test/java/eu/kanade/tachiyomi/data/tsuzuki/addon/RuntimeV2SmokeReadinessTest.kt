@@ -76,7 +76,6 @@ class RuntimeV2SmokeReadinessTest {
         val startedFetch = CompletableDeferred<Result<SourceChapterInventory>>()
         val laterFetch = CompletableDeferred<Result<SourceChapterInventory>>()
         var fetchCount = 0
-        var completionClock = 300L
         val probe = MihonChapterProbeProvider(
             addonId = addonId,
             contentBindingRepository = bindings,
@@ -88,7 +87,6 @@ class RuntimeV2SmokeReadinessTest {
                     else -> error("Unexpected extra inventory request")
                 }
             },
-            clock = { completionClock },
         )
         val chapters = FakeCanonicalChapterRepository()
         val evidence = FakeChapterEvidenceRepository()
@@ -125,7 +123,6 @@ class RuntimeV2SmokeReadinessTest {
         runCurrent()
         fetchCount shouldBe 2
 
-        completionClock = 300L
         laterFetch.complete(inventory(binding, "Chapter 2", fetchStartedAtMillis = 200L))
         runCurrent()
         fastNewerRefresh.await().isSuccess shouldBe true
@@ -138,7 +135,6 @@ class RuntimeV2SmokeReadinessTest {
         )
         val newerCanonicalChapterId = requireNotNull(newerEvidence.mappedCanonicalChapterId)
 
-        completionClock = 400L
         startedFetch.complete(inventory(binding, "Chapter 1", fetchStartedAtMillis = 100L))
         runCurrent()
         slowOlderRefresh.await()

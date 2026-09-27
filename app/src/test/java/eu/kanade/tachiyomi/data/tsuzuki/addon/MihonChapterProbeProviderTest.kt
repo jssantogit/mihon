@@ -81,7 +81,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1234L },
             diagnostics = diagnostics,
         )
 
@@ -139,7 +138,6 @@ class MihonChapterProbeProviderTest {
                         ),
                     )
                 },
-                clock = { 1L },
                 diagnostics = diagnostics,
             )
 
@@ -169,7 +167,6 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(emptyList()),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { error("must not fetch") },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
@@ -193,7 +190,6 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { Result.failure(timeout) },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
@@ -209,7 +205,6 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { Result.failure(unknownIo) },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
@@ -248,7 +243,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 9999L },
         )
 
         val evidence = provider.probe("title").getOrThrow()
@@ -282,7 +276,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 9999L },
         )
 
         provider.probe("title").getOrThrow().single().observedAt shouldBe 0L
@@ -384,7 +377,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         val result = backgroundScope.async {
@@ -427,7 +419,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         provider.probe("title").getOrThrow().single().externalChapterKey shouldBe "8:/chapter-37"
@@ -454,7 +445,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         provider.probe("title").exceptionOrNull()?.message shouldBe "English inventory unavailable"
@@ -471,7 +461,6 @@ class MihonChapterProbeProviderTest {
                 fetchCalls++
                 error("must not fetch without persisted binding")
             },
-            clock = { 1L },
         )
 
         provider.probe("title").getOrThrow() shouldBe emptyList()

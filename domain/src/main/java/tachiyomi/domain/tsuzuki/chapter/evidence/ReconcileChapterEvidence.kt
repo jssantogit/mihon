@@ -165,14 +165,18 @@ class ReconcileChapterEvidence internal constructor(
                 require(observation.observedAt >= previousObservation.observedAt) {
                     "Stale chapter evidence cannot replace a newer observation"
                 }
-                // Mihon legacy inventories carry the ORIGINAL provider fetch-start
-                // timestamp; equal starts do not establish ordering. Other evidence
-                // producers may use caller timestamps and allow same-instant edits.
-                if (observation.producerId.startsWith("mihon-legacy:")) {
+                // Add-on source inventories carry the provider fetch-start timestamp.
+                // Equal starts do not establish ordering, so only exact replays are safe.
+                // Editorial Integration evidence can use caller timestamps and is not
+                // subject to this source-inventory rule.
+                if (
+                    observation.producerKind == ProducerKind.ADDON &&
+                    !observation.externalChapterKey.isNullOrBlank()
+                ) {
                     require(
                         observation.observedAt != previousObservation.observedAt ||
                             observation.copy(id = previousObservation.id) == previousObservation,
-                    ) { "Conflicting legacy evidence shares the same provider fetch timestamp" }
+                    ) { "Conflicting Add-on evidence shares the same provider fetch timestamp" }
                 }
             }
             val stableId = existing?.evidence?.id ?: observation.id

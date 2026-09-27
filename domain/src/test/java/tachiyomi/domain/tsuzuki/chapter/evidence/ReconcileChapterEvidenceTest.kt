@@ -500,6 +500,28 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `editorial evidence may change at the same caller timestamp`() = runTest {
+        val fixture = fixture()
+        val firstObservation = fixture.editorialEvidence(
+            rawLabel = "Chapter 1",
+            externalKey = "editorial-chapter-shared",
+        )
+        fixture.reconciler.execute("title", listOf(firstObservation))
+
+        val sameTimestampUpdate = fixture.editorialEvidence(
+            rawLabel = "Chapter 2",
+            externalKey = "editorial-chapter-shared",
+        ).copy(observedAt = firstObservation.observedAt)
+        fixture.reconciler.execute("title", listOf(sameTimestampUpdate))
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.INTEGRATION,
+            "mal",
+            "editorial-chapter-shared",
+        )?.evidence?.rawLabel shouldBe "Chapter 2"
+    }
+
+    @Test
     fun `legacy evidence adapter rehomes a reused URL without losing an independently supported chapter`() =
         runTest {
             val fixture = fixture()

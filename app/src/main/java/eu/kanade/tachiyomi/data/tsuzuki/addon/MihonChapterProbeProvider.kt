@@ -29,7 +29,6 @@ import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import java.util.UUID
-import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 class MihonChapterProbeProvider internal constructor(
@@ -37,7 +36,6 @@ class MihonChapterProbeProvider internal constructor(
     private val contentBindingRepository: ContentBindingRepository,
     private val parser: ParseCanonicalChapterLabel,
     private val fetchInventory: suspend (ContentBinding) -> Result<SourceChapterInventory>,
-    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
     private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
@@ -143,7 +141,9 @@ class MihonChapterProbeProvider internal constructor(
                     continue
                 }
                 successfulInventoryCount++
-                val observedAt = clock()
+                // Preserve provider fetch-start through cache replay. Inventing a new
+                // observation time here lets a delayed response appear newer than it is.
+                val observedAt = inventory.fetchStartedAtMillis ?: 0L
                 received += inventory.chapters.size
                 sourceIds += inventory.sourceId
                 languages += inventory.language
