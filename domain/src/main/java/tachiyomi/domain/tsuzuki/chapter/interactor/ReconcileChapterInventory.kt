@@ -149,7 +149,7 @@ class ReconcileChapterInventory internal constructor(
                 val sourceChapterId = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
                 require(sourceChapterId.isNotBlank()) { "Source chapter identity is required" }
                 if (
-                    isObsoleteConflictingObservation(
+                    isSupersededUnverifiableObservation(
                         inventory = inventory,
                         snapshot = snapshot,
                         sourceChapterId = sourceChapterId,
@@ -275,7 +275,7 @@ class ReconcileChapterInventory internal constructor(
         )
     }
 
-    private suspend fun isObsoleteConflictingObservation(
+    private suspend fun isSupersededUnverifiableObservation(
         inventory: SourceChapterInventory,
         snapshot: SourceChapterSnapshot,
         sourceChapterId: String,
@@ -300,17 +300,15 @@ class ReconcileChapterInventory internal constructor(
         }
 
         val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
-        val observedVolume = volumeParser.execute(snapshot.rawName)
-        val hasExplicitVolumePrefix = volumeParser.hasExplicitVolumePrefix(snapshot.rawName)
-        val changedIdentity = parsed.confidence >= 0.95 &&
+        val sameReliableIdentity = parsed.confidence >= 0.95 &&
             parsed.identity.isSpecific &&
             mappedChapter.identity.isSpecific &&
-            parsed.identity != mappedChapter.identity
-        val changedExplicitVolume = hasExplicitVolumePrefix &&
-            observedVolume != null &&
-            mappedChapter.volume != null &&
-            observedVolume != mappedChapter.volume
-        return changedIdentity || changedExplicitVolume
+            parsed.identity == mappedChapter.identity
+        if (!sameReliableIdentity) return true
+
+        // A title, number hint, or stable URL alone cannot establish that an
+        // older snapshot is equivalent to the newer mapped observation.
+        return volumeParser.execute(snapshot.rawName) != mappedChapter.volume
     }
 
     suspend operator fun invoke(inventory: SourceChapterInventory): ChapterReconciliationReport = execute(inventory)

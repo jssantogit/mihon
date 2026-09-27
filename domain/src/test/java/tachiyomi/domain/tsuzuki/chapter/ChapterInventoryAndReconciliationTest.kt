@@ -550,6 +550,79 @@ class ChapterInventoryAndReconciliationTest {
         repository.variants shouldBe emptyMap()
     }
 
+    @Test
+    fun `newer mapped evidence suppresses stale low confidence and equal time conflicting inventory`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val chapterTwo = canonicalChapter("chapter-2", volume = null).copy(
+            displayNumber = "2",
+            baseNumber = 2,
+        )
+        repository.upsert(chapterTwo)
+        var persistedObservation = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = "chapter-two-evidence",
+                canonicalTitleId = "title-1",
+                producerKind = ProducerKind.ADDON,
+                producerId = "addon",
+                externalChapterKey = "1:/chapter/shared",
+                rawLabel = "Chapter 2",
+                rawNumber = 2.0,
+                volume = null,
+                title = null,
+                observedAt = 101L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = chapterTwo.id,
+        )
+        val evidenceRepository = object : ChapterEvidenceRepository {
+            override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
+                listOf(persistedObservation).filter { it.evidence.canonicalTitleId == canonicalTitleId }
+
+            override suspend fun getByProducerExternalKey(
+                producerKind: ProducerKind,
+                producerId: String,
+                externalChapterKey: String,
+            ): PersistedChapterEvidence? = persistedObservation.takeIf {
+                it.evidence.producerKind == producerKind &&
+                    it.evidence.producerId == producerId &&
+                    it.evidence.externalChapterKey == externalChapterKey
+            }
+
+            override suspend fun upsert(
+                evidence: ChapterEvidence,
+                mappedCanonicalChapterId: String?,
+            ): PersistedChapterEvidence = error("Inventory freshness check must not write evidence")
+        }
+        val reconciler = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = repository,
+            mutationGate = ChapterMutationGate(),
+            chapterEvidenceRepository = evidenceRepository,
+        )
+
+        ParseCanonicalChapterLabel().execute("Omake").identity.isSpecific shouldBe false
+
+        suspend fun reconcile(rawLabel: String, fetchStartedAtMillis: Long) {
+            reconciler.execute(
+                inventory("mapping-1", 1L, rawLabel, "/chapter/shared").copy(
+                    sourceUrl = "/manga/one-punch-man",
+                    fetchStartedAtMillis = fetchStartedAtMillis,
+                ),
+            ).variants shouldBe emptyList()
+            repository.chapters.keys shouldBe setOf(chapterTwo.id)
+            repository.variants shouldBe emptyMap()
+        }
+
+        reconcile(rawLabel = "Omake", fetchStartedAtMillis = 100L)
+
+        persistedObservation = persistedObservation.copy(
+            evidence = persistedObservation.evidence.copy(observedAt = 100L),
+        )
+        reconcile(rawLabel = "Chapter 1", fetchStartedAtMillis = 100L)
+    }
+
     private fun reconciler(repository: FakeCanonicalChapterRepository) = ReconcileChapterInventory(
         parser = ParseCanonicalChapterLabel(),
         volumeParser = ParseCanonicalChapterVolume(),
