@@ -86,6 +86,7 @@ import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
@@ -111,6 +112,7 @@ import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.jvm.functions.Function2
 
 /** Runs production canonical Reader and Mihon source adapters against a disposable local fixture. */
@@ -619,6 +621,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             scenario = "DETAIL_OWNER_CANCEL",
                             routePushed = false,
                             readiness = readiness,
+                            legacyEntry = legacy,
                             token = token,
                             owner = main,
                             observerModel = observerModel,
@@ -670,6 +673,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             scenario = "DETAIL_OWNER_CANCEL",
                             routePushed = true,
                             readiness = requireNotNull(detailReadiness),
+                            legacyEntry = legacy,
                             token = token,
                             owner = main,
                             observerModel = requireNotNull(appScopeObserverModel),
@@ -759,7 +763,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|sharedCacheIdentity=true|mappingPreserved=true|priorVariantPreserved=true" +
                         "|canonicalIdsPreserved=true|progressPreserved=true|historyPreserved=true" +
                         "|preferencePreserved=true|staleTargetVariantAbsent=true|cancelledResponseReleased=true" +
-                        "|detailRoute=CanonicalTitleScreen|probe=${fixture.sanitizedProbeSummary(inventoryDiagnostics)}",
+                        "|detailRoute=CanonicalTitleScreen|probe=" +
+                        fixture.sanitizedProbeSummary(inventoryDiagnostics),
                 )
             } finally {
                 inventoryDiagnostics?.stop()
@@ -800,6 +805,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             scenario = "DETAIL_INVENTORY_INVALIDATE",
                             routePushed = false,
                             readiness = readiness,
+                            legacyEntry = legacy,
                             token = token,
                             owner = main,
                             observerModel = observerModel,
@@ -851,6 +857,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             scenario = "DETAIL_INVENTORY_INVALIDATE",
                             routePushed = true,
                             readiness = requireNotNull(detailReadiness),
+                            legacyEntry = legacy,
                             token = token,
                             owner = main,
                             observerModel = requireNotNull(appScopeObserverModel),
@@ -940,7 +947,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         "|sharedCacheIdentity=true|mappingPreserved=true|priorVariantPreserved=true" +
                         "|canonicalIdsPreserved=true|progressPreserved=true|historyPreserved=true" +
                         "|preferencePreserved=true|staleTargetVariantAbsent=true|lateResponseReleased=true" +
-                        "|detailRoute=CanonicalTitleScreen|probe=${fixture.sanitizedProbeSummary(inventoryDiagnostics)}",
+                        "|detailRoute=CanonicalTitleScreen|probe=" +
+                        fixture.sanitizedProbeSummary(inventoryDiagnostics),
                 )
             } finally {
                 inventoryDiagnostics?.stop()
@@ -2152,6 +2160,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             scenario: String,
             routePushed: Boolean,
             readiness: DetailRefreshPrerequisites,
+            legacyEntry: LegacyReaderEntry,
             token: String,
             owner: MainActivity,
             observerModel: CanonicalTitleScreenModel,
@@ -2187,6 +2196,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val probeSummary = sanitizedProbeSummary(
                 diagnostics?.report().orEmpty(),
             )
+            val gatewayPreflight = inventoryGatewayPreflight(legacyEntry)
             val actualModel = routeModel != null && routeModel !== observerModel
             InstrumentationRegistry.getInstrumentation().sendStatus(
                 1,
@@ -2203,6 +2213,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             "|bindingGate=${readiness.bindingGate}" +
                             "|sourceEligible=${if (readiness.sourceEligible) "TRUE" else "FALSE"}" +
                             "|bindingSelection=${readiness.bindingSelection}" +
+                            "|bindingPayload=${gatewayPreflight.bindingPayload}" +
+                            "|manga=${gatewayPreflight.manga}" +
+                            "|source=${gatewayPreflight.source}" +
+                            "|aChapterRequests=${sourceA.chapterListRequestCount.get()}" +
+                            "|bChapterRequests=${sourceB.chapterListRequestCount.get()}" +
                             "|aInventory=${dispatcher.routeCounts(token).inventory}" +
                             "|aHeld=${dispatcher.heldInventoryRequestCount(token)}" +
                             "|routeRendered=${if (routePushed) "TRUE" else "FALSE"}" +
@@ -2212,6 +2227,72 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     )
                 },
             )
+        }
+
+        private data class InventoryGatewayPreflight(
+            val bindingPayload: String,
+            val manga: String,
+            val source: String,
+        )
+
+        private fun inventoryGatewayPreflight(legacyEntry: LegacyReaderEntry): InventoryGatewayPreflight {
+            val binding = try {
+                runBlocking {
+                    ContentBindingRepositoryImpl(database)
+                        .getByTitle(title.id)
+                        .singleOrNull { it.id == legacyEntry.mapping.id }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+            val payload = binding?.let {
+                runCatching { MihonContentBindingPayloadCodec.decode(it.runtimePayload) }.getOrNull()
+            }
+            val bindingPayload = when {
+                binding == null -> "MISSING"
+                payload == null -> "INVALID"
+                payload.mihonMangaId != legacyEntry.mapping.mihonMangaId ||
+                    payload.sourceId != legacyEntry.mapping.sourceId ||
+                    payload.sourceUrl != legacyEntry.mapping.sourceUrl -> "MISMATCH"
+                else -> "MATCH"
+            }
+            val manga = when {
+                payload == null -> "UNAVAILABLE"
+                else -> try {
+                    val row = runBlocking { MangaRepositoryImpl(database).getMangaById(payload.mihonMangaId) }
+                    if (
+                        row.id == payload.mihonMangaId &&
+                            row.source == payload.sourceId &&
+                            row.url == payload.sourceUrl
+                    ) {
+                        "MATCH"
+                    } else {
+                        "MISMATCH"
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: NoSuchElementException) {
+                    "MISSING"
+                } catch (_: Throwable) {
+                    "ERROR"
+                }
+            }
+            val source = try {
+                val source = runBlocking { app.graph.sourceManager.get(legacyEntry.mapping.sourceId) }
+                when {
+                    source == null -> "MISSING"
+                    source === sourceA -> "SOURCE_A"
+                    source is StubSource -> "STUB"
+                    else -> "OTHER"
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                "ERROR"
+            }
+            return InventoryGatewayPreflight(bindingPayload, manga, source)
         }
 
         private fun safeErrorCategory(error: Throwable?): String = when (error) {
@@ -2884,6 +2965,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         override val baseUrl: String,
         override val client: OkHttpClient,
     ) : HttpSource() {
+        val chapterListRequestCount = AtomicInteger()
         override val name: String = displayName
         override val lang: String = "en"
         override val supportsLatest: Boolean = false
@@ -2911,7 +2993,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         )
 
         @Deprecated("instrumented source fixture")
-        override fun chapterListRequest(manga: SManga): Request = GET("$baseUrl${manga.url}")
+        override fun chapterListRequest(manga: SManga): Request {
+            chapterListRequestCount.incrementAndGet()
+            return GET("$baseUrl${manga.url}")
+        }
 
         @Deprecated("instrumented source fixture")
         override fun chapterListParse(response: Response): List<SChapter> = response.body.string()

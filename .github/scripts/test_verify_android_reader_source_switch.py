@@ -210,6 +210,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|startJob=COMPLETED|stateError=NO_SUCH_ELEMENT|refreshError=NONE"
             + "|integrationReady=TRUE|addonReady=TRUE|providerCount=2"
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
             + "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING"
         )
@@ -231,7 +232,8 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("state=ERROR|localLoad=FAILED", summary)
         self.assertIn(
             "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
-            "|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            "|sourceEligible=TRUE|bindingSelection=SELECTED|bindingPayload=MATCH|manga=MATCH"
+            "|source=SOURCE_A|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
             "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
             "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING",
             summary,
@@ -245,6 +247,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
             + "|providerCount=1"
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
         )
         with_title = base + "|title=private-title"
@@ -261,6 +264,16 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertEqual(
             {"evidence": "MALFORMED"},
             verifier._detail_setup_diagnostic(with_unbounded_source_state, method),
+        )
+        with_unbounded_source = base.replace("source=SOURCE_A", "source=private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_source, method),
+        )
+        with_unbounded_request_count = base.replace("aChapterRequests=0", "aChapterRequests=private")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_request_count, method),
         )
         with_unbounded_probe = base.replace("probe=NONE", "probe=CHAPTER_PROBE:OTHER:private-title")
         self.assertEqual(
@@ -294,7 +307,9 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                             + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
                             + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
                             + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
-                            + "|aInventory=0|aHeld=0|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+                            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+                            + "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
+                            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
                             + f"|probe={stage}:{outcome}:{reason}"
                         )
                         parsed = verifier._detail_setup_diagnostic(diagnostic, method)

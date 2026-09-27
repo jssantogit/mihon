@@ -108,7 +108,8 @@ DETAIL_SETUP_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_
 DETAIL_SETUP_DIAGNOSTIC_KEYS = (
     "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
     "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
-    "bindingSelection", "aInventory", "aHeld", "routeRendered", "routeTitleMatches", "routeModel", "probe",
+    "bindingSelection", "bindingPayload", "manga", "source", "aChapterRequests", "bChapterRequests",
+    "aInventory", "aHeld", "routeRendered", "routeTitleMatches", "routeModel", "probe",
 )
 DETAIL_SETUP_STATES = {"LOADING", "LOADED", "ERROR"}
 DETAIL_SETUP_LOCAL_LOAD = {"INCOMPLETE", "PASSED", "FAILED"}
@@ -122,6 +123,9 @@ DETAIL_SETUP_BINDING_GATES = {
     "INVALID_SOURCE_KEY", "SOURCE_NOT_ENABLED", "ELIGIBLE", "UNKNOWN",
 }
 DETAIL_SETUP_BINDING_SELECTIONS = {"MISSING", "SELECTED", "ERROR"}
+DETAIL_SETUP_BINDING_PAYLOAD = {"MATCH", "MISMATCH", "MISSING", "INVALID"}
+DETAIL_SETUP_MANGA = {"MATCH", "MISMATCH", "MISSING", "ERROR", "UNAVAILABLE"}
+DETAIL_SETUP_SOURCE = {"SOURCE_A", "STUB", "MISSING", "OTHER", "ERROR"}
 DETAIL_SETUP_ROUTE_MODELS = {"SCREEN", "UNKNOWN"}
 DETAIL_SETUP_PROBE_STAGES = {"UI", "CHAPTER_PROBE", "CHAPTER_INVENTORY"}
 DETAIL_SETUP_PROBE_OUTCOMES = {
@@ -422,6 +426,9 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         or fields["bindingGate"] not in DETAIL_SETUP_BINDING_GATES
         or fields["sourceEligible"] not in {"TRUE", "FALSE"}
         or fields["bindingSelection"] not in DETAIL_SETUP_BINDING_SELECTIONS
+        or fields["bindingPayload"] not in DETAIL_SETUP_BINDING_PAYLOAD
+        or fields["manga"] not in DETAIL_SETUP_MANGA
+        or fields["source"] not in DETAIL_SETUP_SOURCE
         or fields["routeRendered"] not in {"TRUE", "FALSE"}
         or fields["routeTitleMatches"] not in {"TRUE", "FALSE"}
         or fields["routeModel"] not in DETAIL_SETUP_ROUTE_MODELS
@@ -430,7 +437,10 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
     provider_count = fields["providerCount"]
     if provider_count != "UNKNOWN" and not re.fullmatch(r"[0-9]{1,2}", provider_count):
         return {"evidence": "MALFORMED"}
-    if any(not re.fullmatch(r"[0-9]{1,6}", fields[key]) for key in ("aInventory", "aHeld")):
+    if any(
+        not re.fullmatch(r"[0-9]{1,6}", fields[key])
+        for key in ("aChapterRequests", "bChapterRequests", "aInventory", "aHeld")
+    ):
         return {"evidence": "MALFORMED"}
     if fields["probe"] != "NONE":
         records = fields["probe"].split(",")
