@@ -403,7 +403,7 @@ class ChapterInventoryAndReconciliationTest {
 
         val report = refresh.execute("title-1", mappingId = "mapping-1").getOrThrow()
 
-        result.sourceMappingIds shouldBe setOf("mapping-1")
+        report.sourceMappingIds shouldBe setOf("mapping-1")
         io.mockk.coVerify(exactly = 1) { staged.execute(any(), any()) }
         report.canonicalChapters.map { it.id } shouldBe listOf("chapter-cutover")
         report.variants.map { it.id } shouldBe listOf("variant-cutover")

@@ -38,9 +38,9 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.LegacyInventoryEvidenceAdapter
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
-import tachiyomi.domain.tsuzuki.chapter.evidence.LegacyInventoryEvidenceAdapter
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
@@ -591,9 +591,9 @@ class MihonRuntimeEndToEndIntegrationTest {
             lateReport.variants shouldBe emptyList()
 
             val lateVariant = journey.canonicalChapters.getVariantBySourceIdentity(
-                    sourceId = legacyMapping.sourceId,
-                    sourceChapterId = "/chapter/shared",
-                )
+                sourceId = legacyMapping.sourceId,
+                sourceChapterId = "/chapter/shared",
+            )
             lateVariant?.canonicalChapterId shouldBe null
             journey.canonicalChapters.getVariantsBySourceMappingId(legacyMapping.id) shouldBe
                 variantsBeforeStaleRefresh

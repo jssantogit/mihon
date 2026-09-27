@@ -228,6 +228,25 @@ class ReconcileChapterEvidence internal constructor(
                 parsed.identity.isSpecific
 
             if (
+                observation.producerKind == ProducerKind.ADDON &&
+                observation.producerId.startsWith(LEGACY_PRODUCER_PREFIX) &&
+                isSupersededLegacyObservation(
+                    observation = observation,
+                    parsedIdentityIsReliable = parsedIdentityIsReliable,
+                    parsedIdentity = parsed.identity,
+                    currentChapters = chapters,
+                    persistedEvidence = persistedEvidence.values,
+                )
+            ) {
+                // The fetch began before newer evidence was recorded for this exact
+                // Mihon source/chapter key. Do not persist the stale legacy row or
+                // let its label create a second canonical identity.
+                discardedCount++
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+                continue
+            }
+
+            if (
                 observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
                 !parsedIdentityIsReliable
             ) {
@@ -449,6 +468,47 @@ class ReconcileChapterEvidence internal constructor(
             }
     }
 
+    private suspend fun isSupersededLegacyObservation(
+        observation: ChapterEvidence,
+        parsedIdentityIsReliable: Boolean,
+        parsedIdentity: CanonicalChapterIdentity,
+        currentChapters: Map<String, CanonicalChapter>,
+        persistedEvidence: Collection<PersistedChapterEvidence>,
+    ): Boolean {
+        val externalKey = observation.externalChapterKey ?: return false
+        val candidates = persistedEvidence.filter { persisted ->
+            persisted.evidence.producerKind == ProducerKind.ADDON &&
+                persisted.evidence.producerId != observation.producerId &&
+                persisted.evidence.externalChapterKey == externalKey
+        }
+        if (candidates.isEmpty()) return false
+        val latestObservedAt = candidates.maxOf { it.evidence.observedAt }
+        if (latestObservedAt < observation.observedAt) return false
+        val latest = candidates.filter { it.evidence.observedAt == latestObservedAt }
+        val selected = latest.first()
+        if (latest.drop(1).any { !samePersistedObservation(selected, it) }) return true
+
+        val mappedChapterId = selected.mappedCanonicalChapterId ?: return true
+        val mappedChapter = currentChapters[mappedChapterId]
+            ?: canonicalChapterRepository.getById(mappedChapterId)
+            ?: error("Newer chapter evidence maps to missing chapter $mappedChapterId")
+        require(mappedChapter.canonicalTitleId == observation.canonicalTitleId) {
+            "Newer chapter evidence maps to a chapter from another canonical title"
+        }
+
+        val sameReliableIdentity = parsedIdentityIsReliable &&
+            mappedChapter.identity.isSpecific &&
+            parsedIdentity == mappedChapter.identity
+        return !sameReliableIdentity || observation.volume != mappedChapter.volume
+    }
+
+    private fun samePersistedObservation(
+        first: PersistedChapterEvidence,
+        second: PersistedChapterEvidence,
+    ): Boolean = first.evidence.copy(id = "") == second.evidence.copy(id = "") &&
+        first.mappedCanonicalChapterId == second.mappedCanonicalChapterId &&
+        first.rawMetadata.contentEquals(second.rawMetadata)
+
     private fun newChapter(
         canonicalTitleId: String,
         observation: ChapterEvidence,
@@ -488,6 +548,7 @@ class ReconcileChapterEvidence internal constructor(
     }
 
     private companion object {
+        const val LEGACY_PRODUCER_PREFIX = "mihon-legacy:"
         const val RELIABLE_CONFIDENCE = 0.95
     }
 
