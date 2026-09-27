@@ -602,7 +602,7 @@ class ReconcileChapterEvidenceTest {
                     rawLabel = "Chapter 37",
                     externalKey = "reused-source-key",
                     volume = 2,
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -731,7 +731,7 @@ class ReconcileChapterEvidenceTest {
 
         fixture.reconciler.execute(
             "title",
-            listOf(volumeOne.copy(id = "first-source-refresh", volume = null)),
+            listOf(volumeOne.copy(id = "first-source-refresh", volume = null, observedAt = 20L)),
         )
 
         fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 2
@@ -824,7 +824,7 @@ class ReconcileChapterEvidenceTest {
                     id = "observation-2",
                     rawLabel = "Chapter 37 - Revised title",
                     externalKey = "stable-37",
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -856,7 +856,7 @@ class ReconcileChapterEvidenceTest {
                     id = "changed-observation",
                     rawLabel = "Chapter 13",
                     externalKey = "same-key",
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -889,7 +889,7 @@ class ReconcileChapterEvidenceTest {
                     id = "changed",
                     rawLabel = "Chapter 126",
                     externalKey = "stable-key",
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -919,7 +919,8 @@ class ReconcileChapterEvidenceTest {
         fixture.reconciler.execute(
             "title",
             listOf(
-                fixture.addonEvidence(id = "en-new", rawLabel = "Chapter 126", externalKey = "en-stable"),
+                fixture.addonEvidence(id = "en-new", rawLabel = "Chapter 126", externalKey = "en-stable")
+                    .copy(observedAt = 20L),
             ),
         )
 
