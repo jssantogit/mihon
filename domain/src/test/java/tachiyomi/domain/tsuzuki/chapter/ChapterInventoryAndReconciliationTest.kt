@@ -395,7 +395,7 @@ class ChapterInventoryAndReconciliationTest {
                     rawName = "Chapter 4",
                     rawNumberHint = 4.0,
                     rawSourceOrder = null,
-                    rawSourceMetadata = null,
+                    rawSourceMetadata = kotlinx.serialization.json.buildJsonObject {},
                     createdAt = 100L,
                     updatedAt = 100L,
                 ),
