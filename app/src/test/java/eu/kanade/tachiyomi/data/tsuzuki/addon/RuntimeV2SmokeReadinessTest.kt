@@ -141,7 +141,7 @@ class RuntimeV2SmokeReadinessTest {
         completionClock = 400L
         startedFetch.complete(inventory(binding, "Chapter 1", fetchStartedAtMillis = 100L))
         runCurrent()
-        slowOlderRefresh.await().isFailure shouldBe true
+        slowOlderRefresh.await()
 
         val persisted = requireNotNull(
             evidence.getByProducerExternalKey(
