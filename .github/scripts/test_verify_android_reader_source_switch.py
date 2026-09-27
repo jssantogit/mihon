@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -266,6 +267,39 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             {"evidence": "MALFORMED"},
             verifier._detail_setup_diagnostic(with_unbounded_probe, method),
         )
+
+    def test_detail_probe_parser_matches_domain_outcome_and_reason_enums(self):
+        source = (
+            ROOT
+            / "domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/diagnostics/ChapterInventoryDiagnostics.kt"
+        ).read_text(encoding="utf-8")
+
+        def enum_values(name: str) -> set[str]:
+            match = re.search(r"enum class " + name + r"\s*\{([^}]*)\}", source, re.S)
+            self.assertIsNotNone(match, f"Could not locate Domain enum {name}")
+            return {value.strip() for value in match.group(1).split(",") if value.strip()}
+
+        domain_outcomes = enum_values("ChapterInventoryDiagnosticOutcome")
+        domain_reasons = enum_values("ChapterInventoryDiagnosticReason")
+        self.assertEqual(domain_outcomes, verifier.DETAIL_SETUP_PROBE_OUTCOMES)
+        self.assertEqual(domain_reasons | {"NONE"}, verifier.DETAIL_SETUP_PROBE_REASONS)
+
+        method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
+        for stage in verifier.DETAIL_SETUP_PROBE_STAGES:
+            for outcome in domain_outcomes:
+                for reason in domain_reasons:
+                    with self.subTest(stage=stage, outcome=outcome, reason=reason):
+                        diagnostic = (
+                            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+                            + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
+                            + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
+                            + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
+                            + "|aInventory=0|aHeld=0|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+                            + f"|probe={stage}:{outcome}:{reason}"
+                        )
+                        parsed = verifier._detail_setup_diagnostic(diagnostic, method)
+                        self.assertIsNotNone(parsed)
+                        self.assertNotIn("evidence", parsed or {})
 
     def test_real_runner_repeats_numtests_in_the_terminal_status_bundle(self):
         # AndroidJUnitRunner sends numtests=1 both when the test starts and
