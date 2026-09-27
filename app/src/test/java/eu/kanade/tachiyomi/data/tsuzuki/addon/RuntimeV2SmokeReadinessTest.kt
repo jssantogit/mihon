@@ -147,6 +147,7 @@ class RuntimeV2SmokeReadinessTest {
             ),
         )
         persisted.evidence.rawLabel shouldBe "Chapter 2"
+        persisted.evidence.id shouldBe newerEvidence.evidence.id
         persisted.evidence.observedAt shouldBe 200L
         persisted.mappedCanonicalChapterId shouldBe newerCanonicalChapterId
         chapters.getByCanonicalTitleId(TITLE_ID).map { it.id } shouldBe listOf(newerCanonicalChapterId)
