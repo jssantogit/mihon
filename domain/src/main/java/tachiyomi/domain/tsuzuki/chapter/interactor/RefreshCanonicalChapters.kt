@@ -2,6 +2,7 @@ package tachiyomi.domain.tsuzuki.chapter.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
@@ -16,12 +17,36 @@ import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
  * evidence. This class remains only for callers that still operate on materialized
  * Mihon source mappings.
  */
-@Inject
-class RefreshCanonicalChapters(
+class RefreshCanonicalChapters internal constructor(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val chapterInventoryGateway: ChapterInventoryGateway,
     private val reconcileChapterInventory: ReconcileChapterInventory,
+    private val reconcileLegacyChapterEvidence: ReconcileLegacyChapterEvidence?,
 ) {
+
+    @Inject
+    constructor(
+        sourceTitleMappingRepository: SourceTitleMappingRepository,
+        chapterInventoryGateway: ChapterInventoryGateway,
+        reconcileChapterInventory: ReconcileChapterInventory,
+        reconcileLegacyChapterEvidence: ReconcileLegacyChapterEvidence,
+    ) : this(
+        sourceTitleMappingRepository,
+        chapterInventoryGateway,
+        reconcileChapterInventory,
+        reconcileLegacyChapterEvidence as ReconcileLegacyChapterEvidence?,
+    )
+
+    constructor(
+        sourceTitleMappingRepository: SourceTitleMappingRepository,
+        chapterInventoryGateway: ChapterInventoryGateway,
+        reconcileChapterInventory: ReconcileChapterInventory,
+    ) : this(
+        sourceTitleMappingRepository,
+        chapterInventoryGateway,
+        reconcileChapterInventory,
+        null,
+    )
 
     suspend fun execute(
         canonicalTitleId: String,

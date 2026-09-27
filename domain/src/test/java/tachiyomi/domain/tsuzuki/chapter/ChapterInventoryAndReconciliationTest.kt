@@ -22,6 +22,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
@@ -357,6 +358,56 @@ class ChapterInventoryAndReconciliationTest {
         gateway.requestedMappingIds.clear()
         refresh.execute("title-1", mappingId = "mapping-1").isFailure shouldBe true
         gateway.requestedMappingIds shouldBe emptyList()
+    }
+
+    @Test
+    fun `production refresh constructor routes materialized inventory through staged evidence writer`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val mappings = FakeSourceTitleMappingRepository(mapping("mapping-1", materialized = true))
+        val gateway = FakeChapterInventoryGateway().apply {
+            result = Result.success(
+                inventory("mapping-1", 1L, "Chapter 4", "/chapter/4").copy(
+                    mihonMangaId = 10L,
+                    sourceUrl = "/mapping-1",
+                    fetchStartedAtMillis = 100L,
+                ),
+            )
+        }
+        val legacy = mockk<ReconcileChapterInventory>()
+        coEvery { legacy.execute(any<List<SourceChapterInventory>>()) } throws
+            AssertionError("production refresh must not call the legacy canonical writer")
+        val staged = mockk<ReconcileLegacyChapterEvidence>()
+        coEvery { staged.execute(any(), any()) } returns
+            listOf(
+                ChapterVariant(
+                    id = "variant-cutover",
+                    canonicalChapterId = "chapter-cutover",
+                    sourceMappingId = "mapping-1",
+                    sourceId = 1L,
+                    mihonMangaId = 10L,
+                    mihonChapterId = null,
+                    sourceChapterId = "/chapter/4",
+                    sourceChapterUrl = "/chapter/4",
+                    language = "en",
+                    scanlationGroup = null,
+                    version = null,
+                    releaseDate = null,
+                    rawName = "Chapter 4",
+                    rawNumberHint = 4.0,
+                    rawSourceOrder = null,
+                    rawSourceMetadata = null,
+                    createdAt = 100L,
+                    updatedAt = 100L,
+                ),
+            )
+        val refresh = RefreshCanonicalChapters(mappings, gateway, legacy, staged)
+
+        val result = refresh.execute("title-1", mappingId = "mapping-1").getOrThrow()
+
+        result.sourceMappingIds shouldBe setOf("mapping-1")
+        io.mockk.coVerify(exactly = 1) { staged.execute(any(), any()) }
+        io.mockk.coVerify(exactly = 0) { legacy.execute(any<List<SourceChapterInventory>>()) }
+        repository.variants shouldBe emptyMap()
     }
 
     @Test
