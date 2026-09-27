@@ -102,6 +102,28 @@ def output_for(method: str) -> str:
                 "canonicalHistory": "true",
             },
         )
+    elif method in {
+        "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation",
+        "legacyReaderKeepsPagesAfterDetailInventoryInvalidation",
+    }:
+        fields.update(
+            {
+                "readerAttachWaited": "true",
+                "readerPagesPreserved": "true",
+                "sharedCacheIdentity": "true",
+                "mappingPreserved": "true",
+                "priorVariantPreserved": "true",
+                "canonicalIdsPreserved": "true",
+                "progressPreserved": "true",
+                "historyPreserved": "true",
+                "preferencePreserved": "true",
+                "staleTargetVariantAbsent": "true",
+            },
+        )
+        if method == "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation":
+            fields.update({"detailOwnerCancelled": "true", "cancelledResponseReleased": "true"})
+        else:
+            fields.update({"inventoryInvalidated": "true", "lateResponseReleased": "true"})
 
     event = "ANDROID_SOURCE_SWITCH|" + "|".join(key + "=" + value for key, value in fields.items())
     diagnostic = ""
@@ -154,6 +176,84 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                 changed = output.replace(key + "=true", key + "=false")
                 with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
                     verifier.verify(changed, method)
+
+    def test_detail_inventory_races_require_shared_cache_and_preserved_state(self):
+        scenarios = {
+            "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation": (
+                "detailOwnerCancelled", "cancelledResponseReleased",
+            ),
+            "legacyReaderKeepsPagesAfterDetailInventoryInvalidation": (
+                "inventoryInvalidated", "lateResponseReleased",
+            ),
+        }
+        common = (
+            "readerAttachWaited", "readerPagesPreserved", "sharedCacheIdentity", "mappingPreserved",
+            "priorVariantPreserved", "canonicalIdsPreserved", "progressPreserved", "historyPreserved",
+            "preferencePreserved", "staleTargetVariantAbsent",
+        )
+        for method, specific in scenarios.items():
+            with self.subTest(method=method):
+                output = output_for(method)
+                verifier.verify(output, method)
+                for key in (*common, *specific):
+                    with self.subTest(key=key):
+                        changed = output.replace(key + "=true", key + "=false")
+                        with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                            verifier.verify(changed, method)
+
+    def test_detail_setup_diagnostic_reports_only_sanitized_state_and_binding_categories(self):
+        method = "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation"
+        diagnostic = (
+            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+            + "scenario=DETAIL_OWNER_CANCEL|state=ERROR|localLoad=FAILED|refreshing=UNKNOWN"
+            + "|startJob=COMPLETED|stateError=NO_SUCH_ELEMENT|refreshError=NONE"
+            + "|integrationReady=TRUE|addonReady=TRUE|providerCount=2"
+            + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+        )
+        fields = verifier._detail_setup_diagnostic(diagnostic, method)
+        self.assertIsNotNone(fields)
+        self.assertEqual("FAILED", fields["localLoad"])
+        self.assertEqual("NO_SUCH_ELEMENT", fields["stateError"])
+        self.assertEqual("ELIGIBLE", fields["bindingGate"])
+        self.assertEqual("TRUE", fields["sourceEligible"])
+        self.assertEqual("SELECTED", fields["bindingSelection"])
+        summary = verifier.sanitized_summary(
+            method,
+            {},
+            False,
+            detail_setup_diagnostic=fields,
+        )
+        self.assertIn("state=ERROR|localLoad=FAILED", summary)
+        self.assertIn(
+            "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
+            "|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0",
+            summary,
+        )
+
+    def test_detail_setup_diagnostic_rejects_unknown_fields_and_unbounded_categories(self):
+        method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
+        base = (
+            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+            + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
+            + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
+            + "|providerCount=1"
+            + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+        )
+        with_title = base + "|title=private-title"
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_title, method),
+        )
+        with_unbounded_state = base.replace("state=LOADED", "state=private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_state, method),
+        )
+        with_unbounded_source_state = base.replace("sourceEligible=TRUE", "sourceEligible=private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_source_state, method),
+        )
 
     def test_real_runner_repeats_numtests_in_the_terminal_status_bundle(self):
         # AndroidJUnitRunner sends numtests=1 both when the test starts and
@@ -614,14 +714,18 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("live_probe:", workflow)
         self.assertIn("instrumentation_suite:", workflow)
+        self.assertIn("reader_source_switch_mode:", workflow)
         self.assertIn("default: navigation", workflow)
         self.assertIn("- reader-source-switch", workflow)
+        self.assertIn("- detail-races", workflow)
         self.assertIn("run_android_instrumentation_route.sh", workflow)
         self.assertIn("inputs.instrumentation_suite || 'navigation'", workflow)
+        self.assertIn("inputs.reader_source_switch_mode || 'all'", workflow)
         self.assertIn("test_summarize_reader_screenshot.py", workflow)
         runner = (ROOT / ".github/scripts/run_android_reader_source_switch.sh").read_text(encoding="utf-8")
         self.assertIn("--runner-exit", runner)
         self.assertIn("overall_status", runner)
+        self.assertIn("detail-races)", runner)
         self.assertIn("settings get global airplane_mode_on", runner)
         self.assertIn("adb exec-out screencap -p", runner)
         self.assertIn("summarize_reader_screenshot.py", runner)

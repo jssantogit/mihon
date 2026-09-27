@@ -20,6 +20,8 @@ METHOD_SCENARIOS = {
     "slowSourceDoesNotBlockHealthySourceOption": "SLOW_TO_HEALTHY",
     "cancelledDiscoveryCannotMutateActiveReaderSession": "DISCOVERY_CANCEL",
     "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress": "LEGACY_ATTACH",
+    "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation": "DETAIL_OWNER_CANCEL",
+    "legacyReaderKeepsPagesAfterDetailInventoryInvalidation": "DETAIL_INVENTORY_INVALIDATE",
 }
 SAFE_TEST_CLASS_PREFIX = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation."
 SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
@@ -102,6 +104,24 @@ SAFE_DIAGNOSTIC_CATEGORIES = {
     "TIMEOUT",
 }
 STATUS_CODE_ENUM = {"-4", "-3", "-2", "-1", "0", "1"}
+DETAIL_SETUP_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_SWITCH_DETAIL_SETUP|"
+DETAIL_SETUP_DIAGNOSTIC_KEYS = (
+    "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
+    "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
+    "bindingSelection", "aInventory", "aHeld",
+)
+DETAIL_SETUP_STATES = {"LOADING", "LOADED", "ERROR"}
+DETAIL_SETUP_LOCAL_LOAD = {"INCOMPLETE", "PASSED", "FAILED"}
+DETAIL_SETUP_REFRESHING = {"TRUE", "FALSE", "UNKNOWN"}
+DETAIL_SETUP_JOBS = {"ACTIVE", "COMPLETED", "CANCELLED", "NOT_STARTED"}
+DETAIL_SETUP_ERRORS = {
+    "NONE", "NO_SUCH_ELEMENT", "ILLEGAL_ARGUMENT", "ILLEGAL_STATE", "IO", "OTHER",
+}
+DETAIL_SETUP_BINDING_GATES = {
+    "MISSING", "WRONG_ADDON", "UNAVAILABLE", "ADDON_MISSING", "ADDON_DISABLED",
+    "INVALID_SOURCE_KEY", "SOURCE_NOT_ENABLED", "ELIGIBLE", "UNKNOWN",
+}
+DETAIL_SETUP_BINDING_SELECTIONS = {"MISSING", "SELECTED", "ERROR"}
 
 
 class ReaderSourceSwitchVerificationError(ValueError):
@@ -276,6 +296,26 @@ def verify(output: str, method: str) -> dict[str, str]:
             if fields.get(key) != "true":
                 raise ReaderSourceSwitchVerificationError("Legacy Reader attach did not prove " + key)
 
+    if method in {
+        "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation",
+        "legacyReaderKeepsPagesAfterDetailInventoryInvalidation",
+    }:
+        for key in (
+            "readerAttachWaited", "readerPagesPreserved", "sharedCacheIdentity",
+            "mappingPreserved", "priorVariantPreserved", "canonicalIdsPreserved",
+            "progressPreserved", "historyPreserved", "preferencePreserved",
+            "staleTargetVariantAbsent",
+        ):
+            if fields.get(key) != "true":
+                raise ReaderSourceSwitchVerificationError("Concurrent Reader/detail scenario did not prove " + key)
+        if method == "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation":
+            required = ("detailOwnerCancelled", "cancelledResponseReleased")
+        else:
+            required = ("inventoryInvalidated", "lateResponseReleased")
+        for key in required:
+            if fields.get(key) != "true":
+                raise ReaderSourceSwitchVerificationError("Concurrent Reader/detail scenario did not prove " + key)
+
     return fields
 
 
@@ -326,6 +366,51 @@ def _split_diagnostic(
     if not set(expected_keys).issubset(fields):
         return {}
     return fields
+
+
+def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
+    if method not in {
+        "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation",
+        "legacyReaderKeepsPagesAfterDetailInventoryInvalidation",
+    }:
+        return None
+    records = [
+        line for line in output.splitlines()
+        if line.startswith(DETAIL_SETUP_DIAGNOSTIC_PREFIX)
+    ]
+    if not records:
+        return None
+    if len(records) != 1:
+        return {"evidence": "DUPLICATE"}
+    fields = _split_diagnostic(
+        records[0],
+        DETAIL_SETUP_DIAGNOSTIC_PREFIX,
+        DETAIL_SETUP_DIAGNOSTIC_KEYS,
+    )
+    if not fields:
+        return {"evidence": "MALFORMED"}
+    if fields["scenario"] != METHOD_SCENARIOS[method]:
+        return {"evidence": "MALFORMED"}
+    if (
+        fields["state"] not in DETAIL_SETUP_STATES
+        or fields["localLoad"] not in DETAIL_SETUP_LOCAL_LOAD
+        or fields["refreshing"] not in DETAIL_SETUP_REFRESHING
+        or fields["startJob"] not in DETAIL_SETUP_JOBS
+        or fields["stateError"] not in DETAIL_SETUP_ERRORS
+        or fields["refreshError"] not in DETAIL_SETUP_ERRORS
+        or fields["integrationReady"] not in {"TRUE", "FALSE"}
+        or fields["addonReady"] not in {"TRUE", "FALSE"}
+        or fields["bindingGate"] not in DETAIL_SETUP_BINDING_GATES
+        or fields["sourceEligible"] not in {"TRUE", "FALSE"}
+        or fields["bindingSelection"] not in DETAIL_SETUP_BINDING_SELECTIONS
+    ):
+        return {"evidence": "MALFORMED"}
+    provider_count = fields["providerCount"]
+    if provider_count != "UNKNOWN" and not re.fullmatch(r"[0-9]{1,2}", provider_count):
+        return {"evidence": "MALFORMED"}
+    if any(not re.fullmatch(r"[0-9]{1,6}", fields[key]) for key in ("aInventory", "aHeld")):
+        return {"evidence": "MALFORMED"}
+    return {key: fields[key] for key in DETAIL_SETUP_DIAGNOSTIC_KEYS}
 
 
 def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
@@ -573,6 +658,7 @@ def sanitized_summary(
     reader_selector_diagnostics: list[dict[str, str]] | None = None,
     terminal_evidence: dict[str, str] | None = None,
     foreground_diagnostics: list[dict[str, str]] | None = None,
+    detail_setup_diagnostic: dict[str, str] | None = None,
 ) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
@@ -594,7 +680,10 @@ def sanitized_summary(
             "sourceAPageCount", "sourceBPageCount", "positionBefore", "positionAfter", "historyRows",
             "session", "sourceAHealthy", "sourceBPending", "cancelled", "lateResponsesReleased",
             "legacySessionAttached", "canonicalIdStable", "mappingPreserved", "variantPreserved",
-            "preferencePreserved", "canonicalHistory",
+            "preferencePreserved", "canonicalHistory", "readerAttachWaited", "readerPagesPreserved",
+            "sharedCacheIdentity", "priorVariantPreserved", "canonicalIdsPreserved", "progressPreserved",
+            "historyPreserved", "staleTargetVariantAbsent", "detailOwnerCancelled",
+            "cancelledResponseReleased", "inventoryInvalidated", "lateResponseReleased",
         )
         safe_fields = [
             key + "=" + fields[key]
@@ -633,6 +722,20 @@ def sanitized_summary(
                 + "|bInventory=" + fixture_diagnostic["bInventory"]
                 + "|bPages=" + fixture_diagnostic["bPages"]
                 + "|bHeld=" + fixture_diagnostic["bHeld"]
+            )
+    if detail_setup_diagnostic is not None:
+        if "evidence" in detail_setup_diagnostic:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|evidence="
+                + detail_setup_diagnostic["evidence"]
+            )
+        else:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|"
+                + "|".join(
+                    key + "=" + detail_setup_diagnostic[key]
+                    for key in DETAIL_SETUP_DIAGNOSTIC_KEYS
+                )
             )
     for record in reader_view_diagnostics or []:
         if "evidence" in record:
@@ -712,6 +815,7 @@ def main(argv: list[str] | None = None) -> int:
     reader_view_diagnostics = _reader_view_diagnostics(output)
     reader_selector_diagnostics = _reader_selector_diagnostics(output)
     foreground_diagnostics = _reader_foreground_diagnostics(output)
+    detail_setup_diagnostic = _detail_setup_diagnostic(output, args.method)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(
         sanitized_summary(
@@ -724,6 +828,7 @@ def main(argv: list[str] | None = None) -> int:
             reader_selector_diagnostics,
             terminal_evidence,
             foreground_diagnostics,
+            detail_setup_diagnostic,
         ),
         encoding="utf-8",
     )

@@ -20,9 +20,13 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
         profile: str = "mangafire",
         mangaball_marker: str = "false",
         suite: str = "navigation",
+        reader_mode: str = "all",
     ) -> str:
         result = subprocess.run(
-            ["bash", str(ROUTER), event, live, fixture_marker, "true", profile, mangaball_marker, suite],
+            [
+                "bash", str(ROUTER), event, live, fixture_marker, "true", profile,
+                mangaball_marker, suite, reader_mode,
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -56,6 +60,26 @@ class AndroidInstrumentationRouteTest(unittest.TestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("reason=READER_SWITCH_REQUIRES_OFFLINE_DISPATCH", result.stderr)
         self.assertNotIn("providerCalls=1", result.stdout)
+
+    def test_focused_detail_race_mode_is_explicit_and_offline(self):
+        self.assertEqual(
+            "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|mode=READER_SOURCE_SWITCH"
+            "|liveProbe=false|providerCalls=0|suite=reader-source-switch\n"
+            "ANDROID_INSTRUMENTATION_ROUTE|outcome=PASS|readerMode=detail-races",
+            self.route(
+                "workflow_dispatch", "false", suite="reader-source-switch", reader_mode="detail-races",
+            ),
+        )
+
+    def test_reader_focus_is_rejected_for_navigation(self):
+        result = subprocess.run(
+            ["bash", str(ROUTER), "workflow_dispatch", "false", "false", "true", "mangafire", "false", "navigation", "detail-races"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("reason=READER_MODE_REQUIRES_SOURCE_SWITCH", result.stderr)
 
     def test_reader_source_switch_rejects_automatic_push_routes(self):
         result = subprocess.run(

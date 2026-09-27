@@ -13,6 +13,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.view.children
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -26,6 +27,10 @@ import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.tachiyomi.App
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.core.security.SecurityPreferences
+import eu.kanade.tachiyomi.data.tsuzuki.MihonChapterInventoryGateway
+import eu.kanade.tachiyomi.data.tsuzuki.MihonInventorySnapshotCache
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonAddonProviderFactory
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonChapterProbeProvider
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.extension.ExtensionManager
@@ -47,8 +52,14 @@ import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerPageHolder
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenState
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -75,21 +86,30 @@ import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentPreference
+import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.jvm.functions.Function2
 
 /** Runs production canonical Reader and Mihon source adapters against a disposable local fixture. */
 @RunWith(AndroidJUnit4::class)
@@ -563,6 +583,282 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 details = "legacySessionAttached=true|canonicalIdStable=true|mappingPreserved=true" +
                     "|variantPreserved=true|preferencePreserved=true|canonicalHistory=true",
             )
+        }
+    }
+
+    @Test(timeout = 240_000L)
+    fun legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation() {
+        requireOptIn()
+        withFixture(sourceBBehavior = FixtureBehavior(pageCount = 10, inventoryStatus = 503)) { fixture ->
+            val legacy = fixture.seedLegacyEntry(persistVariant = false, matchDetailInventoryKey = true)
+            fixture.enableSyntheticAddonA()
+            val prior = fixture.seedPriorCanonicalState()
+            val progressBefore = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
+            val historyBefore = runBlocking { fixture.reading.getHistory(fixture.chapter.id) }
+            val preferenceBefore = runBlocking { fixture.preferences.get(fixture.title.id) }
+            val token = fixture.sourceA.token
+            fixture.dispatcher.holdInventoryResponse(token)
+            var detailModel: CanonicalTitleScreenModel? = null
+            var detailJob: Job? = null
+            var detailReadiness: SourceSwitchFixture.DetailRefreshPrerequisites? = null
+
+            try {
+                fixture.launchReader(legacyEntry = legacy) { main ->
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        val model = fixture.canonicalTitleScreenModel(main)
+                        detailModel = model
+                    }
+                    val model = requireNotNull(detailModel)
+                    val readiness = fixture.awaitDetailRefreshPrerequisites(model, legacy)
+                    detailReadiness = readiness
+                    if (!readiness.canRefreshAddonA) {
+                        fixture.reportDetailInventorySetup(
+                            scenario = "DETAIL_OWNER_CANCEL",
+                            model = model,
+                            startJob = null,
+                            readiness = readiness,
+                            token = token,
+                        )
+                        throw AssertionError("Detail refresh prerequisites were not ready")
+                    }
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        detailJob = model.start(fixture.title.id)
+                    }
+                    try {
+                        awaitValue<Boolean>("detail ScreenModel to own the held source A inventory") {
+                            val routes = fixture.dispatcher.routeCounts(token)
+                            (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
+                                .takeIf { it }
+                        }
+                    } catch (error: AssertionError) {
+                        fixture.reportDetailInventorySetup(
+                            scenario = "DETAIL_OWNER_CANCEL",
+                            model = model,
+                            startJob = detailJob,
+                            readiness = requireNotNull(detailReadiness),
+                            token = token,
+                        )
+                        throw error
+                    }
+                }
+
+                val reader = awaitActivity(ReaderActivity::class.java)
+                val model = requireNotNull(detailModel)
+                assertSame(
+                    "Reader and detail callers must use the same AppScope inventory cache",
+                    fixture.readerInventorySnapshotCache(reader),
+                    fixture.detailInventorySnapshotCache(model, fixture.addonA),
+                )
+                awaitValue("legacy Reader attach to wait on the detail-owned inventory") {
+                    val state = reader.viewModel.state.value
+                    val routes = fixture.dispatcher.routeCounts(token)
+                    (
+                        state.manga?.id == legacy.manga.id &&
+                            state.source?.id == legacy.manga.source &&
+                            state.viewerChapters == null &&
+                            state.initError == null &&
+                            routes.inventory == 1 &&
+                            fixture.dispatcher.heldInventoryRequestCount(token) == 1 &&
+                            fixture.dispatcher.pageRequestCount(token) == 0
+                        )
+                        .takeIf { it }
+                }
+                assertEquals(
+                    "The legacy attach must join the pending inventory",
+                    1,
+                    fixture.dispatcher.routeCounts(token).inventory,
+                )
+                assertEquals(
+                    "Reader pages must wait until the shared attach finishes",
+                    0,
+                    fixture.dispatcher.pageRequestCount(token),
+                )
+
+                runBlocking { requireNotNull(detailJob).cancelAndJoin() }
+                fixture.dispatcher.releaseInventoryResponse(token)
+                awaitValue("cancelled inventory response to leave the fixture server") {
+                    fixture.dispatcher.heldInventoryRequestCount(token).takeIf { it == 0 }
+                }
+                val loaded = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
+                awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "DETAIL_OWNER_CANCEL")
+
+                assertEquals(0, loaded.first)
+                assertEquals(legacy.chapter.id, reader.viewModel.state.value.currentChapter?.chapter?.id)
+                assertEquals(
+                    "Cancelled detail inventory must not attach a guessed canonical variant",
+                    false,
+                    reader.viewModel.canChangeCanonicalSource(),
+                )
+                assertEquals(
+                    "No stale A variant may be published after cancellation",
+                    null,
+                    fixture.persistedVariant(legacy),
+                )
+                assertEquals(legacy.mapping, fixture.persistedMapping(legacy))
+                assertEquals(prior.mapping, fixture.persistedMapping(prior.mapping.sourceId, prior.mapping.sourceUrl))
+                assertEquals(
+                    prior.variant,
+                    fixture.persistedVariant(prior.variant.sourceId, prior.variant.sourceChapterId),
+                )
+                assertEquals(fixture.title, fixture.persistedCanonicalTitle())
+                assertEquals(fixture.chapter, fixture.persistedCanonicalChapter())
+                assertEquals(progressBefore, runBlocking { fixture.reading.getProgress(fixture.chapter.id) })
+                assertEquals(historyBefore, runBlocking { fixture.reading.getHistory(fixture.chapter.id) })
+                assertEquals(preferenceBefore, runBlocking { fixture.preferences.get(fixture.title.id) })
+                assertEquals(1L, fixture.canonicalHistoryRowCount())
+                report(
+                    scenario = "DETAIL_OWNER_CANCEL",
+                    pageCount = loaded.second,
+                    positionIndex = loaded.first,
+                    details = "detailOwnerCancelled=true|readerAttachWaited=true|readerPagesPreserved=true" +
+                        "|sharedCacheIdentity=true|mappingPreserved=true|priorVariantPreserved=true" +
+                        "|canonicalIdsPreserved=true|progressPreserved=true|historyPreserved=true" +
+                        "|preferencePreserved=true|staleTargetVariantAbsent=true|cancelledResponseReleased=true",
+                )
+            } finally {
+                detailJob?.cancel()
+                fixture.dispatcher.releaseInventoryResponse(token)
+            }
+        }
+    }
+
+    @Test(timeout = 240_000L)
+    fun legacyReaderKeepsPagesAfterDetailInventoryInvalidation() {
+        requireOptIn()
+        withFixture(sourceBBehavior = FixtureBehavior(pageCount = 10, inventoryStatus = 503)) { fixture ->
+            val legacy = fixture.seedLegacyEntry(persistVariant = false, matchDetailInventoryKey = true)
+            fixture.enableSyntheticAddonA()
+            val prior = fixture.seedPriorCanonicalState()
+            val progressBefore = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
+            val historyBefore = runBlocking { fixture.reading.getHistory(fixture.chapter.id) }
+            val preferenceBefore = runBlocking { fixture.preferences.get(fixture.title.id) }
+            val token = fixture.sourceA.token
+            fixture.dispatcher.holdInventoryResponse(token)
+            var detailModel: CanonicalTitleScreenModel? = null
+            var detailJob: Job? = null
+            var detailReadiness: SourceSwitchFixture.DetailRefreshPrerequisites? = null
+
+            try {
+                fixture.launchReader(legacyEntry = legacy) { main ->
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        val model = fixture.canonicalTitleScreenModel(main)
+                        detailModel = model
+                    }
+                    val model = requireNotNull(detailModel)
+                    val readiness = fixture.awaitDetailRefreshPrerequisites(model, legacy)
+                    detailReadiness = readiness
+                    if (!readiness.canRefreshAddonA) {
+                        fixture.reportDetailInventorySetup(
+                            scenario = "DETAIL_INVENTORY_INVALIDATE",
+                            model = model,
+                            startJob = null,
+                            readiness = readiness,
+                            token = token,
+                        )
+                        throw AssertionError("Detail refresh prerequisites were not ready")
+                    }
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        detailJob = model.start(fixture.title.id)
+                    }
+                    try {
+                        awaitValue<Boolean>("detail ScreenModel to own the held source A inventory") {
+                            val routes = fixture.dispatcher.routeCounts(token)
+                            (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
+                                .takeIf { it }
+                        }
+                    } catch (error: AssertionError) {
+                        fixture.reportDetailInventorySetup(
+                            scenario = "DETAIL_INVENTORY_INVALIDATE",
+                            model = model,
+                            startJob = detailJob,
+                            readiness = requireNotNull(detailReadiness),
+                            token = token,
+                        )
+                        throw error
+                    }
+                }
+
+                val reader = awaitActivity(ReaderActivity::class.java)
+                val model = requireNotNull(detailModel)
+                val readerCache = fixture.readerInventorySnapshotCache(reader)
+                assertSame(
+                    "Reader and detail callers must use the same AppScope inventory cache",
+                    readerCache,
+                    fixture.detailInventorySnapshotCache(model, fixture.addonA),
+                )
+                awaitValue("legacy Reader attach to wait on the detail-owned inventory") {
+                    val state = reader.viewModel.state.value
+                    val routes = fixture.dispatcher.routeCounts(token)
+                    (
+                        state.manga?.id == legacy.manga.id &&
+                            state.source?.id == legacy.manga.source &&
+                            state.viewerChapters == null &&
+                            state.initError == null &&
+                            routes.inventory == 1 &&
+                            fixture.dispatcher.heldInventoryRequestCount(token) == 1 &&
+                            fixture.dispatcher.pageRequestCount(token) == 0
+                        )
+                        .takeIf { it }
+                }
+                assertEquals(
+                    "The legacy attach must join the pending inventory",
+                    1,
+                    fixture.dispatcher.routeCounts(token).inventory,
+                )
+
+                fixture.invalidateSharedInventoryTitle(reader, fixture.title.id)
+                val loaded = awaitReaderPages(reader, fixture.sourceA.name, expectedCount = 10)
+                awaitImagePixels(reader, fixture, Color.rgb(220, 40, 40), "DETAIL_INVENTORY_INVALIDATE")
+                assertEquals(
+                    "Reader must keep its valid operational chapter",
+                    legacy.chapter.id,
+                    reader.viewModel.state.value.currentChapter?.chapter?.id,
+                )
+                assertEquals(
+                    "No stale A variant may be published while its invalidated response is pending",
+                    null,
+                    fixture.persistedVariant(legacy),
+                )
+                assertEquals(
+                    "The detail owner must still be held while Reader pages load",
+                    1,
+                    fixture.dispatcher.heldInventoryRequestCount(token),
+                )
+
+                fixture.dispatcher.releaseInventoryResponse(token)
+                runBlocking { requireNotNull(detailJob).join() }
+                awaitValue("invalidated late inventory response to leave the fixture server") {
+                    fixture.dispatcher.heldInventoryRequestCount(token).takeIf { it == 0 }
+                }
+
+                assertEquals(0, loaded.first)
+                assertEquals(false, reader.viewModel.canChangeCanonicalSource())
+                assertEquals("No late stale A variant may be reconciled", null, fixture.persistedVariant(legacy))
+                assertEquals(legacy.mapping, fixture.persistedMapping(legacy))
+                assertEquals(prior.mapping, fixture.persistedMapping(prior.mapping.sourceId, prior.mapping.sourceUrl))
+                assertEquals(
+                    prior.variant,
+                    fixture.persistedVariant(prior.variant.sourceId, prior.variant.sourceChapterId),
+                )
+                assertEquals(fixture.title, fixture.persistedCanonicalTitle())
+                assertEquals(fixture.chapter, fixture.persistedCanonicalChapter())
+                assertEquals(progressBefore, runBlocking { fixture.reading.getProgress(fixture.chapter.id) })
+                assertEquals(historyBefore, runBlocking { fixture.reading.getHistory(fixture.chapter.id) })
+                assertEquals(preferenceBefore, runBlocking { fixture.preferences.get(fixture.title.id) })
+                assertEquals(1L, fixture.canonicalHistoryRowCount())
+                report(
+                    scenario = "DETAIL_INVENTORY_INVALIDATE",
+                    pageCount = loaded.second,
+                    positionIndex = loaded.first,
+                    details = "inventoryInvalidated=true|readerAttachWaited=true|readerPagesPreserved=true" +
+                        "|sharedCacheIdentity=true|mappingPreserved=true|priorVariantPreserved=true" +
+                        "|canonicalIdsPreserved=true|progressPreserved=true|historyPreserved=true" +
+                        "|preferencePreserved=true|staleTargetVariantAbsent=true|lateResponseReleased=true",
+                )
+            } finally {
+                detailJob?.cancel()
+                fixture.dispatcher.releaseInventoryResponse(token)
+            }
         }
     }
 
@@ -1394,6 +1690,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val sourceA: ReaderFixtureHttpSource,
         val sourceB: ReaderFixtureHttpSource,
         private val sourceMangaA: Manga,
+        private val sourceMangaB: Manga,
         val addonA: AddonId,
         val addonB: AddonId,
         val title: CanonicalTitle,
@@ -1406,9 +1703,13 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         private val originalOnboardingCompleted: Boolean,
         private val installedExtensions: MutableStateFlow<Map<String, Extension.Installed>>,
         private val priorExtensions: Map<String, Extension.Installed>,
+        private val priorDisabledSources: Set<String>,
     ) {
 
-        fun launchReader(legacyEntry: LegacyReaderEntry? = null) {
+        fun launchReader(
+            legacyEntry: LegacyReaderEntry? = null,
+            beforeReaderLaunch: (MainActivity) -> Unit = {},
+        ) {
             val instrumentation = InstrumentationRegistry.getInstrumentation()
             val context = instrumentation.targetContext
             val device = UiDevice.getInstance(instrumentation)
@@ -1454,6 +1755,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 }
                 focused.takeIf { it }
             }
+            beforeReaderLaunch(main)
             // Instrumentation starts the separate singleTask Reader as a
             // foreground Activity and waits for creation. A plain startActivity
             // returned RESUMED with the emulator still focused on another app.
@@ -1513,8 +1815,13 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 app.graph.readerPreferences.navigateToPan.set(originalNavigateToPan)
                 app.graph.securityPreferences.secureScreen.set(originalSecureScreen)
                 app.graph.basePreferences.shownOnboardingFlow.set(originalOnboardingCompleted)
+                app.graph.sourcePreferences.disabledSources.set(priorDisabledSources)
                 server.close()
             }
+        }
+
+        fun enableSyntheticAddonA() {
+            runBlocking { app.graph.addonRepository.setEnabled(addonA, true) }
         }
 
         fun canonicalHistoryRowCount(): Long = runBlocking {
@@ -1531,22 +1838,400 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             ) { bindString(0, chapter.id) }.await()
         }
 
+        fun seedPriorCanonicalState(): PriorCanonicalState {
+            val now = System.currentTimeMillis()
+            val mapping = SourceTitleMapping(
+                id = "binding-${title.id.removePrefix("android-source-switch-")}-b",
+                canonicalTitleId = title.id,
+                mihonMangaId = sourceMangaB.id,
+                sourceId = sourceB.id,
+                sourceUrl = sourceMangaB.url,
+                language = sourceB.lang,
+                matchConfidence = 1.0,
+                verifiedByUser = true,
+                availability = SourceMappingAvailability.AVAILABLE,
+                preferredOverride = false,
+                createdAt = now,
+                updatedAt = now,
+            )
+            val chapterUrl = "/reader/${sourceB.token}/chapter-1"
+            val operationalChapter = runBlocking {
+                ChapterRepositoryImpl(database).addAll(
+                    listOf(
+                        Chapter.create().copy(
+                            mangaId = sourceMangaB.id,
+                            url = chapterUrl,
+                            name = "Chapter 1",
+                            chapterNumber = 1.0,
+                            sourceOrder = 1L,
+                            dateUpload = now,
+                        ),
+                    ),
+                ).single()
+            }
+            val variant = ChapterVariant(
+                id = "prior-variant-${title.id}",
+                canonicalChapterId = chapter.id,
+                sourceMappingId = mapping.id,
+                sourceId = sourceB.id,
+                mihonMangaId = sourceMangaB.id,
+                mihonChapterId = operationalChapter.id,
+                sourceChapterId = chapterUrl,
+                sourceChapterUrl = chapterUrl,
+                language = sourceB.lang,
+                scanlationGroup = "Prior synthetic group",
+                version = 1L,
+                releaseDate = now,
+                rawName = "Chapter 1",
+                rawNumberHint = 1.0,
+                rawSourceOrder = 1L,
+                createdAt = now,
+                updatedAt = now,
+            )
+            runBlocking {
+                SourceTitleMappingRepositoryImpl(database).upsert(mapping)
+                CanonicalChapterRepositoryImpl(database).upsertVariant(variant)
+                reading.upsertProgress(
+                    CanonicalChapterProgress(
+                        canonicalChapterId = chapter.id,
+                        lastPageRead = 4L,
+                        lastVariantId = variant.id,
+                        updatedAt = now,
+                    ),
+                )
+                reading.recordHistory(
+                    CanonicalChapterHistoryUpdate(
+                        canonicalChapterId = chapter.id,
+                        variantId = variant.id,
+                        readAt = now,
+                        sessionReadDuration = 30_000L,
+                    ),
+                )
+            }
+            return PriorCanonicalState(mapping, operationalChapter, variant)
+        }
+
+        data class PriorCanonicalState(
+            val mapping: SourceTitleMapping,
+            val operationalChapter: Chapter,
+            val variant: ChapterVariant,
+        )
+
         fun persistedMapping(entry: LegacyReaderEntry): SourceTitleMapping? = runBlocking {
             SourceTitleMappingRepositoryImpl(database).getBySource(entry.mapping.sourceId, entry.mapping.sourceUrl)
         }
 
+        fun persistedMapping(sourceId: Long, sourceUrl: String): SourceTitleMapping? = runBlocking {
+            SourceTitleMappingRepositoryImpl(database).getBySource(sourceId, sourceUrl)
+        }
+
         fun persistedVariant(entry: LegacyReaderEntry): ChapterVariant? = runBlocking {
-            CanonicalChapterRepositoryImpl(database)
-                .getVariantBySourceIdentity(entry.variant.sourceId, entry.variant.sourceChapterId)
+            persistedVariant(entry.variant.sourceId, entry.variant.sourceChapterId)
+        }
+
+        fun persistedVariant(sourceId: Long, sourceChapterId: String): ChapterVariant? = runBlocking {
+            CanonicalChapterRepositoryImpl(database).getVariantBySourceIdentity(sourceId, sourceChapterId)
+        }
+
+        fun persistedCanonicalTitle(): CanonicalTitle? = runBlocking {
+            CanonicalTitleRepositoryImpl(database).getById(title.id)
+        }
+
+        fun persistedCanonicalChapter(): CanonicalChapter? = runBlocking {
+            CanonicalChapterRepositoryImpl(database).getById(chapter.id)
+        }
+
+        fun canonicalTitleScreenModel(owner: MainActivity): CanonicalTitleScreenModel =
+            ViewModelProvider(owner, app.graph.viewModelFactory).get(CanonicalTitleScreenModel::class.java)
+
+        fun readerInventorySnapshotCache(reader: ReaderActivity): MihonInventorySnapshotCache {
+            val refresh = exactPrivateField(
+                reader.viewModel,
+                "refreshCanonicalChapters",
+                RefreshCanonicalChapters::class.java,
+            )
+            val gateway = exactPrivateField(
+                refresh,
+                "chapterInventoryGateway",
+                MihonChapterInventoryGateway::class.java,
+            )
+            return exactPrivateField(gateway, "inventoryCache", MihonInventorySnapshotCache::class.java)
+        }
+
+        fun detailInventorySnapshotCache(
+            model: CanonicalTitleScreenModel,
+            addonId: AddonId,
+        ): MihonInventorySnapshotCache {
+            val refresh = exactPrivateField(
+                model,
+                "refreshChapterEvidence",
+                RefreshChapterEvidence::class.java,
+            )
+            val addonRegistry = exactPrivateField(refresh, "addonRegistry", AddonRegistry::class.java)
+            val provider = addonRegistry.chapterProbeProviders()
+                .filterIsInstance<MihonChapterProbeProvider>()
+                .singleOrNull { it.addonId == addonId }
+                ?: throw AssertionError("Expected exactly one Mihon chapter probe for $addonId")
+            val fetchInventory = exactPrivateField(provider, "fetchInventory", Function2::class.java)
+            val factoryFields = fetchInventory.javaClass.declaredFields.filter {
+                it.type == MihonAddonProviderFactory::class.java
+            }
+            assertEquals(
+                "The real detail inventory lambda must capture exactly one provider factory",
+                1,
+                factoryFields.size,
+            )
+            val factory = exactPrivateField(
+                fetchInventory,
+                factoryFields.single().name,
+                MihonAddonProviderFactory::class.java,
+            )
+            val gateway = exactPrivateField(
+                factory,
+                "chapterInventoryGateway",
+                MihonChapterInventoryGateway::class.java,
+            )
+            return exactPrivateField(gateway, "inventoryCache", MihonInventorySnapshotCache::class.java)
+        }
+
+        data class DetailRefreshPrerequisites(
+            val integrationReady: Boolean,
+            val addonRegistryReady: Boolean,
+            val providerCount: Int?,
+            val bindingGate: String,
+            val sourceEligible: Boolean,
+            val bindingSelection: String,
+        ) {
+            val canRefreshAddonA: Boolean
+                get() = integrationReady && addonRegistryReady && providerCount == 1 &&
+                    bindingGate == "ELIGIBLE" && sourceEligible && bindingSelection == "SELECTED"
+        }
+
+        fun awaitDetailRefreshPrerequisites(
+            model: CanonicalTitleScreenModel,
+            legacyEntry: LegacyReaderEntry,
+        ): DetailRefreshPrerequisites = runBlocking {
+            val refresh = exactPrivateField(
+                model,
+                "refreshChapterEvidence",
+                RefreshChapterEvidence::class.java,
+            )
+            val integrationRegistry = exactPrivateField(
+                refresh,
+                "registry",
+                IntegrationRegistry::class.java,
+            )
+            val addonRegistry = exactPrivateField(refresh, "addonRegistry", AddonRegistry::class.java)
+            val integrationReady = try {
+                withTimeoutOrNull(REGISTRY_READY_TIMEOUT_MS) {
+                    integrationRegistry.awaitReady()
+                    true
+                } ?: false
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                false
+            }
+            val addonRegistryReady = try {
+                withTimeoutOrNull(REGISTRY_READY_TIMEOUT_MS) {
+                    addonRegistry.awaitReady()
+                    true
+                } ?: false
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                false
+            }
+            val providerCount = runCatching {
+                addonRegistry.chapterProbeProviders()
+                    .filterIsInstance<MihonChapterProbeProvider>()
+                    .count { it.addonId == addonA }
+            }.getOrNull()
+            val provider = addonRegistry.chapterProbeProviders()
+                .filterIsInstance<MihonChapterProbeProvider>()
+                .singleOrNull { it.addonId == addonA }
+            DetailRefreshPrerequisites(
+                integrationReady = integrationReady,
+                addonRegistryReady = addonRegistryReady,
+                providerCount = providerCount,
+                bindingGate = detailBindingGate(legacyEntry),
+                sourceEligible = provider?.let { detailProviderSourceEligible(it, legacyEntry) } == true,
+                bindingSelection = detailBindingSelection(refresh, legacyEntry),
+            )
+        }
+
+        fun reportDetailInventorySetup(
+            scenario: String,
+            model: CanonicalTitleScreenModel,
+            startJob: Job?,
+            readiness: DetailRefreshPrerequisites,
+            token: String,
+        ) {
+            val state = model.state.value
+            val stateName: String
+            val localLoad: String
+            val refreshing: String
+            val stateError: String
+            val refreshError: String
+            when (state) {
+                CanonicalTitleScreenState.Loading -> {
+                    stateName = "LOADING"
+                    localLoad = "INCOMPLETE"
+                    refreshing = "UNKNOWN"
+                    stateError = "NONE"
+                    refreshError = "NONE"
+                }
+                is CanonicalTitleScreenState.Loaded -> {
+                    stateName = "LOADED"
+                    localLoad = "PASSED"
+                    refreshing = if (state.isRefreshing) "TRUE" else "FALSE"
+                    stateError = "NONE"
+                    refreshError = detailErrorCategory(state.refreshError)
+                }
+                is CanonicalTitleScreenState.Error -> {
+                    stateName = "ERROR"
+                    localLoad = "FAILED"
+                    refreshing = "UNKNOWN"
+                    stateError = detailErrorCategory(state.error)
+                    refreshError = "NONE"
+                }
+            }
+            val jobState = when {
+                startJob == null -> "NOT_STARTED"
+                startJob.isCancelled -> "CANCELLED"
+                startJob.isCompleted -> "COMPLETED"
+                else -> "ACTIVE"
+            }
+            InstrumentationRegistry.getInstrumentation().sendStatus(
+                1,
+                Bundle().apply {
+                    putString(
+                        "stream",
+                        "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|scenario=$scenario|state=$stateName" +
+                            "|localLoad=$localLoad|refreshing=$refreshing|startJob=$jobState" +
+                            "|stateError=$stateError|refreshError=$refreshError" +
+                            "|integrationReady=${if (readiness.integrationReady) "TRUE" else "FALSE"}" +
+                            "|addonReady=${if (readiness.addonRegistryReady) "TRUE" else "FALSE"}" +
+                            "|providerCount=${readiness.providerCount?.toString() ?: "UNKNOWN"}" +
+                            "|bindingGate=${readiness.bindingGate}" +
+                            "|sourceEligible=${if (readiness.sourceEligible) "TRUE" else "FALSE"}" +
+                            "|bindingSelection=${readiness.bindingSelection}" +
+                            "|aInventory=${dispatcher.routeCounts(token).inventory}" +
+                            "|aHeld=${dispatcher.heldInventoryRequestCount(token)}",
+                    )
+                },
+            )
+        }
+
+        private suspend fun detailBindingGate(legacyEntry: LegacyReaderEntry): String {
+            return try {
+                val binding = ContentBindingRepositoryImpl(database)
+                    .getByTitle(title.id)
+                    .singleOrNull { it.id == legacyEntry.mapping.id }
+                    ?: return "MISSING"
+                if (binding.addonId != addonA) return "WRONG_ADDON"
+                if (binding.availability != ContentBindingAvailability.AVAILABLE) return "UNAVAILABLE"
+                val addon = app.graph.addonRepository.snapshot().singleOrNull { it.id == addonA }
+                    ?: return "ADDON_MISSING"
+                if (!addon.enabled) return "ADDON_DISABLED"
+                val sourceId = binding.providerTitleKey.substringBefore(':').toLongOrNull()
+                    ?: return "INVALID_SOURCE_KEY"
+                if (sourceId !in addon.mihonSourceIds) return "SOURCE_NOT_ENABLED"
+                "ELIGIBLE"
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                "UNKNOWN"
+            }
+        }
+
+        private suspend fun detailProviderSourceEligible(
+            provider: MihonChapterProbeProvider,
+            legacyEntry: LegacyReaderEntry,
+        ): Boolean {
+            val fetchInventory = exactPrivateField(provider, "fetchInventory", Function2::class.java)
+            val factoryFields = fetchInventory.javaClass.declaredFields.filter {
+                it.type == MihonAddonProviderFactory::class.java
+            }
+            if (factoryFields.size != 1) return false
+            val factory = exactPrivateField(
+                fetchInventory,
+                factoryFields.single().name,
+                MihonAddonProviderFactory::class.java,
+            )
+            val eligibilityRepository = exactPrivateField(
+                factory,
+                "sourceEligibilityRepository",
+                AddonSourceEligibilityRepository::class.java,
+            )
+            return eligibilityRepository.getByAddonId(addonA)
+                .singleOrNull { it.sourceId == legacyEntry.mapping.sourceId }
+                ?.enabled == true
+        }
+
+        private suspend fun detailBindingSelection(
+            refresh: RefreshChapterEvidence,
+            legacyEntry: LegacyReaderEntry,
+        ): String {
+            return try {
+                val resolver = exactPrivateField(
+                    refresh,
+                    "resolveContentBinding",
+                    ResolveContentBinding::class.java,
+                )
+                val selected = resolver.existingBindingsForRefresh(title.id, addonA).getOrThrow()
+                    .singleOrNull { it.id == legacyEntry.mapping.id }
+                if (selected == null) "MISSING" else "SELECTED"
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                "ERROR"
+            }
+        }
+
+        fun invalidateSharedInventoryTitle(reader: ReaderActivity, titleId: String) {
+            runBlocking { readerInventorySnapshotCache(reader).invalidateTitle(titleId) }
+        }
+
+        private fun detailErrorCategory(error: Throwable?): String = when (error) {
+            null -> "NONE"
+            is NoSuchElementException -> "NO_SUCH_ELEMENT"
+            is IllegalArgumentException -> "ILLEGAL_ARGUMENT"
+            is IllegalStateException -> "ILLEGAL_STATE"
+            is java.io.IOException -> "IO"
+            else -> "OTHER"
+        }
+
+        private fun <T : Any> exactPrivateField(instance: Any, name: String, expectedType: Class<T>): T {
+            val field = try {
+                instance.javaClass.getDeclaredField(name)
+            } catch (error: NoSuchFieldException) {
+                throw AssertionError("Expected exact field ${instance.javaClass.name}.$name", error)
+            }
+            assertTrue(
+                "${instance.javaClass.name}.$name has type ${field.type.name}, expected ${expectedType.name}",
+                expectedType.isAssignableFrom(field.type),
+            )
+            field.isAccessible = true
+            val value = field.get(instance)
+            assertTrue(
+                "${instance.javaClass.name}.$name did not contain ${expectedType.name}",
+                expectedType.isInstance(value),
+            )
+            return expectedType.cast(value)
         }
 
         private var legacyEntry: LegacyReaderEntry? = null
 
-        fun seedLegacyEntry(): LegacyReaderEntry {
+        fun seedLegacyEntry(
+            persistVariant: Boolean = true,
+            matchDetailInventoryKey: Boolean = false,
+        ): LegacyReaderEntry {
             check(legacyEntry == null) { "Legacy Reader fixture entry was already seeded" }
             val now = System.currentTimeMillis()
+            val bindingSuffix = title.id.removePrefix("android-source-switch-")
             val mapping = SourceTitleMapping(
-                id = "legacy-mapping-${title.id}",
+                id = if (matchDetailInventoryKey) "binding-$bindingSuffix-a" else "legacy-mapping-${title.id}",
                 canonicalTitleId = title.id,
                 mihonMangaId = sourceMangaA.id,
                 sourceId = sourceA.id,
@@ -1595,7 +2280,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             )
             runBlocking {
                 SourceTitleMappingRepositoryImpl(database).upsert(mapping)
-                CanonicalChapterRepositoryImpl(database).upsertVariant(variant)
+                if (persistVariant) CanonicalChapterRepositoryImpl(database).upsertVariant(variant)
             }
             return LegacyReaderEntry(sourceMangaA, operationalChapter, mapping, variant).also {
                 legacyEntry = it
@@ -1631,6 +2316,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     .apply { isAccessible = true }
                     .get(extensionManager) as MutableStateFlow<Map<String, Extension.Installed>>
                 val priorExtensions = installedExtensions.value
+                val priorDisabledSources = app.graph.sourcePreferences.disabledSources.get()
 
                 val runId = UUID.randomUUID().toString().replace("-", "").take(12)
                 val fixtureTitle = "Synthetic Reader Fixture $runId"
@@ -1823,6 +2509,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         sourceA = sourceA,
                         sourceB = sourceB,
                         sourceMangaA = sourceMangas.getValue(sourceA.id),
+                        sourceMangaB = sourceMangas.getValue(sourceB.id),
                         addonA = addonA,
                         addonB = addonB,
                         title = title,
@@ -1835,9 +2522,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         originalOnboardingCompleted = originalOnboardingCompleted,
                         installedExtensions = installedExtensions,
                         priorExtensions = priorExtensions,
+                        priorDisabledSources = priorDisabledSources,
                     )
                 } catch (error: Throwable) {
                     installedExtensions.value = priorExtensions
+                    app.graph.sourcePreferences.disabledSources.set(priorDisabledSources)
                     server.close()
                     // AppScope owns the shared driver; do not close it from this fixture.
                     throw error
@@ -1866,7 +2555,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         private val routeRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
         private val heldResponses = java.util.concurrent.ConcurrentHashMap<String, CountDownLatch>()
+        private val heldInventoryResponses = java.util.concurrent.ConcurrentHashMap<String, CountDownLatch>()
         private val heldRequestCounts =
+            java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        private val heldInventoryRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
 
         fun setBehavior(token: String, behavior: FixtureBehavior) {
@@ -1881,7 +2573,17 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             heldResponses.remove(token)?.countDown()
         }
 
+        fun holdInventoryResponse(token: String) {
+            heldInventoryResponses[token] = CountDownLatch(1)
+        }
+
+        fun releaseInventoryResponse(token: String) {
+            heldInventoryResponses.remove(token)?.countDown()
+        }
+
         fun heldRequestCount(token: String): Int = heldRequestCounts[token]?.get() ?: 0
+
+        fun heldInventoryRequestCount(token: String): Int = heldInventoryRequestCounts[token]?.get() ?: 0
 
         fun pageRequestCount(token: String): Int = pageRequestCounts[token]?.get() ?: 0
 
@@ -1913,15 +2615,24 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 routeRequestCounts.computeIfAbsent("$token:$route") {
                     java.util.concurrent.atomic.AtomicInteger()
                 }.incrementAndGet()
-                val responseGate = heldResponses[token]
+                val inventoryGate = heldInventoryResponses[token].takeIf { route == "inventory" }
+                val responseGate = inventoryGate ?: heldResponses[token]
                 if (responseGate != null) {
                     heldRequestCounts.computeIfAbsent(token) {
                         java.util.concurrent.atomic.AtomicInteger()
                     }.incrementAndGet()
+                    if (inventoryGate != null) {
+                        heldInventoryRequestCounts.computeIfAbsent(token) {
+                            java.util.concurrent.atomic.AtomicInteger()
+                        }.incrementAndGet()
+                    }
                     try {
                         responseGate.await(30, TimeUnit.SECONDS)
                     } finally {
                         heldRequestCounts[token]?.decrementAndGet()
+                        if (inventoryGate != null) {
+                            heldInventoryRequestCounts[token]?.decrementAndGet()
+                        }
                     }
                 }
                 if (behavior.responseDelayMillis > 0) Thread.sleep(behavior.responseDelayMillis)
@@ -2045,6 +2756,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
     private companion object {
         const val EXPECTED_TARGET_PACKAGE = "app.mihon.dev"
         const val UI_TIMEOUT_MS = 60_000L
+        const val REGISTRY_READY_TIMEOUT_MS = 15_000L
         const val MIN_IMAGE_COLOR_SAMPLES = 80
         const val MIN_IMAGE_COLOR_ROWS = 10
         const val MIN_IMAGE_COLOR_RUN_SAMPLES = 8
