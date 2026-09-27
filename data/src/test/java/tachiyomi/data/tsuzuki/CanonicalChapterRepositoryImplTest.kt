@@ -579,6 +579,102 @@ class CanonicalChapterRepositoryImplTest {
             repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe firstVariant.id
         }
 
+    @Test
+    fun `delayed observation cannot revert a newer mapped chapter or its operational variant`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projector = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val en = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+            val pt = legacyInventory(8L, "mapping-2", "pt-BR", "Vol. 1 Ch. 4")
+            projector.execute(listOf(en, pt), observedAt = 200L)
+
+            val newer = en.copy(chapters = en.chapters.map { it.copy(rawName = "Vol. 2 Ch. 4") })
+            projector.execute(listOf(newer), observedAt = 300L)
+            val chaptersBefore = repository.getByCanonicalTitleId("title-1")
+            val englishBefore = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+            val portugueseBefore = requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/4"))
+            val evidenceBefore = evidenceRepository.getByCanonicalTitleId("title-1").map {
+                it.evidence to it.mappedCanonicalChapterId
+            }
+
+            val delayed = en.copy(chapters = en.chapters.map { it.copy(rawName = "Vol. 1 Ch. 4 - delayed") })
+            shouldThrow<IllegalArgumentException> {
+                projector.execute(listOf(delayed), observedAt = 250L)
+            }
+
+            repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
+            repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe englishBefore
+            repository.getVariantBySourceIdentity(8L, "/chapter/4") shouldBe portugueseBefore
+            evidenceRepository.getByCanonicalTitleId("title-1").map {
+                it.evidence to it.mappedCanonicalChapterId
+            } shouldBe evidenceBefore
+
+            val cachedDelayed = en.copy(
+                fetchStartedAtMillis = 150L,
+                chapters = en.chapters.map { it.copy(rawName = "Vol. 1 Ch. 4 - stale cached response") },
+            )
+            shouldThrow<IllegalArgumentException> {
+                projector.execute(listOf(cachedDelayed), observedAt = 400L)
+            }
+            repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
+            repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe englishBefore
+
+            projector.execute(listOf(newer), observedAt = 350L).size shouldBe 1
+            repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe englishBefore.id
+        }
+
+    @Test
+    fun `two conflicting releases with the same fetch start cannot overwrite mapped chapter`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            // Equal millisecond timestamps carry no ordering information. The
+            // newer-looking provider label must not silently rehome a read chapter.
+            val initial = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+                .copy(fetchStartedAtMillis = 200L)
+            projection.execute(listOf(initial), observedAt = 250L).size shouldBe 1
+            // Replaying the identical cached inventory is idempotent, even if
+            // the caller happens to reconcile it at a later wall-clock time.
+            projection.execute(listOf(initial), observedAt = 550L).size shouldBe 1
+            val chaptersBefore = repository.getByCanonicalTitleId("title-1")
+            val variantBefore = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+            val evidenceBefore = evidenceRepository.getByCanonicalTitleId("title-1").map {
+                it.evidence to it.mappedCanonicalChapterId
+            }
+
+            val ambiguous = initial.copy(
+                chapters = initial.chapters.map { it.copy(rawName = "Vol. 2 Ch. 4") },
+            )
+            shouldThrow<IllegalArgumentException> {
+                projection.execute(listOf(ambiguous), observedAt = 600L)
+            }
+
+            repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
+            repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe variantBefore
+            evidenceRepository.getByCanonicalTitleId("title-1").map {
+                it.evidence to it.mappedCanonicalChapterId
+            } shouldBe evidenceBefore
+
+            // A true later source fetch may still legitimately rehome the key.
+            projection.execute(
+                listOf(ambiguous.copy(fetchStartedAtMillis = 201L)),
+                observedAt = 600L,
+            ).size shouldBe 1
+            repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe variantBefore.id
+            repository.getByCanonicalTitleId("title-1").single { it.volume == 2 }.id shouldBe
+                repository.getVariantBySourceIdentity(7L, "/chapter/4")?.canonicalChapterId
+        }
+
     private fun legacyInventory(
         sourceId: Long,
         mappingId: String,

@@ -34,6 +34,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import java.net.SocketTimeoutException
+import kotlin.time.Clock
 
 class MihonChapterInventoryGatewayTest {
 
@@ -168,6 +169,24 @@ class MihonChapterInventoryGatewayTest {
         inventory.chapters[0].rawSourceMetadata shouldBe JsonObject(mapOf("source" to JsonPrimitive("memo")))
         chapterRepository.writeCount shouldBe 0
         mangaRepository.writeCount shouldBe 0
+    }
+
+    @Test
+    fun `inventory captures provider fetch start before the source delivers a result`() = runTest {
+        var sourceEnteredAt = 0L
+        val source = TestSource(7L) {
+            sourceEnteredAt = Clock.System.now().toEpochMilliseconds()
+            listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L))
+        }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+        )
+        val inventory = gateway.fetch(mapping(), refresh = true).getOrThrow()
+        val startedAt = requireNotNull(inventory.fetchStartedAtMillis)
+        (startedAt > 0L) shouldBe true
+        (startedAt <= sourceEnteredAt) shouldBe true
     }
 
     @Test

@@ -33,6 +33,17 @@ class LegacyInventoryEvidenceAdapterTest {
     }
 
     @Test
+    fun `cached fetch time overrides a later reconciliation timestamp`() {
+        val fetched = inventory(101L, "en", "Vol. 1 Ch. 4").copy(fetchStartedAtMillis = 100L)
+        adapter.adapt(fetched, observedAt = 999L).single().observedAt shouldBe 100L
+        adapter.adapt(fetched.copy(fetchStartedAtMillis = null), observedAt = 999L)
+            .single().observedAt shouldBe 999L
+        shouldThrow<IllegalArgumentException> {
+            adapter.adapt(fetched.copy(fetchStartedAtMillis = -1L), observedAt = 999L)
+        }
+    }
+
+    @Test
     fun `unqualified or contradictory volume labels do not invent a volume or verified status`() {
         val inventory = inventory(101L, "en", "Chapter 4").copy(
             chapters = listOf(

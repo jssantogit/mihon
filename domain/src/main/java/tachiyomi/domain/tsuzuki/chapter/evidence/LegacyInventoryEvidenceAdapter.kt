@@ -22,6 +22,10 @@ class LegacyInventoryEvidenceAdapter(
         require(inventory.canonicalTitleId.isNotBlank()) { "Canonical title is required" }
         require(inventory.sourceMappingId.isNotBlank()) { "Legacy source mapping is required" }
         require(observedAt >= 0L) { "Observation timestamp must not be negative" }
+        // Fall back only for older inventories without original fetch provenance.
+        // A later cache replay must not become a newer provider observation.
+        val originalFetchAt = inventory.fetchStartedAtMillis ?: observedAt
+        require(originalFetchAt >= 0L) { "Provider fetch timestamp must not be negative" }
 
         // The provider can repeat identical URLs; a single inventory assigning
         // two different labels or number hints to the same URL is unsafe.
@@ -63,7 +67,7 @@ class LegacyInventoryEvidenceAdapter(
                 rawNumber = snapshot.rawNumberHint?.takeIf { it.isFinite() },
                 volume = volumeParser.execute(snapshot.rawName),
                 title = null,
-                observedAt = observedAt,
+                observedAt = originalFetchAt,
                 confidence = 1.0,
                 authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
             )

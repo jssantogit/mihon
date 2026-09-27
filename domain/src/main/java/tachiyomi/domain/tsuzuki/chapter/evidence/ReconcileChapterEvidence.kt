@@ -157,6 +157,24 @@ class ReconcileChapterEvidence internal constructor(
             }
             val existing = externalKey?.let(persistedEvidenceByExternalKey::get)
                 ?: persistedEvidence[observation.id]
+            // Two in-flight provider refreshes can complete out of order even
+            // though their writes share the chapter mutation gate. A delayed
+            // response may never overwrite a newer persisted observation.
+            val previousObservation = existing?.evidence
+            if (previousObservation != null) {
+                require(observation.observedAt >= previousObservation.observedAt) {
+                    "Stale chapter evidence cannot replace a newer observation"
+                }
+                // Mihon legacy inventories carry the ORIGINAL provider fetch-start
+                // timestamp; equal starts do not establish ordering. Other evidence
+                // producers may use caller timestamps and allow same-instant edits.
+                if (observation.producerId.startsWith("mihon-legacy:")) {
+                    require(
+                        observation.observedAt != previousObservation.observedAt ||
+                            observation.copy(id = previousObservation.id) == previousObservation,
+                    ) { "Conflicting legacy evidence shares the same provider fetch timestamp" }
+                }
+            }
             val stableId = existing?.evidence?.id ?: observation.id
             existing?.evidence?.externalChapterKey?.let { previousExternalKey ->
                 if (previousExternalKey != observation.externalChapterKey) {

@@ -34,6 +34,33 @@ class MihonInventorySnapshotCacheTest {
     }
 
     @Test
+    fun `cached inventories preserve original provider timestamps until an actual refetch`() = runTest {
+        var now = 0L
+        var providerStartedAt = 100L
+        val cache = MihonInventorySnapshotCache({ now }, 100L, 4)
+        var fetchCount = 0
+        val fetch: suspend () -> Result<SourceChapterInventory> = {
+            fetchCount++
+            Result.success(inventory.copy(fetchStartedAtMillis = providerStartedAt))
+        }
+
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 100L
+        now = 50L
+        providerStartedAt = 200L
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 100L
+        fetchCount shouldBe 1
+
+        cache.getOrFetch(key, refresh = true, fetch = fetch)
+            .getOrThrow().fetchStartedAtMillis shouldBe 200L
+        fetchCount shouldBe 2
+
+        now = 151L
+        providerStartedAt = 300L
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 300L
+        fetchCount shouldBe 3
+    }
+
+    @Test
     fun `simultaneous requests for one binding share one network lookup`() = runTest {
         val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
         val gate = CompletableDeferred<Unit>()

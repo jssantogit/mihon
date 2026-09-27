@@ -38,6 +38,7 @@ import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import java.math.BigDecimal
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 /**
@@ -96,6 +97,9 @@ class MihonChapterInventoryGateway(
         mapping: SourceTitleMapping,
         mihonMangaId: Long,
     ): Result<SourceChapterInventory> {
+        // Capture at provider fetch START, never at completion or projection.
+        // A cached result keeps this same timestamp when replayed later.
+        val fetchStartedAtMillis = Clock.System.now().toEpochMilliseconds()
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
@@ -158,6 +162,7 @@ class MihonChapterInventoryGateway(
                     mihonMangaId = mihonMangaId,
                     language = mapping.language,
                     sourceUrl = mapping.sourceUrl,
+                    fetchStartedAtMillis = fetchStartedAtMillis,
                 ),
             )
         } catch (error: CancellationException) {
