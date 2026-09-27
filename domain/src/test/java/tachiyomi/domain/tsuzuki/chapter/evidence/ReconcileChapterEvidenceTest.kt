@@ -610,6 +610,26 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `editorial unqualified evidence remains ambiguous beside qualified and unqualified candidates`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-unqualified"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-volume-1", volume = 1))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.editorialEvidence(rawLabel = "Chapter 4", externalKey = "editorial-chapter-4")),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-unqualified", "chapter-volume-1")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.INTEGRATION,
+            producerId = "mal",
+            externalChapterKey = "editorial-chapter-4",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `unknown volume refresh preserves a previously mapped stable external key`() = runTest {
         val fixture = fixture()
         val volumeOne = fixture.addonEvidence(

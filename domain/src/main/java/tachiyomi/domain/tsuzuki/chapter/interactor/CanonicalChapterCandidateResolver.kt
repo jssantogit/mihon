@@ -29,12 +29,15 @@ internal object CanonicalChapterCandidateResolver {
             val unqualifiedCandidates = candidates.filter { it.volume == null }
             if (unqualifiedCandidates.size > 1) return CanonicalChapterCandidateResolution.Ambiguous
             if (unqualifiedCandidates.size == 1) {
+                if (unqualifiedCandidates.size != candidates.size && !allowUnqualifiedCandidateCreation) {
+                    return CanonicalChapterCandidateResolution.Ambiguous
+                }
                 return CanonicalChapterCandidateResolution.UniqueMatch(unqualifiedCandidates.single())
             }
             // An unqualified source observation cannot reuse a volume-specific
             // chapter. A reliable Add-on observation may instead establish a
             // separate unqualified chapter; other evidence remains unresolved.
-            return if (allowUnqualifiedCandidateCreation) {
+            return if (allowUnqualifiedCandidateCreation && candidates.size == 1) {
                 CanonicalChapterCandidateResolution.NoMatch
             } else {
                 CanonicalChapterCandidateResolution.Ambiguous
