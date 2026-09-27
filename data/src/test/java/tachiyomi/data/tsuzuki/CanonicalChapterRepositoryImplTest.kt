@@ -455,6 +455,31 @@ class CanonicalChapterRepositoryImplTest {
     }
 
     @Test
+    fun `empty legacy inventory preserves canonical evidence and operational variant`() = runBlocking<Unit> {
+        val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+        val projection = ReconcileLegacyChapterEvidence(
+            LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+            repository,
+            SourceTitleMappingRepositoryImpl(database),
+        )
+        val populated = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+        projection.execute(listOf(populated), observedAt = 100L).size shouldBe 1
+        val chaptersBefore = repository.getByCanonicalTitleId("title-1")
+        val evidenceBefore = evidenceRepository.getByCanonicalTitleId("title-1")
+        val variantBefore = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+
+        projection.execute(
+            listOf(populated.copy(chapters = emptyList(), fetchStartedAtMillis = 200L)),
+            observedAt = 300L,
+        ) shouldBe emptyList()
+
+        repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
+        evidenceRepository.getByCanonicalTitleId("title-1") shouldBe evidenceBefore
+        repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe variantBefore
+    }
+
+    @Test
     fun `staged projection rejects a source id that does not own the materialized mapping`() =
         runBlocking<Unit> {
             val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)

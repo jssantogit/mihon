@@ -624,8 +624,20 @@ class MihonRuntimeEndToEndIntegrationTest {
             val mapping = legacyMapping(binding)
             val mappings = InMemorySourceTitleMappings(mapping)
 
+            journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId) shouldBe emptyList()
+            journey.canonicalChapters.getVariantBySourceIdentity(
+                sourceId = mapping.sourceId,
+                sourceChapterId = "/chapter/shared",
+            ) shouldBe null
+
             val initialReport = journey.refreshLegacy(mappings, mapping.id).getOrThrow()
             val initialVariant = initialReport.variants.single()
+            initialVariant.sourceMappingId shouldBe mapping.id
+            initialVariant.sourceChapterId shouldBe "/chapter/shared"
+            journey.canonicalChapters.getVariantBySourceIdentity(
+                sourceId = mapping.sourceId,
+                sourceChapterId = "/chapter/shared",
+            )?.id shouldBe initialVariant.id
             val chapterIdsBeforeDetail = journey.canonicalChapters
                 .getByCanonicalTitleId(journey.canonicalTitleId)
                 .map { it.id }
