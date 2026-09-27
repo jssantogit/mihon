@@ -626,20 +626,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         )
                         throw AssertionError("Detail refresh prerequisites were not ready")
                     }
+                    inventoryDiagnostics = fixture.startInventoryDiagnostics(observerModel)
                     // Compose the actual Voyager route so its own ScreenModel calls start().
                     val detailScreen = CanonicalTitleScreen(fixture.title.id)
-                    val routeModel = fixture.canonicalTitleScreenModel(detailScreen)
-                    assertNotSame(
-                        "The actual Voyager route must own its own ScreenModel",
-                        observerModel,
-                        routeModel,
-                    )
-                    assertSame(
-                        "The detail route and observer must share AppScope diagnostics",
-                        fixture.chapterInventoryDiagnostics(observerModel),
-                        fixture.chapterInventoryDiagnostics(routeModel),
-                    )
-                    inventoryDiagnostics = fixture.startInventoryDiagnostics(routeModel)
                     fixture.pushCanonicalTitleScreen(main, detailScreen)
                     try {
                         awaitValue("real canonical title route to render") {
@@ -650,6 +639,17 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         awaitValue("real detail route to own the MainActivity navigator") {
                             fixture.isCanonicalTitleScreenActive(main).takeIf { it }
                         }
+                        val routeModel = fixture.canonicalTitleScreenModel(main)
+                        assertNotSame(
+                            "The actual Voyager route must own its own ScreenModel",
+                            observerModel,
+                            routeModel,
+                        )
+                        assertSame(
+                            "The detail route and observer must share AppScope diagnostics",
+                            fixture.chapterInventoryDiagnostics(observerModel),
+                            fixture.chapterInventoryDiagnostics(routeModel),
+                        )
                         assertSame(
                             "The active route must use the prepared Voyager ScreenModel",
                             detailScreen,
@@ -665,7 +665,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
                                 .takeIf { it }
                         }
-                    } catch (error: AssertionError) {
+                    } catch (error: Throwable) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_OWNER_CANCEL",
                             routePushed = true,
@@ -807,20 +807,9 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         )
                         throw AssertionError("Detail refresh prerequisites were not ready")
                     }
+                    inventoryDiagnostics = fixture.startInventoryDiagnostics(observerModel)
                     // Compose the actual Voyager route so its own ScreenModel calls start().
                     val detailScreen = CanonicalTitleScreen(fixture.title.id)
-                    val routeModel = fixture.canonicalTitleScreenModel(detailScreen)
-                    assertNotSame(
-                        "The actual Voyager route must own its own ScreenModel",
-                        observerModel,
-                        routeModel,
-                    )
-                    assertSame(
-                        "The detail route and observer must share AppScope diagnostics",
-                        fixture.chapterInventoryDiagnostics(observerModel),
-                        fixture.chapterInventoryDiagnostics(routeModel),
-                    )
-                    inventoryDiagnostics = fixture.startInventoryDiagnostics(routeModel)
                     fixture.pushCanonicalTitleScreen(main, detailScreen)
                     try {
                         awaitValue("real canonical title route to render") {
@@ -831,6 +820,17 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         awaitValue("real detail route to own the MainActivity navigator") {
                             fixture.isCanonicalTitleScreenActive(main).takeIf { it }
                         }
+                        val routeModel = fixture.canonicalTitleScreenModel(main)
+                        assertNotSame(
+                            "The actual Voyager route must own its own ScreenModel",
+                            observerModel,
+                            routeModel,
+                        )
+                        assertSame(
+                            "The detail route and observer must share AppScope diagnostics",
+                            fixture.chapterInventoryDiagnostics(observerModel),
+                            fixture.chapterInventoryDiagnostics(routeModel),
+                        )
                         assertSame(
                             "The active route must use the prepared Voyager ScreenModel",
                             detailScreen,
@@ -846,7 +846,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
                                 .takeIf { it }
                         }
-                    } catch (error: AssertionError) {
+                    } catch (error: Throwable) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_INVENTORY_INVALIDATE",
                             routePushed = true,
@@ -2257,9 +2257,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val ownerClass = Class.forName("cafe.adriel.voyager.androidx.AndroidScreenLifecycleOwner")
             val companion = ownerClass.getField("Companion").get(null)
             val screenInterface = Class.forName("cafe.adriel.voyager.core.screen.Screen")
-            val screenOwner = companion.javaClass
-                .getMethod("get", screenInterface)
-                .invoke(companion, screen) as? ViewModelStoreOwner
+            val screenOwnerCandidate = try {
+                companion.javaClass.getMethod("get", screenInterface).invoke(companion, screen)
+            } catch (error: java.lang.reflect.InvocationTargetException) {
+                throw error.targetException
+            }
+            val screenOwner = screenOwnerCandidate as? ViewModelStoreOwner
                 ?: throw AssertionError("Voyager did not provide a ViewModelStoreOwner for the active screen")
             return ViewModelProvider(screenOwner, app.graph.viewModelFactory)
                 .get(CanonicalTitleScreenModel::class.java)
