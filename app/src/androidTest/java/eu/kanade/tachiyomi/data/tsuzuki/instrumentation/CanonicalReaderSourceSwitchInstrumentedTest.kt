@@ -65,6 +65,8 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -109,10 +111,16 @@ import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.URI
+import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.jvm.functions.Function2
 
 /** Runs production canonical Reader and Mihon source adapters against a disposable local fixture. */
@@ -595,6 +603,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         requireOptIn()
         withFixture(sourceBBehavior = FixtureBehavior(pageCount = 10, inventoryStatus = 503)) { fixture ->
             val legacy = fixture.seedLegacyEntry(persistVariant = false, matchDetailInventoryKey = true)
+            fixture.assertInventoryFixtureUrl(legacy)
             fixture.enableSyntheticAddonA()
             val prior = fixture.seedPriorCanonicalState()
             val progressBefore = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
@@ -779,6 +788,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         requireOptIn()
         withFixture(sourceBBehavior = FixtureBehavior(pageCount = 10, inventoryStatus = 503)) { fixture ->
             val legacy = fixture.seedLegacyEntry(persistVariant = false, matchDetailInventoryKey = true)
+            fixture.assertInventoryFixtureUrl(legacy)
             fixture.enableSyntheticAddonA()
             val prior = fixture.seedPriorCanonicalState()
             val progressBefore = runBlocking { fixture.reading.getProgress(fixture.chapter.id) }
@@ -1920,6 +1930,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             runBlocking { app.graph.addonRepository.setEnabled(addonA, true) }
         }
 
+        fun assertInventoryFixtureUrl(entry: LegacyReaderEntry) {
+            val preflight = inventoryGatewayPreflight(entry)
+            assertEquals("Fixture source must retain MockWebServer's advertised origin", "MATCH", preflight.fixtureOrigin)
+            assertEquals("Fixture inventory path must match the local dispatcher route", "MATCH", preflight.fixturePath)
+        }
+
         fun canonicalHistoryRowCount(): Long = runBlocking {
             driver.executeQuery(
                 null,
@@ -2216,6 +2232,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             "|bindingPayload=${gatewayPreflight.bindingPayload}" +
                             "|manga=${gatewayPreflight.manga}" +
                             "|source=${gatewayPreflight.source}" +
+                            "|fixtureOrigin=${gatewayPreflight.fixtureOrigin}" +
+                            "|fixturePath=${gatewayPreflight.fixturePath}" +
+                            "|aHttp=${sourceA.inventoryCallOutcome.get()}" +
+                            "|bHttp=${sourceB.inventoryCallOutcome.get()}" +
                             "|aChapterRequests=${sourceA.chapterListRequestCount.get()}" +
                             "|bChapterRequests=${sourceB.chapterListRequestCount.get()}" +
                             "|aInventory=${dispatcher.routeCounts(token).inventory}" +
@@ -2233,6 +2253,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val bindingPayload: String,
             val manga: String,
             val source: String,
+            val fixtureOrigin: String,
+            val fixturePath: String,
         )
 
         private fun inventoryGatewayPreflight(legacyEntry: LegacyReaderEntry): InventoryGatewayPreflight {
@@ -2258,14 +2280,32 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                     payload.sourceUrl != legacyEntry.mapping.sourceUrl -> "MISMATCH"
                 else -> "MATCH"
             }
+            val serverUrl = URI(server.url("/").toString())
+            val sourceBaseUrl = URI(sourceA.baseUrl)
+            val expectedInventoryUrl = URI(server.url(legacyEntry.manga.url).toString())
+            val actualInventoryUrl = URI(sourceA.baseUrl + legacyEntry.manga.url)
+            val fixtureOrigin = if (
+                serverUrl.scheme == sourceBaseUrl.scheme &&
+                    serverUrl.host == sourceBaseUrl.host &&
+                    serverUrl.port == sourceBaseUrl.port
+            ) {
+                "MATCH"
+            } else {
+                "MISMATCH"
+            }
+            val fixturePath = if (expectedInventoryUrl.rawPath == actualInventoryUrl.rawPath) {
+                "MATCH"
+            } else {
+                "MISMATCH"
+            }
             val manga = when {
                 payload == null -> "UNAVAILABLE"
                 else -> try {
                     val row = runBlocking { MangaRepositoryImpl(database).getMangaById(payload.mihonMangaId) }
                     if (
                         row.id == payload.mihonMangaId &&
-                            row.source == payload.sourceId &&
-                            row.url == payload.sourceUrl
+                        row.source == payload.sourceId &&
+                        row.url == payload.sourceUrl
                     ) {
                         "MATCH"
                     } else {
@@ -2292,7 +2332,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             } catch (_: Throwable) {
                 "ERROR"
             }
-            return InventoryGatewayPreflight(bindingPayload, manga, source)
+            return InventoryGatewayPreflight(bindingPayload, manga, source, fixtureOrigin, fixturePath)
         }
 
         private fun safeErrorCategory(error: Throwable?): String = when (error) {
@@ -2600,18 +2640,22 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 )
                 server.dispatcher = dispatcher
                 server.start()
-                val baseUrl = server.url("/").newBuilder().host("127.0.0.1").build().toString().trimEnd('/')
+                val baseUrl = server.url("/").toString().trimEnd('/')
+                val sourceAInventoryCall = AtomicReference("NOT_STARTED")
+                val sourceBInventoryCall = AtomicReference("NOT_STARTED")
                 val sourceA = ReaderFixtureHttpSource(
                     displayName = "Synthetic Reader A $runId",
                     token = "reader-$runId-a",
                     baseUrl = baseUrl,
-                    client = OkHttpClient(),
+                    client = fixtureHttpClient("reader-$runId-a", sourceAInventoryCall),
+                    inventoryCallOutcome = sourceAInventoryCall,
                 )
                 val sourceB = ReaderFixtureHttpSource(
                     displayName = "Synthetic Reader B $runId",
                     token = "reader-$runId-b",
                     baseUrl = baseUrl,
-                    client = OkHttpClient(),
+                    client = fixtureHttpClient("reader-$runId-b", sourceBInventoryCall),
+                    inventoryCallOutcome = sourceBInventoryCall,
                 )
                 val addonA = AddonId("test.tsuzuki.reader.$runId.a")
                 val addonB = AddonId("test.tsuzuki.reader.$runId.b")
@@ -2964,6 +3008,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         val token: String,
         override val baseUrl: String,
         override val client: OkHttpClient,
+        val inventoryCallOutcome: AtomicReference<String>,
     ) : HttpSource() {
         val chapterListRequestCount = AtomicInteger()
         override val name: String = displayName
@@ -3093,3 +3138,45 @@ private data class FixtureRouteCounts(
         pages = (pages - previous.pages).coerceAtLeast(0),
     )
 }
+
+private fun fixtureHttpClient(
+    token: String,
+    inventoryCallOutcome: AtomicReference<String>,
+): OkHttpClient = OkHttpClient.Builder()
+    .eventListenerFactory {
+        object : EventListener() {
+            private fun isInventoryCall(call: Call): Boolean =
+                call.request().url.encodedPath == "/reader/$token/manga"
+
+            override fun callStart(call: Call) {
+                if (isInventoryCall(call)) inventoryCallOutcome.set("STARTED")
+            }
+
+            override fun callEnd(call: Call) {
+                if (isInventoryCall(call)) inventoryCallOutcome.set("COMPLETED")
+            }
+
+            override fun callFailed(call: Call, ioe: IOException) {
+                if (isInventoryCall(call)) {
+                    val message = ioe.message.orEmpty().lowercase()
+                    val category = when {
+                        "cleartext" in message -> "CLEARTEXT_BLOCKED"
+                        ioe is UnknownHostException -> "DNS_FAILURE"
+                        ioe is ConnectException && "refused" in message -> "CONNECTION_REFUSED"
+                        ioe is ConnectException -> "CONNECT_FAILURE"
+                        ioe is SocketTimeoutException -> "SOCKET_TIMEOUT"
+                        "canceled" in message -> "CANCELLED"
+                        else -> "OTHER_IO_FAILURE"
+                    }
+                    val exceptionClass = when (ioe) {
+                        is UnknownHostException -> "UnknownHostException"
+                        is ConnectException -> "ConnectException"
+                        is SocketTimeoutException -> "SocketTimeoutException"
+                        else -> "IOException"
+                    }
+                    inventoryCallOutcome.set("$exceptionClass:$category")
+                }
+            }
+        }
+    }
+    .build()

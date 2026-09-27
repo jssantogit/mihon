@@ -210,7 +210,9 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|startJob=COMPLETED|stateError=NO_SUCH_ELEMENT|refreshError=NONE"
             + "|integrationReady=TRUE|addonReady=TRUE|providerCount=2"
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
-            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A|aChapterRequests=0|bChapterRequests=0"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            + "|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
             + "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING"
         )
@@ -221,6 +223,8 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertEqual("ELIGIBLE", fields["bindingGate"])
         self.assertEqual("TRUE", fields["sourceEligible"])
         self.assertEqual("SELECTED", fields["bindingSelection"])
+        self.assertEqual("MATCH", fields["fixtureOrigin"])
+        self.assertEqual("STARTED", fields["aHttp"])
         self.assertEqual("SCREEN", fields["routeModel"])
         self.assertEqual("CHAPTER_PROBE:NO_BINDING:NO_BINDING", fields["probe"])
         summary = verifier.sanitized_summary(
@@ -233,7 +237,8 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn(
             "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
             "|sourceEligible=TRUE|bindingSelection=SELECTED|bindingPayload=MATCH|manga=MATCH"
-            "|source=SOURCE_A|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
+            "|source=SOURCE_A|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
             "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
             "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING",
             summary,
@@ -247,7 +252,9 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
             + "|providerCount=1"
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
-            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A|aChapterRequests=0|bChapterRequests=0"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+            + "|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
         )
         with_title = base + "|title=private-title"
@@ -280,6 +287,16 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             {"evidence": "MALFORMED"},
             verifier._detail_setup_diagnostic(with_unbounded_probe, method),
         )
+        with_unbounded_http = base.replace("aHttp=NOT_STARTED", "aHttp=IOException:private-message")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_http, method),
+        )
+        with_wrong_fixture_origin = base.replace("fixtureOrigin=MATCH", "fixtureOrigin=private-host")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_wrong_fixture_origin, method),
+        )
 
     def test_detail_probe_parser_matches_domain_outcome_and_reason_enums(self):
         source = (
@@ -308,6 +325,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                             + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
                             + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
                             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+                            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
                             + "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
                             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
                             + f"|probe={stage}:{outcome}:{reason}"

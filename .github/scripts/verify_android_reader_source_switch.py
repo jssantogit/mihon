@@ -108,8 +108,9 @@ DETAIL_SETUP_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_
 DETAIL_SETUP_DIAGNOSTIC_KEYS = (
     "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
     "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
-    "bindingSelection", "bindingPayload", "manga", "source", "aChapterRequests", "bChapterRequests",
-    "aInventory", "aHeld", "routeRendered", "routeTitleMatches", "routeModel", "probe",
+    "bindingSelection", "bindingPayload", "manga", "source", "fixtureOrigin", "fixturePath",
+    "aHttp", "bHttp", "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
+    "routeRendered", "routeTitleMatches", "routeModel", "probe",
 )
 DETAIL_SETUP_STATES = {"LOADING", "LOADED", "ERROR"}
 DETAIL_SETUP_LOCAL_LOAD = {"INCOMPLETE", "PASSED", "FAILED"}
@@ -126,6 +127,14 @@ DETAIL_SETUP_BINDING_SELECTIONS = {"MISSING", "SELECTED", "ERROR"}
 DETAIL_SETUP_BINDING_PAYLOAD = {"MATCH", "MISMATCH", "MISSING", "INVALID"}
 DETAIL_SETUP_MANGA = {"MATCH", "MISMATCH", "MISSING", "ERROR", "UNAVAILABLE"}
 DETAIL_SETUP_SOURCE = {"SOURCE_A", "STUB", "MISSING", "OTHER", "ERROR"}
+DETAIL_SETUP_FIXTURE_MATCH = {"MATCH", "MISMATCH"}
+DETAIL_SETUP_HTTP_OUTCOMES = {
+    "NOT_STARTED", "STARTED", "COMPLETED",
+    "UnknownHostException:DNS_FAILURE",
+    "ConnectException:CONNECTION_REFUSED", "ConnectException:CONNECT_FAILURE",
+    "SocketTimeoutException:SOCKET_TIMEOUT",
+    "IOException:CLEARTEXT_BLOCKED", "IOException:CANCELLED", "IOException:OTHER_IO_FAILURE",
+}
 DETAIL_SETUP_ROUTE_MODELS = {"SCREEN", "UNKNOWN"}
 DETAIL_SETUP_PROBE_STAGES = {"UI", "CHAPTER_PROBE", "CHAPTER_INVENTORY"}
 DETAIL_SETUP_PROBE_OUTCOMES = {
@@ -429,6 +438,10 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         or fields["bindingPayload"] not in DETAIL_SETUP_BINDING_PAYLOAD
         or fields["manga"] not in DETAIL_SETUP_MANGA
         or fields["source"] not in DETAIL_SETUP_SOURCE
+        or fields["fixtureOrigin"] not in DETAIL_SETUP_FIXTURE_MATCH
+        or fields["fixturePath"] not in DETAIL_SETUP_FIXTURE_MATCH
+        or fields["aHttp"] not in DETAIL_SETUP_HTTP_OUTCOMES
+        or fields["bHttp"] not in DETAIL_SETUP_HTTP_OUTCOMES
         or fields["routeRendered"] not in {"TRUE", "FALSE"}
         or fields["routeTitleMatches"] not in {"TRUE", "FALSE"}
         or fields["routeModel"] not in DETAIL_SETUP_ROUTE_MODELS
