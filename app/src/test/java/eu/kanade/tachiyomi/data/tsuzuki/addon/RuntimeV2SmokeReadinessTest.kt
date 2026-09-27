@@ -102,6 +102,7 @@ class RuntimeV2SmokeReadinessTest {
             addonRepository = FakeAddonRepository(addonId),
             readingSourceGateway = FakeReadingSourceGateway(),
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
             addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
         )
         val refresh = RefreshChapterEvidence(
