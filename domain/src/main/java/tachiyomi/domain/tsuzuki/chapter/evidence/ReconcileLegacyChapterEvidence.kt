@@ -5,6 +5,8 @@ import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
+import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import java.util.UUID
 
 /**
@@ -20,6 +22,7 @@ class ReconcileLegacyChapterEvidence(
     private val adapter: LegacyInventoryEvidenceAdapter,
     private val reconciler: ReconcileChapterEvidence,
     private val chapters: CanonicalChapterRepository,
+    private val sourceMappings: SourceTitleMappingRepository,
 ) {
     suspend fun execute(
         inventories: List<SourceChapterInventory>,
@@ -59,6 +62,30 @@ class ReconcileLegacyChapterEvidence(
         if (evidence.isEmpty()) return emptyList()
 
         return reconciler.executeAndProject(canonicalTitleId, evidence) { persisted ->
+            // Read authoritative materialized mappings *inside* the chapter/evidence
+            // transaction. An old inventory or a mapping reassigned during fetch
+            // may never publish a cross-title or cross-source operational variant.
+            val mappingsById = sourceMappings.getByCanonicalTitleId(canonicalTitleId).associateBy { it.id }
+            for (inventory in inventories) {
+                val mapping = mappingsById[inventory.sourceMappingId]
+                    ?: throw IllegalArgumentException("Legacy source mapping is missing or owned by another title")
+                require(mapping.sourceId == inventory.sourceId) {
+                    "Legacy source ID does not match the persisted source mapping"
+                }
+                require(mapping.availability != SourceMappingAvailability.UNAVAILABLE) {
+                    "Unavailable source mapping cannot publish chapters"
+                }
+                require(mapping.mihonMangaId != null && mapping.mihonMangaId == inventory.mihonMangaId) {
+                    "Legacy inventory must match a materialized Mihon manga"
+                }
+                require(inventory.language.isBlank() || inventory.language == mapping.language) {
+                    "Legacy inventory language does not match the source mapping"
+                }
+                require(inventory.chapters.all { it.mihonMangaId == null || it.mihonMangaId == mapping.mihonMangaId }) {
+                    "Legacy chapter observation belongs to another Mihon manga"
+                }
+            }
+
             val variants = mutableListOf<ChapterVariant>()
             for (record in persisted) {
                 val key = requireNotNull(record.evidence.externalChapterKey)

@@ -23,6 +23,7 @@ class ReconcileChapterInventory internal constructor(
     private val idFactory: () -> String,
     private val variantIdFactory: () -> String = idFactory,
     private val clock: () -> Long,
+    private val mutationGate: ChapterMutationGate = ChapterMutationGate(),
 ) {
 
     @Inject
@@ -30,6 +31,7 @@ class ReconcileChapterInventory internal constructor(
         parser: ParseCanonicalChapterLabel,
         volumeParser: ParseCanonicalChapterVolume,
         canonicalChapterRepository: CanonicalChapterRepository,
+        mutationGate: ChapterMutationGate,
     ) : this(
         parser = parser,
         volumeParser = volumeParser,
@@ -37,7 +39,16 @@ class ReconcileChapterInventory internal constructor(
         idFactory = { UUID.randomUUID().toString() },
         variantIdFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
+        mutationGate = mutationGate,
     )
+
+    // Preserve manually constructed compatibility/test callers. AppScope
+    // injection provides the *shared* gate to the annotated constructor.
+    constructor(
+        parser: ParseCanonicalChapterLabel,
+        volumeParser: ParseCanonicalChapterVolume,
+        canonicalChapterRepository: CanonicalChapterRepository,
+    ) : this(parser, volumeParser, canonicalChapterRepository, ChapterMutationGate())
 
     suspend fun execute(inventory: SourceChapterInventory): ChapterReconciliationReport =
         execute(listOf(inventory))
@@ -46,7 +57,10 @@ class ReconcileChapterInventory internal constructor(
      * Reconciles multiple inventories for the same canonical title in one
      * in-memory graph and persists the result through a single atomic batch.
      */
-    suspend fun execute(inventories: List<SourceChapterInventory>): ChapterReconciliationReport {
+    suspend fun execute(inventories: List<SourceChapterInventory>): ChapterReconciliationReport =
+        mutationGate.withLock { reconcileUncontended(inventories) }
+
+    private suspend fun reconcileUncontended(inventories: List<SourceChapterInventory>): ChapterReconciliationReport {
         require(inventories.isNotEmpty()) { "At least one chapter inventory is required" }
 
         val canonicalTitleId = inventories.first().canonicalTitleId

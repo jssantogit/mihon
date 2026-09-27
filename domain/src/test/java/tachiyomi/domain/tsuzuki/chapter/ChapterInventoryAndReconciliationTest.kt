@@ -4,10 +4,14 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.interactor.ReconcileChapterInventory
@@ -339,6 +343,45 @@ class ChapterInventoryAndReconciliationTest {
         gateway.requestedMappingIds.clear()
         refresh.execute("title-1", mappingId = "mapping-1").isFailure shouldBe true
         gateway.requestedMappingIds shouldBe emptyList()
+    }
+
+    @Test
+    fun `legacy refresh must wait for an active shared evidence mutation gate`() = runTest {
+        val repository = FakeCanonicalChapterRepository()
+        val sharedGate = ChapterMutationGate()
+        val legacy = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = repository,
+            idFactory = { "chapter-serialization" },
+            variantIdFactory = { "variant-serialization" },
+            clock = { 100L },
+            mutationGate = sharedGate,
+        )
+        val gateEntered = CompletableDeferred<Unit>()
+        val releaseGate = CompletableDeferred<Unit>()
+        val competingReconciliation = async {
+            sharedGate.withLock {
+                gateEntered.complete(Unit)
+                releaseGate.await()
+            }
+        }
+        gateEntered.await()
+        val legacyRefresh = async {
+            legacy.execute(inventory("mapping-1", 1L, "Chapter 4"))
+        }
+        try {
+            runCurrent()
+            legacyRefresh.isCompleted shouldBe false
+            repository.chapters shouldBe emptyMap()
+            repository.variants shouldBe emptyMap()
+        } finally {
+            releaseGate.complete(Unit)
+        }
+        competingReconciliation.await()
+        legacyRefresh.await()
+        repository.getByCanonicalTitleId("title-1").single().displayNumber shouldBe "4"
+        repository.getVariantsBySourceMappingId("mapping-1").size shouldBe 1
     }
 
     @Test

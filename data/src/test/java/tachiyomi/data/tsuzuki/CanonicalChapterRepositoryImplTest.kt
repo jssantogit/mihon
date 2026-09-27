@@ -256,6 +256,7 @@ class CanonicalChapterRepositoryImplTest {
                 LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
                 reconciler,
                 repository,
+                SourceTitleMappingRepositoryImpl(database),
             )
             repository.upsert(chapter("chapter-volume-1", "4", baseNumber = 4).copy(volume = 1))
             val en = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
@@ -305,6 +306,7 @@ class CanonicalChapterRepositoryImplTest {
                 LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
                 ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
                 repository,
+                SourceTitleMappingRepositoryImpl(database),
             )
             repository.upsert(chapter("chapter-volume-1", "4", baseNumber = 4).copy(volume = 1))
             val original = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
@@ -312,7 +314,16 @@ class CanonicalChapterRepositoryImplTest {
             val oldVariant = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
             val before = evidenceRepository.getByCanonicalTitleId("title-1")
             val good = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 5", "/chapter/5")
-            val bad = legacyInventory(8L, "missing-mapping", "pt-BR", "Vol. 2 Ch. 6", "/chapter/6")
+            val bad = legacyInventory(8L, "mapping-2", "pt-BR", "Vol. 2 Ch. 6", "/chapter/6")
+            // Fail after the first variant INSERT, not during source validation,
+            // so the database proves the whole projection transaction rolls back.
+            driver.execute(
+                null,
+                "CREATE TRIGGER reject_second_variant BEFORE INSERT ON tsuzuki_chapter_variants " +
+                    "WHEN NEW.source_chapter_id = '/chapter/6' " +
+                    "BEGIN SELECT RAISE(ABORT, 'injected second-variant failure'); END",
+                0,
+            ).await()
 
             shouldThrow<Throwable> {
                 projection.execute(listOf(good, bad), observedAt = 200L)
@@ -325,18 +336,8 @@ class CanonicalChapterRepositoryImplTest {
             repository.getVariantBySourceIdentity(7L, "/chapter/5") shouldBe null
             repository.getVariantBySourceIdentity(8L, "/chapter/6") shouldBe null
 
-            projection.execute(
-                listOf(
-                    good,
-                    bad.copy(
-                        sourceMappingId = "mapping-2",
-                        chapters = bad.chapters.map {
-                            it.copy(sourceMappingId = "mapping-2")
-                        },
-                    ),
-                ),
-                observedAt = 300L,
-            ).size shouldBe 2
+            driver.execute(null, "DROP TRIGGER reject_second_variant", 0).await()
+            projection.execute(listOf(good, bad), observedAt = 300L).size shouldBe 2
             repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe oldVariant.id
             repository.getVariantBySourceIdentity(7L, "/chapter/5")?.canonicalChapterId shouldBe
                 repository.getByCanonicalTitleId("title-1").single { it.baseNumber == 5 }.id
@@ -353,6 +354,7 @@ class CanonicalChapterRepositoryImplTest {
                 LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
                 ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
                 repository,
+                SourceTitleMappingRepositoryImpl(database),
             )
             val unknown = legacyInventory(7L, "mapping-1", "en", "An unknown release", "/unknown")
             projection.execute(listOf(unknown), observedAt = 100L) shouldBe emptyList()
@@ -365,6 +367,93 @@ class CanonicalChapterRepositoryImplTest {
             )?.mappedCanonicalChapterId shouldBe null
         }
 
+    @Test
+    fun `staged projection rejects a mapping owned by another title without writing any chapter state`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+                id = "foreign-title",
+                displayTitle = "Unrelated title",
+                identityState = "SOURCE_ONLY",
+                createdAt = 100L,
+                updatedAt = 100L,
+            )
+            database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
+                id = "foreign-mapping",
+                canonicalTitleId = "foreign-title",
+                mihonMangaId = 13L,
+                sourceId = 9L,
+                sourceUrl = "/foreign",
+                language = "en",
+                matchConfidence = null,
+                verifiedByUser = false,
+                availability = "AVAILABLE",
+                preferredOverride = false,
+                createdAt = 100L,
+                updatedAt = 100L,
+            )
+
+            val foreign = legacyInventory(9L, "foreign-mapping", "en", "Vol. 1 Ch. 4")
+            shouldThrow<IllegalArgumentException> {
+                projection.execute(listOf(foreign), observedAt = 200L)
+            }
+            repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            repository.getVariantsBySourceMappingId("foreign-mapping") shouldBe emptyList()
+        }
+
+    @Test
+    fun `staged projection rejects a source id that does not own the materialized mapping`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val mismatched = legacyInventory(8L, "mapping-1", "pt-BR", "Vol. 1 Ch. 4")
+            shouldThrow<IllegalArgumentException> {
+                projection.execute(listOf(mismatched), observedAt = 200L)
+            }
+            repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            repository.getVariantsBySourceMappingId("mapping-1") shouldBe emptyList()
+        }
+
+    @Test
+    fun `staged projection rejects a stale manga id and unavailable source mapping`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val staleManga = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+                .copy(mihonMangaId = 999L)
+            shouldThrow<IllegalArgumentException> {
+                projection.execute(listOf(staleManga), observedAt = 200L)
+            }
+            driver.execute(
+                null,
+                "UPDATE tsuzuki_source_mappings SET availability = 'UNAVAILABLE' WHERE id = 'mapping-1'",
+                0,
+            ).await()
+            shouldThrow<IllegalArgumentException> {
+                projection.execute(listOf(legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")), observedAt = 300L)
+            }
+            repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+        }
+
     private fun legacyInventory(
         sourceId: Long,
         mappingId: String,
@@ -375,6 +464,11 @@ class CanonicalChapterRepositoryImplTest {
         sourceMappingId = mappingId,
         sourceId = sourceId,
         canonicalTitleId = "title-1",
+        mihonMangaId = when (sourceId) {
+            7L -> 11L
+            8L -> 12L
+            else -> 13L
+        },
         language = language,
         chapters = listOf(
             SourceChapterSnapshot(
@@ -399,7 +493,7 @@ class CanonicalChapterRepositoryImplTest {
         database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
             id = "mapping-1",
             canonicalTitleId = "title-1",
-            mihonMangaId = null,
+            mihonMangaId = 11L,
             sourceId = 7L,
             sourceUrl = "/title",
             language = "en",
@@ -413,7 +507,7 @@ class CanonicalChapterRepositoryImplTest {
         database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
             id = "mapping-2",
             canonicalTitleId = "title-1",
-            mihonMangaId = null,
+            mihonMangaId = 12L,
             sourceId = 8L,
             sourceUrl = "/title-2",
             language = "pt-BR",
