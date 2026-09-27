@@ -58,7 +58,7 @@ class LegacyInventoryEvidenceAdapter(
                 externalChapterKey = sourceKey,
                 rawLabel = snapshot.rawName,
                 // The Mihon number is a hint, not a verified chapter identity.
-                rawNumber = snapshot.rawNumberHint?.takeIf(Double::isFinite),
+                rawNumber = snapshot.rawNumberHint?.takeIf { it.isFinite() },
                 volume = volumeParser.execute(snapshot.rawName),
                 title = null,
                 observedAt = observedAt,

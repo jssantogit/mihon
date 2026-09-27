@@ -74,8 +74,15 @@ class LegacyInventoryEvidenceAdapterTest {
             adapter.adapt(valid.copy(chapters = valid.chapters.map { it.copy(sourceMappingId = "other") }), 10L)
         }
         shouldThrow<IllegalArgumentException> {
-            adapter.adapt(valid.copy(chapters = valid.chapters.map { it.copy(sourceChapterId = "") }), 10L)
+            adapter.adapt(
+                valid.copy(chapters = valid.chapters.map { it.copy(sourceChapterId = "", sourceChapterUrl = "") }),
+                10L,
+            )
         }
+        // The Mihon compatibility reader falls back to sourceChapterUrl when
+        // an older snapshot has no separate sourceChapterId.
+        val urlOnly = valid.copy(chapters = valid.chapters.map { it.copy(sourceChapterId = "") })
+        adapter.adapt(urlOnly, 10L).single().externalChapterKey shouldBe "/chapter/4"
         adapter.adapt(valid.copy(chapters = emptyList()), 10L) shouldHaveSize 0
     }
 

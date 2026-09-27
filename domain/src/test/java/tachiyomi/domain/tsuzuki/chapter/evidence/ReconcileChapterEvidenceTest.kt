@@ -765,13 +765,12 @@ class ReconcileChapterEvidenceTest {
                 adapter.adapt(en, 10L) + adapter.adapt(pt, 10L),
             )
 
-            fun mappedChapter(sourceId: Long): String? = runBlocking {
+            suspend fun mappedChapter(sourceId: Long): String? =
                 fixture.evidenceRepository.getByProducerExternalKey(
                     ProducerKind.ADDON,
                     "mihon-legacy:title:" + sourceId,
                     "/reused-key",
                 )?.mappedCanonicalChapterId
-            }
             mappedChapter(101L) shouldBe volumeOne.id
             mappedChapter(202L) shouldBe volumeOne.id
 
