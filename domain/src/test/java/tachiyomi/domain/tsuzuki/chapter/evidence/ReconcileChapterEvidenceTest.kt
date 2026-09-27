@@ -734,6 +734,64 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `legacy evidence adapter rehomes a reused URL without losing an independently supported chapter`() =
+        runTest {
+            val fixture = fixture()
+            val volumeOne = existingChapter("chapter-volume-1", volume = 1)
+            val volumeTwo = existingChapter("chapter-volume-2", volume = 2)
+            fixture.chapterRepository.upsert(volumeOne)
+            fixture.chapterRepository.upsert(volumeTwo)
+            val adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume())
+
+            fun sourceInventory(sourceId: Long, label: String) = SourceChapterInventory(
+                sourceMappingId = "mapping-" + sourceId,
+                sourceId = sourceId,
+                canonicalTitleId = "title",
+                language = if (sourceId == 101L) "en" else "pt-BR",
+                chapters = listOf(
+                    SourceChapterSnapshot(
+                        sourceId = sourceId,
+                        sourceMappingId = "mapping-" + sourceId,
+                        sourceChapterId = "/reused-key",
+                        rawName = label,
+                        rawNumberHint = 4.0,
+                    ),
+                ),
+            )
+            val en = sourceInventory(101L, "Vol. 1 Ch. 4")
+            val pt = sourceInventory(202L, "Vol. 1 Ch. 4")
+            fixture.reconciler.execute(
+                "title",
+                adapter.adapt(en, 10L) + adapter.adapt(pt, 10L),
+            )
+
+            fun mappedChapter(sourceId: Long): String? = runBlocking {
+                fixture.evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title:" + sourceId,
+                    "/reused-key",
+                )?.mappedCanonicalChapterId
+            }
+            mappedChapter(101L) shouldBe volumeOne.id
+            mappedChapter(202L) shouldBe volumeOne.id
+
+            // A reused URL is not proof that the new edition is still volume 1.
+            fixture.reconciler.execute(
+                "title",
+                adapter.adapt(sourceInventory(101L, "Vol. 2 Ch. 4"), 20L),
+            )
+            mappedChapter(101L) shouldBe volumeTwo.id
+            mappedChapter(202L) shouldBe volumeOne.id
+            fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe
+                setOf(volumeOne.id, volumeTwo.id)
+
+            // A later partial inventory never discards evidence for an omitted source.
+            fixture.reconciler.execute("title", adapter.adapt(en.copy(chapters = emptyList()), 30L))
+            mappedChapter(101L) shouldBe volumeTwo.id
+            mappedChapter(202L) shouldBe volumeOne.id
+        }
+
+    @Test
     fun `legacy inventory rejects an existing source URL with a contradictory explicit volume`() = runTest {
         val legacyChapters = FakeCanonicalChapterRepository()
         val evidenceFixture = fixture()
