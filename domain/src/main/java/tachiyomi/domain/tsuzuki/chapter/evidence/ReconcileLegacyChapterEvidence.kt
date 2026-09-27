@@ -62,8 +62,10 @@ class ReconcileLegacyChapterEvidence(
         // Empty provider inventories are non-destructive, but an obsolete
         // source mapping must still fail instead of masquerading as success.
         if (evidence.isEmpty()) {
-            validateMappings(canonicalTitleId, inventories)
-            return emptyList()
+            return reconciler.executeAndProject(canonicalTitleId, evidence) {
+                validateMappings(canonicalTitleId, inventories)
+                emptyList<ChapterVariant>()
+            }
         }
 
         return reconciler.executeAndProject(canonicalTitleId, evidence) { persisted ->

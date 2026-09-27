@@ -500,6 +500,85 @@ class CanonicalChapterRepositoryImplTest {
             evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
         }
 
+    @Test
+    fun `empty evidence projection rolls back changes from a failed operational callback`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val reconciler = ReconcileChapterEvidence(
+                ParseCanonicalChapterLabel(),
+                repository,
+                evidenceRepository,
+            )
+            reconciler.executeAndProject("title-1", emptyList()) { observations ->
+                observations.size shouldBe 0
+                "no-op"
+            } shouldBe "no-op"
+
+            shouldThrow<IllegalStateException> {
+                reconciler.executeAndProject("title-1", emptyList()) { observations ->
+                    observations.size shouldBe 0
+                    repository.upsertBatch(
+                        chapters = listOf(chapter("chapter-empty-failed")),
+                        variants = listOf(
+                            variant(
+                                id = "variant-empty-failed",
+                                canonicalChapterId = "chapter-empty-failed",
+                                sourceChapterId = "/empty-projected",
+                            ),
+                        ),
+                    )
+                    throw IllegalStateException("injected failure after operational projection")
+                }
+            }
+            repository.getById("chapter-empty-failed") shouldBe null
+            repository.getVariantBySourceIdentity(7L, "/empty-projected") shouldBe null
+            evidenceRepository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+        }
+
+    @Test
+    fun `mapped source key becoming unreliable aborts and retains earlier evidence and variant`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projector = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val reliable = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+            projector.execute(listOf(reliable), observedAt = 100L).size shouldBe 1
+            val firstVariant = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+            val firstEvidence = requireNotNull(
+                evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title-1:7",
+                    "/chapter/4",
+                ),
+            )
+
+            val unreliable = reliable.copy(
+                chapters = reliable.chapters.map {
+                    it.copy(rawName = "An unknown release", rawNumberHint = null)
+                },
+            )
+            shouldThrow<IllegalStateException> {
+                projector.execute(listOf(unreliable), observedAt = 200L)
+            }
+            repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe firstVariant
+            val retained = requireNotNull(
+                evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title-1:7",
+                    "/chapter/4",
+                ),
+            )
+            retained.evidence shouldBe firstEvidence.evidence
+            retained.mappedCanonicalChapterId shouldBe firstEvidence.mappedCanonicalChapterId
+            repository.getByCanonicalTitleId("title-1").size shouldBe 1
+            projector.execute(listOf(reliable), observedAt = 300L).size shouldBe 1
+            repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe firstVariant.id
+        }
+
     private fun legacyInventory(
         sourceId: Long,
         mappingId: String,

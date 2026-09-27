@@ -95,7 +95,11 @@ class ReconcileChapterEvidence internal constructor(
                     discarded = 0,
                 ),
             )
-            return project(emptyList())
+            return mutationGate.withLock {
+                evidenceRepository.withTransaction {
+                    project(emptyList())
+                }
+            }
         }
         return mutationGate.withLock {
             evidenceRepository.withTransaction {
