@@ -352,6 +352,54 @@ class ChapterInventoryAndReconciliationTest {
             repository.getVariantsBySourceMappingId("mapping-1").size shouldBe 1
         }
 
+    private fun refresh(
+        sourceTitleMappingRepository: FakeSourceTitleMappingRepository,
+        chapterInventoryGateway: ChapterInventoryGateway,
+        canonicalChapterRepository: FakeCanonicalChapterRepository,
+        mutationGate: ChapterMutationGate = ChapterMutationGate(),
+        evidenceRepository: FakeChapterEvidenceRepository = FakeChapterEvidenceRepository(),
+    ): RefreshCanonicalChapters {
+        val staged = ReconcileLegacyChapterEvidence(
+            adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            reconciler = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = canonicalChapterRepository,
+                evidenceRepository = evidenceRepository,
+                idFactory = object : () -> String {
+                    private var next = 0
+                    override fun invoke(): String = "chapter-${++next}"
+                },
+                clock = { 100L },
+                mutationGate = mutationGate,
+            ),
+            chapters = canonicalChapterRepository,
+            sourceMappings = sourceTitleMappingRepository,
+        )
+        val materializingGateway = object : ChapterInventoryGateway {
+            override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> =
+                chapterInventoryGateway.fetch(mapping).map { inventory ->
+                    inventory.copy(
+                        mihonMangaId = inventory.mihonMangaId ?: mapping.mihonMangaId,
+                        sourceUrl = inventory.sourceUrl.ifBlank { mapping.sourceUrl },
+                        chapters = inventory.chapters.map { snapshot ->
+                            if (snapshot.mihonMangaId == null) {
+                                snapshot.copy(mihonMangaId = mapping.mihonMangaId)
+                            } else {
+                                snapshot
+                            }
+                        },
+                    )
+                }
+        }
+        return RefreshCanonicalChapters(
+            sourceTitleMappingRepository = sourceTitleMappingRepository,
+            chapterInventoryGateway = materializingGateway,
+            reconcileLegacyChapterEvidence = staged,
+            canonicalChapterRepository = canonicalChapterRepository,
+            clock = { 100L },
+        )
+    }
+
     private fun inventory(
         mappingId: String,
         sourceId: Long,

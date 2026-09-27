@@ -593,8 +593,15 @@ class CanonicalChapterRepositoryImplTest {
         )
         val volumeOne = chapter("chapter-volume-1").copy(volume = 1)
         repository.upsert(volumeOne)
-        val explicit = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 1")
-        val unqualified = legacyInventory(8L, "mapping-2", "pt-BR", "Chapter 1", "/chapter/plain")
+        val explicit = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 1", rawNumberHint = 1.0)
+        val unqualified = legacyInventory(
+            8L,
+            "mapping-2",
+            "pt-BR",
+            "Chapter 1",
+            "/chapter/plain",
+            rawNumberHint = 1.0,
+        )
 
         projection.execute(listOf(explicit, unqualified), observedAt = 200L).size shouldBe 2
 
@@ -984,6 +991,7 @@ class CanonicalChapterRepositoryImplTest {
         language: String,
         label: String,
         url: String = "/chapter/4",
+        rawNumberHint: Double? = 4.0,
     ) = SourceChapterInventory(
         sourceMappingId = mappingId,
         sourceId = sourceId,
@@ -1007,7 +1015,7 @@ class CanonicalChapterRepositoryImplTest {
                 sourceChapterId = url,
                 rawName = label,
                 language = language,
-                rawNumberHint = 4.0,
+                rawNumberHint = rawNumberHint,
             ),
         ),
     )
