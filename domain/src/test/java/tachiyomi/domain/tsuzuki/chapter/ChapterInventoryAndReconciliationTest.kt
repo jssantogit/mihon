@@ -3,6 +3,9 @@ package tachiyomi.domain.tsuzuki.chapter
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -11,6 +14,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
+import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
+import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
@@ -23,6 +35,8 @@ import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
+import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
@@ -383,6 +397,127 @@ class ChapterInventoryAndReconciliationTest {
         repository.getByCanonicalTitleId("title-1").single().displayNumber shouldBe "4"
         repository.getVariantsBySourceMappingId("mapping-1").size shouldBe 1
     }
+
+    @Test
+    fun `simultaneous legacy Reader and editorial refresh retain one canonical chapter and stable variant`() =
+        runTest {
+            val sharedGate = ChapterMutationGate()
+            val legacyInsideWrite = CompletableDeferred<Unit>()
+            val finishLegacyWrite = CompletableDeferred<Unit>()
+            var blockFirstLegacyWrite = true
+            val repository = object : FakeCanonicalChapterRepository() {
+                override suspend fun upsertBatch(chapters: List<CanonicalChapter>, variants: List<ChapterVariant>) {
+                    if (blockFirstLegacyWrite && variants.isNotEmpty()) {
+                        blockFirstLegacyWrite = false
+                        legacyInsideWrite.complete(Unit)
+                        finishLegacyWrite.await()
+                    }
+                    super.upsertBatch(chapters, variants)
+                }
+            }
+            val evidenceRecords = linkedMapOf<String, PersistedChapterEvidence>()
+            val evidenceRepository = object : ChapterEvidenceRepository {
+                override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
+                    evidenceRecords.values.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+
+                override suspend fun getByProducerExternalKey(
+                    producerKind: ProducerKind,
+                    producerId: String,
+                    externalChapterKey: String,
+                ): PersistedChapterEvidence? = evidenceRecords.values.firstOrNull {
+                    it.evidence.producerKind == producerKind &&
+                        it.evidence.producerId == producerId &&
+                        it.evidence.externalChapterKey == externalChapterKey
+                }
+
+                override suspend fun upsert(
+                    evidence: ChapterEvidence,
+                    mappedCanonicalChapterId: String?,
+                ): PersistedChapterEvidence =
+                    PersistedChapterEvidence(evidence, mappedCanonicalChapterId).also {
+                        evidenceRecords[evidence.id] = it
+                    }
+            }
+            val legacyReconciler = ReconcileChapterInventory(
+                ParseCanonicalChapterLabel(),
+                ParseCanonicalChapterVolume(),
+                repository,
+                sharedGate,
+            )
+            val editorialReconciler = ReconcileChapterEvidence(
+                ParseCanonicalChapterLabel(),
+                repository,
+                evidenceRepository,
+                sharedGate,
+                NoOpChapterInventoryDiagnostics,
+            )
+            val sourceInventory = inventory("mapping-1", 1L, "Vol. 1 Ch. 4", "/chapter/4")
+            val gateway = object : ChapterInventoryGateway {
+                override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> =
+                    Result.success(sourceInventory)
+            }
+            val legacyRefresh = RefreshCanonicalChapters(
+                FakeSourceTitleMappingRepository(mapping("mapping-1", materialized = true)),
+                gateway,
+                legacyReconciler,
+            )
+            val editorial = object : ChapterEvidenceProvider {
+                override val producerId = "editorial"
+
+                override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                    Result.success(
+                        listOf(
+                            ChapterEvidence(
+                                id = "editorial-vol-1-ch-4",
+                                canonicalTitleId = canonicalTitleId,
+                                producerKind = ProducerKind.INTEGRATION,
+                                producerId = producerId,
+                                externalChapterKey = "/editorial/1/4",
+                                rawLabel = "Vol. 1 Ch. 4",
+                                rawNumber = 4.0,
+                                volume = 1,
+                                title = null,
+                                observedAt = 100L,
+                                confidence = 1.0,
+                                authority = ChapterEvidenceAuthority.EDITORIAL,
+                            ),
+                        ),
+                    )
+            }
+            val registry = mockk<IntegrationRegistry>()
+            coEvery { registry.awaitReady() } returns Unit
+            every { registry.chapterEvidenceProviders() } returns listOf(editorial)
+            val editorialRefresh = RefreshChapterEvidence(registry, editorialReconciler)
+
+            val pendingLegacy = async { legacyRefresh.execute("title-1", mappingId = "mapping-1") }
+            legacyInsideWrite.await()
+            val pendingEditorial = async { editorialRefresh.execute("title-1") }
+            try {
+                runCurrent()
+                pendingEditorial.isCompleted shouldBe false
+                repository.chapters shouldBe emptyMap()
+                repository.variants shouldBe emptyMap()
+            } finally {
+                finishLegacyWrite.complete(Unit)
+            }
+            pendingLegacy.await().isSuccess shouldBe true
+            pendingEditorial.await().isSuccess shouldBe true
+
+            val canonicalId = repository.getByCanonicalTitleId("title-1").single().id
+            val firstVariant = requireNotNull(repository.getVariantBySourceIdentity(1L, "/chapter/4"))
+            firstVariant.canonicalChapterId shouldBe canonicalId
+            evidenceRecords.values.single().mappedCanonicalChapterId shouldBe canonicalId
+            repository.getByCanonicalTitleId("title-1").single().confirmation shouldBe
+                CanonicalChapterConfirmation.CONFIRMED
+
+            // Repeat both entrypoints after the competing refresh to prove
+            // that editorial confirmation never forks the operational variant.
+            editorialRefresh.execute("title-1").isSuccess shouldBe true
+            legacyRefresh.execute("title-1", mappingId = "mapping-1").isSuccess shouldBe true
+            repository.getByCanonicalTitleId("title-1").map { it.id } shouldBe listOf(canonicalId)
+            repository.getVariantBySourceIdentity(1L, "/chapter/4")?.id shouldBe firstVariant.id
+            repository.getVariantsBySourceMappingId("mapping-1").size shouldBe 1
+        }
 
     @Test
     fun `reconciliation rejects mismatched or blank source identity evidence`() = runTest {
