@@ -647,6 +647,93 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `both writers retain source specific language variants after refresh reordering and omission`() = runTest {
+        val legacyChapters = FakeCanonicalChapterRepository()
+        val evidenceFixture = fixture()
+        val existing = existingChapter("chapter-volume-1", volume = 1)
+        legacyChapters.upsert(existing)
+        evidenceFixture.chapterRepository.upsert(existing)
+        var nextVariant = 0
+        val legacy = ReconcileChapterInventory(
+            parser = ParseCanonicalChapterLabel(),
+            volumeParser = ParseCanonicalChapterVolume(),
+            canonicalChapterRepository = legacyChapters,
+            idFactory = { error("Language variants must not materialize duplicate canonical chapters") },
+            variantIdFactory = { "variant-${++nextVariant}" },
+            clock = { 100L },
+        )
+        data class LanguageSource(val id: Long, val language: String)
+        val sources = listOf(LanguageSource(101L, "en"), LanguageSource(202L, "pt-BR"))
+        val url = "/chapter/4"
+
+        suspend fun refresh(selected: List<LanguageSource>) {
+            legacy.execute(
+                selected.map { source ->
+                    SourceChapterInventory(
+                        sourceMappingId = "mapping-${source.id}",
+                        sourceId = source.id,
+                        canonicalTitleId = "title",
+                        language = source.language,
+                        chapters = listOf(
+                            SourceChapterSnapshot(
+                                sourceId = source.id,
+                                sourceMappingId = "mapping-${source.id}",
+                                sourceChapterId = url,
+                                rawName = "Vol. 1 Ch. 4",
+                                rawNumberHint = 4.0,
+                                language = source.language,
+                            ),
+                        ),
+                    )
+                },
+            )
+            evidenceFixture.reconciler.execute(
+                "title",
+                selected.map { source ->
+                    evidenceFixture.addonEvidence(
+                        id = "observation-${source.id}",
+                        rawLabel = "Vol. 1 Ch. 4",
+                        externalKey = "${source.id}:$url",
+                        producerId = "addon-${source.id}",
+                        volume = 1,
+                    )
+                },
+            )
+        }
+
+        suspend fun assertMappings(variantIds: Map<Long, String>) {
+            legacyChapters.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(existing.id)
+            evidenceFixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+                listOf(existing.id)
+            for (source in sources) {
+                val variant = requireNotNull(legacyChapters.getVariantBySourceIdentity(source.id, url))
+                variant.id shouldBe variantIds.getValue(source.id)
+                variant.canonicalChapterId shouldBe existing.id
+                variant.language shouldBe source.language
+                evidenceFixture.evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "addon-${source.id}",
+                    "${source.id}:$url",
+                )?.mappedCanonicalChapterId shouldBe existing.id
+            }
+            evidenceFixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 2
+        }
+
+        refresh(sources)
+        val variantIds = sources.associate { source ->
+            source.id to requireNotNull(legacyChapters.getVariantBySourceIdentity(source.id, url)).id
+        }
+        assertMappings(variantIds)
+
+        // Provider order and a later omission must not merge sources or change
+        // the existing Mihon variant IDs and their separate language labels.
+        refresh(sources.reversed())
+        assertMappings(variantIds)
+        refresh(listOf(sources.first()))
+        assertMappings(variantIds)
+    }
+
+    @Test
     fun `legacy inventory rejects an existing source URL with a contradictory explicit volume`() = runTest {
         val legacyChapters = FakeCanonicalChapterRepository()
         val evidenceFixture = fixture()
