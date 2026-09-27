@@ -72,8 +72,8 @@ import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
 import tachiyomi.data.tsuzuki.SourceTitleMappingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
-import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
@@ -537,18 +537,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             assertEquals(
                 "Reader attach must not replace the source mapping",
                 legacy.mapping,
-                runBlocking {
-                    SourceTitleMappingRepositoryImpl(fixture.database)
-                        .getBySource(fixture.sourceA.id, legacy.manga.url)
-                },
+                fixture.persistedMapping(legacy),
             )
             assertEquals(
                 "Reader attach must keep the mapped operational variant stable",
                 legacy.variant,
-                runBlocking {
-                    CanonicalChapterRepositoryImpl(fixture.database)
-                        .getVariantBySourceIdentity(fixture.sourceA.id, legacy.chapter.url)
-                },
+                fixture.persistedVariant(legacy),
             )
             assertEquals(
                 "Legacy progress recording must not change the preferred Add-on",
@@ -1528,6 +1522,15 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 },
                 1,
             ) { bindString(0, chapter.id) }.await()
+        }
+
+        fun persistedMapping(entry: LegacyReaderEntry): SourceTitleMapping? = runBlocking {
+            SourceTitleMappingRepositoryImpl(database).getBySource(entry.mapping.sourceId, entry.mapping.sourceUrl)
+        }
+
+        fun persistedVariant(entry: LegacyReaderEntry): ChapterVariant? = runBlocking {
+            CanonicalChapterRepositoryImpl(database)
+                .getVariantBySourceIdentity(entry.variant.sourceId, entry.variant.sourceChapterId)
         }
 
         private var legacyEntry: LegacyReaderEntry? = null
