@@ -24,6 +24,8 @@ import tachiyomi.data.Mangas
 import tachiyomi.data.MemoColumnAdapter
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.LegacyInventoryEvidenceAdapter
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
@@ -259,6 +261,7 @@ class CanonicalChapterRepositoryImplTest {
                 SourceTitleMappingRepositoryImpl(database),
             )
             repository.upsert(chapter("chapter-volume-1", "4", baseNumber = 4).copy(volume = 1))
+            repository.upsert(chapter("chapter-volume-2", "4", baseNumber = 4).copy(volume = 2))
             val en = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
             val pt = legacyInventory(8L, "mapping-2", "pt-BR", "Vol. 1 Ch. 4")
 
@@ -288,12 +291,12 @@ class CanonicalChapterRepositoryImplTest {
             evidenceRepository.getByProducerExternalKey(
                 ProducerKind.ADDON,
                 "mihon-legacy:title-1:7",
-                "/chapter/4",
+                "7:/chapter/4",
             )?.mappedCanonicalChapterId shouldBe volumeTwo.id
             evidenceRepository.getByProducerExternalKey(
                 ProducerKind.ADDON,
                 "mihon-legacy:title-1:8",
-                "/chapter/4",
+                "8:/chapter/4",
             )?.mappedCanonicalChapterId shouldBe "chapter-volume-1"
             repository.getByCanonicalTitleId("title-1").size shouldBe 2
         }
@@ -347,7 +350,7 @@ class CanonicalChapterRepositoryImplTest {
         }
 
     @Test
-    fun `unreliable legacy observation stays unmapped and never publishes a reading variant`() =
+    fun `unreliable legacy observations from separate mappings stay unmapped and never publish variants`() =
         runBlocking<Unit> {
             val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
             val projection = ReconcileLegacyChapterEvidence(
@@ -356,15 +359,75 @@ class CanonicalChapterRepositoryImplTest {
                 repository,
                 SourceTitleMappingRepositoryImpl(database),
             )
-            val unknown = legacyInventory(7L, "mapping-1", "en", "An unknown release", "/unknown")
-            projection.execute(listOf(unknown), observedAt = 100L) shouldBe emptyList()
+            val english = legacyInventory(7L, "mapping-1", "en", "An unknown release", "/unknown")
+            val portuguese = legacyInventory(8L, "mapping-2", "pt-BR", "An unknown release", "/unknown")
+            projection.execute(listOf(english, portuguese), observedAt = 100L) shouldBe emptyList()
             repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
             repository.getVariantBySourceIdentity(7L, "/unknown") shouldBe null
+            repository.getVariantBySourceIdentity(8L, "/unknown") shouldBe null
+            evidenceRepository.getByCanonicalTitleId("title-1").size shouldBe 2
+            listOf(7L, 8L).forEach { sourceId ->
+                evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title-1:$sourceId",
+                    "$sourceId:/unknown",
+                )?.mappedCanonicalChapterId shouldBe null
+            }
+        }
+
+    @Test
+    fun `newer unmapped add-on evidence blocks stale legacy inventory but allows a later fetch`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val newerEvidence = ChapterEvidence(
+                id = "detail-evidence",
+                canonicalTitleId = "title-1",
+                producerKind = ProducerKind.ADDON,
+                producerId = "detail-addon",
+                externalChapterKey = "7:/chapter/4",
+                rawLabel = "Chapter 2",
+                rawNumber = 2.0,
+                volume = null,
+                title = null,
+                observedAt = 200L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            )
+            evidenceRepository.upsert(newerEvidence, mappedCanonicalChapterId = null)
+
+            val stale = legacyInventory(7L, "mapping-1", "en", "Chapter 1").copy(
+                fetchStartedAtMillis = 100L,
+            )
+            projection.execute(listOf(stale), observedAt = 300L) shouldBe emptyList()
+            repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+            repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe null
+            evidenceRepository.getByCanonicalTitleId("title-1").map { it.evidence.id } shouldBe
+                listOf(newerEvidence.id)
+
+            projection.execute(
+                listOf(stale.copy(fetchStartedAtMillis = 201L)),
+                observedAt = 400L,
+            ).size shouldBe 1
+
+            val canonical = repository.getByCanonicalTitleId("title-1").single()
+            canonical.baseNumber shouldBe 1
+            repository.getVariantBySourceIdentity(7L, "/chapter/4")?.canonicalChapterId shouldBe canonical.id
+            evidenceRepository.getByProducerExternalKey(
+                ProducerKind.ADDON,
+                "detail-addon",
+                "7:/chapter/4",
+            )?.mappedCanonicalChapterId shouldBe null
             evidenceRepository.getByProducerExternalKey(
                 ProducerKind.ADDON,
                 "mihon-legacy:title-1:7",
-                "/unknown",
-            )?.mappedCanonicalChapterId shouldBe null
+                "7:/chapter/4",
+            )?.mappedCanonicalChapterId shouldBe canonical.id
         }
 
     @Test
@@ -455,7 +518,7 @@ class CanonicalChapterRepositoryImplTest {
     }
 
     @Test
-    fun `empty legacy inventory preserves canonical evidence and operational variant`() = runBlocking<Unit> {
+    fun `empty legacy inventories preserve canonical evidence and operational variants`() = runBlocking<Unit> {
         val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
         val projection = ReconcileLegacyChapterEvidence(
             LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
@@ -463,20 +526,235 @@ class CanonicalChapterRepositoryImplTest {
             repository,
             SourceTitleMappingRepositoryImpl(database),
         )
-        val populated = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
-        projection.execute(listOf(populated), observedAt = 100L).size shouldBe 1
-        val chaptersBefore = repository.getByCanonicalTitleId("title-1")
-        val evidenceBefore = evidenceRepository.getByCanonicalTitleId("title-1")
-        val variantBefore = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+        val english = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 4")
+        val portuguese = legacyInventory(8L, "mapping-2", "pt-BR", "Vol. 1 Ch. 4")
+        projection.execute(listOf(english, portuguese), observedAt = 100L).size shouldBe 2
+        val canonicalId = repository.getByCanonicalTitleId("title-1").single().id
+        val initialVariantIds = mapOf(
+            7L to requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4")).id,
+            8L to requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/4")).id,
+        )
 
         projection.execute(
-            listOf(populated.copy(chapters = emptyList(), fetchStartedAtMillis = 200L)),
+            listOf(
+                english.copy(chapters = emptyList(), fetchStartedAtMillis = 200L),
+                portuguese,
+            ),
             observedAt = 300L,
+        ).size shouldBe 1
+        repository.getByCanonicalTitleId("title-1").map { it.id } shouldBe listOf(canonicalId)
+        listOf(7L, 8L).forEach { sourceId ->
+            repository.getVariantBySourceIdentity(sourceId, "/chapter/4")?.let { variant ->
+                variant.id shouldBe initialVariantIds.getValue(sourceId)
+                variant.canonicalChapterId shouldBe canonicalId
+            }
+        }
+        evidenceRepository.getByCanonicalTitleId("title-1").map { it.mappedCanonicalChapterId }
+            .toSet() shouldBe setOf(canonicalId)
+
+        val chaptersBeforeEmpty = repository.getByCanonicalTitleId("title-1")
+        val evidenceBeforeEmpty = evidenceRepository.getByCanonicalTitleId("title-1")
+        val variantsBeforeEmpty = listOf(7L, 8L).associateWith { sourceId ->
+            repository.getVariantBySourceIdentity(sourceId, "/chapter/4")
+        }
+        projection.execute(
+            listOf(
+                english.copy(chapters = emptyList(), fetchStartedAtMillis = 400L),
+                portuguese.copy(chapters = emptyList(), fetchStartedAtMillis = 400L),
+            ),
+            observedAt = 500L,
         ) shouldBe emptyList()
 
-        repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
-        evidenceRepository.getByCanonicalTitleId("title-1") shouldBe evidenceBefore
-        repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe variantBefore
+        repository.getByCanonicalTitleId("title-1") shouldBe chaptersBeforeEmpty
+        val evidenceAfterEmpty = evidenceRepository.getByCanonicalTitleId("title-1").associateBy {
+            it.evidence.id
+        }
+        evidenceAfterEmpty.keys shouldBe evidenceBeforeEmpty.map { it.evidence.id }.toSet()
+        evidenceBeforeEmpty.forEach { before ->
+            val after = requireNotNull(evidenceAfterEmpty[before.evidence.id])
+            after.evidence shouldBe before.evidence
+            after.mappedCanonicalChapterId shouldBe before.mappedCanonicalChapterId
+            after.rawMetadata.contentEquals(before.rawMetadata) shouldBe true
+        }
+        listOf(7L, 8L).forEach { sourceId ->
+            repository.getVariantBySourceIdentity(sourceId, "/chapter/4") shouldBe
+                variantsBeforeEmpty.getValue(sourceId)
+        }
+    }
+
+    @Test
+    fun `staged projection keeps an unqualified chapter separate from a volume candidate`() = runBlocking<Unit> {
+        val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+        val projection = ReconcileLegacyChapterEvidence(
+            LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+            repository,
+            SourceTitleMappingRepositoryImpl(database),
+        )
+        val volumeOne = chapter("chapter-volume-1").copy(volume = 1)
+        repository.upsert(volumeOne)
+        val explicit = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 1")
+        val unqualified = legacyInventory(8L, "mapping-2", "pt-BR", "Chapter 1", "/chapter/plain")
+
+        projection.execute(listOf(explicit, unqualified), observedAt = 200L).size shouldBe 2
+
+        val chapters = repository.getByCanonicalTitleId("title-1")
+        chapters.size shouldBe 2
+        chapters.single { it.id == volumeOne.id }.volume shouldBe 1
+        val unqualifiedChapter = chapters.single { it.id != volumeOne.id }
+        unqualifiedChapter.volume shouldBe null
+        unqualifiedChapter.baseNumber shouldBe 1
+        repository.getVariantBySourceIdentity(7L, "/chapter/4")?.canonicalChapterId shouldBe volumeOne.id
+        repository.getVariantBySourceIdentity(8L, "/chapter/plain")?.canonicalChapterId shouldBe
+            unqualifiedChapter.id
+    }
+
+    @Test
+    fun `staged projection retains fractional chapters after a partial inventory omits one URL`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val inventory = legacyInventory(7L, "mapping-1", "en", "Chapter 0").copy(
+                fetchStartedAtMillis = 100L,
+                chapters = listOf(
+                    SourceChapterSnapshot(
+                        sourceId = 7L,
+                        sourceMappingId = "mapping-1",
+                        sourceChapterId = "/chapter/0",
+                        rawName = "Chapter 0",
+                        language = "en",
+                        rawNumberHint = 0.0,
+                    ),
+                    SourceChapterSnapshot(
+                        sourceId = 7L,
+                        sourceMappingId = "mapping-1",
+                        sourceChapterId = "/chapter/0.5",
+                        rawName = "Chapter 0.5",
+                        language = "en",
+                        rawNumberHint = 0.5,
+                    ),
+                    SourceChapterSnapshot(
+                        sourceId = 7L,
+                        sourceMappingId = "mapping-1",
+                        sourceChapterId = "/chapter/1",
+                        rawName = "Chapter 1",
+                        language = "en",
+                        rawNumberHint = 1.0,
+                    ),
+                ),
+            )
+
+            projection.execute(listOf(inventory), observedAt = 200L).size shouldBe 3
+            val chapterIds = repository.getByCanonicalTitleId("title-1").associate { it.displayNumber to it.id }
+            chapterIds.keys shouldBe setOf("0", "0.5", "1")
+            val variantIds = listOf("/chapter/0", "/chapter/0.5", "/chapter/1").associateWith { sourceKey ->
+                requireNotNull(repository.getVariantBySourceIdentity(7L, sourceKey)).id
+            }
+            val omittedEvidence = requireNotNull(
+                evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title-1:7",
+                    "7:/chapter/0.5",
+                ),
+            )
+
+            val partialInventory = inventory.copy(
+                fetchStartedAtMillis = 300L,
+                chapters = listOf(inventory.chapters[0], inventory.chapters[2]),
+            )
+            projection.execute(listOf(partialInventory), observedAt = 400L).size shouldBe 2
+
+            repository.getByCanonicalTitleId("title-1").associate { it.displayNumber to it.id } shouldBe chapterIds
+            listOf("/chapter/0", "/chapter/0.5", "/chapter/1").forEach { sourceKey ->
+                repository.getVariantBySourceIdentity(7L, sourceKey)?.id shouldBe variantIds.getValue(sourceKey)
+            }
+            val persistedOmittedEvidence = requireNotNull(
+                evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title-1:7",
+                    "7:/chapter/0.5",
+                ),
+            )
+            persistedOmittedEvidence.evidence shouldBe omittedEvidence.evidence
+            persistedOmittedEvidence.mappedCanonicalChapterId shouldBe omittedEvidence.mappedCanonicalChapterId
+            persistedOmittedEvidence.rawMetadata.contentEquals(omittedEvidence.rawMetadata) shouldBe true
+        }
+
+    @Test
+    fun `partial legacy refresh preserves an omitted mapping variant and its evidence`() = runBlocking<Unit> {
+        val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+        val projection = ReconcileLegacyChapterEvidence(
+            LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+            repository,
+            SourceTitleMappingRepositoryImpl(database),
+        )
+        val english = legacyInventory(7L, "mapping-1", "en", "Chapter 4")
+        val portuguese = legacyInventory(8L, "mapping-2", "pt-BR", "Chapter 4")
+
+        projection.execute(listOf(english, portuguese), observedAt = 100L).size shouldBe 2
+        val canonical = repository.getByCanonicalTitleId("title-1").single()
+        val omittedVariant = requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/4"))
+        omittedVariant.canonicalChapterId shouldBe canonical.id
+        val omittedEvidence = requireNotNull(
+            evidenceRepository.getByProducerExternalKey(
+                ProducerKind.ADDON,
+                "mihon-legacy:title-1:8",
+                "8:/chapter/4",
+            ),
+        )
+
+        projection.execute(listOf(english), observedAt = 200L).size shouldBe 1
+
+        repository.getByCanonicalTitleId("title-1").map { it.id } shouldBe listOf(canonical.id)
+        repository.getVariantBySourceIdentity(8L, "/chapter/4") shouldBe omittedVariant
+        val persistedOmittedEvidence = requireNotNull(
+            evidenceRepository.getByProducerExternalKey(
+                ProducerKind.ADDON,
+                "mihon-legacy:title-1:8",
+                "8:/chapter/4",
+            ),
+        )
+        persistedOmittedEvidence.evidence shouldBe omittedEvidence.evidence
+        persistedOmittedEvidence.mappedCanonicalChapterId shouldBe canonical.id
+        persistedOmittedEvidence.rawMetadata.contentEquals(omittedEvidence.rawMetadata) shouldBe true
+    }
+
+    @Test
+    fun `two source mappings materialize one shared canonical chapter for a new identity`() = runBlocking<Unit> {
+        val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+        val projection = ReconcileLegacyChapterEvidence(
+            LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+            repository,
+            SourceTitleMappingRepositoryImpl(database),
+        )
+        val english = legacyInventory(7L, "mapping-1", "en", "Chapter 4")
+        val portuguese = legacyInventory(8L, "mapping-2", "pt-BR", "Chapter 4")
+
+        repository.getByCanonicalTitleId("title-1") shouldBe emptyList()
+        projection.execute(listOf(english, portuguese), observedAt = 100L).size shouldBe 2
+
+        val canonical = repository.getByCanonicalTitleId("title-1").single()
+        val englishVariant = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+        val portugueseVariant = requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/4"))
+        englishVariant.canonicalChapterId shouldBe canonical.id
+        portugueseVariant.canonicalChapterId shouldBe canonical.id
+        evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title-1:7",
+            "7:/chapter/4",
+        )?.mappedCanonicalChapterId shouldBe canonical.id
+        evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title-1:8",
+            "8:/chapter/4",
+        )?.mappedCanonicalChapterId shouldBe canonical.id
     }
 
     @Test
@@ -577,7 +855,7 @@ class CanonicalChapterRepositoryImplTest {
                 evidenceRepository.getByProducerExternalKey(
                     ProducerKind.ADDON,
                     "mihon-legacy:title-1:7",
-                    "/chapter/4",
+                    "7:/chapter/4",
                 ),
             )
 
@@ -594,7 +872,7 @@ class CanonicalChapterRepositoryImplTest {
                 evidenceRepository.getByProducerExternalKey(
                     ProducerKind.ADDON,
                     "mihon-legacy:title-1:7",
-                    "/chapter/4",
+                    "7:/chapter/4",
                 ),
             )
             retained.evidence shouldBe firstEvidence.evidence

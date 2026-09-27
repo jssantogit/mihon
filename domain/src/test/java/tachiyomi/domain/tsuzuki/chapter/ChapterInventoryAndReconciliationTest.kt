@@ -137,7 +137,7 @@ class ChapterInventoryAndReconciliationTest {
     }
 
     @Test
-    fun `production refresh constructor materializes missing operational variant through staged evidence writer`() = runTest {
+    fun `production refresh materializes missing variant through staged writer`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val mappings = FakeSourceTitleMappingRepository(mapping("mapping-1", materialized = true))
         val gateway = FakeChapterInventoryGateway().apply {
@@ -351,3 +351,192 @@ class ChapterInventoryAndReconciliationTest {
             repository.getVariantBySourceIdentity(1L, "/chapter/4")?.id shouldBe firstVariant.id
             repository.getVariantsBySourceMappingId("mapping-1").size shouldBe 1
         }
+
+    private fun inventory(
+        mappingId: String,
+        sourceId: Long,
+        name: String,
+        sourceChapterId: String = "/$mappingId/${name.replace(' ', '-')}",
+    ) = SourceChapterInventory(
+        sourceMappingId = mappingId,
+        sourceId = sourceId,
+        canonicalTitleId = "title-1",
+        chapters = listOf(snapshot(sourceId, mappingId, name, sourceChapterId)),
+    )
+
+    private fun snapshot(sourceId: Long, mappingId: String, name: String, url: String) =
+        SourceChapterSnapshot(
+            sourceId = sourceId,
+            sourceMappingId = mappingId,
+            sourceChapterId = url,
+            sourceChapterUrl = url,
+            rawName = name,
+            language = "en",
+            rawNumberHint = null,
+            rawSourceOrder = null,
+            scanlationGroup = null,
+            releaseDate = null,
+            createdAt = 100L,
+            updatedAt = 100L,
+        )
+
+    private fun canonicalChapter(id: String, volume: Int?) = CanonicalChapter(
+        id = id,
+        canonicalTitleId = "title-1",
+        displayNumber = "1",
+        volume = volume,
+        type = CanonicalChapterType.REGULAR,
+        baseNumber = 1,
+        confidence = 1.0,
+        createdAt = 50L,
+        updatedAt = 50L,
+    )
+
+    private fun mapping(id: String, materialized: Boolean, preferred: Boolean = false) = SourceTitleMapping(
+        id = id,
+        canonicalTitleId = "title-1",
+        mihonMangaId = if (materialized) 10L else null,
+        sourceId = id.removePrefix("mapping-").toLong(),
+        sourceUrl = "/$id",
+        language = "en",
+        matchConfidence = 1.0,
+        verifiedByUser = false,
+        availability = SourceMappingAvailability.AVAILABLE,
+        preferredOverride = preferred,
+        createdAt = 100L,
+        updatedAt = 100L,
+    )
+
+    private class FakeChapterInventoryGateway : ChapterInventoryGateway {
+        var result: Result<SourceChapterInventory> = Result.success(
+            SourceChapterInventory(
+                sourceMappingId = "mapping-1",
+                sourceId = 1L,
+                canonicalTitleId = "title-1",
+                chapters = emptyList(),
+            ),
+        )
+        var inventories: Map<String, SourceChapterInventory> = emptyMap()
+        val requestedMappingIds = mutableListOf<String>()
+
+        override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> {
+            requestedMappingIds += mapping.id
+            return inventories[mapping.id]?.let(Result.Companion::success) ?: result
+        }
+    }
+
+    private open class FakeCanonicalChapterRepository : CanonicalChapterRepository {
+        val chapters = linkedMapOf<String, CanonicalChapter>()
+        val variants = linkedMapOf<String, ChapterVariant>()
+        var upsertBatchCalls = 0
+
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
+            chapters.values.filter { it.canonicalTitleId == canonicalTitleId }
+
+        override fun observeByCanonicalTitleId(canonicalTitleId: String): Flow<List<CanonicalChapter>> =
+            MutableStateFlow(chapters.values.filter { it.canonicalTitleId == canonicalTitleId })
+
+        override suspend fun getById(id: String): CanonicalChapter? = chapters[id]
+
+        override suspend fun getVariantBySourceIdentity(sourceId: Long, sourceChapterId: String): ChapterVariant? =
+            variants.values.firstOrNull { it.sourceId == sourceId && it.sourceChapterId == sourceChapterId }
+
+        override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> =
+            variants.values.filter { it.canonicalChapterId == canonicalChapterId }
+
+        override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> =
+            variants.values.filter { it.sourceMappingId == sourceMappingId }
+
+        override suspend fun upsert(chapter: CanonicalChapter) {
+            chapters[chapter.id] = chapter
+        }
+
+        override suspend fun upsertVariant(variant: ChapterVariant) {
+            variants[variant.id] = variant
+        }
+
+        override suspend fun upsertBatch(chapters: List<CanonicalChapter>, variants: List<ChapterVariant>) {
+            upsertBatchCalls += 1
+            chapters.forEach { upsert(it) }
+            variants.forEach { upsertVariant(it) }
+        }
+    }
+
+    private class FailingTransactionalCanonicalChapterRepository : FakeCanonicalChapterRepository() {
+        var failBatch = false
+
+        override suspend fun upsertBatch(chapters: List<CanonicalChapter>, variants: List<ChapterVariant>) {
+            val chaptersBefore = this.chapters.toMap()
+            val variantsBefore = this.variants.toMap()
+            try {
+                super.upsertBatch(chapters, variants)
+                if (failBatch) throw IllegalStateException("transaction rolled back")
+            } catch (error: Throwable) {
+                this.chapters.clear()
+                this.chapters.putAll(chaptersBefore)
+                this.variants.clear()
+                this.variants.putAll(variantsBefore)
+                throw error
+            }
+        }
+    }
+
+    private class FakeSourceTitleMappingRepository(
+        vararg initial: SourceTitleMapping,
+    ) : SourceTitleMappingRepository {
+        private val mappings = initial.associateBy { it.id }.toMutableMap()
+
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<SourceTitleMapping> =
+            mappings.values.filter { it.canonicalTitleId == canonicalTitleId }
+
+        override fun getByCanonicalTitleIdAsFlow(canonicalTitleId: String): Flow<List<SourceTitleMapping>> =
+            MutableStateFlow(mappings.values.filter { it.canonicalTitleId == canonicalTitleId })
+
+        override suspend fun getBySource(sourceId: Long, sourceUrl: String): SourceTitleMapping? =
+            mappings.values.firstOrNull { it.sourceId == sourceId && it.sourceUrl == sourceUrl }
+
+        override suspend fun upsert(mapping: SourceTitleMapping) {
+            mappings[mapping.id] = mapping
+        }
+
+        override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) =
+            Unit
+    }
+
+    private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {
+        private val records = mutableListOf<PersistedChapterEvidence>()
+
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
+            records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun getByProducerExternalKey(
+            producerKind: ProducerKind,
+            producerId: String,
+            externalChapterKey: String,
+        ): PersistedChapterEvidence? = records.firstOrNull {
+            it.evidence.producerKind == producerKind &&
+                it.evidence.producerId == producerId &&
+                it.evidence.externalChapterKey == externalChapterKey
+        }
+
+        override suspend fun upsert(
+            evidence: ChapterEvidence,
+            mappedCanonicalChapterId: String?,
+        ): PersistedChapterEvidence = persist(evidence, mappedCanonicalChapterId)
+
+        override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>): List<PersistedChapterEvidence> =
+            writes.map { persist(it.evidence, it.mappedCanonicalChapterId) }
+
+        private fun persist(evidence: ChapterEvidence, mappedCanonicalChapterId: String?): PersistedChapterEvidence {
+            val index = records.indexOfFirst {
+                it.evidence.producerKind == evidence.producerKind &&
+                    it.evidence.producerId == evidence.producerId &&
+                    it.evidence.externalChapterKey == evidence.externalChapterKey
+            }
+            val stableEvidence = evidence.copy(id = records.getOrNull(index)?.evidence?.id ?: evidence.id)
+            val persisted = PersistedChapterEvidence(stableEvidence, mappedCanonicalChapterId)
+            if (index >= 0) records[index] = persisted else records += persisted
+            return persisted
+        }
+    }
+}
