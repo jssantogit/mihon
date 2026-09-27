@@ -22,9 +22,14 @@ import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
 import tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
+import tachiyomi.domain.tsuzuki.chapter.evidence.LegacyInventoryEvidenceAdapter
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.nio.file.Files
@@ -125,6 +130,112 @@ class ChapterEvidenceReconciliationBenchmarkTest {
         val report = samples.joinToString(separator = "\n", postfix = "\n")
         output.writeText(report)
         println(report)
+    }
+
+    /**
+     * Opt-in measurement of repeated staged projection over already
+     * materialized chapters, evidence and Mihon variants. No network or UI.
+     */
+    @Test
+    @EnabledIfEnvironmentVariable(named = "TSUZUKI_STAGED_PROJECTION_BENCHMARK", matches = "true")
+    fun `measure staged projection at 100 500 and 1000 mapped chapters`() = runBlocking<Unit> {
+        val label = System.getenv("TSUZUKI_BENCHMARK_LABEL") ?: "unlabeled"
+        val output = java.io.File("build/reports/tsuzuki/staged-projection-benchmark.txt")
+        output.parentFile.mkdirs()
+        val report = mutableListOf(
+            "revision_label=$label",
+            "workload=staged_legacy_refresh_existing_chapters_evidence_variants",
+            "environment java=${System.getProperty("java.version")} " +
+                "os=${System.getProperty("os.name")} arch=${System.getProperty("os.arch")} " +
+                "processors=${Runtime.getRuntime().availableProcessors()} driver=JdbcSqliteDriver(IN_MEMORY)",
+        )
+        val projection = ReconcileLegacyChapterEvidence(
+            adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            reconciler = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapterRepository,
+                evidenceRepository = evidenceRepository,
+            ),
+            chapters = chapterRepository,
+            sourceMappings = SourceTitleMappingRepositoryImpl(database),
+        )
+        for (size in listOf(100, 500, 1_000)) {
+            val titleId = "staged-benchmark-title-$size"
+            val mappingId = "staged-benchmark-mapping-$size"
+            val sourceId = 50_000L + size
+            val mangaId = 60_000L + size
+            val titleUrl = "/staged-benchmark/$size"
+            database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+                id = titleId,
+                displayTitle = titleId,
+                identityState = "SOURCE_ONLY",
+                createdAt = 1L,
+                updatedAt = 1L,
+            )
+            database.tsuzuki_source_mappingsQueries.upsertTsuzukiSourceMapping(
+                id = mappingId,
+                canonicalTitleId = titleId,
+                mihonMangaId = mangaId,
+                sourceId = sourceId,
+                sourceUrl = titleUrl,
+                language = "en",
+                matchConfidence = null,
+                verifiedByUser = false,
+                availability = "AVAILABLE",
+                preferredOverride = false,
+                createdAt = 1L,
+                updatedAt = 1L,
+            )
+            val inventory = SourceChapterInventory(
+                sourceMappingId = mappingId,
+                sourceId = sourceId,
+                canonicalTitleId = titleId,
+                mihonMangaId = mangaId,
+                language = "en",
+                sourceUrl = titleUrl,
+                fetchStartedAtMillis = 10L,
+                chapters = (1..size).map { index ->
+                    SourceChapterSnapshot(
+                        sourceId = sourceId,
+                        sourceMappingId = mappingId,
+                        sourceChapterId = "/chapter/$index",
+                        rawName = "Chapter $index",
+                        rawNumberHint = index.toDouble(),
+                        language = "en",
+                        mihonMangaId = mangaId,
+                    )
+                },
+            )
+            projection.execute(listOf(inventory), observedAt = 10L).size shouldBe size
+            val priorIds = chapterRepository.getVariantsBySourceMappingId(mappingId)
+                .associate { it.sourceChapterId to it.id }
+            priorIds.size shouldBe size
+
+            val samples = mutableListOf<BenchmarkSample>()
+            repeat(2) { index ->
+                queryCounter.reset()
+                val startedAt = System.nanoTime()
+                projection.execute(
+                    listOf(inventory.copy(fetchStartedAtMillis = 20L + index)),
+                    observedAt = 20L + index,
+                ).size shouldBe size
+                samples += BenchmarkSample(System.nanoTime() - startedAt, queryCounter.snapshot())
+            }
+            chapterRepository.getByCanonicalTitleId(titleId).size shouldBe size
+            evidenceRepository.getByCanonicalTitleId(titleId).size shouldBe size
+            val afterIds = chapterRepository.getVariantsBySourceMappingId(mappingId)
+                .associate { it.sourceChapterId to it.id }
+            afterIds shouldBe priorIds
+            samples[0].queryCounts shouldBe samples[1].queryCounts
+
+            val counts = samples.first().queryCounts
+            val elapsedMs = samples.joinToString(",") { formatMillis(it.elapsedNanos) }
+            report += "sample size=$size warmup=$size elapsed_ms=[$elapsedMs] " +
+                "execute=${counts.execute} executeQuery=${counts.executeQuery} total_sql=${counts.total} " +
+                "canonical=$size evidence=$size variants=$size ids_stable=true"
+        }
+        output.writeText(report.joinToString(separator = "\n", postfix = "\n"))
+        println(report.joinToString(separator = "\n"))
     }
 
     private suspend fun seedExistingInventory(titleId: String, size: Int): List<ChapterEvidence> {
