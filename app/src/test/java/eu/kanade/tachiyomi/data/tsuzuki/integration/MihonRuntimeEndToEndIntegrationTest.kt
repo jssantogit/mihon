@@ -40,12 +40,13 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
+import tachiyomi.domain.tsuzuki.chapter.evidence.LegacyInventoryEvidenceAdapter
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.RefreshChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
-import tachiyomi.domain.tsuzuki.chapter.interactor.ReconcileChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
@@ -631,9 +632,12 @@ class MihonRuntimeEndToEndIntegrationTest {
                 .toSet()
 
             journey.refresh()
-            val detailEvidence = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).single()
+            val persistedAfterDetail = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
+            val detailEvidence = persistedAfterDetail.single { it.evidence.producerId == journey.addonId.value }
+            val legacyEvidence = persistedAfterDetail.single { it.evidence.producerId.startsWith("mihon-legacy:") }
             detailEvidence.evidence.rawLabel shouldBe "Chapter 1"
             detailEvidence.mappedCanonicalChapterId shouldBe initialVariant.canonicalChapterId
+            legacyEvidence.mappedCanonicalChapterId shouldBe initialVariant.canonicalChapterId
 
             val replayReport = journey.refreshLegacy(mappings, mapping.id).getOrThrow()
             val replayVariant = journey.canonicalChapters.getVariantBySourceIdentity(
@@ -648,7 +652,11 @@ class MihonRuntimeEndToEndIntegrationTest {
             journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId)
                 .map { it.id }
                 .toSet() shouldBe chapterIdsBeforeDetail
-            journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId).single() shouldBe detailEvidence
+            val evidenceAfterReplay = journey.evidence.getByCanonicalTitleId(journey.canonicalTitleId)
+            evidenceAfterReplay.size shouldBe 2
+            evidenceAfterReplay.single { it.evidence.producerId == journey.addonId.value } shouldBe detailEvidence
+            evidenceAfterReplay.single { it.evidence.producerId.startsWith("mihon-legacy:") }
+                .mappedCanonicalChapterId shouldBe initialVariant.canonicalChapterId
         }
     }
 
@@ -835,15 +843,16 @@ class MihonRuntimeEndToEndIntegrationTest {
                 addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
                 diagnostics = diagnostics,
             )
+            val evidenceReconciler = ReconcileChapterEvidence(
+                parser = parser,
+                canonicalChapterRepository = canonicalChapters,
+                evidenceRepository = evidence,
+                mutationGate = mutationGate,
+                diagnostics = diagnostics,
+            )
             refresh = RefreshChapterEvidence(
                 registry = EmptyIntegrationRegistry,
-                reconcileChapterEvidence = ReconcileChapterEvidence(
-                    parser = parser,
-                    canonicalChapterRepository = canonicalChapters,
-                    evidenceRepository = evidence,
-                    mutationGate = mutationGate,
-                    diagnostics = diagnostics,
-                ),
+                reconcileChapterEvidence = evidenceReconciler,
                 addonRegistry = registry,
                 resolveContentBinding = bindingResolver,
                 contentOptionCache = ContentOptionCache(),
@@ -897,13 +906,19 @@ class MihonRuntimeEndToEndIntegrationTest {
         ) = RefreshCanonicalChapters(
             sourceTitleMappingRepository = mappings,
             chapterInventoryGateway = gateway,
-            reconcileChapterInventory = ReconcileChapterInventory(
-                parser = parser,
-                volumeParser = ParseCanonicalChapterVolume(),
-                canonicalChapterRepository = canonicalChapters,
-                mutationGate = mutationGate,
-                chapterEvidenceRepository = evidence,
+            reconcileLegacyChapterEvidence = ReconcileLegacyChapterEvidence(
+                adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                reconciler = ReconcileChapterEvidence(
+                    parser = parser,
+                    canonicalChapterRepository = canonicalChapters,
+                    evidenceRepository = evidence,
+                    mutationGate = mutationGate,
+                    diagnostics = diagnostics,
+                ),
+                chapters = canonicalChapters,
+                sourceMappings = mappings,
             ),
+            canonicalChapterRepository = canonicalChapters,
         ).execute(canonicalTitleId, mappingId)
         suspend fun seedInformationalBinding(source: FixtureHttpSource): ContentBinding {
             val mangaId = 8000L

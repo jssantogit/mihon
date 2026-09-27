@@ -769,7 +769,7 @@ class ReconcileChapterEvidenceTest {
                 fixture.evidenceRepository.getByProducerExternalKey(
                     ProducerKind.ADDON,
                     "mihon-legacy:title:" + sourceId,
-                    "/reused-key",
+                    "${sourceId}:/reused-key",
                 )?.mappedCanonicalChapterId
             mappedChapter(101L) shouldBe volumeOne.id
             mappedChapter(202L) shouldBe volumeOne.id

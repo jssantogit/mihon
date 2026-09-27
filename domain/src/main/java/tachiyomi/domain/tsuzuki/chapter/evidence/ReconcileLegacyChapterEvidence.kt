@@ -14,8 +14,7 @@ import java.util.UUID
  * authoritative for chapter identity; the operational variants are derived
  * from *persisted* mapped evidence inside the same SQLDelight transaction.
  *
- * Not wired into RefreshCanonicalChapters or the Reader until behavioral
- * equivalence and Android process-restart checks are complete.
+ * Used by RefreshCanonicalChapters for materialized Mihon Reader mappings.
  */
 @Inject
 class ReconcileLegacyChapterEvidence(
@@ -51,10 +50,11 @@ class ReconcileLegacyChapterEvidence(
             adapter.adapt(inventory, observedAt).onEach { observation ->
                 val key = requireNotNull(observation.externalChapterKey)
                 val identity = observation.producerId to key
+                val sourceKey = key.substringAfter(':')
                 check(
                     snapshotsByEvidenceKey.putIfAbsent(
                         identity,
-                        inventory to firstBySourceKey.getValue(key),
+                        inventory to firstBySourceKey.getValue(sourceKey),
                     ) == null,
                 ) { "Duplicate source evidence identity in a legacy reconciliation batch" }
             }

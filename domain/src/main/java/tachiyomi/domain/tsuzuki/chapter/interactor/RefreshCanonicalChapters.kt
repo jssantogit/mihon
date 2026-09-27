@@ -4,51 +4,39 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileLegacyChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
+import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
+import kotlin.time.Clock
 
 /**
- * Legacy compatibility path for Mihon source inventories.
- *
- * New canonical detail and Library update flows must use RefreshChapterEvidence,
- * where Integrations provide editorial evidence and Add-ons may submit provisional
- * evidence. This class remains only for callers that still operate on materialized
- * Mihon source mappings.
+ * Compatibility entrypoint for Reader and targeted refresh flows backed by
+ * materialized Mihon mappings. Canonical identity and operational variants are
+ * committed together through the chapter evidence reconciler.
  */
 class RefreshCanonicalChapters internal constructor(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
     private val chapterInventoryGateway: ChapterInventoryGateway,
-    private val reconcileChapterInventory: ReconcileChapterInventory,
-    private val reconcileLegacyChapterEvidence: ReconcileLegacyChapterEvidence?,
-    @Suppress("unused") private val constructorDiscriminator: Boolean,
+    private val reconcileLegacyChapterEvidence: ReconcileLegacyChapterEvidence,
+    private val canonicalChapterRepository: CanonicalChapterRepository,
+    private val clock: () -> Long,
 ) {
 
     @Inject
     constructor(
         sourceTitleMappingRepository: SourceTitleMappingRepository,
         chapterInventoryGateway: ChapterInventoryGateway,
-        reconcileChapterInventory: ReconcileChapterInventory,
         reconcileLegacyChapterEvidence: ReconcileLegacyChapterEvidence,
+        canonicalChapterRepository: CanonicalChapterRepository,
     ) : this(
-        sourceTitleMappingRepository,
-        chapterInventoryGateway,
-        reconcileChapterInventory,
-        reconcileLegacyChapterEvidence as ReconcileLegacyChapterEvidence?,
-        true,
-    )
-
-    constructor(
-        sourceTitleMappingRepository: SourceTitleMappingRepository,
-        chapterInventoryGateway: ChapterInventoryGateway,
-        reconcileChapterInventory: ReconcileChapterInventory,
-    ) : this(
-        sourceTitleMappingRepository,
-        chapterInventoryGateway,
-        reconcileChapterInventory,
-        null,
-        false,
+        sourceTitleMappingRepository = sourceTitleMappingRepository,
+        chapterInventoryGateway = chapterInventoryGateway,
+        reconcileLegacyChapterEvidence = reconcileLegacyChapterEvidence,
+        canonicalChapterRepository = canonicalChapterRepository,
+        clock = { Clock.System.now().toEpochMilliseconds() },
     )
 
     suspend fun execute(
@@ -68,10 +56,7 @@ class RefreshCanonicalChapters internal constructor(
             // Fetch every requested source before writing any canonical state.
             // The resulting inventories are then reconciled in one atomic batch.
             val inventories = selected.map { mapping ->
-                val inventory = chapterInventoryGateway.fetch(mapping).getOrElse { error ->
-                    if (error is CancellationException) throw error
-                    throw error
-                }
+                val inventory = chapterInventoryGateway.fetch(mapping).getOrThrow()
                 require(inventory.canonicalTitleId.isBlank() || inventory.canonicalTitleId == canonicalTitleId) {
                     "Inventory title ${inventory.canonicalTitleId} does not match $canonicalTitleId"
                 }
@@ -84,7 +69,19 @@ class RefreshCanonicalChapters internal constructor(
                 )
             }
 
-            Result.success(reconcileChapterInventory.execute(inventories))
+            val variants = reconcileLegacyChapterEvidence.execute(inventories, clock())
+            val canonicalChapters = variants
+                .map(ChapterVariant::canonicalChapterId)
+                .distinct()
+                .mapNotNull(canonicalChapterRepository::getById)
+            Result.success(
+                ChapterReconciliationReport(
+                    canonicalTitleId = canonicalTitleId,
+                    canonicalChapters = canonicalChapters,
+                    variants = variants,
+                    sourceMappingIds = inventories.mapTo(linkedSetOf()) { it.sourceMappingId },
+                ),
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {

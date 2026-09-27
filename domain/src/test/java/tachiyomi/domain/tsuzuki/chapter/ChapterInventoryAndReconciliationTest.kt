@@ -18,7 +18,9 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnost
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.LegacyInventoryEvidenceAdapter
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
@@ -282,7 +284,7 @@ class ChapterInventoryAndReconciliationTest {
         )
         repository.failBatch = true
 
-        val refresh = RefreshCanonicalChapters(mappings, gateway, reconciler(repository))
+        val refresh = refresh(mappings, gateway, repository)
         refresh.execute("title-1", mappingIds = listOf("mapping-1", "mapping-2")).isFailure shouldBe true
 
         repository.upsertBatchCalls shouldBe 1
@@ -294,10 +296,10 @@ class ChapterInventoryAndReconciliationTest {
     fun `source failure leaves persisted state intact and cancellation propagates`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val gateway = FakeChapterInventoryGateway()
-        val refresh = RefreshCanonicalChapters(
+        val refresh = refresh(
             sourceTitleMappingRepository = FakeSourceTitleMappingRepository(mapping("mapping-1", true)),
             chapterInventoryGateway = gateway,
-            reconcileChapterInventory = reconciler(repository),
+            canonicalChapterRepository = repository,
         )
 
         gateway.result = Result.success(inventory("mapping-1", 1L, "Chapter 1", "/one"))
@@ -328,14 +330,13 @@ class ChapterInventoryAndReconciliationTest {
             "mapping-2" to inventory("mapping-2", 2L, "Chapter 2"),
             "mapping-3" to inventory("mapping-3", 3L, "Chapter 3"),
         )
-        val refresh = RefreshCanonicalChapters(mappings, gateway, reconciler(repository))
+        val refresh = refresh(mappings, gateway, repository)
 
         refresh.execute("title-1").getOrThrow().sourceMappingIds shouldBe setOf("mapping-2")
-        val callsAfterDefault = repository.upsertBatchCalls
 
         refresh.execute("title-1", mappingIds = listOf("mapping-1", "mapping-3"))
             .getOrThrow().sourceMappingIds shouldBe setOf("mapping-1", "mapping-3")
-        repository.upsertBatchCalls shouldBe callsAfterDefault + 1
+        gateway.requestedMappingIds shouldBe listOf("mapping-2", "mapping-1", "mapping-3")
     }
 
     @Test
@@ -350,7 +351,7 @@ class ChapterInventoryAndReconciliationTest {
         gateway.inventories = mapOf(
             "mapping-2" to inventory("mapping-2", 2L, "Chapter 2"),
         )
-        val refresh = RefreshCanonicalChapters(mappings, gateway, reconciler(repository))
+        val refresh = refresh(mappings, gateway, repository)
 
         refresh.execute("title-1").getOrThrow().sourceMappingIds shouldBe setOf("mapping-2")
         gateway.requestedMappingIds shouldContainExactly listOf("mapping-2")
@@ -373,9 +374,7 @@ class ChapterInventoryAndReconciliationTest {
                 ),
             )
         }
-        val legacy = mockk<ReconcileChapterInventory>()
-        coEvery { legacy.execute(any<List<SourceChapterInventory>>()) } throws
-            AssertionError("production refresh must not call the legacy canonical writer")
+        repository.upsert(canonicalChapter("chapter-cutover", volume = null).copy(displayNumber = "4", baseNumber = 4))
         val staged = mockk<ReconcileLegacyChapterEvidence>()
         coEvery { staged.execute(any(), any()) } returns
             listOf(
@@ -400,29 +399,25 @@ class ChapterInventoryAndReconciliationTest {
                     updatedAt = 100L,
                 ),
             )
-        val refresh = RefreshCanonicalChapters(mappings, gateway, legacy, staged)
+        val refresh = RefreshCanonicalChapters(mappings, gateway, staged, repository)
 
-        val result = refresh.execute("title-1", mappingId = "mapping-1").getOrThrow()
+        val report = refresh.execute("title-1", mappingId = "mapping-1").getOrThrow()
 
         result.sourceMappingIds shouldBe setOf("mapping-1")
         io.mockk.coVerify(exactly = 1) { staged.execute(any(), any()) }
-        io.mockk.coVerify(exactly = 0) { legacy.execute(any<List<SourceChapterInventory>>()) }
-        repository.variants shouldBe emptyMap()
+        report.canonicalChapters.map { it.id } shouldBe listOf("chapter-cutover")
+        report.variants.map { it.id } shouldBe listOf("variant-cutover")
     }
 
     @Test
     fun `legacy refresh must wait for an active shared evidence mutation gate`() = runTest {
         val repository = FakeCanonicalChapterRepository()
         val sharedGate = ChapterMutationGate()
-        val legacy = ReconcileChapterInventory(
-            parser = ParseCanonicalChapterLabel(),
-            volumeParser = ParseCanonicalChapterVolume(),
-            canonicalChapterRepository = repository,
-            idFactory = { "chapter-serialization" },
-            variantIdFactory = { "variant-serialization" },
-            clock = { 100L },
-            mutationGate = sharedGate,
-        )
+        val mappings = FakeSourceTitleMappingRepository(mapping("mapping-1", materialized = true))
+        val gateway = FakeChapterInventoryGateway().apply {
+            result = Result.success(inventory("mapping-1", 1L, "Chapter 4", "/chapter/4"))
+        }
+        val legacyRefresh = refresh(mappings, gateway, repository, sharedGate)
         val gateEntered = CompletableDeferred<Unit>()
         val releaseGate = CompletableDeferred<Unit>()
         val competingReconciliation = async {
@@ -432,19 +427,17 @@ class ChapterInventoryAndReconciliationTest {
             }
         }
         gateEntered.await()
-        val legacyRefresh = async {
-            legacy.execute(inventory("mapping-1", 1L, "Chapter 4"))
-        }
+        val pendingRefresh = async { legacyRefresh.execute("title-1", mappingId = "mapping-1") }
         try {
             runCurrent()
-            legacyRefresh.isCompleted shouldBe false
+            pendingRefresh.isCompleted shouldBe false
             repository.chapters shouldBe emptyMap()
             repository.variants shouldBe emptyMap()
         } finally {
             releaseGate.complete(Unit)
         }
         competingReconciliation.await()
-        legacyRefresh.await()
+        pendingRefresh.await().isSuccess shouldBe true
         repository.getByCanonicalTitleId("title-1").single().displayNumber shouldBe "4"
         repository.getVariantsBySourceMappingId("mapping-1").size shouldBe 1
     }
@@ -458,7 +451,7 @@ class ChapterInventoryAndReconciliationTest {
             var blockFirstLegacyWrite = true
             val repository = object : FakeCanonicalChapterRepository() {
                 override suspend fun upsertBatch(chapters: List<CanonicalChapter>, variants: List<ChapterVariant>) {
-                    if (blockFirstLegacyWrite && variants.isNotEmpty()) {
+                    if (blockFirstLegacyWrite && (chapters.isNotEmpty() || variants.isNotEmpty())) {
                         blockFirstLegacyWrite = false
                         legacyInsideWrite.complete(Unit)
                         finishLegacyWrite.await()
@@ -489,12 +482,6 @@ class ChapterInventoryAndReconciliationTest {
                         evidenceRecords[evidence.id] = it
                     }
             }
-            val legacyReconciler = ReconcileChapterInventory(
-                ParseCanonicalChapterLabel(),
-                ParseCanonicalChapterVolume(),
-                repository,
-                sharedGate,
-            )
             val editorialReconciler = ReconcileChapterEvidence(
                 ParseCanonicalChapterLabel(),
                 repository,
@@ -502,15 +489,30 @@ class ChapterInventoryAndReconciliationTest {
                 sharedGate,
                 NoOpChapterInventoryDiagnostics,
             )
-            val sourceInventory = inventory("mapping-1", 1L, "Vol. 1 Ch. 4", "/chapter/4")
+            val sourceMapping = mapping("mapping-1", materialized = true)
+            val sourceMappings = FakeSourceTitleMappingRepository(sourceMapping)
+            val baseInventory = inventory("mapping-1", 1L, "Vol. 1 Ch. 4", "/chapter/4")
+            val sourceInventory = baseInventory.copy(
+                mihonMangaId = sourceMapping.mihonMangaId,
+                sourceUrl = sourceMapping.sourceUrl,
+                chapters = baseInventory.chapters.map { it.copy(mihonMangaId = sourceMapping.mihonMangaId) },
+            )
             val gateway = object : ChapterInventoryGateway {
                 override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> =
                     Result.success(sourceInventory)
             }
+            val legacyReconciler = ReconcileLegacyChapterEvidence(
+                adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                reconciler = editorialReconciler,
+                chapters = repository,
+                sourceMappings = sourceMappings,
+            )
             val legacyRefresh = RefreshCanonicalChapters(
-                FakeSourceTitleMappingRepository(mapping("mapping-1", materialized = true)),
+                sourceMappings,
                 gateway,
                 legacyReconciler,
+                repository,
+                { 100L },
             )
             val editorial = object : ChapterEvidenceProvider {
                 override val producerId = "editorial"
@@ -557,7 +559,8 @@ class ChapterInventoryAndReconciliationTest {
             val canonicalId = repository.getByCanonicalTitleId("title-1").single().id
             val firstVariant = requireNotNull(repository.getVariantBySourceIdentity(1L, "/chapter/4"))
             firstVariant.canonicalChapterId shouldBe canonicalId
-            evidenceRecords.values.single().mappedCanonicalChapterId shouldBe canonicalId
+            evidenceRecords.values.size shouldBe 2
+            evidenceRecords.values.map { it.mappedCanonicalChapterId }.toSet() shouldBe setOf(canonicalId)
             repository.getByCanonicalTitleId("title-1").single().confirmation shouldBe
                 CanonicalChapterConfirmation.CONFIRMED
 
@@ -867,6 +870,54 @@ class ChapterInventoryAndReconciliationTest {
         clock = { 100L },
     )
 
+    private fun refresh(
+        sourceTitleMappingRepository: FakeSourceTitleMappingRepository,
+        chapterInventoryGateway: ChapterInventoryGateway,
+        canonicalChapterRepository: FakeCanonicalChapterRepository,
+        mutationGate: ChapterMutationGate = ChapterMutationGate(),
+        evidenceRepository: FakeChapterEvidenceRepository = FakeChapterEvidenceRepository(),
+    ): RefreshCanonicalChapters {
+        val staged = ReconcileLegacyChapterEvidence(
+            adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+            reconciler = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = canonicalChapterRepository,
+                evidenceRepository = evidenceRepository,
+                idFactory = object : () -> String {
+                    private var next = 0
+                    override fun invoke(): String = "chapter-${++next}"
+                },
+                clock = { 100L },
+                mutationGate = mutationGate,
+            ),
+            chapters = canonicalChapterRepository,
+            sourceMappings = sourceTitleMappingRepository,
+        )
+        val materializingGateway = object : ChapterInventoryGateway {
+            override suspend fun fetch(mapping: SourceTitleMapping): Result<SourceChapterInventory> =
+                chapterInventoryGateway.fetch(mapping).map { inventory ->
+                    inventory.copy(
+                        mihonMangaId = inventory.mihonMangaId ?: mapping.mihonMangaId,
+                        sourceUrl = inventory.sourceUrl.ifBlank { mapping.sourceUrl },
+                        chapters = inventory.chapters.map { snapshot ->
+                            if (snapshot.mihonMangaId == null) {
+                                snapshot.copy(mihonMangaId = mapping.mihonMangaId)
+                            } else {
+                                snapshot
+                            }
+                        },
+                    )
+                }
+        }
+        return RefreshCanonicalChapters(
+            sourceTitleMappingRepository = sourceTitleMappingRepository,
+            chapterInventoryGateway = materializingGateway,
+            reconcileLegacyChapterEvidence = staged,
+            canonicalChapterRepository = canonicalChapterRepository,
+            clock = { 100L },
+        )
+    }
+
     private fun inventory(
         mappingId: String,
         sourceId: Long,
@@ -1016,5 +1067,42 @@ class ChapterInventoryAndReconciliationTest {
 
         override suspend fun setPreferredForTitle(canonicalTitleId: String, mappingId: String?, updatedAt: Long) =
             Unit
+    }
+
+    private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {
+        private val records = mutableListOf<PersistedChapterEvidence>()
+
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence> =
+            records.filter { it.evidence.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun getByProducerExternalKey(
+            producerKind: ProducerKind,
+            producerId: String,
+            externalChapterKey: String,
+        ): PersistedChapterEvidence? = records.firstOrNull {
+            it.evidence.producerKind == producerKind &&
+                it.evidence.producerId == producerId &&
+                it.evidence.externalChapterKey == externalChapterKey
+        }
+
+        override suspend fun upsert(
+            evidence: ChapterEvidence,
+            mappedCanonicalChapterId: String?,
+        ): PersistedChapterEvidence = persist(evidence, mappedCanonicalChapterId)
+
+        override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>): List<PersistedChapterEvidence> =
+            writes.map { persist(it.evidence, it.mappedCanonicalChapterId) }
+
+        private fun persist(evidence: ChapterEvidence, mappedCanonicalChapterId: String?): PersistedChapterEvidence {
+            val index = records.indexOfFirst {
+                it.evidence.producerKind == evidence.producerKind &&
+                    it.evidence.producerId == evidence.producerId &&
+                    it.evidence.externalChapterKey == evidence.externalChapterKey
+            }
+            val stableEvidence = evidence.copy(id = records.getOrNull(index)?.evidence?.id ?: evidence.id)
+            val persisted = PersistedChapterEvidence(stableEvidence, mappedCanonicalChapterId)
+            if (index >= 0) records[index] = persisted else records += persisted
+            return persisted
+        }
     }
 }
