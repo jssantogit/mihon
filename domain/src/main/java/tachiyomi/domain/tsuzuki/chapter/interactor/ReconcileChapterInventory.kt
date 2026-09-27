@@ -120,7 +120,7 @@ class ReconcileChapterInventory internal constructor(
         // Production DI always supplies this repository. Legacy unit tests may
         // use the compatibility constructor because they exercise the writer
         // without a persisted evidence boundary.
-        val latestAddonEvidenceByExternalKey = chapterEvidenceRepository
+        val addonEvidenceByExternalKey = chapterEvidenceRepository
             ?.getByCanonicalTitleId(canonicalTitleId)
             .orEmpty()
             .asSequence()
@@ -130,7 +130,6 @@ class ReconcileChapterInventory internal constructor(
                     !it.evidence.externalChapterKey.isNullOrBlank()
             }
             .groupBy { it.evidence.externalChapterKey!! }
-            .mapValues { (_, candidates) -> candidates.maxBy { it.evidence.observedAt } }
 
         for (inventory in inventories) {
             require(inventory.sourceMappingId.isNotBlank()) { "Source mapping id is required" }
@@ -153,7 +152,7 @@ class ReconcileChapterInventory internal constructor(
                         inventory = inventory,
                         snapshot = snapshot,
                         sourceChapterId = sourceChapterId,
-                        latestEvidenceByExternalKey = latestAddonEvidenceByExternalKey,
+                        evidenceByExternalKey = addonEvidenceByExternalKey,
                     )
                 ) {
                     continue
@@ -279,7 +278,7 @@ class ReconcileChapterInventory internal constructor(
         inventory: SourceChapterInventory,
         snapshot: SourceChapterSnapshot,
         sourceChapterId: String,
-        latestEvidenceByExternalKey: Map<String, PersistedChapterEvidence>,
+        evidenceByExternalKey: Map<String, List<PersistedChapterEvidence>>,
     ): Boolean {
         if (chapterEvidenceRepository == null) return false
         val fetchStartedAtMillis = inventory.fetchStartedAtMillis
@@ -290,9 +289,13 @@ class ReconcileChapterInventory internal constructor(
         // pair above and this key matches the source id + chapter URL exactly.
         // Evidence does not persist SourceTitleMapping ids.
         val externalChapterKey = "${snapshot.sourceId}:$sourceChapterId"
-        val latestEvidence = latestEvidenceByExternalKey[externalChapterKey] ?: return false
-        if (latestEvidence.evidence.observedAt < fetchStartedAtMillis) return false
-        val mappedChapterId = latestEvidence.mappedCanonicalChapterId ?: return false
+        val candidates = evidenceByExternalKey[externalChapterKey] ?: return false
+        val latestObservedAt = candidates.maxOf { it.evidence.observedAt }
+        if (latestObservedAt < fetchStartedAtMillis) return false
+        val latestEvidence = candidates.filter { it.evidence.observedAt == latestObservedAt }
+        val selectedEvidence = latestEvidence.first()
+        if (latestEvidence.drop(1).any { !samePersistedObservation(selectedEvidence, it) }) return true
+        val mappedChapterId = selectedEvidence.mappedCanonicalChapterId ?: return true
         val mappedChapter = canonicalChapterRepository.getById(mappedChapterId)
             ?: error("Newer chapter evidence maps to missing chapter $mappedChapterId")
         require(mappedChapter.canonicalTitleId == inventory.canonicalTitleId) {
@@ -310,6 +313,13 @@ class ReconcileChapterInventory internal constructor(
         // older snapshot is equivalent to the newer mapped observation.
         return volumeParser.execute(snapshot.rawName) != mappedChapter.volume
     }
+
+    private fun samePersistedObservation(
+        first: PersistedChapterEvidence,
+        second: PersistedChapterEvidence,
+    ): Boolean = first.evidence.copy(id = "") == second.evidence.copy(id = "") &&
+        first.mappedCanonicalChapterId == second.mappedCanonicalChapterId &&
+        first.rawMetadata.contentEquals(second.rawMetadata)
 
     suspend operator fun invoke(inventory: SourceChapterInventory): ChapterReconciliationReport = execute(inventory)
 
