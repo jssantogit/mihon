@@ -17,16 +17,28 @@ internal object CanonicalChapterCandidateResolver {
         candidates: List<CanonicalChapter>,
         observedVolume: Int?,
         hasExplicitVolumePrefix: Boolean = false,
+        allowUnqualifiedCandidateCreation: Boolean = false,
     ): CanonicalChapterCandidateResolution {
         if (candidates.isEmpty()) return CanonicalChapterCandidateResolution.NoMatch
 
         if (observedVolume == null) {
-            if (hasExplicitVolumePrefix || candidates.any { it.volume != null }) {
+            if (hasExplicitVolumePrefix) {
                 return CanonicalChapterCandidateResolution.Ambiguous
             }
-            return candidates.singleOrNull()
-                ?.let(CanonicalChapterCandidateResolution::UniqueMatch)
-                ?: CanonicalChapterCandidateResolution.Ambiguous
+
+            val unqualifiedCandidates = candidates.filter { it.volume == null }
+            if (unqualifiedCandidates.size > 1) return CanonicalChapterCandidateResolution.Ambiguous
+            if (unqualifiedCandidates.size == 1) {
+                return CanonicalChapterCandidateResolution.UniqueMatch(unqualifiedCandidates.single())
+            }
+            // An unqualified source observation cannot reuse a volume-specific
+            // chapter. A reliable Add-on observation may instead establish a
+            // separate unqualified chapter; other evidence remains unresolved.
+            return if (allowUnqualifiedCandidateCreation) {
+                CanonicalChapterCandidateResolution.NoMatch
+            } else {
+                CanonicalChapterCandidateResolution.Ambiguous
+            }
         }
 
         val matchingVolume = candidates.filter { it.volume == observedVolume }

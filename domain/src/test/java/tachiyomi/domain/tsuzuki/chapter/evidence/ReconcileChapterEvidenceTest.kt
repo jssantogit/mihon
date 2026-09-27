@@ -539,7 +539,7 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `unmapped observation without volume does not join the only explicit volume candidate`() = runTest {
+    fun `reliable unqualified add-on observation stays separate from explicit volume candidate`() = runTest {
         val fixture = fixture()
         val volumeOne = fixture.addonEvidence(
             id = "volume-one-observation",
@@ -558,13 +558,54 @@ class ReconcileChapterEvidenceTest {
         fixture.reconciler.execute("title", listOf(volumeOne, unknownVolume))
 
         val chapters = fixture.chapterRepository.getByCanonicalTitleId("title")
-        chapters shouldHaveSize 1
-        chapters.single().volume shouldBe 1
+        chapters shouldHaveSize 2
+        chapters.single { it.id == "chapter-1" }.volume shouldBe 1
+        val unqualifiedChapter = chapters.single { it.id != "chapter-1" }
+        unqualifiedChapter.volume shouldBe null
+        unqualifiedChapter.baseNumber shouldBe 37
         fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 2
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "source-two",
             externalChapterKey = "source-two-37",
+        )?.mappedCanonicalChapterId shouldBe unqualifiedChapter.id
+    }
+
+    @Test
+    fun `unqualified add-on evidence stays unmapped when multiple unqualified candidates exist`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-first"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-second"))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.addonEvidence(rawLabel = "Chapter 4", externalKey = "ambiguous-chapter-4")),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-first", "chapter-second")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "ambiguous-chapter-4",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `editorial unqualified evidence stays unmapped beside an explicit volume candidate`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-volume-1", volume = 1))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.editorialEvidence(rawLabel = "Chapter 4", externalKey = "editorial-chapter-4")),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf("chapter-volume-1")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.INTEGRATION,
+            producerId = "mal",
+            externalChapterKey = "editorial-chapter-4",
         )?.mappedCanonicalChapterId shouldBe null
     }
 

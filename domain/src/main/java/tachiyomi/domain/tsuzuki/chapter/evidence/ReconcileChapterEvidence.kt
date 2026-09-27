@@ -292,6 +292,9 @@ class ReconcileChapterEvidence internal constructor(
                     observedVolume = observation.volume,
                     hasExplicitVolumePrefix = observation.volume == null &&
                         volumeParser.hasExplicitVolumePrefix(observation.rawLabel),
+                    allowUnqualifiedCandidateCreation =
+                        observation.producerKind == ProducerKind.ADDON &&
+                            observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL,
                 )
             } else {
                 CanonicalChapterCandidateResolution.NoMatch
