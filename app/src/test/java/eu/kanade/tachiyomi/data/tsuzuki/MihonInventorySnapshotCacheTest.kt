@@ -118,27 +118,57 @@ class MihonInventorySnapshotCacheTest {
     }
 
     @Test
-    fun `invalidated in-flight inventory cannot overwrite a fresh snapshot`() = runTest {
+    fun `invalidated in-flight inventory fails its original caller and cannot overwrite a fresh snapshot`() = runTest {
         val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
         val releaseOldFetch = CompletableDeferred<Unit>()
         var requests = 0
         val fetch: suspend () -> Result<SourceChapterInventory> = {
             requests++
+            val startedAt = if (requests == 1) 100L else 200L
             if (requests == 1) releaseOldFetch.await()
-            Result.success(inventory)
+            Result.success(inventory.copy(fetchStartedAtMillis = startedAt))
         }
 
         val obsolete = async { cache.getOrFetch(key, fetch = fetch) }
         yield()
         requests shouldBe 1
 
+        // A binding change invalidates this title while the original network
+        // request is still in progress. The original caller must fail closed.
         cache.invalidateTitle("title")
-        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 200L
         requests shouldBe 2
 
         releaseOldFetch.complete(Unit)
-        obsolete.await().getOrThrow() shouldBe inventory
-        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
+        obsolete.await().isFailure shouldBe true
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 200L
+        requests shouldBe 2
+    }
+
+    @Test
+    fun `invalidating a shared in-flight lookup fails all earlier waiters but not the fresh request`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val releaseOldFetch = CompletableDeferred<Unit>()
+        var requests = 0
+        val fetch: suspend () -> Result<SourceChapterInventory> = {
+            requests++
+            if (requests == 1) releaseOldFetch.await()
+            Result.success(inventory.copy(fetchStartedAtMillis = requests * 100L))
+        }
+
+        val original = async { cache.getOrFetch(key, fetch = fetch) }
+        yield()
+        val joined = async { cache.getOrFetch(key, fetch = fetch) }
+        yield()
+        requests shouldBe 1
+
+        cache.invalidateTitle("title")
+        val replacement = cache.getOrFetch(key, fetch = fetch).getOrThrow()
+        replacement.fetchStartedAtMillis shouldBe 200L
+        releaseOldFetch.complete(Unit)
+        original.await().isFailure shouldBe true
+        joined.await().isFailure shouldBe true
+        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe replacement
         requests shouldBe 2
     }
 

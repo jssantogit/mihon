@@ -12,9 +12,12 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
@@ -187,6 +190,43 @@ class MihonChapterInventoryGatewayTest {
         val startedAt = requireNotNull(inventory.fetchStartedAtMillis)
         (startedAt > 0L) shouldBe true
         (startedAt <= sourceEnteredAt) shouldBe true
+    }
+
+    @Test
+    fun `gateway refuses invalidated in-flight provider results and retains newer inventory`() = runTest {
+        val releaseOld = CompletableDeferred<Unit>()
+        var fetchCount = 0
+        val source = TestSource(7L) {
+            fetchCount++
+            val request = fetchCount
+            if (request == 1) releaseOld.await()
+            listOf(
+                chapter("/chapter/$request", "Chapter $request", request.toFloat(), null, request.toLong()),
+            )
+        }
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            inventoryCache = cache,
+        )
+
+        val original = async { gateway.fetch(mapping(), refresh = true) }
+        yield()
+        val joined = async { gateway.fetch(mapping()) }
+        yield()
+        fetchCount shouldBe 1
+
+        cache.invalidateTitle("title-1")
+        val fresh = gateway.fetch(mapping(), refresh = true).getOrThrow()
+        fresh.chapters.map { it.sourceChapterId } shouldContainExactly listOf("/chapter/2")
+        releaseOld.complete(Unit)
+
+        original.await().isFailure shouldBe true
+        joined.await().isFailure shouldBe true
+        gateway.fetch(mapping()).getOrThrow() shouldBe fresh
+        fetchCount shouldBe 2
     }
 
     @Test

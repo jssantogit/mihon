@@ -89,10 +89,12 @@ class MihonInventorySnapshotCache internal constructor(
                             eldest.remove()
                         }
                     }
+                    // Publish under the same lock as invalidation. A detached
+                    // fetch must return the invalidation result, not stale data.
+                    pending.complete(result)
                 }
             }
-            pending.complete(result)
-            return result
+            return pending.await()
         } catch (cancelled: CancellationException) {
             mutex.withLock {
                 if (inFlight[key] === pending) inFlight.remove(key)
@@ -105,10 +107,16 @@ class MihonInventorySnapshotCache internal constructor(
     suspend fun invalidateTitle(canonicalTitleId: String) {
         mutex.withLock {
             entries.keys.removeAll { it.canonicalTitleId == canonicalTitleId }
-            // Detach obsolete fetches as well: an older in-flight request may
-            // still finish, but must not repopulate the cache or block a fresh
-            // request after the title's binding/evidence graph changes.
+            // Invalidate both owners and joiners. Detaching alone prevents
+            // cache poisoning, but still delivers a stale result to callers.
+            // Complete under the lock to order invalidation against publication.
+            val obsolete = inFlight.filterKeys { it.canonicalTitleId == canonicalTitleId }.values.toList()
             inFlight.keys.removeAll { it.canonicalTitleId == canonicalTitleId }
+            obsolete.forEach { pending ->
+                pending.complete(
+                    Result.failure(IllegalStateException("Chapter inventory invalidated")),
+                )
+            }
         }
     }
 
