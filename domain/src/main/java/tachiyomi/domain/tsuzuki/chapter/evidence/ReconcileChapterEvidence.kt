@@ -65,6 +65,20 @@ class ReconcileChapterEvidence internal constructor(
         canonicalTitleId: String,
         evidence: List<ChapterEvidence>,
     ) {
+        executeAndProject(canonicalTitleId, evidence) {}
+    }
+
+    /**
+     * Runs an optional operational projection after the canonical/evidence writes
+     * but before the same persistence transaction commits. A projection failure
+     * rolls back all three kinds of rows. The projection may only use the
+     * persisted result, never infer a chapter ID from a raw source label.
+     */
+    suspend fun <T> executeAndProject(
+        canonicalTitleId: String,
+        evidence: List<ChapterEvidence>,
+        project: suspend (List<PersistedChapterEvidence>) -> T,
+    ): T {
         require(canonicalTitleId.isNotBlank()) { "Canonical title id is required" }
         require(evidence.all { it.canonicalTitleId == canonicalTitleId }) {
             "All chapter evidence must belong to canonical title $canonicalTitleId"
@@ -81,11 +95,11 @@ class ReconcileChapterEvidence internal constructor(
                     discarded = 0,
                 ),
             )
-            return
+            return project(emptyList())
         }
-        mutationGate.withLock {
+        return mutationGate.withLock {
             evidenceRepository.withTransaction {
-                reconcileUncontended(canonicalTitleId, evidence)
+                project(reconcileUncontended(canonicalTitleId, evidence))
             }
         }
     }
@@ -93,7 +107,7 @@ class ReconcileChapterEvidence internal constructor(
     private suspend fun reconcileUncontended(
         canonicalTitleId: String,
         evidence: List<ChapterEvidence>,
-    ) {
+    ): List<PersistedChapterEvidence> {
         val chapters = canonicalChapterRepository
             .getByCanonicalTitleId(canonicalTitleId)
             .associateByTo(linkedMapOf(), CanonicalChapter::id)
@@ -336,7 +350,8 @@ class ReconcileChapterEvidence internal constructor(
         }
 
         canonicalChapterRepository.upsertBatch(chapterUpserts.values.toList(), emptyList())
-        evidenceRepository.upsertBatch(evidenceUpserts).forEach { persisted ->
+        val persistedWrites = evidenceRepository.upsertBatch(evidenceUpserts)
+        persistedWrites.forEach { persisted ->
             persistedEvidence[persisted.evidence.id] = persisted
         }
 
@@ -386,6 +401,7 @@ class ReconcileChapterEvidence internal constructor(
                 },
             ),
         )
+        return persistedWrites
     }
 
     private fun MutableMap<ChapterInventoryDiagnosticReason, Int>.increment(
