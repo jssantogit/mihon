@@ -141,8 +141,8 @@ class MihonChapterProbeProvider internal constructor(
                     continue
                 }
                 successfulInventoryCount++
-                // Preserve provider fetch-start through cache replay. Inventing a new
-                // observation time here lets a delayed response appear newer than it is.
+                // Cache replay keeps the gateway's fetch-start. Older inventories
+                // without provenance use the oldest timestamp, not processing time.
                 val observedAt = inventory.fetchStartedAtMillis ?: 0L
                 received += inventory.chapters.size
                 sourceIds += inventory.sourceId

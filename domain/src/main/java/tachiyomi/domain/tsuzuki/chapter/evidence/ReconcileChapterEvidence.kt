@@ -169,10 +169,10 @@ class ReconcileChapterEvidence internal constructor(
                 // Equal starts do not establish ordering, so only exact replays are safe.
                 // Editorial Integration evidence can use caller timestamps and is not
                 // subject to this source-inventory rule.
-                if (
+                val hasStableAddonSourceIdentity =
                     observation.producerKind == ProducerKind.ADDON &&
                     !observation.externalChapterKey.isNullOrBlank()
-                ) {
+                if (hasStableAddonSourceIdentity) {
                     require(
                         observation.observedAt != previousObservation.observedAt ||
                             observation.copy(id = previousObservation.id) == previousObservation,
