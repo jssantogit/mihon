@@ -1,11 +1,15 @@
 package tachiyomi.domain.tsuzuki.chapter.interactor
 
 import dev.zacsweers.metro.Inject
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
+import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterReconciliationReport
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import java.util.UUID
 import kotlin.time.Clock
@@ -24,10 +28,29 @@ class ReconcileChapterInventory internal constructor(
     private val variantIdFactory: () -> String = idFactory,
     private val clock: () -> Long,
     private val mutationGate: ChapterMutationGate = ChapterMutationGate(),
+    private val chapterEvidenceRepository: ChapterEvidenceRepository? = null,
 ) {
 
     @Inject
     constructor(
+        parser: ParseCanonicalChapterLabel,
+        volumeParser: ParseCanonicalChapterVolume,
+        canonicalChapterRepository: CanonicalChapterRepository,
+        mutationGate: ChapterMutationGate,
+        chapterEvidenceRepository: ChapterEvidenceRepository,
+    ) : this(
+        parser = parser,
+        volumeParser = volumeParser,
+        canonicalChapterRepository = canonicalChapterRepository,
+        idFactory = { UUID.randomUUID().toString() },
+        variantIdFactory = { UUID.randomUUID().toString() },
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        mutationGate = mutationGate,
+        chapterEvidenceRepository = chapterEvidenceRepository,
+    )
+
+    /** Compatibility constructor for isolated domain tests without an evidence store. */
+    internal constructor(
         parser: ParseCanonicalChapterLabel,
         volumeParser: ParseCanonicalChapterVolume,
         canonicalChapterRepository: CanonicalChapterRepository,
@@ -37,14 +60,13 @@ class ReconcileChapterInventory internal constructor(
         volumeParser = volumeParser,
         canonicalChapterRepository = canonicalChapterRepository,
         idFactory = { UUID.randomUUID().toString() },
-        variantIdFactory = { UUID.randomUUID().toString() },
         clock = { Clock.System.now().toEpochMilliseconds() },
         mutationGate = mutationGate,
     )
 
     // Preserve manually constructed compatibility/test callers. AppScope
     // injection provides the *shared* gate to the annotated constructor.
-    constructor(
+    internal constructor(
         parser: ParseCanonicalChapterLabel,
         volumeParser: ParseCanonicalChapterVolume,
         canonicalChapterRepository: CanonicalChapterRepository,
@@ -95,6 +117,20 @@ class ReconcileChapterInventory internal constructor(
         }
 
         val chaptersToPersist = linkedMapOf<String, CanonicalChapter>()
+        // Production DI always supplies this repository. Legacy unit tests may
+        // use the compatibility constructor because they exercise the writer
+        // without a persisted evidence boundary.
+        val latestAddonEvidenceByExternalKey = chapterEvidenceRepository
+            ?.getByCanonicalTitleId(canonicalTitleId)
+            .orEmpty()
+            .asSequence()
+            .filter {
+                it.evidence.canonicalTitleId == canonicalTitleId &&
+                    it.evidence.producerKind == ProducerKind.ADDON &&
+                    !it.evidence.externalChapterKey.isNullOrBlank()
+            }
+            .groupBy { it.evidence.externalChapterKey!! }
+            .mapValues { (_, candidates) -> candidates.maxBy { it.evidence.observedAt } }
 
         for (inventory in inventories) {
             require(inventory.sourceMappingId.isNotBlank()) { "Source mapping id is required" }
@@ -112,6 +148,16 @@ class ReconcileChapterInventory internal constructor(
                 val sourceId = snapshot.sourceId
                 val sourceChapterId = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
                 require(sourceChapterId.isNotBlank()) { "Source chapter identity is required" }
+                if (
+                    isObsoleteConflictingObservation(
+                        inventory = inventory,
+                        snapshot = snapshot,
+                        sourceChapterId = sourceChapterId,
+                        latestEvidenceByExternalKey = latestAddonEvidenceByExternalKey,
+                    )
+                ) {
+                    continue
+                }
                 val sourceIdentity = sourceId to sourceChapterId
                 val associatedVariant = variantsBySourceIdentity[sourceIdentity]
                     ?: canonicalChapterRepository.getVariantBySourceIdentity(
@@ -227,6 +273,44 @@ class ReconcileChapterInventory internal constructor(
             sourceMappingIds = sourceMappingIds,
             createdCanonicalChapterIds = newChapterIds,
         )
+    }
+
+    private suspend fun isObsoleteConflictingObservation(
+        inventory: SourceChapterInventory,
+        snapshot: SourceChapterSnapshot,
+        sourceChapterId: String,
+        latestEvidenceByExternalKey: Map<String, PersistedChapterEvidence>,
+    ): Boolean {
+        if (chapterEvidenceRepository == null) return false
+        val fetchStartedAtMillis = inventory.fetchStartedAtMillis
+            ?: error("Production chapter inventory is missing its provider fetch timestamp")
+        require(inventory.sourceUrl.isNotBlank()) { "Production chapter inventory is missing its source URL" }
+        // The gateway validates the inventory title URL against its selected
+        // SourceTitleMapping. The writer validates the inventory/source mapping
+        // pair above and this key matches the source id + chapter URL exactly.
+        // Evidence does not persist SourceTitleMapping ids.
+        val externalChapterKey = "${snapshot.sourceId}:$sourceChapterId"
+        val latestEvidence = latestEvidenceByExternalKey[externalChapterKey] ?: return false
+        if (latestEvidence.evidence.observedAt < fetchStartedAtMillis) return false
+        val mappedChapterId = latestEvidence.mappedCanonicalChapterId ?: return false
+        val mappedChapter = canonicalChapterRepository.getById(mappedChapterId)
+            ?: error("Newer chapter evidence maps to missing chapter $mappedChapterId")
+        require(mappedChapter.canonicalTitleId == inventory.canonicalTitleId) {
+            "Newer chapter evidence maps to a chapter from another canonical title"
+        }
+
+        val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
+        val observedVolume = volumeParser.execute(snapshot.rawName)
+        val hasExplicitVolumePrefix = volumeParser.hasExplicitVolumePrefix(snapshot.rawName)
+        val changedIdentity = parsed.confidence >= 0.95 &&
+            parsed.identity.isSpecific &&
+            mappedChapter.identity.isSpecific &&
+            parsed.identity != mappedChapter.identity
+        val changedExplicitVolume = hasExplicitVolumePrefix &&
+            observedVolume != null &&
+            mappedChapter.volume != null &&
+            observedVolume != mappedChapter.volume
+        return changedIdentity || changedExplicitVolume
     }
 
     suspend operator fun invoke(inventory: SourceChapterInventory): ChapterReconciliationReport = execute(inventory)
