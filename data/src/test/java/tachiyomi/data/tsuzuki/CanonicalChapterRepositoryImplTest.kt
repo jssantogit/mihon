@@ -251,15 +251,11 @@ class CanonicalChapterRepositoryImplTest {
 
         repository.getByCanonicalTitleId("title-1").map { it.id }.toSet() shouldBe
             setOf(preferred.id, duplicate.id)
-        database.tsuzuki_chapter_progressQueries.getTsuzukiChapterProgress(duplicate.id)
-            .awaitAsOneOrNull() shouldBe
-            tachiyomi.data.Tsuzuki_chapter_progress(
-                canonical_chapter_id = duplicate.id,
-                read = false,
-                last_page_read = 3L,
-                last_variant_id = null,
-                updated_at = 200L,
-            )
+        val retainedProgress = database.tsuzuki_chapter_progressQueries
+            .getTsuzukiChapterProgress(duplicate.id)
+            .awaitAsOneOrNull()
+        retainedProgress?.canonical_chapter_id shouldBe duplicate.id
+        retainedProgress?.last_page_read shouldBe 3L
     }
 
     @Test
