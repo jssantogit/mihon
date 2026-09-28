@@ -109,9 +109,10 @@ class MihonContentProvider internal constructor(
                 canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId) + canonicalChapter
                 )
                 .associateBy(CanonicalChapter::id)
-            val mappedEvidence = chapterEvidenceRepository
+            val allPersistedEvidence = chapterEvidenceRepository
                 ?.getByCanonicalTitleId(canonicalTitleId)
                 .orEmpty()
+            val mappedEvidence = allPersistedEvidence
                 .filter { persisted ->
                     if (
                         persisted.evidence.producerKind != ProducerKind.ADDON ||
@@ -146,6 +147,22 @@ class MihonContentProvider internal constructor(
                         else -> true
                     }
                 }
+            if (
+                canonicalChapter.isRegularZero() &&
+                !hasIndependentRegularZeroSupport(
+                    evidence = allPersistedEvidence,
+                    canonicalChapter = canonicalChapter,
+                    currentAddonId = addonId,
+                )
+            ) {
+                recordProvider(
+                    canonicalTitleId,
+                    ChapterInventoryDiagnosticOutcome.NO_MATCH,
+                    ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH,
+                )
+                return Result.success(emptyList())
+            }
+
             val evidenceIdentities = mappedEvidence
                 .asSequence()
                 .mapNotNull { persisted ->
@@ -499,6 +516,39 @@ class MihonContentProvider internal constructor(
     private fun contentKey(snapshot: SourceChapterSnapshot): String {
         val chapterKey = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
         return addonId.value + ":" + snapshot.sourceId + ":" + chapterKey
+    }
+
+    private fun CanonicalChapter.isRegularZero(): Boolean =
+        type == tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR &&
+            baseNumber == 0 &&
+            part == null &&
+            alphaSuffix == null
+
+    private fun hasIndependentRegularZeroSupport(
+        evidence: List<tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence>,
+        canonicalChapter: CanonicalChapter,
+        currentAddonId: AddonId,
+    ): Boolean {
+        return evidence.any { persisted ->
+            if (
+                persisted.evidence.producerKind != ProducerKind.ADDON ||
+                persisted.evidence.producerId == currentAddonId.value ||
+                persisted.mappedCanonicalChapterId != canonicalChapter.id
+            ) {
+                return@any false
+            }
+            val parsed = parser.execute(
+                persisted.evidence.rawLabel,
+                persisted.evidence.rawNumber,
+            )
+            parsed.identity.isSpecific &&
+                parsed.identity == canonicalChapter.identity &&
+                !isUnsafeProvisionalChapterEvidence(
+                    parsed,
+                    persisted.evidence.rawLabel,
+                    persisted.evidence.rawNumber,
+                )
+        }
     }
 
     private companion object {
