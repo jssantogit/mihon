@@ -13,7 +13,7 @@ import kotlin.math.abs
  * instead of being attached to an unrelated canonical chapter. Negative/invalid hints remain
  * non-authoritative placeholders.
  *
- * The hint never becomes canonical identity.
+ * The hint never becomes canonical identity; both values remain source metadata until reconciliation.
  */
 fun hasConflictingIntegerChapterHint(
     parsed: ParsedChapterLabel,
