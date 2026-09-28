@@ -46,7 +46,7 @@ fun hasConflictingIntegerChapterHint(
  * sources can also expose a titled zero row (for example, "Chapter 0: Tragedy") whose
  * provider number is zero while the pages belong to a positive chapter. Neither shape
  * is strong enough to become canonical identity or a Reader option without independent
- * evidence. Plain numeric zero/fractional chapters remain valid.
+ * evidence. Plain numeric zero/fractional chapters remain valid and test-covered.
  */
 fun isUnsafeProvisionalChapterEvidence(
     parsed: ParsedChapterLabel,
