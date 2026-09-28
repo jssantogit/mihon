@@ -22,8 +22,8 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
-import tachiyomi.domain.tsuzuki.chapter.interactor.isUnsafeProvisionalChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.isInferredChapter
+import tachiyomi.domain.tsuzuki.chapter.interactor.isUnsafeProvisionalChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
@@ -126,7 +126,11 @@ class MihonContentProvider internal constructor(
                         persisted.evidence.rawNumber,
                     )
                     if (
-                        isUnsafeProvisionalChapterEvidence(parsed, persisted.evidence.rawLabel, persisted.evidence.rawNumber) ||
+                        isUnsafeProvisionalChapterEvidence(
+                            parsed,
+                            persisted.evidence.rawLabel,
+                            persisted.evidence.rawNumber,
+                        ) ||
                         !parsed.identity.isSpecific ||
                         parsed.identity != canonicalChapter.identity ||
                         mappedChapter.identity != canonicalChapter.identity
@@ -166,7 +170,13 @@ class MihonContentProvider internal constructor(
                 if (identity.first !in boundSourceIds) return@forEach
                 val volumeLabel = sourceVolumeLabel(persisted.evidence.rawLabel)
                 val parsed = parser.execute(persisted.evidence.rawLabel, persisted.evidence.rawNumber)
-                if (isUnsafeProvisionalChapterEvidence(parsed, persisted.evidence.rawLabel, persisted.evidence.rawNumber)) {
+                if (
+                    isUnsafeProvisionalChapterEvidence(
+                        parsed,
+                        persisted.evidence.rawLabel,
+                        persisted.evidence.rawNumber,
+                    )
+                ) {
                     conflictingMappedEvidenceIdentities += identity
                     return@forEach
                 }
