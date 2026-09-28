@@ -103,8 +103,8 @@ class RefreshChapterEvidence private constructor(
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
         return try {
             registry.awaitReady()
-            // Break the catalog-title deadlock before probing inventories. Safe,
-            // unambiguous matches are persisted; ambiguous matches remain manual.
+            // Break the zero-binding/zero-chapter deadlock before probing inventories.
+            // Safe, unambiguous matches are persisted; ambiguous matches remain manual.
             try {
                 discoverReadableTitle?.execute(canonicalTitleId)?.exceptionOrNull()
             } catch (error: CancellationException) {
@@ -113,11 +113,34 @@ class RefreshChapterEvidence private constructor(
                 // Best effort only: existing bindings/integration evidence must still refresh.
             }
             // Integration metadata and Add-on inventories are independent until
-            // reconciliation. Running both concurrently avoids serial network waits.
+            // reconciliation. Running the first pass concurrently avoids serial network waits.
             val evidence = coroutineScope {
                 val integrations = async { collectIntegrationEvidence(canonicalTitleId) }
-                val addons = async { collectAddonEvidence(canonicalTitleId) }
-                (integrations.await() + addons.await()).distinctBy(ChapterEvidence::id)
+                val initialAddons = async { collectAddonEvidence(canonicalTitleId) }
+                val integrationEvidence = integrations.await()
+                var addonEvidence = initialAddons.await()
+
+                // An existing binding is not proof that it is readable. If every current
+                // binding yields an empty inventory, broaden to the remaining configured
+                // sources and probe again. This is bounded by DiscoverReadableTitle and
+                // stops as soon as a safe binding is found.
+                if (addonEvidence.isEmpty()) {
+                    val broadened = try {
+                        discoverReadableTitle
+                            ?.execute(canonicalTitleId, broadenExistingBindings = true)
+                            ?.getOrNull()
+                            .orEmpty()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
+                    if (broadened.isNotEmpty()) {
+                        addonEvidence = collectAddonEvidence(canonicalTitleId)
+                    }
+                }
+
+                (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id)
             }
             reconcileChapterEvidence.execute(canonicalTitleId, evidence)
             // Chapter mappings may have changed; never serve stale provider

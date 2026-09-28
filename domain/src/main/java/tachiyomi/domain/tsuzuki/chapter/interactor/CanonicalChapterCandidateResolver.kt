@@ -34,14 +34,12 @@ internal object CanonicalChapterCandidateResolver {
                 }
                 return CanonicalChapterCandidateResolution.UniqueMatch(unqualifiedCandidates.single())
             }
-            // An unqualified source observation cannot reuse a volume-specific
-            // chapter. A reliable Add-on observation may instead establish a
-            // separate unqualified chapter; other evidence remains unresolved.
-            return if (allowUnqualifiedCandidateCreation && candidates.size == 1) {
-                CanonicalChapterCandidateResolution.NoMatch
-            } else {
-                CanonicalChapterCandidateResolution.Ambiguous
-            }
+            // Unknown volume is not a reason to duplicate an otherwise unique
+            // chapter identity. Reuse a sole candidate regardless of its known volume.
+            // If the same chapter number exists in multiple volumes, remain fail-closed.
+            return candidates.singleOrNull()
+                ?.let(CanonicalChapterCandidateResolution::UniqueMatch)
+                ?: CanonicalChapterCandidateResolution.Ambiguous
         }
 
         val matchingVolume = candidates.filter { it.volume == observedVolume }

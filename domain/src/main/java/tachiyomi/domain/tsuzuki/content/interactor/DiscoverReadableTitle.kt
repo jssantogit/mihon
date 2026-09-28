@@ -87,11 +87,14 @@ class DiscoverReadableTitle internal constructor(
         planner = planner,
     )
 
-    suspend fun execute(canonicalTitleId: String): Result<List<ContentBinding>> {
+    suspend fun execute(
+        canonicalTitleId: String,
+        broadenExistingBindings: Boolean = false,
+    ): Result<List<ContentBinding>> {
         require(canonicalTitleId.isNotBlank())
         return try {
             val currentBindings = existingBindings(canonicalTitleId)
-            if (currentBindings.isNotEmpty()) {
+            if (currentBindings.isNotEmpty() && !broadenExistingBindings) {
                 return Result.success(currentBindings)
             }
 
@@ -117,8 +120,10 @@ class DiscoverReadableTitle internal constructor(
                     emptyList()
                 }
             }
-            val attemptedSourceIds = mutableSetOf<Long>()
-            val discovered = mutableListOf<ContentBinding>()
+            val attemptedSourceIds = currentBindings.mapNotNullTo(mutableSetOf()) { binding ->
+                binding.providerTitleKey.substringBefore(':').toLongOrNull()
+            }
+            val discovered = currentBindings.toMutableList()
 
             for (wave in 0 until MAX_TITLE_DISCOVERY_WAVES) {
                 val remainingEligibility = baseEligibility.mapValues { (_, sources) ->
