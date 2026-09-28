@@ -2,8 +2,11 @@ package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -52,6 +55,103 @@ import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
 // Guards the end-to-end human smoke path from canonical catalog title through Add-on content.
 class RuntimeV2SmokeReadinessTest {
+
+    @Test
+    fun `late older addon inventory cannot replace evidence from newer fetch`() = runTest {
+        val addonId = AddonId("mangadex")
+        val binding = ContentBinding(
+            id = "binding-provenance",
+            canonicalTitleId = TITLE_ID,
+            addonId = addonId,
+            providerTitleKey = "7:/dandadan",
+            matchConfidence = 1.0,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(7),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val bindings = FakeContentBindingRepository()
+        bindings.upsert(binding)
+        val startedFetch = CompletableDeferred<Result<SourceChapterInventory>>()
+        val laterFetch = CompletableDeferred<Result<SourceChapterInventory>>()
+        var fetchCount = 0
+        val probe = MihonChapterProbeProvider(
+            addonId = addonId,
+            contentBindingRepository = bindings,
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                when (fetchCount++) {
+                    0 -> startedFetch.await()
+                    1 -> laterFetch.await()
+                    else -> error("Unexpected extra inventory request")
+                }
+            },
+        )
+        val chapters = FakeCanonicalChapterRepository()
+        val evidence = FakeChapterEvidenceRepository()
+        val registry = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
+        }
+        val bindingResolver = ResolveContentBinding(
+            contentBindingRepository = bindings,
+            canonicalTitleRepository = FakeCanonicalTitleRepository(),
+            addonRepository = FakeAddonRepository(addonId),
+            readingSourceGateway = FakeReadingSourceGateway(),
+            scoreSourceTitleMatch = ScoreSourceTitleMatch(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+            addonSourceEligibilityRepository = AddonSourceEligibilityRepository { emptyList() },
+        )
+        val refresh = RefreshChapterEvidence(
+            registry = emptyIntegrationRegistry(),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = evidence,
+            ),
+            addonRegistry = registry,
+            resolveContentBinding = bindingResolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+        )
+
+        val slowOlderRefresh = backgroundScope.async { refresh.execute(TITLE_ID) }
+        runCurrent()
+        fetchCount shouldBe 1
+        val fastNewerRefresh = backgroundScope.async { refresh.execute(TITLE_ID) }
+        runCurrent()
+        fetchCount shouldBe 2
+
+        laterFetch.complete(inventory(binding, "Chapter 2", fetchStartedAtMillis = 200L))
+        runCurrent()
+        fastNewerRefresh.await().isSuccess shouldBe true
+        val newerEvidence = requireNotNull(
+            evidence.getByProducerExternalKey(
+                producerKind = ProducerKind.ADDON,
+                producerId = addonId.value,
+                externalChapterKey = "7:/chapter-shared",
+            ),
+        )
+        val newerCanonicalChapterId = requireNotNull(newerEvidence.mappedCanonicalChapterId)
+
+        startedFetch.complete(inventory(binding, "Chapter 1", fetchStartedAtMillis = 100L))
+        runCurrent()
+        slowOlderRefresh.await()
+
+        val persisted = requireNotNull(
+            evidence.getByProducerExternalKey(
+                producerKind = ProducerKind.ADDON,
+                producerId = addonId.value,
+                externalChapterKey = "7:/chapter-shared",
+            ),
+        )
+        persisted.evidence.rawLabel shouldBe "Chapter 2"
+        persisted.evidence.id shouldBe newerEvidence.evidence.id
+        persisted.evidence.observedAt shouldBe 200L
+        persisted.mappedCanonicalChapterId shouldBe newerCanonicalChapterId
+        chapters.getByCanonicalTitleId(TITLE_ID).map { it.id } shouldBe listOf(newerCanonicalChapterId)
+    }
 
     @Test
     fun `multi-source Add-on provisions canonical chapters and content options`() = runTest {
@@ -165,6 +265,33 @@ class RuntimeV2SmokeReadinessTest {
             ),
         )
     }
+
+    private fun inventory(
+        binding: ContentBinding,
+        rawName: String,
+        fetchStartedAtMillis: Long,
+    ): Result<SourceChapterInventory> = Result.success(
+        SourceChapterInventory(
+            sourceMappingId = binding.id,
+            sourceId = 7L,
+            canonicalTitleId = TITLE_ID,
+            chapters = listOf(
+                SourceChapterSnapshot(
+                    sourceId = 7L,
+                    sourceMappingId = binding.id,
+                    sourceChapterId = "/chapter-shared",
+                    sourceChapterUrl = "/chapter-shared",
+                    rawName = rawName,
+                    language = "en",
+                    rawNumberHint = rawName.removePrefix("Chapter ").toDouble(),
+                    mihonMangaId = 70L,
+                ),
+            ),
+            mihonMangaId = 70L,
+            language = "en",
+            fetchStartedAtMillis = fetchStartedAtMillis,
+        ),
+    )
 
     private class FakeAddonRepository(
         private val addonId: AddonId,

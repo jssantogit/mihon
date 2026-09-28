@@ -9,7 +9,9 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.model.SChapter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import org.json.JSONException
 import tachiyomi.core.common.util.system.logcat
@@ -125,12 +127,16 @@ class MihonChapterInventoryGateway(
             val legacyChapters = chapterRepository.getChapterByMangaId(mihonMangaId)
             val legacyByUrl = legacyChapters.associateBy { it.url }
             val networkStart = TimeSource.Monotonic.markNow()
-            val update = source.getMangaUpdate(
-                manga = manga.toSManga(),
-                chapters = legacyChapters.map(Chapter::toSChapter),
-                fetchDetails = false,
-                fetchChapters = true,
-            )
+            // Source implementations may execute their OkHttp call synchronously
+            // inside this suspend API.
+            val update = withContext(Dispatchers.IO) {
+                source.getMangaUpdate(
+                    manga = manga.toSManga(),
+                    chapters = legacyChapters.map(Chapter::toSChapter),
+                    fetchDetails = false,
+                    fetchChapters = true,
+                )
+            }
 
             val networkTime = networkStart.elapsedNow()
             recordInventorySuccess(

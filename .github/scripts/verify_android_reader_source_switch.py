@@ -19,6 +19,9 @@ METHOD_SCENARIOS = {
     "repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry": "HISTORY_IDEMPOTENCE",
     "slowSourceDoesNotBlockHealthySourceOption": "SLOW_TO_HEALTHY",
     "cancelledDiscoveryCannotMutateActiveReaderSession": "DISCOVERY_CANCEL",
+    "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress": "LEGACY_ATTACH",
+    "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation": "DETAIL_OWNER_CANCEL",
+    "legacyReaderKeepsPagesAfterDetailInventoryInvalidation": "DETAIL_INVENTORY_INVALIDATE",
 }
 SAFE_TEST_CLASS_PREFIX = "eu.kanade.tachiyomi.data.tsuzuki.instrumentation."
 SAFE_TEST_SOURCE = "CanonicalReaderSourceSwitchInstrumentedTest.kt"
@@ -101,6 +104,95 @@ SAFE_DIAGNOSTIC_CATEGORIES = {
     "TIMEOUT",
 }
 STATUS_CODE_ENUM = {"-4", "-3", "-2", "-1", "0", "1"}
+DETAIL_SETUP_DIAGNOSTIC_PREFIX = "INSTRUMENTATION_STATUS: stream=ANDROID_SOURCE_SWITCH_DETAIL_SETUP|"
+DETAIL_SETUP_DIAGNOSTIC_KEYS = (
+    "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
+    "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
+    "bindingSelection", "bindingPayload", "manga", "source", "fixtureOrigin", "fixturePath",
+    "aHttp", "bHttp", "aCallEvents", "bCallEvents", "serverRequests", "unknownSourceRequests", "aOther", "bOther",
+    "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
+    "routeRendered", "routeTitleMatches", "routeModel", "probe",
+)
+DETAIL_SETUP_STATES = {"LOADING", "LOADED", "ERROR"}
+DETAIL_SETUP_LOCAL_LOAD = {"INCOMPLETE", "PASSED", "FAILED"}
+DETAIL_SETUP_REFRESHING = {"TRUE", "FALSE", "UNKNOWN"}
+DETAIL_SETUP_JOBS = {"ACTIVE", "COMPLETED", "CANCELLED", "NOT_STARTED"}
+DETAIL_SETUP_ERRORS = {
+    "NONE", "NO_SUCH_ELEMENT", "ILLEGAL_ARGUMENT", "ILLEGAL_STATE", "IO", "OTHER",
+}
+DETAIL_SETUP_BINDING_GATES = {
+    "MISSING", "WRONG_ADDON", "UNAVAILABLE", "ADDON_MISSING", "ADDON_DISABLED",
+    "INVALID_SOURCE_KEY", "SOURCE_NOT_ENABLED", "ELIGIBLE", "UNKNOWN",
+}
+DETAIL_SETUP_BINDING_SELECTIONS = {"MISSING", "SELECTED", "ERROR"}
+DETAIL_SETUP_BINDING_PAYLOAD = {"MATCH", "MISMATCH", "MISSING", "INVALID"}
+DETAIL_SETUP_MANGA = {"MATCH", "MISMATCH", "MISSING", "ERROR", "UNAVAILABLE"}
+DETAIL_SETUP_SOURCE = {"SOURCE_A", "STUB", "MISSING", "OTHER", "ERROR"}
+DETAIL_SETUP_FIXTURE_MATCH = {"MATCH", "MISMATCH"}
+DETAIL_SETUP_HTTP_OUTCOMES = {
+    "NOT_STARTED", "STARTED", "COMPLETED",
+    "UnknownHostException:DNS_FAILURE",
+    "ConnectException:CONNECTION_REFUSED", "ConnectException:CONNECT_FAILURE",
+    "SocketTimeoutException:SOCKET_TIMEOUT",
+    "IOException:CLEARTEXT_BLOCKED", "IOException:CANCELLED", "IOException:OTHER_IO_FAILURE",
+}
+DETAIL_SETUP_CALL_EVENT = re.compile(
+    r"C[0-9a-f]{1,8}:(?:INVENTORY|SOURCE_OTHER|OTHER|ORIGIN_MISMATCH)_"
+    r"(?:START|CONNECT_START|CONNECT_LOCAL_MATCH|CONNECT_LOCAL_MISMATCH|CONNECT_END|CONNECTION_ACQUIRED|"
+    r"REQUEST_SENT|RESPONSE_START|HTTP_[1-5][0-9]{2}|CACHE_HIT|CACHE_MISS|CACHE_CONDITIONAL_HIT|"
+    r"CACHE_FAILURE_HTTP_[1-5][0-9]{2}|END|"
+    r"FAIL_(?:CLEARTEXT_BLOCKED|DNS_FAILURE|CONNECTION_REFUSED|CONNECT_FAILURE|SOCKET_TIMEOUT|CANCELLED|"
+    r"OTHER_IO_FAILURE)|"
+    r"APP_REQUEST_ONLY_IF_CACHED_(?:TRUE|FALSE)|"
+    r"APP_REQUEST_ON_MAIN_THREAD_(?:TRUE|FALSE)|"
+    r"APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_(?:TRUE|FALSE)|"
+    r"APP_REQUEST_MAX_AGE_(?:NONE|ZERO|POSITIVE)|"
+    r"APP_RESPONSE_HTTP_[1-5][0-9]{2}_(?:CACHE_AND_NETWORK|CACHE_ONLY|NETWORK_ONLY|"
+    r"NO_CACHE_OR_NETWORK_METADATA)|"
+    r"APP_FAIL_(?:CLEARTEXT_BLOCKED|DNS_FAILURE|CONNECTION_REFUSED|CONNECT_FAILURE|SOCKET_TIMEOUT|CANCELLED|"
+    r"OTHER_IO_FAILURE|OTHER_EXCEPTION)|"
+    r"APP_FAILURE_TYPE_(?:NETWORK_ON_MAIN_THREAD|IO_EXCEPTION|CANCELLATION|ILLEGAL_ARGUMENT|ILLEGAL_STATE|"
+    r"SECURITY_EXCEPTION|OTHER_EXCEPTION)|"
+    r"APP_FAILURE_CAUSE_(?:NONE|NETWORK_ON_MAIN_THREAD|IO_EXCEPTION|CANCELLATION|ILLEGAL_ARGUMENT|ILLEGAL_STATE|"
+    r"SECURITY_EXCEPTION|OTHER_EXCEPTION)|"
+    r"APP_FAILURE_ON_MAIN_THREAD_(?:TRUE|FALSE))",
+)
+
+
+def _valid_detail_http_outcome(value: str) -> bool:
+    return value in DETAIL_SETUP_HTTP_OUTCOMES or re.fullmatch(r"HTTP_[1-5][0-9]{2}", value) is not None
+
+
+def _valid_detail_call_events(value: str) -> bool:
+    if value == "NONE":
+        return True
+    events = value.split(",")
+    return (
+        len(events) <= 8
+        and len(value) <= 512
+        and all(DETAIL_SETUP_CALL_EVENT.fullmatch(event) is not None for event in events)
+    )
+
+
+DETAIL_SETUP_ROUTE_MODELS = {"SCREEN", "UNKNOWN"}
+DETAIL_SETUP_PROBE_STAGES = {"UI", "CHAPTER_PROBE", "CHAPTER_INVENTORY"}
+DETAIL_SETUP_PROBE_OUTCOMES = {
+    "SUCCESS", "EMPTY", "DISABLED", "NO_MATCH", "AMBIGUOUS", "CAPTCHA_REQUIRED", "NETWORK_ERROR",
+    "EXTENSION_ERROR", "HTTP_ERROR", "SOURCE_UNAVAILABLE", "MALFORMED_RESPONSE", "INDETERMINATE",
+    "TIMEOUT", "NO_BINDING", "LOW_CONFIDENCE", "PARTIAL",
+}
+DETAIL_SETUP_PROBE_REASONS = {
+    "NONE", "DUPLICATE", "MISSING_SOURCE_ID", "MISSING_SOURCE_URL", "INVALID_LABEL", "PARSER_ERROR",
+    "LOW_CONFIDENCE", "IDENTITY_MISMATCH", "NO_BINDING", "INVENTORY_EMPTY", "BINDING_NOT_MATERIALIZED",
+    "BINDING_CONFIRMATION_REQUIRED", "ADDON_NOT_INSTALLED", "ALL_SOURCES_DISABLED", "SOURCE_DISABLED",
+    "REUSED_BINDING", "SOURCE_SEARCH_FAILED", "NO_SEARCH_RESULTS", "MATCH_BELOW_THRESHOLD",
+    "AMBIGUOUS_CANDIDATES", "MATERIALIZATION_FAILED", "BINDING_PERSISTENCE_FAILED", "CAPTCHA_CHALLENGE",
+    "NETWORK_FAILURE", "TIMEOUT_FAILURE", "EXTENSION_FAILURE", "HTTP_RESPONSE", "HTTP_FORBIDDEN",
+    "HTTP_RATE_LIMITED", "HTTP_SERVER_ERROR", "SOURCE_UNAVAILABLE", "MALFORMED_RESPONSE",
+    "INDETERMINATE_FAILURE", "PROVIDER_FAILED", "PROVIDER_NOT_REGISTERED", "NO_CHAPTER_VARIANT",
+    "CACHED_OPTIONS", "CACHE_SNAPSHOT", "REFRESHED_SNAPSHOT", "PERSISTED_MAPPED", "PERSISTED_UNMAPPED",
+    "FILTERED_FROM_UI",
+}
 
 
 class ReaderSourceSwitchVerificationError(ValueError):
@@ -267,6 +359,34 @@ def verify(output: str, method: str) -> dict[str, str]:
         if fields.get("session") != "PREVIOUS_PRESERVED":
             raise ReaderSourceSwitchVerificationError("Cancelled discovery did not prove the active Reader session remained intact")
 
+    if method == "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress":
+        for key in (
+            "legacySessionAttached", "canonicalIdStable", "mappingPreserved",
+            "variantPreserved", "preferencePreserved", "canonicalHistory",
+        ):
+            if fields.get(key) != "true":
+                raise ReaderSourceSwitchVerificationError("Legacy Reader attach did not prove " + key)
+
+    if method in {
+        "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation",
+        "legacyReaderKeepsPagesAfterDetailInventoryInvalidation",
+    }:
+        for key in (
+            "readerAttachWaited", "readerPagesPreserved", "sharedCacheIdentity",
+            "mappingPreserved", "priorVariantPreserved", "canonicalIdsPreserved",
+            "progressPreserved", "historyPreserved", "preferencePreserved",
+            "staleTargetVariantAbsent",
+        ):
+            if fields.get(key) != "true":
+                raise ReaderSourceSwitchVerificationError("Concurrent Reader/detail scenario did not prove " + key)
+        if method == "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation":
+            required = ("detailOwnerCancelled", "cancelledResponseReleased")
+        else:
+            required = ("inventoryInvalidated", "lateResponseReleased")
+        for key in required:
+            if fields.get(key) != "true":
+                raise ReaderSourceSwitchVerificationError("Concurrent Reader/detail scenario did not prove " + key)
+
     return fields
 
 
@@ -317,6 +437,82 @@ def _split_diagnostic(
     if not set(expected_keys).issubset(fields):
         return {}
     return fields
+
+
+def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
+    if method not in {
+        "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation",
+        "legacyReaderKeepsPagesAfterDetailInventoryInvalidation",
+    }:
+        return None
+    records = [
+        line for line in output.splitlines()
+        if line.startswith(DETAIL_SETUP_DIAGNOSTIC_PREFIX)
+    ]
+    if not records:
+        return None
+    if len(records) != 1:
+        return {"evidence": "DUPLICATE"}
+    fields = _split_diagnostic(
+        records[0],
+        DETAIL_SETUP_DIAGNOSTIC_PREFIX,
+        DETAIL_SETUP_DIAGNOSTIC_KEYS,
+    )
+    if not fields:
+        return {"evidence": "MALFORMED"}
+    if fields["scenario"] != METHOD_SCENARIOS[method]:
+        return {"evidence": "MALFORMED"}
+    if (
+        fields["state"] not in DETAIL_SETUP_STATES
+        or fields["localLoad"] not in DETAIL_SETUP_LOCAL_LOAD
+        or fields["refreshing"] not in DETAIL_SETUP_REFRESHING
+        or fields["startJob"] not in DETAIL_SETUP_JOBS
+        or fields["stateError"] not in DETAIL_SETUP_ERRORS
+        or fields["refreshError"] not in DETAIL_SETUP_ERRORS
+        or fields["integrationReady"] not in {"TRUE", "FALSE"}
+        or fields["addonReady"] not in {"TRUE", "FALSE"}
+        or fields["bindingGate"] not in DETAIL_SETUP_BINDING_GATES
+        or fields["sourceEligible"] not in {"TRUE", "FALSE"}
+        or fields["bindingSelection"] not in DETAIL_SETUP_BINDING_SELECTIONS
+        or fields["bindingPayload"] not in DETAIL_SETUP_BINDING_PAYLOAD
+        or fields["manga"] not in DETAIL_SETUP_MANGA
+        or fields["source"] not in DETAIL_SETUP_SOURCE
+        or fields["fixtureOrigin"] not in DETAIL_SETUP_FIXTURE_MATCH
+        or fields["fixturePath"] not in DETAIL_SETUP_FIXTURE_MATCH
+        or not _valid_detail_http_outcome(fields["aHttp"])
+        or not _valid_detail_http_outcome(fields["bHttp"])
+        or not _valid_detail_call_events(fields["aCallEvents"])
+        or not _valid_detail_call_events(fields["bCallEvents"])
+        or fields["routeRendered"] not in {"TRUE", "FALSE"}
+        or fields["routeTitleMatches"] not in {"TRUE", "FALSE"}
+        or fields["routeModel"] not in DETAIL_SETUP_ROUTE_MODELS
+    ):
+        return {"evidence": "MALFORMED"}
+    provider_count = fields["providerCount"]
+    if provider_count != "UNKNOWN" and not re.fullmatch(r"[0-9]{1,2}", provider_count):
+        return {"evidence": "MALFORMED"}
+    if any(
+        not re.fullmatch(r"[0-9]{1,6}", fields[key])
+        for key in (
+            "serverRequests", "unknownSourceRequests", "aOther", "bOther",
+            "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
+        )
+    ):
+        return {"evidence": "MALFORMED"}
+    if fields["probe"] != "NONE":
+        records = fields["probe"].split(",")
+        if len(records) > 8 or len(fields["probe"]) > 512:
+            return {"evidence": "MALFORMED"}
+        for record in records:
+            parts = record.split(":")
+            if (
+                len(parts) != 3
+                or parts[0] not in DETAIL_SETUP_PROBE_STAGES
+                or parts[1] not in DETAIL_SETUP_PROBE_OUTCOMES
+                or parts[2] not in DETAIL_SETUP_PROBE_REASONS
+            ):
+                return {"evidence": "MALFORMED"}
+    return {key: fields[key] for key in DETAIL_SETUP_DIAGNOSTIC_KEYS}
 
 
 def _reader_view_diagnostics(output: str) -> list[dict[str, str]]:
@@ -564,6 +760,7 @@ def sanitized_summary(
     reader_selector_diagnostics: list[dict[str, str]] | None = None,
     terminal_evidence: dict[str, str] | None = None,
     foreground_diagnostics: list[dict[str, str]] | None = None,
+    detail_setup_diagnostic: dict[str, str] | None = None,
 ) -> str:
     result = "PASS" if passed else "FAIL"
     lines = [
@@ -584,6 +781,11 @@ def sanitized_summary(
         safe_keys = (
             "sourceAPageCount", "sourceBPageCount", "positionBefore", "positionAfter", "historyRows",
             "session", "sourceAHealthy", "sourceBPending", "cancelled", "lateResponsesReleased",
+            "legacySessionAttached", "canonicalIdStable", "mappingPreserved", "variantPreserved",
+            "preferencePreserved", "canonicalHistory", "readerAttachWaited", "readerPagesPreserved",
+            "sharedCacheIdentity", "priorVariantPreserved", "canonicalIdsPreserved", "progressPreserved",
+            "historyPreserved", "staleTargetVariantAbsent", "detailOwnerCancelled",
+            "cancelledResponseReleased", "inventoryInvalidated", "lateResponseReleased",
         )
         safe_fields = [
             key + "=" + fields[key]
@@ -622,6 +824,20 @@ def sanitized_summary(
                 + "|bInventory=" + fixture_diagnostic["bInventory"]
                 + "|bPages=" + fixture_diagnostic["bPages"]
                 + "|bHeld=" + fixture_diagnostic["bHeld"]
+            )
+    if detail_setup_diagnostic is not None:
+        if "evidence" in detail_setup_diagnostic:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|evidence="
+                + detail_setup_diagnostic["evidence"]
+            )
+        else:
+            lines.append(
+                "ANDROID_SOURCE_SWITCH_DETAIL_SETUP|"
+                + "|".join(
+                    key + "=" + detail_setup_diagnostic[key]
+                    for key in DETAIL_SETUP_DIAGNOSTIC_KEYS
+                )
             )
     for record in reader_view_diagnostics or []:
         if "evidence" in record:
@@ -701,6 +917,7 @@ def main(argv: list[str] | None = None) -> int:
     reader_view_diagnostics = _reader_view_diagnostics(output)
     reader_selector_diagnostics = _reader_selector_diagnostics(output)
     foreground_diagnostics = _reader_foreground_diagnostics(output)
+    detail_setup_diagnostic = _detail_setup_diagnostic(output, args.method)
     args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(
         sanitized_summary(
@@ -713,6 +930,7 @@ def main(argv: list[str] | None = None) -> int:
             reader_selector_diagnostics,
             terminal_evidence,
             foreground_diagnostics,
+            detail_setup_diagnostic,
         ),
         encoding="utf-8",
     )

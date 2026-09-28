@@ -8,8 +8,36 @@ readonly test_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.CanonicalR
 readonly results_root='.github/results/android-reader-source-switch'
 readonly run_name="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 readonly results_dir="${results_root}/${run_name}"
+readonly reader_mode="${1:-all}"
 mkdir -p "$results_dir"
 touch "$results_dir/cleanup.txt"
+
+case "$reader_mode" in
+  all)
+    methods=(
+      sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition
+      emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession
+      pageCountDifferenceClampsPositionToValidPage
+      retiredSourceCallbackCannotChangePublishedSession
+      activityRecreationRestoresObservedCanonicalPosition
+      repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry
+      slowSourceDoesNotBlockHealthySourceOption
+      cancelledDiscoveryCannotMutateActiveReaderSession
+      legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress
+    )
+    ;;
+  detail-races)
+    methods=(
+      legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation
+      legacyReaderKeepsPagesAfterDetailInventoryInvalidation
+    )
+    ;;
+  *)
+    echo 'ANDROID_SOURCE_SWITCH_SETUP|outcome=BLOCKED|reason=INVALID_READER_MODE' > "$results_dir/setup.txt"
+    echo '::error::Reader source-switch mode is not allowed'
+    exit 2
+    ;;
+esac
 
 device_state="$(adb shell getprop ro.kernel.qemu | tr -d '\r')"
 if [[ "$device_state" != '1' ]]; then
@@ -160,15 +188,7 @@ run_one() {
 }
 
 overall_status=0
-for method in \
-  sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition \
-  emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession \
-  pageCountDifferenceClampsPositionToValidPage \
-  retiredSourceCallbackCannotChangePublishedSession \
-  activityRecreationRestoresObservedCanonicalPosition \
-  repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry \
-  slowSourceDoesNotBlockHealthySourceOption \
-  cancelledDiscoveryCannotMutateActiveReaderSession; do
+for method in "${methods[@]}"; do
   if ! run_one "$method"; then
     overall_status=1
   fi

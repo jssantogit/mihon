@@ -98,7 +98,7 @@ class PrepareCanonicalChapterForReaderTest {
     }
 
     @Test
-    fun `first read returns selection state without preparing content`() = runTest {
+    fun `first read with sole verified option prepares reader directly`() = runTest {
         val option = option("mangadex")
         val fixture = fixture(
             preference = null,
@@ -107,10 +107,29 @@ class PrepareCanonicalChapterForReaderTest {
 
         val result = fixture.prepare.execute("chapter-1")
 
+        result.shouldBeInstanceOf<CanonicalReaderPreparation.Ready>()
+        result.canonicalChapterId shouldBe "chapter-1"
+        result.selectedOption shouldBe option
+        result.usedFallback shouldBe false
+        fixture.preparer.calls shouldBe 1
+        fixture.preparer.lastOption shouldBe option
+    }
+
+    @Test
+    fun `first read with multiple verified options still requires selection`() = runTest {
+        val mangadex = option("mangadex")
+        val mangafire = option("mangafire")
+        val fixture = fixture(
+            preference = null,
+            providers = listOf(provider(mangadex), provider(mangafire)),
+        )
+
+        val result = fixture.prepare.execute("chapter-1")
+
         result.shouldBeInstanceOf<CanonicalReaderPreparation.SelectionRequired>()
         result.canonicalTitleId shouldBe "title-1"
         result.canonicalChapterId shouldBe "chapter-1"
-        result.options shouldBe listOf(option)
+        result.options.map { it.addonId }.toSet() shouldBe setOf(AddonId("mangadex"), AddonId("mangafire"))
         result.preferredAddonId shouldBe null
         result.preferredUnavailable shouldBe false
         fixture.preparer.calls shouldBe 0

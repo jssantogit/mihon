@@ -1049,10 +1049,479 @@ class MihonContentProviderTest {
         materializations shouldBe 0
     }
 
-    private fun binding(id: String, sourceKey: String) = ContentBinding(
+    // Physical One Piece regression: conflicting provider numbers must fail closed.
+    @Test
+    fun `parsed chapter label is rejected when Mihon numeric hint points to another integer chapter`() = runTest {
+        val linked = binding(id = "binding-one-piece", sourceKey = "7:/one-piece")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-1",
+            canonicalTitleId = "title",
+            displayNumber = "1",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 1,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "pt-BR",
+                        snapshot(7L, it.id, "/chapter-826", "pt-BR").copy(
+                            rawName = "Chapter 1",
+                            rawNumberHint = 826.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 826L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    // Physical Tokyo Ghoul regression: a provider row labelled Chapter 1 with a zero
+    // Mihon hint must never be offered as canonical Chapter 0 (or trusted as Chapter 1).
+    @Test
+    fun `zero numeric hint contradicting an explicit chapter label is rejected by content provider`() = runTest {
+        val linked = binding(id = "binding-tokyo-ghoul", sourceKey = "7:/tokyo-ghoul")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-1",
+            canonicalTitleId = "title",
+            displayNumber = "1",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 1,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-1", "en").copy(
+                            rawName = "Chapter 1",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 1L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    // Physical Kimetsu regression: fractional placeholder hints must not override a
+    // different explicit chapter label and leak an unrelated source row into Reader.
+    @Test
+    fun `fractional numeric hint contradicting an explicit integer label is rejected by content provider`() = runTest {
+        val linked = binding(id = "binding-kimetsu", sourceKey = "7:/kimetsu")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-38",
+            canonicalTitleId = "title",
+            displayNumber = "38",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 38,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-38", "en").copy(
+                            rawName = "Chapter 38",
+                            rawNumberHint = 0.1,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 38L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    // Physical Tokyo Ghoul regression: MangaDot exposed a chapter-zero row whose pages were chapter one.
+    @Test
+    fun `titled zero placeholder is never offered as a readable regular zero`() = runTest {
+        val linked = binding(
+            id = "binding-tokyo-ghoul-zero",
+            sourceKey = "7:/tokyo-ghoul",
+            addonId = "mangadot",
+        )
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0",
+            canonicalTitleId = "title",
+            displayNumber = "0",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-zero-tragedy", "en").copy(
+                            rawName = "Chapter 0: Tragedy",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 1L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    // Physical Tokyo Ghoul: a lone MangaDot Chapter 0 must not terminate discovery as readable.
+    @Test
+    fun `single provider plain zero is not trusted without independent chapter support`() = runTest {
+        val linked = binding(
+            id = "binding-tokyo-ghoul-plain-zero",
+            sourceKey = "7:/tokyo-ghoul",
+            addonId = "mangadot",
+        )
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0",
+            canonicalTitleId = "title",
+            displayNumber = "0",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            confidence = 1.0,
+        )
+        val mangadotEvidence = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = "mangadot-zero",
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = "mangadot",
+                externalChapterKey = "7:/chapter-zero",
+                rawLabel = "Chapter 0",
+                rawNumber = 0.0,
+                volume = null,
+                title = null,
+                observedAt = 10L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = requested.id,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-zero", "en").copy(
+                            rawName = "Chapter 0",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 1L))
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(listOf(mangadotEvidence)),
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun `regular zero remains readable when another addon independently maps the same chapter`() = runTest {
+        val linked = binding(
+            id = "binding-hxh-zero",
+            sourceKey = "7:/hunter-x-hunter",
+            addonId = "mangaflix",
+        )
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0",
+            canonicalTitleId = "title",
+            displayNumber = "0",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            confidence = 1.0,
+        )
+        fun zeroEvidence(id: String, producerId: String, sourceId: Long) = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = id,
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = producerId,
+                externalChapterKey = "$sourceId:/chapter-zero",
+                rawLabel = "Chapter 0",
+                rawNumber = 0.0,
+                volume = null,
+                title = null,
+                observedAt = 10L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = requested.id,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangaflix"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "pt-BR",
+                        snapshot(7L, it.id, "/chapter-zero", "pt-BR").copy(
+                            rawName = "Chapter 0",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 0L))
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(
+                listOf(
+                    zeroEvidence("mangaflix-zero", "mangaflix", 7L),
+                    zeroEvidence("mangadex-zero", "mangadex", 8L),
+                ),
+            ),
+        )
+
+        provider.resolve("title", requested.id).getOrThrow().single()
+            .delivery shouldBe ContentDelivery.Mihon(7L, 70L, 0L)
+        materializations shouldBe 1
+    }
+
+    @Test
+    fun `deleted fractional tombstone is never offered as readable content`() = runTest {
+        val linked = binding(
+            id = "binding-kimetsu-deleted",
+            sourceKey = "7:/kimetsu",
+            addonId = "mangadot",
+        )
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0-1",
+            canonicalTitleId = "title",
+            displayNumber = "0.1",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            part = 1,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/deleted-0-1", "en").copy(
+                            rawName = "Chapter 0.1: vol.[DELETED] ch.[DELETED]",
+                            rawNumberHint = 0.1,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 38L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun `plain regular chapter zero fails closed when it has no independent source support`() = runTest {
+        val linked = binding(id = "binding-legitimate-zero", sourceKey = "7:/series")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0",
+            canonicalTitleId = "title",
+            displayNumber = "0",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-zero", "en").copy(
+                            rawName = "Chapter 0",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 0L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun `persisted exact provider evidence disambiguates a sibling canonical id across volumes`() = runTest {
+        val linked = binding(id = "binding-tokyo-ghoul", sourceKey = "7:/tokyo-ghoul")
+        val requested = CanonicalChapter(
+            id = "requested-chapter-37",
+            canonicalTitleId = "title",
+            displayNumber = "37",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 37,
+            confidence = 1.0,
+        )
+        val sibling = requested.copy(
+            id = "sibling-canonical-chapter-37",
+            volume = 1,
+        )
+        val evidence = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = "mangaflix-volume-one-37",
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = "mangadex",
+                externalChapterKey = "7:/volume-1-chapter-37",
+                rawLabel = "Vol. 1 Ch. 37",
+                rawNumber = 37.0,
+                volume = 1,
+                title = null,
+                observedAt = 10L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = "sibling-canonical-chapter-37",
+        )
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(
+                variants = emptyList(),
+                chapter = requested,
+                additionalChapters = listOf(sibling),
+            ),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = it.id,
+                        sourceId = 7L,
+                        canonicalTitleId = "title",
+                        chapters = listOf(
+                            snapshot(7L, it.id, "/volume-1-chapter-37", "pt-BR").copy(
+                                rawName = "Vol. 1 Ch. 37",
+                                rawNumberHint = 37.0,
+                            ),
+                            snapshot(7L, it.id, "/volume-2-chapter-37", "pt-BR").copy(
+                                rawName = "Vol. 2 Ch. 37",
+                                rawNumberHint = 37.0,
+                            ),
+                        ),
+                        mihonMangaId = 70L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            materializeDelivery = { _, snapshot ->
+                Result.success(
+                    ContentDelivery.Mihon(
+                        sourceId = snapshot.sourceId,
+                        mangaId = 70L,
+                        chapterId = if (snapshot.sourceChapterId.contains("volume-1")) 371L else 372L,
+                    ),
+                )
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(listOf(evidence)),
+        )
+
+        val options = provider.resolve("title", requested.id).getOrThrow()
+
+        options.map { it.delivery } shouldBe listOf(ContentDelivery.Mihon(7L, 70L, 371L))
+    }
+
+    private fun binding(
+        id: String,
+        sourceKey: String,
+        addonId: String = "mangadex",
+    ) = ContentBinding(
         id = id,
         canonicalTitleId = "title",
-        addonId = AddonId("mangadex"),
+        addonId = AddonId(addonId),
         providerTitleKey = sourceKey,
         matchConfidence = 1.0,
         verifiedByUser = false,
@@ -1170,12 +1639,15 @@ class MihonContentProviderTest {
             baseNumber = 37,
             confidence = 1.0,
         ),
+        private val additionalChapters: List<CanonicalChapter> = emptyList(),
     ) : CanonicalChapterRepository {
         var writeCount = 0
 
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> = emptyList()
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
+            (listOf(chapter) + additionalChapters).filter { it.canonicalTitleId == canonicalTitleId }
         override fun observeByCanonicalTitleId(canonicalTitleId: String): Flow<List<CanonicalChapter>> = emptyFlow()
-        override suspend fun getById(id: String): CanonicalChapter? = chapter.takeIf { it.id == id }
+        override suspend fun getById(id: String): CanonicalChapter? =
+            (listOf(chapter) + additionalChapters).firstOrNull { it.id == id }
         override suspend fun getVariantBySourceIdentity(sourceId: Long, sourceChapterId: String): ChapterVariant? =
             variants.firstOrNull { it.sourceId == sourceId && it.sourceChapterId == sourceChapterId }
 

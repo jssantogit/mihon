@@ -25,6 +25,7 @@ class PlanFastReadingDiscovery {
         eligibility: Map<AddonId, List<AddonSourceEligibility>>,
         preferredAddonId: AddonId?,
         preferredLanguages: List<String>,
+        preferredSourceIds: List<Long> = emptyList(),
         maxAddons: Int = MAX_INITIAL_ADDONS,
         maxQueries: Int = MAX_INITIAL_QUERIES,
     ): List<PlannedAddonSearch> {
@@ -38,21 +39,35 @@ class PlanFastReadingDiscovery {
             if (!addon.enabled || addon.mihonSourceIds.isEmpty()) return@mapNotNull null
             val enabledIds = addon.mihonSourceIds.toSet()
             val sources = eligibility[addon.id].orEmpty().filter { source ->
-                source.enabled && source.sourceId in enabledIds &&
-                    families.any { family -> family.containsLanguage(source.language) }
+                source.enabled &&
+                    source.sourceId in enabledIds &&
+                    (
+                        source.sourceId in preferredSourceIds ||
+                            families.any { family -> family.containsLanguage(source.language) }
+                        )
             }
             if (sources.isEmpty()) null else EligibleAddon(addon, sources)
         }
         if (candidates.isEmpty()) return emptyList()
 
-        // A previously chosen Add-on has priority if it is still enabled and
-        // supports one of the requested languages. A package's size otherwise
-        // breaks ties: small packages avoid an expensive multilingual sweep.
-        val comparator = compareBy<EligibleAddon> { it.addon.mihonSourceIds.size }
+        // A per-title Add-on preference remains strongest. Explicit global source
+        // preferences then outrank package-size heuristics, so setup choices actually
+        // drive automatic reading discovery.
+        val sourceRank = preferredSourceIds.withIndex().associate { (index, sourceId) -> sourceId to index }
+        val comparator = compareBy<EligibleAddon> { item ->
+            item.sources.mapNotNull { sourceRank[it.sourceId] }.minOrNull() ?: Int.MAX_VALUE
+        }
+            .thenBy { it.addon.mihonSourceIds.size }
             .thenBy { it.addon.id.value }
         val chosen = linkedMapOf<AddonId, EligibleAddon>()
         candidates.firstOrNull { it.addon.id == preferredAddonId }?.let {
             chosen[it.addon.id] = it
+        }
+        for (sourceId in preferredSourceIds) {
+            if (chosen.size >= maxAddons) break
+            candidates.firstOrNull { item ->
+                item.addon.id !in chosen && item.sources.any { it.sourceId == sourceId }
+            }?.let { chosen[it.addon.id] = it }
         }
         for (family in families) {
             if (chosen.size >= maxAddons) break
@@ -71,7 +86,7 @@ class PlanFastReadingDiscovery {
         val perAddonLimit = if (chosen.size == 1) MAX_INITIAL_SOURCES_PER_ADDON else 2
         var remaining = maxQueries
         return chosen.values.mapNotNull { item ->
-            val ordered = orderedSourceIds(item.sources, families)
+            val ordered = orderedSourceIds(item.sources, families, preferredSourceIds)
             val allotted = minOf(perAddonLimit, ordered.size, remaining)
             remaining -= allotted
             if (allotted == 0) {
@@ -89,7 +104,9 @@ class PlanFastReadingDiscovery {
     private fun orderedSourceIds(
         sources: List<AddonSourceEligibility>,
         families: List<List<String>>,
+        preferredSourceIds: List<Long>,
     ): List<Long> {
+        val sourceIds = sources.map(AddonSourceEligibility::sourceId).toSet()
         val grouped = families.map { family ->
             family.flatMap { language ->
                 sources.filter { it.language.equals(language, ignoreCase = true) }
@@ -97,6 +114,7 @@ class PlanFastReadingDiscovery {
             }.distinct()
         }
         val result = linkedSetOf<Long>()
+        preferredSourceIds.filterTo(result) { it in sourceIds }
         val depth = grouped.maxOfOrNull(List<Long>::size) ?: 0
         for (index in 0 until depth) {
             grouped.forEach { group -> group.getOrNull(index)?.let(result::add) }

@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -169,6 +170,80 @@ class MihonInventorySnapshotCacheTest {
         original.await().isFailure shouldBe true
         joined.await().isFailure shouldBe true
         cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe replacement
+        requests shouldBe 2
+    }
+
+    @Test
+    fun `cancelling a joiner does not cancel the fetch owner`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val fetchStarted = CompletableDeferred<Unit>()
+        val releaseFetch = CompletableDeferred<Unit>()
+        var requests = 0
+        val owner = async {
+            cache.getOrFetch(key) {
+                requests++
+                fetchStarted.complete(Unit)
+                releaseFetch.await()
+                Result.success(inventory)
+            }
+        }
+        fetchStarted.await()
+
+        val joiner = async { cache.getOrFetch(key) { error("A joiner must not start another provider request") } }
+        yield()
+        requests shouldBe 1
+        joiner.isActive shouldBe true
+        joiner.cancel()
+        joiner.join()
+        owner.isActive shouldBe true
+
+        releaseFetch.complete(Unit)
+        owner.await().getOrThrow() shouldBe inventory
+        cache.getOrFetch(key) { error("The successful owner result should be cached") }.getOrThrow() shouldBe inventory
+        requests shouldBe 1
+    }
+
+    @Test
+    fun `cancelling the fetch owner returns failure to joiners without cancelling their reader`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val fetchStarted = CompletableDeferred<Unit>()
+        var requests = 0
+        val owner = async {
+            cache.getOrFetch(key) {
+                requests++
+                fetchStarted.complete(Unit)
+                CompletableDeferred<Unit>().await()
+                Result.success(inventory)
+            }
+        }
+        fetchStarted.await()
+
+        val joiner = async {
+            cache.getOrFetch(key) {
+                error("A joiner must not start another provider request")
+            }
+        }
+        yield()
+        requests shouldBe 1
+        joiner.isActive shouldBe true
+
+        owner.cancel()
+        owner.join()
+
+        var cancelled = false
+        val joinerResult = try {
+            joiner.await()
+        } catch (_: CancellationException) {
+            cancelled = true
+            null
+        }
+        cancelled shouldBe false
+        requireNotNull(joinerResult).isFailure shouldBe true
+
+        cache.getOrFetch(key) {
+            requests++
+            Result.success(inventory)
+        }.getOrThrow() shouldBe inventory
         requests shouldBe 2
     }
 

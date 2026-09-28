@@ -1,6 +1,7 @@
 package tachiyomi.data.tsuzuki
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
+import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -90,6 +91,43 @@ class CanonicalChapterRepositoryImpl(
 
     override suspend fun upsertVariant(variant: ChapterVariant) {
         upsertVariantInternal(variant)
+    }
+
+    override suspend fun consolidateExactDuplicateIfSafe(
+        canonicalTitleId: String,
+        preferredChapterId: String,
+        duplicateChapterId: String,
+    ): Boolean {
+        require(preferredChapterId != duplicateChapterId) { "Duplicate chapter ids must differ" }
+        val preferred = getById(preferredChapterId) ?: return false
+        val duplicate = getById(duplicateChapterId) ?: return false
+        require(preferred.canonicalTitleId == canonicalTitleId && duplicate.canonicalTitleId == canonicalTitleId) {
+            "Duplicate chapters must belong to the requested canonical title"
+        }
+        require(
+            preferred.type == CanonicalChapterType.REGULAR &&
+                duplicate.type == CanonicalChapterType.REGULAR &&
+                preferred.identity == duplicate.identity &&
+                preferred.volume == duplicate.volume,
+        ) { "Only exact numbered regular chapter duplicates may be consolidated" }
+
+        val protectedState = database.tsuzuki_canonical_chaptersQueries
+            .countTsuzukiCanonicalChapterProtectedState(duplicateChapterId)
+            .awaitAsOne()
+        if (protectedState > 0L) return false
+
+        database.transaction {
+            database.tsuzuki_chapter_evidenceQueries.rekeyTsuzukiChapterEvidenceMapping(
+                preferredChapterId = preferredChapterId,
+                duplicateChapterId = duplicateChapterId,
+            )
+            database.tsuzuki_chapter_variantsQueries.rekeyTsuzukiChapterVariantsCanonicalChapter(
+                preferredChapterId = preferredChapterId,
+                duplicateChapterId = duplicateChapterId,
+            )
+            database.tsuzuki_canonical_chaptersQueries.deleteTsuzukiCanonicalChapterById(duplicateChapterId)
+        }
+        return true
     }
 
     override suspend fun upsertBatch(

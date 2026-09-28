@@ -125,6 +125,18 @@ class InFlightContentResolution private constructor(
         }
     }
 
+    /** Prevents post-refresh lookups from joining work started against older title evidence. */
+    internal suspend fun invalidateTitle(canonicalTitleId: String) {
+        invalidateMatching { key -> key.canonicalTitleId == canonicalTitleId }
+    }
+
+    /** Prevents a targeted binding refresh from sharing stale work for its Add-on. */
+    internal suspend fun invalidateTitleAddon(canonicalTitleId: String, addonId: AddonId) {
+        invalidateMatching { key ->
+            key.canonicalTitleId == canonicalTitleId && key.addonId == addonId
+        }
+    }
+
     internal suspend fun invalidate(key: ContentOptionCacheKey) {
         invalidateMatching { it == key }
     }

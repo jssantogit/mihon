@@ -139,6 +139,12 @@ class ResolveChapterContent(
         if (ranked.isEmpty()) return ContentResolution.Unavailable
 
         if (preferredAddonId == null) {
+            if (ranked.size == 1) {
+                return ContentResolution.Direct(
+                    option = ranked.single(),
+                    usedFallback = false,
+                )
+            }
             return ContentResolution.NeedsSelection(
                 options = ranked,
                 preferredAddonId = null,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -91,6 +92,39 @@ def output_for(method: str) -> str:
                 "session": "PREVIOUS_PRESERVED",
             },
         )
+    elif method == "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress":
+        fields.update(
+            {
+                "legacySessionAttached": "true",
+                "canonicalIdStable": "true",
+                "mappingPreserved": "true",
+                "variantPreserved": "true",
+                "preferencePreserved": "true",
+                "canonicalHistory": "true",
+            },
+        )
+    elif method in {
+        "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation",
+        "legacyReaderKeepsPagesAfterDetailInventoryInvalidation",
+    }:
+        fields.update(
+            {
+                "readerAttachWaited": "true",
+                "readerPagesPreserved": "true",
+                "sharedCacheIdentity": "true",
+                "mappingPreserved": "true",
+                "priorVariantPreserved": "true",
+                "canonicalIdsPreserved": "true",
+                "progressPreserved": "true",
+                "historyPreserved": "true",
+                "preferencePreserved": "true",
+                "staleTargetVariantAbsent": "true",
+            },
+        )
+        if method == "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation":
+            fields.update({"detailOwnerCancelled": "true", "cancelledResponseReleased": "true"})
+        else:
+            fields.update({"inventoryInvalidated": "true", "lateResponseReleased": "true"})
 
     event = "ANDROID_SOURCE_SWITCH|" + "|".join(key + "=" + value for key, value in fields.items())
     diagnostic = ""
@@ -130,6 +164,245 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                 fields = verifier.verify(output_for(method), method)
                 self.assertEqual("OBSERVABLE", fields["position"])
                 self.assertGreater(int(fields["pageCount"]), 0)
+
+    def test_legacy_attach_requires_mapping_variant_preference_and_history_evidence(self):
+        method = "legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress"
+        output = output_for(method)
+        verifier.verify(output, method)
+        for key in (
+            "legacySessionAttached", "canonicalIdStable", "mappingPreserved",
+            "variantPreserved", "preferencePreserved", "canonicalHistory",
+        ):
+            with self.subTest(key=key):
+                changed = output.replace(key + "=true", key + "=false")
+                with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                    verifier.verify(changed, method)
+
+    def test_detail_inventory_races_require_shared_cache_and_preserved_state(self):
+        scenarios = {
+            "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation": (
+                "detailOwnerCancelled", "cancelledResponseReleased",
+            ),
+            "legacyReaderKeepsPagesAfterDetailInventoryInvalidation": (
+                "inventoryInvalidated", "lateResponseReleased",
+            ),
+        }
+        common = (
+            "readerAttachWaited", "readerPagesPreserved", "sharedCacheIdentity", "mappingPreserved",
+            "priorVariantPreserved", "canonicalIdsPreserved", "progressPreserved", "historyPreserved",
+            "preferencePreserved", "staleTargetVariantAbsent",
+        )
+        for method, specific in scenarios.items():
+            with self.subTest(method=method):
+                output = output_for(method)
+                verifier.verify(output, method)
+                for key in (*common, *specific):
+                    with self.subTest(key=key):
+                        changed = output.replace(key + "=true", key + "=false")
+                        with self.assertRaises(verifier.ReaderSourceSwitchVerificationError):
+                            verifier.verify(changed, method)
+
+    def test_detail_setup_diagnostic_reports_only_sanitized_state_and_binding_categories(self):
+        method = "legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation"
+        diagnostic = (
+            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+            + "scenario=DETAIL_OWNER_CANCEL|state=ERROR|localLoad=FAILED|refreshing=UNKNOWN"
+            + "|startJob=COMPLETED|stateError=NO_SUCH_ELEMENT|refreshError=NONE"
+            + "|integrationReady=TRUE|addonReady=TRUE|providerCount=2"
+            + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            + "|aCallEvents=C1:INVENTORY_START,C1:INVENTORY_CONNECT_START|bCallEvents=NONE"
+            + "|serverRequests=2|unknownSourceRequests=0|aOther=0|bOther=0"
+            + "|aChapterRequests=0|bChapterRequests=0"
+            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+            + "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING"
+        )
+        fields = verifier._detail_setup_diagnostic(diagnostic, method)
+        self.assertIsNotNone(fields)
+        self.assertEqual("FAILED", fields["localLoad"])
+        self.assertEqual("NO_SUCH_ELEMENT", fields["stateError"])
+        self.assertEqual("ELIGIBLE", fields["bindingGate"])
+        self.assertEqual("TRUE", fields["sourceEligible"])
+        self.assertEqual("SELECTED", fields["bindingSelection"])
+        self.assertEqual("MATCH", fields["fixtureOrigin"])
+        self.assertEqual("STARTED", fields["aHttp"])
+        self.assertEqual("SCREEN", fields["routeModel"])
+        self.assertEqual("CHAPTER_PROBE:NO_BINDING:NO_BINDING", fields["probe"])
+        summary = verifier.sanitized_summary(
+            method,
+            {},
+            False,
+            detail_setup_diagnostic=fields,
+        )
+        self.assertIn("state=ERROR|localLoad=FAILED", summary)
+        self.assertIn(
+            "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
+            "|sourceEligible=TRUE|bindingSelection=SELECTED|bindingPayload=MATCH|manga=MATCH"
+            "|source=SOURCE_A|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            "|aCallEvents=C1:INVENTORY_START,C1:INVENTORY_CONNECT_START|bCallEvents=NONE"
+            "|serverRequests=2|unknownSourceRequests=0|aOther=0|bOther=0"
+            "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
+            "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+            "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING",
+            summary,
+        )
+
+    def test_detail_setup_diagnostic_rejects_unknown_fields_and_unbounded_categories(self):
+        method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
+        base = (
+            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+            + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
+            + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
+            + "|providerCount=1"
+            + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+            + "|aCallEvents=NONE|bCallEvents=NONE"
+            + "|serverRequests=0|unknownSourceRequests=0|aOther=0|bOther=0"
+            + "|aChapterRequests=0|bChapterRequests=0"
+            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
+        )
+        with_title = base + "|title=private-title"
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_title, method),
+        )
+        with_unbounded_state = base.replace("state=LOADED", "state=private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_state, method),
+        )
+        with_unbounded_source_state = base.replace("sourceEligible=TRUE", "sourceEligible=private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_source_state, method),
+        )
+        with_unbounded_source = base.replace("source=SOURCE_A", "source=private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_source, method),
+        )
+        with_unbounded_request_count = base.replace("aChapterRequests=0", "aChapterRequests=private")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_request_count, method),
+        )
+        with_unbounded_probe = base.replace("probe=NONE", "probe=CHAPTER_PROBE:OTHER:private-title")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_probe, method),
+        )
+        with_unbounded_http = base.replace("aHttp=NOT_STARTED", "aHttp=IOException:private-message")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_http, method),
+        )
+        with_unbounded_call_event = base.replace(
+            "aCallEvents=NONE",
+            "aCallEvents=C1:INVENTORY_START,private-host",
+        )
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_call_event, method),
+        )
+        with_wrong_fixture_origin = base.replace("fixtureOrigin=MATCH", "fixtureOrigin=private-host")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_wrong_fixture_origin, method),
+        )
+        with_unbounded_server_count = base.replace("serverRequests=0", "serverRequests=private")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_server_count, method),
+        )
+
+    def test_detail_setup_call_trace_accepts_only_sanitized_interceptor_events(self):
+        allowed = (
+            "C1:INVENTORY_APP_REQUEST_ONLY_IF_CACHED_FALSE",
+            "C1:INVENTORY_APP_REQUEST_ON_MAIN_THREAD_FALSE",
+            "C1:INVENTORY_APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_FALSE",
+            "C1:INVENTORY_APP_REQUEST_MAX_AGE_POSITIVE",
+            "C1:INVENTORY_APP_RESPONSE_HTTP_200_NETWORK_ONLY",
+            "C1:INVENTORY_APP_RESPONSE_HTTP_504_CACHE_ONLY",
+            "C1:INVENTORY_APP_FAIL_CONNECTION_REFUSED",
+            "C1:INVENTORY_APP_FAIL_OTHER_EXCEPTION",
+            "C1:INVENTORY_APP_FAILURE_TYPE_NETWORK_ON_MAIN_THREAD",
+            "C1:INVENTORY_APP_FAILURE_CAUSE_NONE",
+            "C1:INVENTORY_APP_FAILURE_ON_MAIN_THREAD_TRUE",
+        )
+        for event in allowed:
+            with self.subTest(event=event):
+                self.assertTrue(verifier._valid_detail_call_events(event))
+
+        safe_trace = ",".join(allowed[:4])
+        self.assertTrue(verifier._valid_detail_call_events(safe_trace))
+        for unsafe in (
+            "C1:INVENTORY_APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_private-host",
+            "C1:INVENTORY_APP_RESPONSE_HTTP_200_private-title",
+            "C1:INVENTORY_APP_FAIL_java.net.ConnectException",
+            "C1:INVENTORY_APP_FAILURE_TYPE_private-class",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assertFalse(verifier._valid_detail_call_events(unsafe))
+
+    def test_detail_setup_diagnostic_accepts_sanitized_http_statuses(self):
+        method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
+        base = (
+            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+            + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
+            + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
+            + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=HTTP_404|bHttp=HTTP_503"
+            + "|aCallEvents=C1:INVENTORY_START,C1:INVENTORY_HTTP_404,C1:INVENTORY_END|bCallEvents=NONE"
+            + "|serverRequests=2|unknownSourceRequests=1|aOther=0|bOther=0"
+            + "|aChapterRequests=1|bChapterRequests=1|aInventory=0|aHeld=0"
+            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
+        )
+        fields = verifier._detail_setup_diagnostic(base, method)
+        self.assertIsNotNone(fields)
+        self.assertEqual("HTTP_404", fields["aHttp"])
+        self.assertEqual("2", fields["serverRequests"])
+        self.assertEqual("1", fields["unknownSourceRequests"])
+
+    def test_detail_probe_parser_matches_domain_outcome_and_reason_enums(self):
+        source = (
+            ROOT
+            / "domain/src/main/java/tachiyomi/domain/tsuzuki/chapter/diagnostics/ChapterInventoryDiagnostics.kt"
+        ).read_text(encoding="utf-8")
+
+        def enum_values(name: str) -> set[str]:
+            match = re.search(r"enum class " + name + r"\s*\{([^}]*)\}", source, re.S)
+            self.assertIsNotNone(match, f"Could not locate Domain enum {name}")
+            return {value.strip() for value in match.group(1).split(",") if value.strip()}
+
+        domain_outcomes = enum_values("ChapterInventoryDiagnosticOutcome")
+        domain_reasons = enum_values("ChapterInventoryDiagnosticReason")
+        self.assertEqual(domain_outcomes, verifier.DETAIL_SETUP_PROBE_OUTCOMES)
+        self.assertEqual(domain_reasons | {"NONE"}, verifier.DETAIL_SETUP_PROBE_REASONS)
+
+        method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
+        for stage in verifier.DETAIL_SETUP_PROBE_STAGES:
+            for outcome in domain_outcomes:
+                for reason in domain_reasons:
+                    with self.subTest(stage=stage, outcome=outcome, reason=reason):
+                        diagnostic = (
+                            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+                            + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
+                            + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
+                            + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
+                            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+                            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+                            + "|aCallEvents=NONE|bCallEvents=NONE"
+                            + "|serverRequests=0|unknownSourceRequests=0|aOther=0|bOther=0"
+                            + "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
+                            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
+                            + f"|probe={stage}:{outcome}:{reason}"
+                        )
+                        parsed = verifier._detail_setup_diagnostic(diagnostic, method)
+                        self.assertIsNotNone(parsed)
+                        self.assertNotIn("evidence", parsed or {})
 
     def test_real_runner_repeats_numtests_in_the_terminal_status_bundle(self):
         # AndroidJUnitRunner sends numtests=1 both when the test starts and
@@ -590,14 +863,18 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("live_probe:", workflow)
         self.assertIn("instrumentation_suite:", workflow)
+        self.assertIn("reader_source_switch_mode:", workflow)
         self.assertIn("default: navigation", workflow)
         self.assertIn("- reader-source-switch", workflow)
+        self.assertIn("- detail-races", workflow)
         self.assertIn("run_android_instrumentation_route.sh", workflow)
         self.assertIn("inputs.instrumentation_suite || 'navigation'", workflow)
+        self.assertIn("inputs.reader_source_switch_mode || 'all'", workflow)
         self.assertIn("test_summarize_reader_screenshot.py", workflow)
         runner = (ROOT / ".github/scripts/run_android_reader_source_switch.sh").read_text(encoding="utf-8")
         self.assertIn("--runner-exit", runner)
         self.assertIn("overall_status", runner)
+        self.assertIn("detail-races)", runner)
         self.assertIn("settings get global airplane_mode_on", runner)
         self.assertIn("adb exec-out screencap -p", runner)
         self.assertIn("summarize_reader_screenshot.py", runner)

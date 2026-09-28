@@ -11,8 +11,8 @@ import java.util.UUID
  * Read-only compatibility adapter from materialized Mihon inventory to source-scoped
  * provisional evidence. No ContentBinding is required for a legacy Reader mapping.
  *
- * This adapter does NOT publish ChapterVariants or replace the legacy writer until
- * evidence and operational variants can be committed together transactionally.
+ * The source-scoped external key matches Add-on observations so the shared
+ * reconciler can compare delayed Reader inventories with newer detail evidence.
  */
 @Inject
 class LegacyInventoryEvidenceAdapter(
@@ -61,7 +61,7 @@ class LegacyInventoryEvidenceAdapter(
                 canonicalTitleId = inventory.canonicalTitleId,
                 producerKind = ProducerKind.ADDON,
                 producerId = producerId,
-                externalChapterKey = sourceKey,
+                externalChapterKey = "${snapshot.sourceId}:$sourceKey",
                 rawLabel = snapshot.rawName,
                 // The Mihon number is a hint, not a verified chapter identity.
                 rawNumber = snapshot.rawNumberHint?.takeIf { it.isFinite() },

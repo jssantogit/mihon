@@ -24,7 +24,7 @@ class LegacyInventoryEvidenceAdapterTest {
         first shouldHaveSize 2
         first.map { it.id }.toSet() shouldBe reversed.map { it.id }.toSet()
         first.map { it.producerId }.toSet() shouldBe setOf("mihon-legacy:title:101", "mihon-legacy:title:202")
-        first.map { it.externalChapterKey } shouldBe listOf("/chapter/4", "/chapter/4")
+        first.map { it.externalChapterKey } shouldBe listOf("101:/chapter/4", "202:/chapter/4")
         first.map { it.volume } shouldBe listOf(1, 1)
         first.all { it.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL } shouldBe true
         first.all { it.producerKind == ProducerKind.ADDON } shouldBe true
@@ -55,7 +55,7 @@ class LegacyInventoryEvidenceAdapterTest {
         val observations = adapter.adapt(inventory, 42L)
         observations shouldHaveSize 3
         observations.map { it.volume } shouldBe listOf(null, null, null)
-        observations.single { it.externalChapterKey == "/unknown" }.rawNumber shouldBe 4.0
+        observations.single { it.externalChapterKey == "101:/unknown" }.rawNumber shouldBe 4.0
         observations.all { it.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL } shouldBe true
     }
 
@@ -93,7 +93,7 @@ class LegacyInventoryEvidenceAdapterTest {
         // The Mihon compatibility reader falls back to sourceChapterUrl when
         // an older snapshot has no separate sourceChapterId.
         val urlOnly = valid.copy(chapters = valid.chapters.map { it.copy(sourceChapterId = "") })
-        adapter.adapt(urlOnly, 10L).single().externalChapterKey shouldBe "/chapter/4"
+        adapter.adapt(urlOnly, 10L).single().externalChapterKey shouldBe "101:/chapter/4"
         adapter.adapt(valid.copy(chapters = emptyList()), 10L) shouldHaveSize 0
     }
 

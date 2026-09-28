@@ -5,8 +5,10 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import java.util.LinkedHashMap
 import kotlin.time.Clock
@@ -96,10 +98,16 @@ class MihonInventorySnapshotCache internal constructor(
             }
             return pending.await()
         } catch (cancelled: CancellationException) {
-            mutex.withLock {
-                if (inFlight[key] === pending) inFlight.remove(key)
+            withContext(NonCancellable) {
+                mutex.withLock {
+                    if (inFlight[key] === pending) {
+                        inFlight.remove(key)
+                        pending.complete(
+                            Result.failure(IllegalStateException("Chapter inventory fetch was cancelled", cancelled)),
+                        )
+                    }
+                }
             }
-            pending.cancel(cancelled)
             throw cancelled
         }
     }

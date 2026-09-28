@@ -26,6 +26,17 @@ interface CanonicalChapterRepository {
 
     suspend fun upsertVariant(variant: ChapterVariant)
 
+    /**
+     * Converges two legacy rows that represent the exact same numbered regular
+     * chapter and volume. Implementations must refuse the merge when deleting
+     * [duplicateChapterId] would discard user-owned or pending Reader state.
+     */
+    suspend fun consolidateExactDuplicateIfSafe(
+        canonicalTitleId: String,
+        preferredChapterId: String,
+        duplicateChapterId: String,
+    ): Boolean = false
+
     /** Upserts one inventory batch atomically, or rolls the entire batch back. */
     suspend fun upsertBatch(
         chapters: List<CanonicalChapter>,

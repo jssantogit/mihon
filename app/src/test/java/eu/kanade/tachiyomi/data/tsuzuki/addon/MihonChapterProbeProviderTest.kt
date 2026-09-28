@@ -81,7 +81,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1234L },
             diagnostics = diagnostics,
         )
 
@@ -139,7 +138,6 @@ class MihonChapterProbeProviderTest {
                         ),
                     )
                 },
-                clock = { 1L },
                 diagnostics = diagnostics,
             )
 
@@ -169,7 +167,6 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(emptyList()),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { error("must not fetch") },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
@@ -193,7 +190,6 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { Result.failure(timeout) },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
@@ -209,7 +205,6 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { Result.failure(unknownIo) },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
@@ -220,7 +215,7 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
-    fun `source chapter ahead of integration becomes addon provisional evidence`() = runTest {
+    fun `probe evidence keeps inventory fetch start instead of completion time`() = runTest {
         val binding = binding()
         val provider = MihonChapterProbeProvider(
             addonId = AddonId("mangadex"),
@@ -244,10 +239,10 @@ class MihonChapterProbeProviderTest {
                         ),
                         mihonMangaId = 99L,
                         language = "en",
+                        fetchStartedAtMillis = 1234L,
                     ),
                 )
             },
-            clock = { 1234L },
         )
 
         val evidence = provider.probe("title").getOrThrow()
@@ -260,6 +255,30 @@ class MihonChapterProbeProviderTest {
         newChapter.externalChapterKey shouldBe "7:/chapter-211"
         newChapter.rawNumber shouldBe 211.0
         newChapter.observedAt shouldBe 1234L
+    }
+
+    @Test
+    fun `inventory without fetch provenance uses oldest timestamp instead of completion time`() = runTest {
+        val binding = binding()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = 7L,
+                        canonicalTitleId = "title",
+                        chapters = listOf(snapshot(binding.id, 7L, "/chapter-1", "Chapter 1", 1.0)),
+                        mihonMangaId = 99L,
+                        language = "en",
+                    ),
+                )
+            },
+        )
+
+        provider.probe("title").getOrThrow().single().observedAt shouldBe 0L
     }
 
     @Test
@@ -358,7 +377,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         val result = backgroundScope.async {
@@ -401,7 +419,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         provider.probe("title").getOrThrow().single().externalChapterKey shouldBe "8:/chapter-37"
@@ -428,7 +445,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         provider.probe("title").exceptionOrNull()?.message shouldBe "English inventory unavailable"
@@ -445,7 +461,6 @@ class MihonChapterProbeProviderTest {
                 fetchCalls++
                 error("must not fetch without persisted binding")
             },
-            clock = { 1L },
         )
 
         provider.probe("title").getOrThrow() shouldBe emptyList()

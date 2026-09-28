@@ -1,24 +1,21 @@
 # Tsuzuki chapter reconciliation: production caller map and migration gate
 
-Status: design map only; **Phase D is not implemented**. This file describes the
-active paths in PR #21. It does not authorize merging while Android acceptance
-or real-provider evidence remains incomplete.
+Status: **single-writer cutover implemented and automated pre-UI acceptance complete in PR #22**. The production implementation baseline is `6c173c41e7cdbd6134ff3c2e4b66ca2c0ae2b426`. PR #20/#21/#22 remain draft and unmerged; physical-device and bounded live-provider evidence remain external acceptance debt.
+
+Sections below that discuss `ReconcileChapterInventory` as an active writer document the **historical pre-cutover path** and its migration evidence. They must not be interpreted as the current production architecture.
 
 ## Current production paths
 
 | Entry point | Refresh and input | Canonical writer | Result |
 | --- | --- | --- | --- |
-| `ReaderViewModel.attachCanonicalSessionForLegacy` | On an unmapped legacy Mihon chapter, calls `RefreshCanonicalChapters.execute(title, mappingId)` through `ChapterInventoryGateway` / `MihonChapterInventoryGateway` | `ReconcileChapterInventory` | `CanonicalChapterRepository.upsertBatch` stores canonical chapters and Mihon operational `ChapterVariant` rows; Reader then finds the variant by source ID and URL. |
-| `CanonicalTitleScreenModel.refreshInBackground` | `RefreshChapterEvidence.execute(title)` | `ReconcileChapterEvidence` | Transactional canonical chapter and persisted editorial/Add-on evidence; broad refresh currently remains. |
-| `ContentSelectorScreenModel.refreshAfterBindings` | `RefreshChapterEvidence.executeForBinding(binding)`, bounded to two selected bindings | `ReconcileChapterEvidence` | Same canonical chapter/evidence transaction; avoid refreshing all providers. |
+| `ReaderViewModel.attachCanonicalSessionForLegacy` | On an unmapped legacy Mihon chapter, calls `RefreshCanonicalChapters.execute(title, mappingId)` through `ChapterInventoryGateway` / `MihonChapterInventoryGateway` | `ReconcileLegacyChapterEvidence → ReconcileChapterEvidence.executeAndProject` | Legacy Mihon inventory becomes source-scoped chapter evidence; canonical chapter/evidence and operational `ChapterVariant` projection share the evidence-authoritative transaction and mutation gate. |
+| `CanonicalTitleScreenModel.refreshInBackground` | `RefreshChapterEvidence.execute(title)` | `ReconcileChapterEvidence` | Transactional canonical chapter and persisted editorial/Add-on evidence; post-commit invalidation prevents stale in-flight/content-option reuse. |
+| `ContentSelectorScreenModel.refreshAfterBindings` | `RefreshChapterEvidence.executeForBinding(binding)`, bounded to selected bindings | `ReconcileChapterEvidence` | Same canonical chapter/evidence authority with title/Add-on-scoped invalidation; no all-provider refresh is introduced by this targeted path. |
 | Targeted initial Reader discovery | `DiscoverReadableChapter`, `ResolveChapterContent` and scoped evidence refresh | `ReconcileChapterEvidence` when refresh is necessary | Uses verified per-chapter options; a verified option is not proof that full image bytes have rendered. |
 
-`ReconcileChapterInventory` and `ReconcileChapterEvidence` already share the
-conservative `CanonicalChapterCandidateResolver` and explicit volume policy,
-but they remain different canonical writers. Treat them as potentially
-divergent until equivalent outcomes are established by the tests below.
+There is now **one canonical reconciliation authority**: `ReconcileChapterEvidence`. `ReconcileLegacyChapterEvidence` is a compatibility adapter/projector for materialized Mihon inventory, not a second identity writer. The independent `ReconcileChapterInventory` implementation was removed in PR #22.
 
-## Reused source URLs: safety guard before writer unification
+## Historical pre-cutover: reused source URLs safety guard
 
 The original legacy reconciler reused a persisted `ChapterVariant` solely
 because `(sourceId, sourceChapterId)` was unchanged, even when a later
@@ -26,7 +23,7 @@ observation described a reliably different chapter or explicitly contradictory
 volume. The evidence reconciler already detects those conflicts and can remap
 source-scoped evidence to the newly supported identity.
 
-**The acceptance branch now fails closed in the legacy writer:** it parses
+**At this pre-cutover checkpoint, the acceptance branch failed closed in the legacy writer:** it parses
 existing source-key observations, checks reliably contradictory chapter
 identities and explicitly incompatible non-null volumes, and rejects the
 affected inventory *before* committing any batch. Existing canonical IDs,
@@ -44,11 +41,11 @@ of unconditional trust in the reused URL. The [focused Domain and App CI
 passed on equivalent production and test source blobs; skipped Format,
 Release and migration jobs in that run do not count as validation.
 
-Full unification is still blocked on legacy Reader acceptance, operational
+At this historical checkpoint, full unification was still blocked on legacy Reader acceptance, operational
 variant projection in the same database transaction as evidence, and
-conflicting-key compatibility coverage.
+conflicting-key compatibility coverage. Those gates were subsequently closed by PR #22 as recorded in the final cutover section.
 
-## Migration sequence (after Phase A/C acceptance)
+## Migration sequence — completed by PR #22
 
 1. Record equivalence fixtures against *both existing writers*: fractional
    chapters (0/0.5/1), same number in different volumes, two languages
@@ -81,23 +78,23 @@ conflicting-key compatibility coverage.
 - A fourth dual-writer test covers **two source languages** (English and pt-BR) sharing one preexisting volume-1 canonical chapter while retaining separate legacy `ChapterVariant` IDs and language metadata. It reverses refresh ordering and later omits the pt-BR row; neither writer may drop the previous mapping. The [Domain job in CI 36282164099](https://github.com/jssantogit/mihon/actions/runs/36282164099) passed on byte-identical PR source and test blobs; the remaining full CI jobs require separate checking.
 - The baseline is still intentionally narrow. It does not cover the legacy Reader UI, reused external URLs, contradictory volume releases, a transaction spanning evidence and operational variants, or Android E2E. Do not use it as authorization to remove the older writer.
 
-## Staged legacy inventory evidence adapter — not yet used by the Reader
+## Legacy inventory evidence adapter — historical staging record
 
 The acceptance PR now includes `LegacyInventoryEvidenceAdapter`, which maps a previously materialized Mihon source inventory to `ADDON_PROVISIONAL` evidence **without requiring a new ContentBinding**. Its producer scope includes the canonical title and Mihon source ID, so the same relative URL in a different title/source cannot accidentally reuse evidence; its generated evidence ID is deterministic across refresh order and label changes. Only explicit, unambiguous volume-prefix evidence becomes `volume`; the old numeric hint remains a hint, never verified editorial authority. Identical repeated chapter URLs are deduplicated; contradictory duplicate URL observations and mismatched source/mapping IDs fail closed before any write. Blank source ID may use a nonblank legacy source URL; both blank fail.
 
 The [initial RED CI 36282830973](https://github.com/jssantogit/mihon/actions/runs/36282830973) executed all four new adapter tests and they failed against the intentionally unimplemented adapter. The subsequent [Domain CI 36282997303](https://github.com/jssantogit/mihon/actions/runs/36282997303) passed those tests and a new end-to-end test through the existing evidence reconciler: an English source reuses a URL for volume 2 while a Portuguese source retains independent support for volume 1, preserving both canonical IDs. Spotless reported one whitespace layout difference in the adapter; the corrected implementation is under [CI 36283160529](https://github.com/jssantogit/mihon/actions/runs/36283160529) passed Domain, Data, App, Core, SQLDelight, Supabase, Format, Release and CI Gate; separate Compile/Native gates were skipped by the planner.
 
-**The adapter is still not connected to the legacy Reader.** A staged projector now writes evidence and variants in one SQLDelight transaction and passes an injected second-variant failure/retry regression. Reader source-mapping authority, concurrency and lifecycle still gate cutover.
+**Historical note:** at this checkpoint the adapter was not connected to the legacy Reader. PR #22 later connected `RefreshCanonicalChapters` to `ReconcileLegacyChapterEvidence`; see the final cutover evidence below.
 
-## Staged atomic projection — not production Reader routing
+## Atomic projection — historical staging record
 
 The acceptance PR now includes `ReconcileLegacyChapterEvidence`. After source-scoped provisional evidence is created by the legacy adapter, `ReconcileChapterEvidence.executeAndProject` reconciles canonical chapters/evidence and projects only the **persisted mapped evidence** to Mihon `ChapterVariant` rows. Everything runs within the same SQLDelight transaction and chapter mutation gate. An unmapped observation creates no variant; if an already-mapped key becomes ambiguous the projector fails closed and the transaction rolls back. Stable operational variant IDs and source metadata are retained across reorder and explicit-volume reassignment; independent support for the old volume is preserved.
 
 The [RED JDBC CI 36284495531](https://github.com/jssantogit/mihon/actions/runs/36284495531) confirmed three new regressions fail against the deliberately unimplemented projector. [Scoped GREEN CI 36284727291](https://github.com/jssantogit/mihon/actions/runs/36284727291) passed Domain, Data, App, Format and CI Gate. The real SQLite foreign-key regression fails on the **second variant** after an earlier valid variant and newly written canonical/evidence rows; it confirms complete rollback, preservation of preexisting state and successful retry with the mapping fixed. Scope-planned migration/Release/Supabase/Native and separate Compile jobs were skipped, not approved; a full CI run on byte-identical PR files remains required.
 
-This is the transaction building block, **not single-writer cutover**. Validate mapping/title ownership, concurrent refresh, legacy Reader missing-mapping entry and process-restart recovery, performance and final Android 8/8 before deleting the independent legacy writer. No distribution APK or merge is authorized by the staged API.
+This paragraph records the pre-cutover gate at that historical checkpoint. PR #22 subsequently routed the production legacy Reader compatibility entry through this projector and removed the independent legacy writer after the final-SHA gates described below. No distribution APK or merge is implied by the historical staged API.
 
-## Mapping authority and cross-writer serialization — scoped regression evidence
+## Mapping authority and cross-writer serialization — historical pre-cutover evidence
 
 The staged legacy projection now reads the persisted `SourceTitleMapping` **inside** its canonical/evidence/variant transaction. It accepts an inventory only if the mapping ID belongs to the same canonical title, the Mihon source ID and materialized manga ID match, the mapping is not unavailable and nonblank inventory language matches. A rejected inventory rolls back staged canonical/evidence writes and never publishes an operational variant. [RED JDBC CI 36285954535](https://github.com/jssantogit/mihon/actions/runs/36285954535) reproduced three previously accepted invalid inventories; [GREEN scoped CI 36286206067](https://github.com/jssantogit/mihon/actions/runs/36286206067) passed Data, Domain, App, Format and CI Gate.
 
@@ -107,7 +104,73 @@ While both writers coexist, the injected `ReconcileChapterInventory` now locks t
 
 [PR-equivalent full CI 36313408103](https://github.com/jssantogit/mihon/actions/runs/36313408103) passed mapping, locking and empty-projection coverage. [RED provenance CI 36313988598](https://github.com/jssantogit/mihon/actions/runs/36313988598) exposed missing provider fetch timestamps in App/Domain and a cached stale overwrite in real Data/JDBC. [Scoped GREEN 36314684084](https://github.com/jssantogit/mihon/actions/runs/36314684084) passed App/Domain after preserving the original fetch clock. [RED same-millisecond JDBC 36314850321](https://github.com/jssantogit/mihon/actions/runs/36314850321) then demonstrated an ambiguous equal-time rehome. [Full CI 36315380750](https://github.com/jssantogit/mihon/actions/runs/36315380750) passed Domain, Data, App, Core Common, Format, SQLDelight, Supabase, Release Compile and CI Gate with the corrected Mihon-legacy-only guard; separate Compile/Native jobs were skipped by the planner. Verified that all eight PR source/test blobs are byte-identical to the disposable green branch; none of its CI workflows were promoted.
 
-**Remaining before cutover:** simultaneous real Reader/detail refresh and invalidated in-flight cache, staged-projection benchmark (100/500/1,000 observations), Android process restart and a new 8/8 acceptance after routing production Reader. Live-provider inventory and physical-device evidence remain separate. The independent legacy Reader writer has not been removed; neither PR is merged.
+**Historical checkpoint:** these items were still pending here. PR #22 subsequently completed final-SHA Reader/detail races, Android process recovery, Reader 9/9, the 100/500/1,000 projector benchmark and removal of the independent legacy writer. Live-provider inventory and physical-device evidence remain separate.
+
+## Cached legacy Reader versus canonical detail — CR-01 pre-cutover proof
+
+An App integration regression uses the production `MihonChapterInventoryGateway`, `RefreshCanonicalChapters` and `RefreshChapterEvidence` callers against a local HTTP fixture. It warms the Reader inventory with Chapter 1, delays the legacy refresh after it returns the cached inventory, then lets a forced detail refresh record Chapter 2 evidence for the same exact source chapter key before releasing the legacy write. The initial [RED CI 36328774260](https://github.com/jssantogit/mihon/actions/runs/36328774260) showed the detail evidence mapped to canonical ID `d0836135-58d9-45d9-936f-fbde8ec47727` and then the same-key operational variant mapped to a different Chapter 1 ID `493b477c-dba1-4111-8ccd-5e3baf71edcb`.
+
+`ReconcileChapterInventory` now reads ADDON evidence while holding the shared mutation gate and suppresses an old inventory unless its parsed identity and volume prove it equivalent to the latest same-title/source/exact-key mapped evidence. Unmapped newer evidence and contradictory evidence tied at the latest timestamp also block old projections; semantically identical tied replay remains allowed, and a genuinely later provider fetch can advance. The production-injected evidence repository is required, so a failed evidence read cannot silently fall back to the legacy writer. The added edge regressions returned the expected RED in [CI 36330781034](https://github.com/jssantogit/mihon/actions/runs/36330781034): Domain failed three cases for newer unmapped evidence and order-dependent contradictory ties, while App passed. The corrected Domain tests cover unmapped evidence, timestamp equality, both tie orderings and identical replay. The App fixture also asserts that the delayed observation leaves persisted mapping, existing chapter/variant IDs, preferred source mapping, progress and history intact, and separately confirms same-identity cached replay keeps its existing variant.
+
+[GREEN CI 36331109111](https://github.com/jssantogit/mihon/actions/runs/36331109111) passed Domain Tsuzuki, App Tsuzuki and CI Gate on code SHA `3d3d058ef1caa25a85bbcf764e2482289c198359`. Format, migrations, Supabase, Release, separate Compile and Native jobs were planner-skipped; APK Build was skipped. The test uses a local source harness and in-memory canonical/evidence repositories. It invokes the actual production interactors and gateway, but does not run `ReaderViewModel`/Reader UI, Android instrumentation, process restart, a cancelled/invalidation race, or any real-provider sweep. This closes the cached late-response integration regression only; it does not close phase 1 or authorize cutover.
+
+## Reader/detail owner races and partial-source recovery — CR-06 pre-cutover checkpoint
+
+Branch `tsuzuki/uc01-transactional-cutover`, implementation checkpoint SHA
+`439e7b68bf1224c72969d548a7adc34f4f1081c6` (before the final documentation
+and recovery-workflow checkpoint commit). The gateway now performs the
+synchronous Mihon source inventory call on `Dispatchers.IO`; source-fetch
+start time and cancellation behavior remain tied to that call. A focused
+gateway regression waits on an explicit `CompletableDeferred` signal from
+inside the old in-flight source fetch before starting the competing request.
+This replaces a scheduler `yield()` that did not prove IO work had started,
+while retaining the invalidation and newer-inventory assertions.
+
+The local partial-source App fixture now queues the second English HTTP 503
+needed for the provider's uncached retry. Previously its retry waited forever
+for a MockWebServer response, and the two-language provider lookup timed out
+before exposing the valid cached pt-BR option. This is a fixture correction;
+the exact `pt-BR` expectation remains, no production timeout was enlarged,
+and the test's provider and content-selector assertions remain enabled. The
+focused CI run [36374013417](https://github.com/jssantogit/mihon/actions/runs/36374013417)
+passed App, Domain and CI Gate on SHA `439e7b68bf1224c72969d548a7adc34f4f1081c6`;
+Format and unrelated planner-selected jobs were skipped in that run.
+
+The offline synthetic-emulator run
+[36372581923](https://github.com/jssantogit/mihon/actions/runs/36372581923)
+executed both detail-owner race methods: cancellation and invalidation. Each
+XML result reports one test, zero failures, zero errors and zero skips. Both
+loaded ten pages and retained observable position, canonical IDs, source
+variant, preference, progress and history; cancellation released the held
+response and invalidation released its late response. The parent reviewer
+accepted this 2/2 behavioral proof. It is a focused run on SHA
+`165bbe668487037be74096f06327b81e90093c01`, not final-SHA evidence. Final
+Android base coverage, repeat detail-race run, process recovery, full CI and
+the 100/500/1,000-observation benchmark remain pending on the final checkpoint
+SHA. Physical-device acceptance and live-provider validation remain separate;
+neither is claimed here.
+
+The process-recovery workflow now has a manual dispatch entry point, committed
+with this checkpoint. Next, run all required final gates against the resulting
+SHA and record their exact results.
+
+## Final cutover evidence — PR #22
+
+Production implementation baseline: `6c173c41e7cdbd6134ff3c2e4b66ca2c0ae2b426`.
+
+- [Full CI 36381251731](https://github.com/jssantogit/mihon/actions/runs/36381251731) passed App, Domain, Data, Core Common, Format, SQLDelight migrations, Supabase, Release Compile and CI Gate. Compile matrix and Native Package Gate were planner-skipped, not passed.
+- [Final Reader Android 36381449656](https://github.com/jssantogit/mihon/actions/runs/36381449656) executed 9/9 methods on an isolated offline emulator with synthetic local fixtures and `providerCalls=0`, including legacy canonical attach in addition to the eight source-switch/lifecycle cases.
+- [Reader/detail races 36382698722](https://github.com/jssantogit/mihon/actions/runs/36382698722) executed 2/2 methods through the real `CanonicalTitleScreen` / Reader lifecycle with shared AppScope inventory cache. Detail-owner cancellation and explicit inventory invalidation both preserved loaded Reader pages, canonical IDs, mapping, prior variant, preference, progress and history while rejecting the stale target variant.
+- [Process recovery 36381426672](https://github.com/jssantogit/mihon/actions/runs/36381426672) proved a real process transition (`PID 3047 → 3851`), a `PENDING` durable projection queue after force-stop, database verification before startup, startup replay to `ACKNOWLEDGED`, preserved preference/progress and history applied once.
+- [Final-SHA projector benchmark 36380749934](https://github.com/jssantogit/mihon/actions/runs/36380749934) passed at 100/500/1,000 already mapped chapters with 704/3,504/7,004 SQL operations and stable existing variant IDs.
+
+### Acceptance-contract resolution
+
+The Reader/detail race and process-recovery requirements are accepted as **compositional evidence**, not misreported as one monolithic E2E test. The race tests prove that the UI concurrency paths leave the durable canonical/mapping/variant/user state stable after cancellation or invalidation; the recovery test independently proves that pending canonical→Mihon projection work survives an actual process death and replays once at startup. A future literal `race → force-stop → restart` scenario may be added as hardening, but it is not a pre-UI blocker.
+
+The performance gate is intentionally **projector-level**. The benchmark measures `ReconcileLegacyChapterEvidence` and its SQL projection on in-memory SQLite; it does not measure provider fetches, gateway/cache latency, Android disk I/O or whole-Reader performance. Targeted routing and the no-broad-provider-sweep invariant are functional properties covered by integration/Android tests, not inferred from this microbenchmark. No whole-Reader performance claim is authorized by the benchmark numbers.
+
+The automated pre-UI cutover gate is therefore complete. External acceptance remains open for a physical Android device and bounded real-provider evidence (Death Note, One-Punch Man, Hunter × Hunter, Dandadan and Nanatsu no Taizai). The stacked PRs remain draft/unmerged until the project explicitly chooses the merge gate.
 
 ## Acceptance checks
 
@@ -126,8 +189,8 @@ While both writers coexist, the injected `ReconcileChapterInventory` now locks t
   Reader tests on the **same final production implementation SHA**.
   Distinguish a compiled or skipped test from an executed Android pass.
 
-## Android emulator acceptance now completed; writer migration still gated
+## Historical PR #21 Android acceptance — superseded by final PR #22 gates
 
 [Final offline emulator run 36280293418](https://github.com/jssantogit/mihon/actions/runs/36280293418) executed **all eight named tests, 8/8 PASS**, with strict instrumentation/result parsing and real on-screen red/blue pixels linked to attached decoded page views: A→B retains index 4; empty/503 replacement retains prior session; 10→3 pages clamps 8→2; retired callbacks cannot overwrite newer state; Activity recreation restores index 6; repeated A↔B preserves one history row; slow source cannot block healthy source; canceled discovery cannot mutate the active reader. The [full CI 36280293408](https://github.com/jssantogit/mihon/actions/runs/36280293408) passed Domain/Data/App/Core, SQLDelight migration, Supabase, Format, Release and CI Gate; separate Compile matrix and Native Package Gate were skipped, not approved. The disposable test SHA [`bd95095`](https://github.com/jssantogit/mihon/commit/bd95095e9a33127b032f42944fb13ffcba9d1de9) has byte-identical blobs to PR #21's three production Reader files and instrumented test; CI routing/workflow files differ to trigger the offline run. An exact-title Pixel Launcher system-ANR dismissal was added to the test fixture without relaxing focus or screenshot requirements.
 
-**This closes Phase A's eight offline emulator cases only.** The production legacy Reader entry through missing variant mapping, real-provider inventory, process-kill recovery, physical-device visual evidence and Phase D's stage-to-production Reader cutover and its process-restart validation still lack acceptance. The two reconcilers remain separate; do not merge or delete one based on Android 8/8 alone. Synthetic 169/163 inventory fixtures do not explain a current live MangaDex discrepancy.
+**Historical scope:** that 8/8 run closed only PR #21's original emulator cases. PR #22 later added legacy attach, production cutover, final-SHA process recovery and Reader/detail race coverage as recorded above. Physical-device visual evidence and live-provider inventory remain unverified; synthetic 169/163 inventory fixtures still do not explain a current live-provider discrepancy.

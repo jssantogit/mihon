@@ -14,8 +14,7 @@ import java.util.UUID
  * authoritative for chapter identity; the operational variants are derived
  * from *persisted* mapped evidence inside the same SQLDelight transaction.
  *
- * Not wired into RefreshCanonicalChapters or the Reader until behavioral
- * equivalence and Android process-restart checks are complete.
+ * Used by RefreshCanonicalChapters for materialized Mihon Reader mappings.
  */
 @Inject
 class ReconcileLegacyChapterEvidence(
@@ -51,10 +50,11 @@ class ReconcileLegacyChapterEvidence(
             adapter.adapt(inventory, observedAt).onEach { observation ->
                 val key = requireNotNull(observation.externalChapterKey)
                 val identity = observation.producerId to key
+                val sourceKey = key.substringAfter(':')
                 check(
                     snapshotsByEvidenceKey.putIfAbsent(
                         identity,
-                        inventory to firstBySourceKey.getValue(key),
+                        inventory to firstBySourceKey.getValue(sourceKey),
                     ) == null,
                 ) { "Duplicate source evidence identity in a legacy reconciliation batch" }
             }
@@ -80,7 +80,8 @@ class ReconcileLegacyChapterEvidence(
                 val (inventory, snapshot) = requireNotNull(
                     snapshotsByEvidenceKey[record.evidence.producerId to key],
                 ) { "Persisted chapter evidence has no corresponding source observation" }
-                val existing = chapters.getVariantBySourceIdentity(inventory.sourceId, key)
+                val sourceKey = snapshot.sourceChapterId.ifBlank { snapshot.sourceChapterUrl }
+                val existing = chapters.getVariantBySourceIdentity(inventory.sourceId, sourceKey)
                 if (existing != null) {
                     check(existing.sourceMappingId == inventory.sourceMappingId) {
                         "Existing operational variant belongs to another source mapping"
@@ -107,8 +108,8 @@ class ReconcileLegacyChapterEvidence(
                     sourceId = inventory.sourceId,
                     mihonMangaId = snapshot.mihonMangaId ?: inventory.mihonMangaId ?: existing?.mihonMangaId,
                     mihonChapterId = snapshot.mihonChapterId ?: existing?.mihonChapterId,
-                    sourceChapterId = key,
-                    sourceChapterUrl = snapshot.sourceChapterUrl.ifBlank { key },
+                    sourceChapterId = sourceKey,
+                    sourceChapterUrl = snapshot.sourceChapterUrl.ifBlank { sourceKey },
                     language = snapshot.language.ifBlank { inventory.language },
                     scanlationGroup = snapshot.scanlationGroup ?: existing?.scanlationGroup,
                     version = snapshot.version ?: existing?.version,
