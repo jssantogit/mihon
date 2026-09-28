@@ -1092,6 +1092,68 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `conflicting positive numeric hint cannot create a canonical mapping from the label alone`() = runTest {
+        val fixture = fixture()
+        val conflicting = fixture.addonEvidence(
+            id = "chapter-one-with-wrong-hint",
+            rawLabel = "Chapter 1",
+            externalKey = "source-key-826",
+        ).copy(rawNumber = 826.0)
+
+        fixture.reconciler.execute("title", listOf(conflicting))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-826",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `stale same-provider observation is discarded without aborting a fresh sibling`() = runTest {
+        val fixture = fixture()
+        val current = fixture.addonEvidence(
+            id = "current-one",
+            rawLabel = "Chapter 1",
+            externalKey = "source-key-1",
+        ).copy(observedAt = 20L)
+        fixture.reconciler.execute("title", listOf(current))
+        val chapterOneId = fixture.chapterRepository.getByCanonicalTitleId("title").single().id
+
+        val stale = current.copy(
+            id = "stale-one",
+            rawLabel = "Chapter 826",
+            rawNumber = 826.0,
+            observedAt = 10L,
+        )
+        val freshSibling = fixture.addonEvidence(
+            id = "fresh-two",
+            rawLabel = "Chapter 2",
+            externalKey = "source-key-2",
+        ).copy(observedAt = 30L)
+
+        fixture.reconciler.execute("title", listOf(stale, freshSibling))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title")
+            .mapNotNull { it.baseNumber }
+            .toSet() shouldBe setOf(1, 2)
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-1",
+        )?.mappedCanonicalChapterId shouldBe chapterOneId
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-2",
+        )?.mappedCanonicalChapterId shouldBe fixture.chapterRepository
+            .getByCanonicalTitleId("title")
+            .single { it.baseNumber == 2 }
+            .id
+    }
+
+    @Test
     fun `provider omission never deletes an already materialized canonical chapter`() = runTest {
         val fixture = fixture()
 
