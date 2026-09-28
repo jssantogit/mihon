@@ -47,6 +47,16 @@ def check_contract(root: Path) -> list[str]:
         errors,
     )
     apk_workflow = _read(root, ".github/workflows/apk.yml", errors)
+    about_screen = _read(
+        root,
+        "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt",
+        errors,
+    )
+    more_screen = _read(
+        root,
+        "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt",
+        errors,
+    )
 
     if build:
         application_id = re.search(r'\bapplicationId\s*=\s*"([^"]+)"', build)
@@ -94,6 +104,36 @@ def check_contract(root: Path) -> list[str]:
         for name in SIGNING_SECRET_NAMES:
             if f"secrets.{name}" not in apk_workflow:
                 errors.append(f"APK workflow no longer references {name}")
+
+    if about_screen:
+        inherited_public_markers = (
+            "https://mihon.app",
+            "Constants.URL_DISCORD",
+            "https://x.com/mihonapp",
+            "https://facebook.com/mihonapp",
+            "https://www.reddit.com/r/mihonapp",
+        )
+        if any(marker in about_screen for marker in inherited_public_markers):
+            errors.append("About screen exposes Mihon-owned public identity links")
+
+        inherited_release_markers = (
+            "RELEASE_URL",
+            "updaterEnabled",
+            "check_for_updates",
+            "NewUpdateScreen",
+        )
+        if any(marker in about_screen for marker in inherited_release_markers):
+            errors.append("About screen still exposes the inherited Mihon release channel")
+
+    if more_screen:
+        inherited_more_markers = (
+            "label_support_us",
+            "Constants.URL_HELP",
+            "onClickSupport",
+            "VolunteerActivism",
+        )
+        if any(marker in more_screen for marker in inherited_more_markers):
+            errors.append("More screen still exposes inherited Mihon support/help entry points")
 
     return errors
 
