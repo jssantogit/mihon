@@ -894,6 +894,8 @@
     <string name="tsuzuki_content_automatic_fallback">Automatic fallback</string>
     <string name="tsuzuki_content_automatic_fallback_summary">Automatically use another Add-on when the preferred one cannot provide a chapter.</string>
     <string name="tsuzuki_account_title">Account</string>
+    <string name="tsuzuki_project_source">Tsuzuki source code</string>
+    <string name="tsuzuki_upstream_mihon">Upstream: Mihon</string>
     <string name="tsuzuki_integrations_title">Integrations</string>
     <string name="tsuzuki_home_collections_title">Home &amp; Collections</string>
     <string name="tsuzuki_sync_title">Sync</string>
