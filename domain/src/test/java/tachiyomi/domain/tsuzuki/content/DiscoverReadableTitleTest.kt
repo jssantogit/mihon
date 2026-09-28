@@ -115,6 +115,127 @@ class DiscoverReadableTitleTest {
     }
 
     @Test
+    fun `successful first wave stops before querying unrelated fallback sources`() = runTest {
+        val preferred = installed("a-preferred", 1L)
+        val peer = installed("b-peer", 2L)
+        val fallback = installed("c-fallback", 3L)
+        val searched = mutableListOf<Long>()
+        val discover = DiscoverReadableTitle(
+            hasObservedChapters = { false },
+            existingBindings = { emptyList() },
+            installedAddons = { listOf(preferred, peer, fallback) },
+            sourceEligibility = { addonId ->
+                when (addonId) {
+                    preferred.id -> listOf(source(1L, "en"))
+                    peer.id -> listOf(source(2L, "en"))
+                    else -> listOf(source(3L, "en"))
+                }
+            },
+            preferredLanguages = { listOf("en") },
+            preferredSourceIds = { listOf(1L) },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = if (sourceId == 1L) {
+                                ContentBindingSourceOutcome.BOUND
+                            } else {
+                                ContentBindingSourceOutcome.EMPTY
+                            },
+                            bindings = if (sourceId == 1L) {
+                                listOf(binding(preferred.id, sourceId))
+                            } else {
+                                emptyList()
+                            },
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        discover.execute("title").getOrThrow().single().providerTitleKey shouldBe "1:/title"
+        searched.toSet() shouldBe setOf(1L, 2L)
+        searched.contains(3L) shouldBe false
+    }
+
+    @Test
+    fun `one eligibility failure does not suppress a healthy configured source`() = runTest {
+        val broken = installed("a-broken", 1L)
+        val healthy = installed("b-healthy", 2L)
+        val discover = DiscoverReadableTitle(
+            hasObservedChapters = { false },
+            existingBindings = { emptyList() },
+            installedAddons = { listOf(broken, healthy) },
+            sourceEligibility = { addonId ->
+                if (addonId == broken.id) error("broken extension metadata")
+                listOf(source(2L, "en"))
+            },
+            preferredLanguages = { listOf("en") },
+            preferredSourceIds = { listOf(2L) },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = ContentBindingSourceOutcome.BOUND,
+                            bindings = listOf(binding(healthy.id, sourceId)),
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        discover.execute("title").getOrThrow().single().providerTitleKey shouldBe "2:/title"
+    }
+
+    @Test
+    fun `per-title preferred addon outranks package-size fallback when no global source is configured`() = runTest {
+        val preferred = installed("preferred-large", 10L, 11L, 12L)
+        val small = installed("small", 20L)
+        val searched = mutableListOf<AddonId>()
+        val discover = DiscoverReadableTitle(
+            hasObservedChapters = { false },
+            existingBindings = { emptyList() },
+            installedAddons = { listOf(small, preferred) },
+            sourceEligibility = { addonId ->
+                if (addonId == preferred.id) listOf(source(10L, "en")) else listOf(source(20L, "en"))
+            },
+            preferredLanguages = { listOf("en") },
+            preferredSourceIds = { emptyList() },
+            preferredAddonId = { preferred.id },
+            sourceSearch = { request ->
+                searched += request.addonId
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = ContentBindingSourceOutcome.BOUND,
+                            bindings = listOf(binding(request.addonId, sourceId)),
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        discover.execute("title").getOrThrow()
+        searched.first() shouldBe preferred.id
+    }
+
+    @Test
     fun `observed chapter evidence skips automatic title discovery`() = runTest {
         var searches = 0
         val addon = installed("preferred", 42L)
