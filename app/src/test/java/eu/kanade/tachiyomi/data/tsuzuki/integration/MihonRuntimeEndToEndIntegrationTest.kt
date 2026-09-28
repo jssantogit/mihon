@@ -969,6 +969,7 @@ class MihonRuntimeEndToEndIntegrationTest {
         suspend fun refresh() = refresh.execute(canonicalTitleId).getOrThrow()
         suspend fun refreshBinding(binding: ContentBinding) = refresh.executeForBinding(binding).getOrThrow()
         suspend fun installedSources() = harness.gateway.listInstalled("en")
+        suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
         suspend fun lookupOptions(chapterId: String): ContentOptionLookup =
             selector.lookupOptions(canonicalTitleId, chapterId)
 
