@@ -12,7 +12,6 @@ import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibility
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepository
-import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
@@ -30,7 +29,6 @@ import java.util.Locale
  * manual confirmation flow.
  */
 class DiscoverReadableTitle internal constructor(
-    private val hasObservedChapters: suspend (String) -> Boolean,
     private val existingBindings: suspend (String) -> List<ContentBinding>,
     private val installedAddons: suspend () -> List<InstalledAddon>,
     private val sourceEligibility: suspend (AddonId) -> List<AddonSourceEligibility>,
@@ -43,7 +41,6 @@ class DiscoverReadableTitle internal constructor(
 
     @Inject
     constructor(
-        evidenceRepository: ChapterEvidenceRepository,
         contentBindingRepository: ContentBindingRepository,
         addonRepository: AddonRepository,
         eligibilityRepository: AddonSourceEligibilityRepository,
@@ -53,10 +50,6 @@ class DiscoverReadableTitle internal constructor(
         sourceResolver: ResolveContentBinding,
         planner: PlanFastReadingDiscovery,
     ) : this(
-        hasObservedChapters = { titleId ->
-            evidenceRepository.getByCanonicalTitleId(titleId)
-                .any { it.mappedCanonicalChapterId != null }
-        },
         existingBindings = { titleId ->
             contentBindingRepository.getByTitle(titleId)
                 .filter { it.availability != ContentBindingAvailability.UNAVAILABLE }
@@ -97,17 +90,15 @@ class DiscoverReadableTitle internal constructor(
     suspend fun execute(canonicalTitleId: String): Result<List<ContentBinding>> {
         require(canonicalTitleId.isNotBlank())
         return try {
-            if (hasObservedChapters(canonicalTitleId)) {
-                return Result.success(emptyList())
+            val currentBindings = existingBindings(canonicalTitleId)
+            if (currentBindings.isNotEmpty()) {
+                return Result.success(currentBindings)
             }
 
             val installed = installedAddons()
                 .filter { it.enabled && it.mihonSourceIds.isNotEmpty() }
             if (installed.isEmpty()) return Result.success(emptyList())
 
-            val alreadyBoundSourceIds = existingBindings(canonicalTitleId)
-                .mapNotNull { it.providerTitleKey.substringBefore(':').toLongOrNull() }
-                .toSet()
             val languages = preferredLanguages(canonicalTitleId)
             val configuredSourceIds = try {
                 preferredSourceIds(languages)
@@ -115,19 +106,18 @@ class DiscoverReadableTitle internal constructor(
                 throw error
             } catch (_: Throwable) {
                 emptyList()
-            }.filterNot { it in alreadyBoundSourceIds }
+            }
 
             val baseEligibility = installed.associate { addon ->
                 addon.id to try {
                     sourceEligibility(addon.id)
-                        .filterNot { it.sourceId in alreadyBoundSourceIds }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Throwable) {
                     emptyList()
                 }
             }
-            val attemptedSourceIds = alreadyBoundSourceIds.toMutableSet()
+            val attemptedSourceIds = mutableSetOf<Long>()
             val discovered = mutableListOf<ContentBinding>()
 
             for (wave in 0 until MAX_TITLE_DISCOVERY_WAVES) {

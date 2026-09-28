@@ -20,7 +20,6 @@ class DiscoverReadableTitleTest {
         val smaller = installed("small", 7L)
         val searches = mutableListOf<Set<Long>?>()
         val discover = DiscoverReadableTitle(
-            hasObservedChapters = { false },
             existingBindings = { emptyList() },
             installedAddons = { listOf(smaller, preferred) },
             sourceEligibility = { addonId ->
@@ -69,7 +68,6 @@ class DiscoverReadableTitleTest {
         val fallback = installed("c-fallback", 3L)
         val searched = mutableListOf<Long>()
         val discover = DiscoverReadableTitle(
-            hasObservedChapters = { false },
             existingBindings = { emptyList() },
             installedAddons = { listOf(first, second, fallback) },
             sourceEligibility = { addonId ->
@@ -121,7 +119,6 @@ class DiscoverReadableTitleTest {
         val fallback = installed("c-fallback", 3L)
         val searched = mutableListOf<Long>()
         val discover = DiscoverReadableTitle(
-            hasObservedChapters = { false },
             existingBindings = { emptyList() },
             installedAddons = { listOf(preferred, peer, fallback) },
             sourceEligibility = { addonId ->
@@ -169,7 +166,6 @@ class DiscoverReadableTitleTest {
         val broken = installed("a-broken", 1L)
         val healthy = installed("b-healthy", 2L)
         val discover = DiscoverReadableTitle(
-            hasObservedChapters = { false },
             existingBindings = { emptyList() },
             installedAddons = { listOf(broken, healthy) },
             sourceEligibility = { addonId ->
@@ -204,7 +200,6 @@ class DiscoverReadableTitleTest {
         val small = installed("small", 20L)
         val searched = mutableListOf<AddonId>()
         val discover = DiscoverReadableTitle(
-            hasObservedChapters = { false },
             existingBindings = { emptyList() },
             installedAddons = { listOf(small, preferred) },
             sourceEligibility = { addonId ->
@@ -236,44 +231,11 @@ class DiscoverReadableTitleTest {
     }
 
     @Test
-    fun `observed editorial chapters without a reading binding still discover content`() = runTest {
-        var searches = 0
-        val addon = installed("preferred", 42L)
-        val discover = DiscoverReadableTitle(
-            hasObservedChapters = { true },
-            existingBindings = { emptyList() },
-            installedAddons = { listOf(addon) },
-            sourceEligibility = { listOf(source(42L, "en")) },
-            preferredLanguages = { listOf("en") },
-            preferredSourceIds = { listOf(42L) },
-            sourceSearch = { request ->
-                searches++
-                flow {
-                    emit(
-                        ContentBindingSearchProgress.SourceCompleted(
-                            sourceId = 42L,
-                            language = "en",
-                            outcome = ContentBindingSourceOutcome.BOUND,
-                            bindings = listOf(binding(addon.id, 42L)),
-                        ),
-                    )
-                    emit(ContentBindingSearchProgress.Completed(listOf(42L), 0))
-                }
-            },
-            planner = PlanFastReadingDiscovery(),
-        )
-
-        discover.execute("title").getOrThrow().single().providerTitleKey shouldBe "42:/title"
-        searches shouldBe 1
-    }
-
-    @Test
     fun `existing usable reading binding stops title discovery immediately`() = runTest {
         var searches = 0
         val addon = installed("preferred", 42L)
         val existing = binding(addon.id, 42L)
         val discover = DiscoverReadableTitle(
-            hasObservedChapters = { false },
             existingBindings = { listOf(existing) },
             installedAddons = { listOf(addon) },
             sourceEligibility = { listOf(source(42L, "en")) },
