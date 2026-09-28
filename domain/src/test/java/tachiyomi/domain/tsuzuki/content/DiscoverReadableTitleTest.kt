@@ -157,7 +157,8 @@ class DiscoverReadableTitleTest {
         )
 
         discover.execute("title").getOrThrow().single().providerTitleKey shouldBe "1:/title"
-        searched.toSet() shouldBe setOf(1L, 2L)
+        searched shouldBe listOf(1L)
+        searched.contains(2L) shouldBe false
         searched.contains(3L) shouldBe false
     }
 
