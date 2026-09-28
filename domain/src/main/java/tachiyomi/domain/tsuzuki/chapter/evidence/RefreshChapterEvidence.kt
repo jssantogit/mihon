@@ -27,6 +27,7 @@ import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableTitle
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
@@ -38,6 +39,7 @@ class RefreshChapterEvidence private constructor(
     private val contentOptionCache: ContentOptionCache?,
     private val inFlightContentResolution: InFlightContentResolution?,
     private val diagnostics: ChapterInventoryDiagnostics,
+    private val discoverReadableTitle: DiscoverReadableTitle?,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
@@ -50,6 +52,7 @@ class RefreshChapterEvidence private constructor(
         contentOptionCache: ContentOptionCache,
         inFlightContentResolution: InFlightContentResolution,
         diagnostics: ChapterInventoryDiagnostics,
+        discoverReadableTitle: DiscoverReadableTitle,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
@@ -58,6 +61,7 @@ class RefreshChapterEvidence private constructor(
         contentOptionCache = contentOptionCache,
         inFlightContentResolution = inFlightContentResolution,
         diagnostics = diagnostics,
+        discoverReadableTitle = discoverReadableTitle,
         constructorMarker = Unit,
     )
 
@@ -68,6 +72,7 @@ class RefreshChapterEvidence private constructor(
         resolveContentBinding: ResolveContentBinding,
         contentOptionCache: ContentOptionCache,
         diagnostics: ChapterInventoryDiagnostics,
+        discoverReadableTitle: DiscoverReadableTitle? = null,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
@@ -76,6 +81,7 @@ class RefreshChapterEvidence private constructor(
         contentOptionCache = contentOptionCache,
         inFlightContentResolution = null,
         diagnostics = diagnostics,
+        discoverReadableTitle = discoverReadableTitle,
         constructorMarker = Unit,
     )
 
@@ -90,12 +96,22 @@ class RefreshChapterEvidence private constructor(
         contentOptionCache = null,
         inFlightContentResolution = null,
         diagnostics = NoOpChapterInventoryDiagnostics,
+        discoverReadableTitle = null,
         constructorMarker = Unit,
     )
 
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
         return try {
             registry.awaitReady()
+            // Break the catalog-title deadlock before probing inventories. Safe,
+            // unambiguous matches are persisted; ambiguous matches remain manual.
+            try {
+                discoverReadableTitle?.execute(canonicalTitleId)?.exceptionOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Best effort only: existing bindings/integration evidence must still refresh.
+            }
             // Integration metadata and Add-on inventories are independent until
             // reconciliation. Running both concurrently avoids serial network waits.
             val evidence = coroutineScope {

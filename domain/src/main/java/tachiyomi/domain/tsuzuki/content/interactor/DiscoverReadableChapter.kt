@@ -29,6 +29,7 @@ import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
+import tachiyomi.domain.tsuzuki.source.interactor.GetPreferredReadingSources
 import tachiyomi.domain.tsuzuki.source.model.ScoredSourceCandidate
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -108,6 +109,7 @@ class DiscoverReadableChapter internal constructor(
     private val sourceEligibility: suspend (AddonId) -> List<AddonSourceEligibility>,
     private val contentPreference: suspend (String) -> ContentPreference?,
     private val globalLanguages: () -> List<String>,
+    private val preferredSourceIds: suspend (List<String>) -> List<Long> = { emptyList() },
     private val deviceLocale: () -> Locale,
     private val sourceSearch: (ContentBindingSearchRequest) -> Flow<ContentBindingSearchProgress>,
     private val refreshBinding: suspend (ContentBinding) -> Result<Unit>,
@@ -122,6 +124,7 @@ class DiscoverReadableChapter internal constructor(
         eligibilityRepository: AddonSourceEligibilityRepository,
         preferenceRepository: ContentPreferenceRepository,
         readerPreferences: CanonicalReaderPreferences,
+        preferredReadingSources: GetPreferredReadingSources,
         sourceResolver: ResolveContentBinding,
         refreshEvidence: RefreshChapterEvidence,
         planner: PlanFastReadingDiscovery,
@@ -134,6 +137,17 @@ class DiscoverReadableChapter internal constructor(
         sourceEligibility = eligibilityRepository::getByAddonId,
         contentPreference = preferenceRepository::get,
         globalLanguages = { readerPreferences.preferredLanguages.get() },
+        preferredSourceIds = { languages ->
+            val configuredLanguages = preferredReadingSources.getConfiguredLanguages()
+            (languages + configuredLanguages)
+                .distinctBy { it.lowercase(Locale.ROOT) }
+                .flatMap { language ->
+                    preferredReadingSources.await(language)
+                        .sortedBy { it.position }
+                        .map { it.sourceId }
+                }
+                .distinct()
+        },
         deviceLocale = { Locale.getDefault() },
         sourceSearch = sourceResolver::searchProgress,
         refreshBinding = refreshEvidence::executeForBinding,
@@ -203,6 +217,14 @@ class DiscoverReadableChapter internal constructor(
                 .filter { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
                 .distinctBy { it.lowercase(Locale.ROOT) }
 
+            val configuredSourceIds = try {
+                preferredSourceIds(preferredLanguages)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                emptyList()
+            }
+
             val eligibleAddons = installedAddons().filter { it.enabled && it.mihonSourceIds.isNotEmpty() }
             val eligibility = eligibleAddons.associate { addon ->
                 val current = try {
@@ -226,6 +248,7 @@ class DiscoverReadableChapter internal constructor(
                 eligibility = eligibility,
                 preferredAddonId = preferred?.preferredAddonId,
                 preferredLanguages = preferredLanguages,
+                preferredSourceIds = configuredSourceIds,
                 maxAddons = budget.maxAddons,
                 maxQueries = budget.maxQueries,
             )
