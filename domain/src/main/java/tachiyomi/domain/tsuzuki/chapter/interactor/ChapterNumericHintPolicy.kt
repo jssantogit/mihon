@@ -38,4 +38,42 @@ fun hasConflictingIntegerChapterHint(
     return abs(hint - parsedNumber) > NUMERIC_EPSILON
 }
 
+/**
+ * Rejects provisional source rows whose metadata is structurally unsafe even when the
+ * parsed label and Mihon number happen to agree.
+ *
+ * Some providers expose deleted/tombstone rows as ordinary chapters. MangaDot-family
+ * sources can also expose a titled zero row (for example, "Chapter 0: Tragedy") whose
+ * provider number is zero while the pages belong to a positive chapter. Neither shape
+ * is strong enough to become canonical identity or a Reader option without independent
+ * evidence. Plain numeric zero/fractional chapters remain valid.
+ */
+fun isUnsafeProvisionalChapterEvidence(
+    parsed: ParsedChapterLabel,
+    rawLabel: String,
+    rawNumberHint: Double?,
+): Boolean {
+    if (hasConflictingIntegerChapterHint(parsed, rawNumberHint)) return true
+    if (rawLabel.contains(DELETED_TOMBSTONE, ignoreCase = true)) return true
+
+    val hint = rawNumberHint ?: return false
+    if (!hint.isFinite() || abs(hint) > NUMERIC_EPSILON) return false
+    val identity = parsed.identity
+    if (
+        identity.type != CanonicalChapterType.REGULAR ||
+        identity.baseNumber != 0 ||
+        identity.part != null ||
+        identity.alphaSuffix != null
+    ) {
+        return false
+    }
+    return TITLED_ZERO_PLACEHOLDER.matches(rawLabel.trim())
+}
+
+private const val DELETED_TOMBSTONE = "[DELETED]"
+private val TITLED_ZERO_PLACEHOLDER = Regex(
+    pattern = "^(?:chapter|ch(?:apter)?|capitulo)\\s*\\.?\\s*0(?:\\.0+)?\\s*:\\s*\\S.*$",
+    option = RegexOption.IGNORE_CASE,
+)
+
 private const val NUMERIC_EPSILON = 1e-9
