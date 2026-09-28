@@ -123,7 +123,7 @@ class DiscoverReadableTitle internal constructor(
             val attemptedSourceIds = currentBindings.mapNotNullTo(mutableSetOf()) { binding ->
                 binding.providerTitleKey.substringBefore(':').toLongOrNull()
             }
-            val discovered = currentBindings.toMutableList()
+            val discovered = mutableListOf<ContentBinding>()
 
             for (wave in 0 until MAX_TITLE_DISCOVERY_WAVES) {
                 val remainingEligibility = baseEligibility.mapValues { (_, sources) ->
@@ -184,7 +184,7 @@ class DiscoverReadableTitle internal constructor(
                 if (discovered.isNotEmpty()) break
                 if (attemptedSourceIds.size == before) break
             }
-            Result.success(discovered.distinctBy(ContentBinding::id))
+            Result.success((currentBindings + discovered).distinctBy(ContentBinding::id))
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
