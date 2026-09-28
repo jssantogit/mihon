@@ -337,6 +337,7 @@ class DiscoverReadableChapterTest {
             FastDiscoveryCompletion.FOUND
     }
 
+    // Product budget: explore deeply without exceeding ten distinct Add-ons.
     @Test
     fun `default discovery stops after ten distinct addons when none are readable`() = runTest {
         val addons = (1L..12L).map { index ->
