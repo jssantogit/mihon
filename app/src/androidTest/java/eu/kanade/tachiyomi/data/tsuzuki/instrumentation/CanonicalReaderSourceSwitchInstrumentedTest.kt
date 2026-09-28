@@ -2240,6 +2240,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             "|fixturePath=${gatewayPreflight.fixturePath}" +
                             "|aHttp=${sourceA.inventoryCallOutcome.get()}" +
                             "|bHttp=${sourceB.inventoryCallOutcome.get()}" +
+                            "|aCallEvents=${sourceA.inventoryCallEvents.get()}" +
+                            "|bCallEvents=${sourceB.inventoryCallEvents.get()}" +
                             "|serverRequests=${server.requestCount}" +
                             "|unknownSourceRequests=${dispatcher.unknownSourceRequestCount()}" +
                             "|aOther=${dispatcher.routeCounts(sourceA.token).other}" +
@@ -2651,19 +2653,33 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 val baseUrl = server.url("/").toString().trimEnd('/')
                 val sourceAInventoryCall = AtomicReference("NOT_STARTED")
                 val sourceBInventoryCall = AtomicReference("NOT_STARTED")
+                val sourceAInventoryCallEvents = AtomicReference("NONE")
+                val sourceBInventoryCallEvents = AtomicReference("NONE")
                 val sourceA = ReaderFixtureHttpSource(
                     displayName = "Synthetic Reader A $runId",
                     token = "reader-$runId-a",
                     baseUrl = baseUrl,
-                    client = fixtureHttpClient("reader-$runId-a", sourceAInventoryCall),
+                    client = fixtureHttpClient(
+                        token = "reader-$runId-a",
+                        inventoryCallOutcome = sourceAInventoryCall,
+                        inventoryCallEvents = sourceAInventoryCallEvents,
+                        expectedOrigin = URI(baseUrl),
+                    ),
                     inventoryCallOutcome = sourceAInventoryCall,
+                    inventoryCallEvents = sourceAInventoryCallEvents,
                 )
                 val sourceB = ReaderFixtureHttpSource(
                     displayName = "Synthetic Reader B $runId",
                     token = "reader-$runId-b",
                     baseUrl = baseUrl,
-                    client = fixtureHttpClient("reader-$runId-b", sourceBInventoryCall),
+                    client = fixtureHttpClient(
+                        token = "reader-$runId-b",
+                        inventoryCallOutcome = sourceBInventoryCall,
+                        inventoryCallEvents = sourceBInventoryCallEvents,
+                        expectedOrigin = URI(baseUrl),
+                    ),
                     inventoryCallOutcome = sourceBInventoryCall,
+                    inventoryCallEvents = sourceBInventoryCallEvents,
                 )
                 val addonA = AddonId("test.tsuzuki.reader.$runId.a")
                 val addonB = AddonId("test.tsuzuki.reader.$runId.b")
@@ -3024,6 +3040,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         override val baseUrl: String,
         override val client: OkHttpClient,
         val inventoryCallOutcome: AtomicReference<String>,
+        val inventoryCallEvents: AtomicReference<String>,
     ) : HttpSource() {
         val chapterListRequestCount = AtomicInteger()
         override val name: String = displayName
@@ -3159,30 +3176,113 @@ private data class FixtureRouteCounts(
 private fun fixtureHttpClient(
     token: String,
     inventoryCallOutcome: AtomicReference<String>,
-): OkHttpClient = OkHttpClient.Builder()
-    .eventListenerFactory {
-        object : EventListener() {
-            private fun isInventoryCall(call: Call): Boolean =
-                call.request().url.encodedPath == "/reader/$token/manga"
+    inventoryCallEvents: AtomicReference<String>,
+    expectedOrigin: URI,
+): OkHttpClient {
+    val callSequence = AtomicInteger()
+    return OkHttpClient.Builder()
+        .eventListenerFactory {
+            val callId = java.lang.Integer.toHexString(callSequence.incrementAndGet())
+            object : EventListener() {
+                private fun isInventoryCall(call: Call): Boolean =
+                    call.request().url.encodedPath == "/reader/$token/manga"
 
-            override fun callStart(call: Call) {
-                if (isInventoryCall(call)) inventoryCallOutcome.set("STARTED")
-            }
-
-            override fun callEnd(call: Call) {
-                if (isInventoryCall(call) && inventoryCallOutcome.get() == "STARTED") {
-                    inventoryCallOutcome.set("COMPLETED")
+                private fun requestKind(url: okhttp3.HttpUrl): String {
+                    val originMatches = url.scheme == expectedOrigin.scheme &&
+                        url.host == expectedOrigin.host &&
+                        url.port == expectedOrigin.port
+                    if (!originMatches) return "ORIGIN_MISMATCH"
+                    return when {
+                        url.encodedPath == "/reader/$token/manga" -> "INVENTORY"
+                        url.encodedPath.startsWith("/reader/$token/") -> "SOURCE_OTHER"
+                        else -> "OTHER"
+                    }
                 }
-            }
 
-            override fun responseHeadersEnd(call: Call, response: Response) {
-                if (isInventoryCall(call)) {
-                    inventoryCallOutcome.set("HTTP_${response.code}")
+                private fun recordEvent(call: Call, event: String, request: Request = call.request()) {
+                    val value = "C$callId:${requestKind(request.url)}_$event"
+                    inventoryCallEvents.updateAndGet { current ->
+                        val prior = current.split(',').filter { it != "NONE" }
+                        (prior + value).takeLast(8).joinToString(",").ifBlank { "NONE" }
+                    }
                 }
-            }
 
-            override fun callFailed(call: Call, ioe: IOException) {
-                if (isInventoryCall(call)) {
+                override fun callStart(call: Call) {
+                    recordEvent(call, "START")
+                    if (isInventoryCall(call)) inventoryCallOutcome.set("STARTED")
+                }
+
+                override fun connectStart(
+                    call: Call,
+                    inetSocketAddress: java.net.InetSocketAddress,
+                    proxy: java.net.Proxy,
+                ) {
+                    recordEvent(call, "CONNECT_START")
+                    if (isInventoryCall(call)) {
+                        val address = inetSocketAddress.address
+                        val connectionTarget = if (
+                            inetSocketAddress.port == expectedOrigin.port && address?.isLoopbackAddress == true
+                        ) {
+                            "CONNECT_LOCAL_MATCH"
+                        } else {
+                            "CONNECT_LOCAL_MISMATCH"
+                        }
+                        recordEvent(call, connectionTarget)
+                    }
+                }
+
+                override fun connectEnd(
+                    call: Call,
+                    inetSocketAddress: java.net.InetSocketAddress,
+                    proxy: java.net.Proxy,
+                    protocol: okhttp3.Protocol?,
+                ) {
+                    recordEvent(call, "CONNECT_END")
+                }
+
+                override fun connectionAcquired(call: Call, connection: okhttp3.Connection) {
+                    recordEvent(call, "CONNECTION_ACQUIRED")
+                }
+
+                override fun requestHeadersEnd(call: Call, request: Request) {
+                    recordEvent(call, "REQUEST_SENT", request)
+                }
+
+                override fun responseHeadersStart(call: Call) {
+                    recordEvent(call, "RESPONSE_START")
+                }
+
+                override fun callEnd(call: Call) {
+                    recordEvent(call, "END")
+                    if (isInventoryCall(call) && inventoryCallOutcome.get() == "STARTED") {
+                        inventoryCallOutcome.set("COMPLETED")
+                    }
+                }
+
+                override fun responseHeadersEnd(call: Call, response: Response) {
+                    recordEvent(call, "HTTP_${response.code}", response.request)
+                    if (isInventoryCall(call)) {
+                        inventoryCallOutcome.set("HTTP_${response.code}")
+                    }
+                }
+
+                override fun cacheHit(call: Call, response: Response) {
+                    recordEvent(call, "CACHE_HIT")
+                }
+
+                override fun cacheMiss(call: Call) {
+                    recordEvent(call, "CACHE_MISS")
+                }
+
+                override fun cacheConditionalHit(call: Call, cachedResponse: Response) {
+                    recordEvent(call, "CACHE_CONDITIONAL_HIT")
+                }
+
+                override fun satisfactionFailure(call: Call, response: Response) {
+                    recordEvent(call, "CACHE_FAILURE_HTTP_${response.code}")
+                }
+
+                override fun callFailed(call: Call, ioe: IOException) {
                     val message = ioe.message.orEmpty().lowercase()
                     val category = when {
                         "cleartext" in message -> "CLEARTEXT_BLOCKED"
@@ -3193,15 +3293,18 @@ private fun fixtureHttpClient(
                         "canceled" in message -> "CANCELLED"
                         else -> "OTHER_IO_FAILURE"
                     }
-                    val exceptionClass = when (ioe) {
-                        is UnknownHostException -> "UnknownHostException"
-                        is ConnectException -> "ConnectException"
-                        is SocketTimeoutException -> "SocketTimeoutException"
-                        else -> "IOException"
+                    recordEvent(call, "FAIL_$category")
+                    if (isInventoryCall(call)) {
+                        val exceptionClass = when (ioe) {
+                            is UnknownHostException -> "UnknownHostException"
+                            is ConnectException -> "ConnectException"
+                            is SocketTimeoutException -> "SocketTimeoutException"
+                            else -> "IOException"
+                        }
+                        inventoryCallOutcome.set("$exceptionClass:$category")
                     }
-                    inventoryCallOutcome.set("$exceptionClass:$category")
                 }
             }
         }
-    }
-    .build()
+        .build()
+}

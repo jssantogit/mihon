@@ -268,6 +268,14 @@ class ReconcileChapterEvidence internal constructor(
                 observation = observation,
                 persistedEvidence = persistedEvidence.values,
             )
+            val previousLegacyMappedChapterId = previousLegacyEvidence?.mappedCanonicalChapterId
+            val previousLegacyMappedChapter = previousLegacyMappedChapterId?.let { chapterId ->
+                (chapters[chapterId] ?: canonicalChapterRepository.getById(chapterId))?.also { chapter ->
+                    require(chapter.canonicalTitleId == canonicalTitleId) {
+                        "Legacy evidence mapping points to chapter from another canonical title"
+                    }
+                }
+            }
             val previousEvidence = externalEvidence ?: persistedEvidence[observation.id] ?: previousLegacyEvidence
             val mappedChapterId = previousEvidence?.mappedCanonicalChapterId
             val mappedChapter = if (mappedChapterId != null) {
@@ -348,7 +356,14 @@ class ReconcileChapterEvidence internal constructor(
 
             val conflictsWithOlderLegacyMapping = previousLegacyEvidence != null &&
                 observation.observedAt > previousLegacyEvidence.evidence.observedAt &&
-                mappedIdentityConflicts
+                previousLegacyMappedChapter != null &&
+                parsedIdentityIsReliable &&
+                previousLegacyMappedChapter.identity.isSpecific &&
+                (
+                    previousLegacyMappedChapter.identity != parsed.identity ||
+                        (previousLegacyMappedChapter.volume != null && observation.volume != null &&
+                            previousLegacyMappedChapter.volume != observation.volume)
+                    )
             if (conflictsWithOlderLegacyMapping) {
                 // A newer detail probe can disagree with the label attached to a
                 // Reader's existing source key. Keep that operational identity and
@@ -502,8 +517,10 @@ class ReconcileChapterEvidence internal constructor(
         val candidates = persistedEvidence.filter { persisted ->
             persisted.evidence.producerKind == ProducerKind.ADDON &&
                 persisted.evidence.producerId != observation.producerId &&
-                (observation.producerId.startsWith(LEGACY_PRODUCER_PREFIX) ||
-                    persisted.evidence.producerId.startsWith(LEGACY_PRODUCER_PREFIX)) &&
+                (
+                    observation.producerId.startsWith(LEGACY_PRODUCER_PREFIX) ||
+                        persisted.evidence.producerId.startsWith(LEGACY_PRODUCER_PREFIX)
+                    ) &&
                 persisted.evidence.externalChapterKey == externalKey
         }
         if (candidates.isEmpty()) return false

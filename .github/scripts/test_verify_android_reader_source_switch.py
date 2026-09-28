@@ -212,6 +212,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            + "|aCallEvents=C1:INVENTORY_START,C1:INVENTORY_CONNECT_START|bCallEvents=NONE"
             + "|serverRequests=2|unknownSourceRequests=0|aOther=0|bOther=0"
             + "|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
@@ -239,6 +240,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
             "|sourceEligible=TRUE|bindingSelection=SELECTED|bindingPayload=MATCH|manga=MATCH"
             "|source=SOURCE_A|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            "|aCallEvents=C1:INVENTORY_START,C1:INVENTORY_CONNECT_START|bCallEvents=NONE"
             "|serverRequests=2|unknownSourceRequests=0|aOther=0|bOther=0"
             "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
             "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
@@ -256,6 +258,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+            + "|aCallEvents=NONE|bCallEvents=NONE"
             + "|serverRequests=0|unknownSourceRequests=0|aOther=0|bOther=0"
             + "|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
@@ -295,6 +298,14 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             {"evidence": "MALFORMED"},
             verifier._detail_setup_diagnostic(with_unbounded_http, method),
         )
+        with_unbounded_call_event = base.replace(
+            "aCallEvents=NONE",
+            "aCallEvents=C1:INVENTORY_START,private-host",
+        )
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_call_event, method),
+        )
         with_wrong_fixture_origin = base.replace("fixtureOrigin=MATCH", "fixtureOrigin=private-host")
         self.assertEqual(
             {"evidence": "MALFORMED"},
@@ -315,6 +326,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=HTTP_404|bHttp=HTTP_503"
+            + "|aCallEvents=C1:INVENTORY_START,C1:INVENTORY_HTTP_404,C1:INVENTORY_END|bCallEvents=NONE"
             + "|serverRequests=2|unknownSourceRequests=1|aOther=0|bOther=0"
             + "|aChapterRequests=1|bChapterRequests=1|aInventory=0|aHeld=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
@@ -353,6 +365,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                             + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
                             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
                             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+                            + "|aCallEvents=NONE|bCallEvents=NONE"
                             + "|serverRequests=0|unknownSourceRequests=0|aOther=0|bOther=0"
                             + "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
                             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"

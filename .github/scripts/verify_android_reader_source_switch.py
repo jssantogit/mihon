@@ -109,7 +109,7 @@ DETAIL_SETUP_DIAGNOSTIC_KEYS = (
     "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
     "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
     "bindingSelection", "bindingPayload", "manga", "source", "fixtureOrigin", "fixturePath",
-    "aHttp", "bHttp", "serverRequests", "unknownSourceRequests", "aOther", "bOther",
+    "aHttp", "bHttp", "aCallEvents", "bCallEvents", "serverRequests", "unknownSourceRequests", "aOther", "bOther",
     "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
     "routeRendered", "routeTitleMatches", "routeModel", "probe",
 )
@@ -136,10 +136,29 @@ DETAIL_SETUP_HTTP_OUTCOMES = {
     "SocketTimeoutException:SOCKET_TIMEOUT",
     "IOException:CLEARTEXT_BLOCKED", "IOException:CANCELLED", "IOException:OTHER_IO_FAILURE",
 }
+DETAIL_SETUP_CALL_EVENT = re.compile(
+    r"C[0-9a-f]{1,8}:(?:INVENTORY|SOURCE_OTHER|OTHER|ORIGIN_MISMATCH)_"
+    r"(?:START|CONNECT_START|CONNECT_LOCAL_MATCH|CONNECT_LOCAL_MISMATCH|CONNECT_END|CONNECTION_ACQUIRED|"
+    r"REQUEST_SENT|RESPONSE_START|HTTP_[1-5][0-9]{2}|CACHE_HIT|CACHE_MISS|CACHE_CONDITIONAL_HIT|"
+    r"CACHE_FAILURE_HTTP_[1-5][0-9]{2}|END|"
+    r"FAIL_(?:CLEARTEXT_BLOCKED|DNS_FAILURE|CONNECTION_REFUSED|CONNECT_FAILURE|SOCKET_TIMEOUT|CANCELLED|"
+    r"OTHER_IO_FAILURE))",
+)
 
 
 def _valid_detail_http_outcome(value: str) -> bool:
     return value in DETAIL_SETUP_HTTP_OUTCOMES or re.fullmatch(r"HTTP_[1-5][0-9]{2}", value) is not None
+
+
+def _valid_detail_call_events(value: str) -> bool:
+    if value == "NONE":
+        return True
+    events = value.split(",")
+    return (
+        len(events) <= 8
+        and len(value) <= 512
+        and all(DETAIL_SETUP_CALL_EVENT.fullmatch(event) is not None for event in events)
+    )
 
 
 DETAIL_SETUP_ROUTE_MODELS = {"SCREEN", "UNKNOWN"}
@@ -449,6 +468,8 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         or fields["fixturePath"] not in DETAIL_SETUP_FIXTURE_MATCH
         or not _valid_detail_http_outcome(fields["aHttp"])
         or not _valid_detail_http_outcome(fields["bHttp"])
+        or not _valid_detail_call_events(fields["aCallEvents"])
+        or not _valid_detail_call_events(fields["bCallEvents"])
         or fields["routeRendered"] not in {"TRUE", "FALSE"}
         or fields["routeTitleMatches"] not in {"TRUE", "FALSE"}
         or fields["routeModel"] not in DETAIL_SETUP_ROUTE_MODELS
