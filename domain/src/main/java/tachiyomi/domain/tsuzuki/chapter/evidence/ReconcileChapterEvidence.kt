@@ -15,6 +15,7 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.interactor.hasConflictingIntegerChapterHint
+import tachiyomi.domain.tsuzuki.chapter.interactor.isUnsafeProvisionalChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -303,11 +304,15 @@ class ReconcileChapterEvidence internal constructor(
             }
             ChapterInventoryDiagnosticLabels.fromIdentity(parsed.identity)?.let(diagnosticLabels::add)
             val numericHintConflicts = hasConflictingIntegerChapterHint(parsed, observation.rawNumber)
+            val unsafeProvisionalEvidence = observation.producerKind == ProducerKind.ADDON &&
+                observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+                isUnsafeProvisionalChapterEvidence(parsed, observation.rawLabel, observation.rawNumber)
+            val identityEvidenceUnsafe = numericHintConflicts || unsafeProvisionalEvidence
             val parsedIdentityIsReliable = observation.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.identity.isSpecific &&
-                !numericHintConflicts
-            if (numericHintConflicts) {
+                !identityEvidenceUnsafe
+            if (identityEvidenceUnsafe) {
                 reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
             }
 
@@ -334,7 +339,7 @@ class ReconcileChapterEvidence internal constructor(
                 !parsedIdentityIsReliable
             ) {
                 provisionalCount++
-                if (!numericHintConflicts) {
+                if (!identityEvidenceUnsafe) {
                     reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
                 }
                 stageEvidence(observation, mappedCanonicalChapterId = null)
@@ -596,10 +601,14 @@ class ReconcileChapterEvidence internal constructor(
         volumeIsAmbiguous: Boolean,
     ): Boolean {
         val parsed = parser.execute(evidence.rawLabel, evidence.rawNumber)
+        val unsafeSourceEvidence = evidence.producerKind == ProducerKind.ADDON &&
+            evidence.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+            isUnsafeProvisionalChapterEvidence(parsed, evidence.rawLabel, evidence.rawNumber)
         return evidence.confidence >= RELIABLE_CONFIDENCE &&
             parsed.confidence >= RELIABLE_CONFIDENCE &&
             parsed.identity.isSpecific &&
             !hasConflictingIntegerChapterHint(parsed, evidence.rawNumber) &&
+            !unsafeSourceEvidence &&
             parsed.identity == chapter.identity &&
             when {
                 evidence.volume == null -> !volumeIsAmbiguous
