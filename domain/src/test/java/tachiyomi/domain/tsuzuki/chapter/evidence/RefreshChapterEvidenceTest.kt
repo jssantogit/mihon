@@ -412,7 +412,7 @@ class RefreshChapterEvidenceTest {
             volume = null,
             title = null,
             observedAt = observedAt,
-            confidence = 0.8,
+            confidence = 1.0,
             authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
         )
 
