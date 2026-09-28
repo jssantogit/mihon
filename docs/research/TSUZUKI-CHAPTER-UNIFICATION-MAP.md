@@ -117,6 +117,46 @@ An App integration regression uses the production `MihonChapterInventoryGateway`
 
 [GREEN CI 36331109111](https://github.com/jssantogit/mihon/actions/runs/36331109111) passed Domain Tsuzuki, App Tsuzuki and CI Gate on code SHA `3d3d058ef1caa25a85bbcf764e2482289c198359`. Format, migrations, Supabase, Release, separate Compile and Native jobs were planner-skipped; APK Build was skipped. The test uses a local source harness and in-memory canonical/evidence repositories. It invokes the actual production interactors and gateway, but does not run `ReaderViewModel`/Reader UI, Android instrumentation, process restart, a cancelled/invalidation race, or any real-provider sweep. This closes the cached late-response integration regression only; it does not close phase 1 or authorize cutover.
 
+## Reader/detail owner races and partial-source recovery — CR-06 checkpoint
+
+Branch `tsuzuki/uc01-transactional-cutover`, implementation checkpoint SHA
+`439e7b68bf1224c72969d548a7adc34f4f1081c6` (before the final documentation
+and recovery-workflow checkpoint commit). The gateway now performs the
+synchronous Mihon source inventory call on `Dispatchers.IO`; source-fetch
+start time and cancellation behavior remain tied to that call. A focused
+gateway regression waits on an explicit `CompletableDeferred` signal from
+inside the old in-flight source fetch before starting the competing request.
+This replaces a scheduler `yield()` that did not prove IO work had started,
+while retaining the invalidation and newer-inventory assertions.
+
+The local partial-source App fixture now queues the second English HTTP 503
+needed for the provider's uncached retry. Previously its retry waited forever
+for a MockWebServer response, and the two-language provider lookup timed out
+before exposing the valid cached pt-BR option. This is a fixture correction;
+the exact `pt-BR` expectation remains, no production timeout was enlarged,
+and the test's provider and content-selector assertions remain enabled. The
+focused CI run [36374013417](https://github.com/jssantogit/mihon/actions/runs/36374013417)
+passed App, Domain and CI Gate on SHA `439e7b68bf1224c72969d548a7adc34f4f1081c6`;
+Format and unrelated planner-selected jobs were skipped in that run.
+
+The offline synthetic-emulator run
+[36372581923](https://github.com/jssantogit/mihon/actions/runs/36372581923)
+executed both detail-owner race methods: cancellation and invalidation. Each
+XML result reports one test, zero failures, zero errors and zero skips. Both
+loaded ten pages and retained observable position, canonical IDs, source
+variant, preference, progress and history; cancellation released the held
+response and invalidation released its late response. The parent reviewer
+accepted this 2/2 behavioral proof. It is a focused run on SHA
+`165bbe668487037be74096f06327b81e90093c01`, not final-SHA evidence. Final
+Android base coverage, repeat detail-race run, process recovery, full CI and
+the 100/500/1,000-observation benchmark remain pending on the final checkpoint
+SHA. Physical-device acceptance and live-provider validation remain separate;
+neither is claimed here.
+
+The process-recovery workflow now has a manual dispatch entry point, committed
+with this checkpoint. Next, run all required final gates against the resulting
+SHA and record their exact results.
+
 ## Acceptance checks
 
 - Fault-inject between canonical chapter, evidence and operational variant

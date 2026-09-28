@@ -1,6 +1,7 @@
 name: Chapter projection process recovery
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - tsuzuki/uc01-transactional-cutover
