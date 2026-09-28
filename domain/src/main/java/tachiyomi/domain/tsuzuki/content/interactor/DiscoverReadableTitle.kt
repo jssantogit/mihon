@@ -36,6 +36,7 @@ class DiscoverReadableTitle internal constructor(
     private val sourceEligibility: suspend (AddonId) -> List<AddonSourceEligibility>,
     private val preferredLanguages: suspend (String) -> List<String>,
     private val preferredSourceIds: suspend (List<String>) -> List<Long>,
+    private val preferredAddonId: suspend (String) -> AddonId? = { null },
     private val sourceSearch: (ContentBindingSearchRequest) -> Flow<ContentBindingSearchProgress>,
     private val planner: PlanFastReadingDiscovery = PlanFastReadingDiscovery(),
 ) {
@@ -88,6 +89,7 @@ class DiscoverReadableTitle internal constructor(
                 }
                 .distinct()
         },
+        preferredAddonId = { titleId -> contentPreferenceRepository.get(titleId)?.preferredAddonId },
         sourceSearch = sourceResolver::searchProgress,
         planner = planner,
     )
@@ -107,28 +109,39 @@ class DiscoverReadableTitle internal constructor(
                 .mapNotNull { it.providerTitleKey.substringBefore(':').toLongOrNull() }
                 .toSet()
             val languages = preferredLanguages(canonicalTitleId)
-            val configuredSourceIds = preferredSourceIds(languages)
-                .filterNot { it in alreadyBoundSourceIds }
+            val configuredSourceIds = try {
+                preferredSourceIds(languages)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                emptyList()
+            }.filterNot { it in alreadyBoundSourceIds }
 
             val baseEligibility = installed.associate { addon ->
-                addon.id to sourceEligibility(addon.id)
-                    .filterNot { it.sourceId in alreadyBoundSourceIds }
+                addon.id to try {
+                    sourceEligibility(addon.id)
+                        .filterNot { it.sourceId in alreadyBoundSourceIds }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    emptyList()
+                }
             }
             val attemptedSourceIds = alreadyBoundSourceIds.toMutableSet()
             val discovered = mutableListOf<ContentBinding>()
 
-            repeat(MAX_TITLE_DISCOVERY_WAVES) {
+            for (wave in 0 until MAX_TITLE_DISCOVERY_WAVES) {
                 val remainingEligibility = baseEligibility.mapValues { (_, sources) ->
                     sources.filterNot { it.sourceId in attemptedSourceIds }
                 }
                 val targets = planner.execute(
                     installed = installed,
                     eligibility = remainingEligibility,
-                    preferredAddonId = null,
+                    preferredAddonId = preferredAddonId(canonicalTitleId),
                     preferredLanguages = languages,
                     preferredSourceIds = configuredSourceIds.filterNot { it in attemptedSourceIds },
                 )
-                if (targets.isEmpty()) return@repeat
+                if (targets.isEmpty()) break
 
                 val waveResults = coroutineScope {
                     targets.map { target ->
@@ -173,7 +186,8 @@ class DiscoverReadableTitle internal constructor(
                     attemptedSourceIds += result.queriedSourceIds
                     discovered += result.bindings
                 }
-                if (attemptedSourceIds.size == before) return@repeat
+                if (discovered.isNotEmpty()) break
+                if (attemptedSourceIds.size == before) break
             }
             Result.success(discovered.distinctBy(ContentBinding::id))
         } catch (error: CancellationException) {
