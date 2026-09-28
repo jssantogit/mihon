@@ -107,6 +107,10 @@ class IdentityContractTest(unittest.TestCase):
         root = self.make_repo(build=VALID_BUILD.replace('"app.mihon"', '"app.tsuzuki"'))
         self.assertIn("applicationId must remain app.mihon", check_contract(root))
 
+    def test_android_namespace_change_is_rejected(self):
+        root = self.make_repo(build=VALID_BUILD.replace('"eu.kanade.tachiyomi"', '"app.tsuzuki"'))
+        self.assertIn("Android namespace must remain eu.kanade.tachiyomi", check_contract(root))
+
     def test_legacy_extension_store_schemes_are_required(self):
         root = self.make_repo(manifest=VALID_MANIFEST.replace('android:scheme="tachiyomi"', 'android:scheme="other"'))
         self.assertIn("legacy tachiyomi://add-repo contract is missing", check_contract(root))
