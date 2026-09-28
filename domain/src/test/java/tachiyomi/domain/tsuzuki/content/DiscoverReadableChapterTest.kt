@@ -283,6 +283,61 @@ class DiscoverReadableChapterTest {
     }
 
     @Test
+    fun `default discovery can reach the sixth installed addon without increasing concurrency`() = runTest {
+        val addons = (1L..6L).map { index -> installed("addon-$index", index) }
+        val winner = addons.last()
+        val searched = mutableListOf<Long>()
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, binding ->
+                if (binding.addonId == winner.id) lookup(option(winner.id.value, "en")) else lookup()
+            },
+            installedAddons = { addons },
+            sourceEligibility = { addonId ->
+                val sourceId = addons.indexOfFirst { it.id == addonId }.toLong() + 1L
+                listOf(source(sourceId, "en"))
+            },
+            contentPreference = { null },
+            globalLanguages = { listOf("en") },
+            deviceLocale = { Locale.US },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    val isWinner = request.addonId == winner.id
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = if (isWinner) {
+                                ContentBindingSourceOutcome.BOUND
+                            } else {
+                                ContentBindingSourceOutcome.EMPTY
+                            },
+                            bindings = if (isWinner) {
+                                listOf(binding(winner.id.value, sourceId))
+                            } else {
+                                emptyList()
+                            },
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            refreshBinding = { Result.success(Unit) },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        val events = runner.discover("title", "chapter").toList()
+
+        searched shouldBe listOf(1L, 2L, 3L, 4L, 5L, 6L)
+        events.filterIsInstance<FastReadingDiscoveryEvent.Ready>()
+            .single().options.single().addonId shouldBe winner.id
+        events.last().let { it as FastReadingDiscoveryEvent.Completed }.reason shouldBe
+            FastDiscoveryCompletion.FOUND
+    }
+
+    @Test
     fun `healthy fast edition is emitted while earlier bound edition is still refreshing`() = runTest {
         val slow = installed("portuguese", 7L)
         val fast = installed("english", 8L)
