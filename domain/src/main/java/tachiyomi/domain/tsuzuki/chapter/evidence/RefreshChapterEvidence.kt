@@ -105,12 +105,13 @@ class RefreshChapterEvidence private constructor(
             registry.awaitReady()
             // Break the zero-binding/zero-chapter deadlock before probing inventories.
             // Safe, unambiguous matches are persisted; ambiguous matches remain manual.
-            try {
-                discoverReadableTitle?.execute(canonicalTitleId)?.exceptionOrNull()
+            val initialBindings = try {
+                discoverReadableTitle?.execute(canonicalTitleId)?.getOrNull().orEmpty()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
                 // Best effort only: existing bindings/integration evidence must still refresh.
+                emptyList()
             }
             // Integration metadata and Add-on inventories are independent until
             // reconciliation. Running the first pass concurrently avoids serial network waits.
@@ -120,11 +121,17 @@ class RefreshChapterEvidence private constructor(
                 val integrationEvidence = integrations.await()
                 var addonEvidence = initialAddons.await()
 
-                // An existing binding is not proof that it is readable. If every current
-                // binding yields an empty inventory, broaden to the remaining configured
-                // sources and probe again. This is bounded by DiscoverReadableTitle and
-                // stops as soon as a safe binding is found.
-                if (addonEvidence.isEmpty()) {
+                // A safe title binding is not proof that its edition actually exposes chapters.
+                // Keep broadening while each newly bound edition is empty, but only while the
+                // discovery result grows. This prevents both a stale-binding dead end and an
+                // unbounded provider sweep.
+                val knownBindingIds = initialBindings.mapTo(linkedSetOf(), ContentBinding::id)
+                var broadenAttempt = 0
+                while (
+                    addonEvidence.isEmpty() &&
+                    broadenAttempt < MAX_EMPTY_BINDING_BROADEN_ATTEMPTS
+                ) {
+                    broadenAttempt++
                     val broadened = try {
                         discoverReadableTitle
                             ?.execute(canonicalTitleId, broadenExistingBindings = true)
@@ -135,9 +142,10 @@ class RefreshChapterEvidence private constructor(
                     } catch (_: Throwable) {
                         emptyList()
                     }
-                    if (broadened.isNotEmpty()) {
-                        addonEvidence = collectAddonEvidence(canonicalTitleId)
-                    }
+                    val newBindings = broadened.filter { it.id !in knownBindingIds }
+                    if (newBindings.isEmpty()) break
+                    knownBindingIds += newBindings.map(ContentBinding::id)
+                    addonEvidence = collectAddonEvidence(canonicalTitleId)
                 }
 
                 (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id)
@@ -434,6 +442,7 @@ class RefreshChapterEvidence private constructor(
 
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
+        const val MAX_EMPTY_BINDING_BROADEN_ATTEMPTS = 3
     }
 }
 
