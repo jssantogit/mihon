@@ -9,6 +9,7 @@ import tachiyomi.domain.tsuzuki.chapter.model.ParsedChapterLabel
  * Unknown/zero/decimal hints remain non-authoritative because extensions commonly use them
  * as placeholders. A positive integer that disagrees with an otherwise plain regular integer
  * label is strong evidence that the source row must fail closed.
+ * This is a contradiction check only; the hint never becomes canonical identity.
  */
 fun hasConflictingIntegerChapterHint(
     parsed: ParsedChapterLabel,
