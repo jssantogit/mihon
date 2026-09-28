@@ -743,6 +743,37 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `legacy unqualified mapping rehomes to sole explicit volume candidate on refresh`() = runTest {
+        val fixture = fixture()
+        val qualified = existingChapter("chapter-qualified", volume = 1)
+        val legacy = existingChapter("chapter-legacy", volume = null)
+        fixture.chapterRepository.upsert(qualified)
+        fixture.chapterRepository.upsert(legacy)
+
+        val observation = fixture.addonEvidence(
+            id = "legacy-evidence",
+            rawLabel = "Chapter 4",
+            externalKey = "source-4",
+            producerId = "source-two",
+        )
+        fixture.evidenceRepository.upsert(
+            evidence = observation,
+            mappedCanonicalChapterId = legacy.id,
+        )
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(observation.copy(id = "refresh", observedAt = 20L)),
+        )
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-two",
+            externalChapterKey = "source-4",
+        )?.mappedCanonicalChapterId shouldBe qualified.id
+    }
+
+    @Test
     fun `unqualified add-on evidence stays unmapped when multiple unqualified candidates exist`() = runTest {
         val fixture = fixture()
         fixture.chapterRepository.upsert(existingChapter("chapter-first"))
