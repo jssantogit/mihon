@@ -110,7 +110,8 @@ class DiscoverReadableTitleTest {
         val bindings = discover.execute("title").getOrThrow()
 
         bindings.map { it.providerTitleKey } shouldBe listOf("3:/title")
-        searched shouldBe listOf(1L, 2L, 3L)
+        searched.take(2).toSet() shouldBe setOf(1L, 2L)
+        searched.drop(2) shouldBe listOf(3L)
     }
 
     @Test

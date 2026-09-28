@@ -2,6 +2,9 @@ package tachiyomi.domain.tsuzuki.content.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import tachiyomi.domain.tsuzuki.addon.AddonId
@@ -107,40 +110,70 @@ class DiscoverReadableTitle internal constructor(
             val configuredSourceIds = preferredSourceIds(languages)
                 .filterNot { it in alreadyBoundSourceIds }
 
-            val eligibility = installed.associate { addon ->
+            val baseEligibility = installed.associate { addon ->
                 addon.id to sourceEligibility(addon.id)
                     .filterNot { it.sourceId in alreadyBoundSourceIds }
             }
-            val targets = planner.execute(
-                installed = installed,
-                eligibility = eligibility,
-                preferredAddonId = null,
-                preferredLanguages = languages,
-                preferredSourceIds = configuredSourceIds,
-            )
-            if (targets.isEmpty()) return Result.success(emptyList())
-
+            val attemptedSourceIds = alreadyBoundSourceIds.toMutableSet()
             val discovered = mutableListOf<ContentBinding>()
-            for (target in targets) {
-                val request = ContentBindingSearchRequest(
-                    canonicalTitleId = canonicalTitleId,
-                    addonId = target.addonId,
-                    preferredLanguages = languages,
-                    allowedSourceIds = target.allowedSourceIds,
-                    batchSize = target.batchSize,
-                    sourceTimeoutMillis = TITLE_DISCOVERY_SOURCE_TIMEOUT_MILLIS,
-                )
-                sourceSearch(request).collect { event ->
-                    if (event is ContentBindingSearchProgress.SourceCompleted &&
-                        event.outcome == ContentBindingSourceOutcome.BOUND
-                    ) {
-                        discovered += event.bindings.filter { binding ->
-                            binding.canonicalTitleId == canonicalTitleId &&
-                                binding.addonId == target.addonId &&
-                                binding.availability == ContentBindingAvailability.AVAILABLE
-                        }
-                    }
+
+            repeat(MAX_TITLE_DISCOVERY_WAVES) {
+                val remainingEligibility = baseEligibility.mapValues { (_, sources) ->
+                    sources.filterNot { it.sourceId in attemptedSourceIds }
                 }
+                val targets = planner.execute(
+                    installed = installed,
+                    eligibility = remainingEligibility,
+                    preferredAddonId = null,
+                    preferredLanguages = languages,
+                    preferredSourceIds = configuredSourceIds.filterNot { it in attemptedSourceIds },
+                )
+                if (targets.isEmpty()) return@repeat
+
+                val waveResults = coroutineScope {
+                    targets.map { target ->
+                        async {
+                            val queried = mutableSetOf<Long>()
+                            val bindings = mutableListOf<ContentBinding>()
+                            val request = ContentBindingSearchRequest(
+                                canonicalTitleId = canonicalTitleId,
+                                addonId = target.addonId,
+                                preferredLanguages = languages,
+                                allowedSourceIds = target.allowedSourceIds,
+                                batchSize = target.batchSize,
+                                sourceTimeoutMillis = TITLE_DISCOVERY_SOURCE_TIMEOUT_MILLIS,
+                            )
+                            sourceSearch(request).collect { event ->
+                                when (event) {
+                                    is ContentBindingSearchProgress.Completed ->
+                                        queried += event.queriedSourceIds
+                                    is ContentBindingSearchProgress.SourceCompleted -> {
+                                        event.sourceId?.let(queried::add)
+                                        if (event.outcome == ContentBindingSourceOutcome.BOUND) {
+                                            bindings += event.bindings.filter { binding ->
+                                                binding.canonicalTitleId == canonicalTitleId &&
+                                                    binding.addonId == target.addonId &&
+                                                    binding.availability == ContentBindingAvailability.AVAILABLE
+                                            }
+                                        }
+                                    }
+                                    is ContentBindingSearchProgress.ExistingBindingsObserved -> Unit
+                                }
+                            }
+                            DiscoveryWaveResult(
+                                queriedSourceIds = queried.ifEmpty { target.allowedSourceIds.toMutableSet() },
+                                bindings = bindings,
+                            )
+                        }
+                    }.awaitAll()
+                }
+
+                val before = attemptedSourceIds.size
+                waveResults.forEach { result ->
+                    attemptedSourceIds += result.queriedSourceIds
+                    discovered += result.bindings
+                }
+                if (attemptedSourceIds.size == before) return@repeat
             }
             Result.success(discovered.distinctBy(ContentBinding::id))
         } catch (error: CancellationException) {
@@ -150,7 +183,13 @@ class DiscoverReadableTitle internal constructor(
         }
     }
 
+    private data class DiscoveryWaveResult(
+        val queriedSourceIds: Set<Long>,
+        val bindings: List<ContentBinding>,
+    )
+
     private companion object {
-        const val TITLE_DISCOVERY_SOURCE_TIMEOUT_MILLIS = 4_000L
+        const val MAX_TITLE_DISCOVERY_WAVES = 3
+        const val TITLE_DISCOVERY_SOURCE_TIMEOUT_MILLIS = 3_000L
     }
 }
