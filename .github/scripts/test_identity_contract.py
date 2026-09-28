@@ -82,6 +82,7 @@ VALID_MORE_SCREEN = """
 fun MoreScreen() {
     // Tsuzuki-owned navigation only.
 }
+"""
 
 
 class IdentityContractTest(unittest.TestCase):
