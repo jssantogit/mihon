@@ -1,6 +1,5 @@
 package tachiyomi.domain.tsuzuki.chapter.evidence
 
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
@@ -533,7 +532,7 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `conflicting addon observations with the same fetch start fail closed`() = runTest {
+    fun `conflicting addon observations with the same fetch start are discarded without aborting refresh`() = runTest {
         val fixture = fixture()
         val firstObservation = fixture.addonEvidence(
             id = "detail-chapter-two",
@@ -550,9 +549,7 @@ class ReconcileChapterEvidenceTest {
             externalKey = "101:/chapter/shared",
             producerId = "detail-addon",
         ).copy(observedAt = 200L)
-        shouldThrow<IllegalArgumentException> {
-            fixture.reconciler.execute("title", listOf(contradictoryReplay))
-        }
+        fixture.reconciler.execute("title", listOf(contradictoryReplay))
 
         fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
         val persisted = fixture.evidenceRepository.getByProducerExternalKey(

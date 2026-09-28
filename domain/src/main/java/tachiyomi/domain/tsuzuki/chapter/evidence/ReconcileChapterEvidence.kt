@@ -14,6 +14,7 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.CanonicalChapterCandidateReso
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
+import tachiyomi.domain.tsuzuki.chapter.interactor.hasConflictingIntegerChapterHint
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -271,6 +272,18 @@ class ReconcileChapterEvidence internal constructor(
         var discardedCount = 0
 
         for (observation in evidence) {
+            if (
+                isSupersededSameProducerObservation(
+                    observation = observation,
+                    persistedEvidence = persistedEvidence,
+                    persistedEvidenceByExternalKey = persistedEvidenceByExternalKey,
+                )
+            ) {
+                discardedCount++
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+                continue
+            }
+
             val parsed = try {
                 parser.execute(observation.rawLabel, observation.rawNumber)
             } catch (error: Throwable) {
@@ -289,9 +302,14 @@ class ReconcileChapterEvidence internal constructor(
                 throw error
             }
             ChapterInventoryDiagnosticLabels.fromIdentity(parsed.identity)?.let(diagnosticLabels::add)
+            val numericHintConflicts = hasConflictingIntegerChapterHint(parsed, observation.rawNumber)
             val parsedIdentityIsReliable = observation.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
-                parsed.identity.isSpecific
+                parsed.identity.isSpecific &&
+                !numericHintConflicts
+            if (numericHintConflicts) {
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+            }
 
             if (
                 observation.producerKind == ProducerKind.ADDON &&
@@ -316,7 +334,9 @@ class ReconcileChapterEvidence internal constructor(
                 !parsedIdentityIsReliable
             ) {
                 provisionalCount++
-                reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
+                if (!numericHintConflicts) {
+                    reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
+                }
                 stageEvidence(observation, mappedCanonicalChapterId = null)
                 continue
             }
@@ -579,12 +599,41 @@ class ReconcileChapterEvidence internal constructor(
         return evidence.confidence >= RELIABLE_CONFIDENCE &&
             parsed.confidence >= RELIABLE_CONFIDENCE &&
             parsed.identity.isSpecific &&
+            !hasConflictingIntegerChapterHint(parsed, evidence.rawNumber) &&
             parsed.identity == chapter.identity &&
             when {
                 evidence.volume == null -> !volumeIsAmbiguous
                 chapter.volume == null -> true
                 else -> evidence.volume == chapter.volume
             }
+    }
+
+    private fun isSupersededSameProducerObservation(
+        observation: ChapterEvidence,
+        persistedEvidence: Map<String, PersistedChapterEvidence>,
+        persistedEvidenceByExternalKey: Map<EvidenceExternalKey, PersistedChapterEvidence>,
+    ): Boolean {
+        if (
+            observation.producerKind != ProducerKind.ADDON ||
+            observation.externalChapterKey.isNullOrBlank()
+        ) {
+            return false
+        }
+        val externalKey = EvidenceExternalKey(
+            observation.producerKind,
+            observation.producerId,
+            observation.externalChapterKey,
+        )
+        val previous = persistedEvidenceByExternalKey[externalKey]
+            ?: persistedEvidence[observation.id]
+            ?: return false
+        if (observation.observedAt < previous.evidence.observedAt) return true
+        if (observation.observedAt > previous.evidence.observedAt) return false
+
+        // Equal provider fetch-start timestamps do not establish ordering. A byte-for-byte
+        // replay is idempotent; contradictory data is stale/ambiguous and must not abort
+        // unrelated provider evidence in the same refresh.
+        return observation.copy(id = previous.evidence.id) != previous.evidence
     }
 
     private suspend fun isSupersededCrossProducerObservation(

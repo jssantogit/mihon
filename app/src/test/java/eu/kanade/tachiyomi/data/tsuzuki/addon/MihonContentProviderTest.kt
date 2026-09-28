@@ -1101,6 +1101,10 @@ class MihonContentProviderTest {
             baseNumber = 37,
             confidence = 1.0,
         )
+        val sibling = requested.copy(
+            id = "sibling-canonical-chapter-37",
+            volume = 1,
+        )
         val evidence = PersistedChapterEvidence(
             evidence = ChapterEvidence(
                 id = "mangaflix-volume-one-37",
@@ -1121,7 +1125,11 @@ class MihonContentProviderTest {
         val provider = MihonContentProvider(
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
-            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(
+                variants = emptyList(),
+                chapter = requested,
+                additionalChapters = listOf(sibling),
+            ),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = {
                 Result.success(
@@ -1282,12 +1290,15 @@ class MihonContentProviderTest {
             baseNumber = 37,
             confidence = 1.0,
         ),
+        private val additionalChapters: List<CanonicalChapter> = emptyList(),
     ) : CanonicalChapterRepository {
         var writeCount = 0
 
-        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> = emptyList()
+        override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
+            (listOf(chapter) + additionalChapters).filter { it.canonicalTitleId == canonicalTitleId }
         override fun observeByCanonicalTitleId(canonicalTitleId: String): Flow<List<CanonicalChapter>> = emptyFlow()
-        override suspend fun getById(id: String): CanonicalChapter? = chapter.takeIf { it.id == id }
+        override suspend fun getById(id: String): CanonicalChapter? =
+            (listOf(chapter) + additionalChapters).firstOrNull { it.id == id }
         override suspend fun getVariantBySourceIdentity(sourceId: Long, sourceChapterId: String): ChapterVariant? =
             variants.firstOrNull { it.sourceId == sourceId && it.sourceChapterId == sourceChapterId }
 
