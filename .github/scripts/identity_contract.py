@@ -57,6 +57,13 @@ def check_contract(root: Path) -> list[str]:
         "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt",
         errors,
     )
+    base_strings = _read(
+        root,
+        "i18n/src/commonMain/moko-resources/base/strings.xml",
+        errors,
+    )
+    settings = _read(root, "settings.gradle.kts", errors)
+    readme = _read(root, "README.md", errors)
 
     if build:
         application_id = re.search(r'\bapplicationId\s*=\s*"([^"]+)"', build)
@@ -134,6 +141,34 @@ def check_contract(root: Path) -> list[str]:
         )
         if any(marker in more_screen for marker in inherited_more_markers):
             errors.append("More screen still exposes inherited Mihon support/help entry points")
+
+    if base_strings:
+        app_name = re.search(
+            r'<string\s+name="app_name"[^>]*>([^<]+)</string>',
+            base_strings,
+        )
+        if app_name is None or app_name.group(1).strip() != "Tsuzuki":
+            errors.append("base app_name must be Tsuzuki")
+
+    if settings:
+        project_name = re.search(r'rootProject\.name\s*=\s*"([^"]+)"', settings)
+        if project_name is None or project_name.group(1) != "Tsuzuki":
+            errors.append("rootProject.name must be Tsuzuki")
+
+    if readme and not readme.lstrip().startswith("# Tsuzuki"):
+        errors.append("README must identify Tsuzuki as the project")
+
+    legacy_release = root / ".github/workflows/release.yml"
+    if legacy_release.is_file():
+        release_text = legacy_release.read_text(encoding="utf-8")
+        if "mihonapp/mihon" in release_text or "name: Mihon " in release_text:
+            errors.append("inherited Mihon release workflow is active")
+
+    legacy_website = root / ".github/workflows/update_website.yml"
+    if legacy_website.is_file():
+        website_text = legacy_website.read_text(encoding="utf-8")
+        if "mihonapp/website" in website_text:
+            errors.append("inherited Mihon website workflow is active")
 
     return errors
 
