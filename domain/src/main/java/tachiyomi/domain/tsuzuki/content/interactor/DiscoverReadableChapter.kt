@@ -35,18 +35,28 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class InitialDiscoveryBudget(
-    val totalMillis: Long = 10_000L,
+    val totalMillis: Long = 30_000L,
     val existingLookupMillis: Long = 2_000L,
     val sourceTimeoutMillis: Long = 4_000L,
+    /** Maximum Add-ons searched concurrently in one discovery wave. */
     val maxAddons: Int = PlanFastReadingDiscovery.MAX_INITIAL_ADDONS,
-    val maxQueries: Int = PlanFastReadingDiscovery.MAX_INITIAL_QUERIES,
+    /** Maximum distinct Add-ons visited across all discovery waves. */
+    val maxTotalAddons: Int = MAX_TOTAL_DISCOVERY_ADDONS,
+    /** Maximum internal Mihon source queries across all discovery waves. */
+    val maxQueries: Int = MAX_TOTAL_DISCOVERY_QUERIES,
 ) {
     init {
         require(totalMillis in 1L..60_000L)
         require(existingLookupMillis in 1L..totalMillis)
         require(sourceTimeoutMillis in 1L..ContentBindingSearchRequest.MAX_SOURCE_TIMEOUT_MILLIS)
         require(maxAddons in 1..PlanFastReadingDiscovery.MAX_INITIAL_ADDONS)
-        require(maxQueries in 1..PlanFastReadingDiscovery.MAX_INITIAL_QUERIES)
+        require(maxTotalAddons in 1..MAX_TOTAL_DISCOVERY_ADDONS)
+        require(maxQueries in 1..MAX_TOTAL_DISCOVERY_QUERIES)
+    }
+
+    private companion object {
+        const val MAX_TOTAL_DISCOVERY_ADDONS = 10
+        const val MAX_TOTAL_DISCOVERY_QUERIES = 20
     }
 }
 
@@ -244,24 +254,39 @@ class DiscoverReadableChapter internal constructor(
                 addon.id to current
             }
             val attemptedSourceIds = linkedSetOf<Long>()
+            val attemptedAddonIds = linkedSetOf<AddonId>()
             var remainingQueries = budget.maxQueries
             var plannedAnyTarget = false
 
-            while (!found.get() && remainingQueries > 0) {
-                val remainingEligibility = eligibility.mapValues { (_, sources) ->
-                    sources.filterNot { it.sourceId in attemptedSourceIds }
+            while (
+                !found.get() &&
+                remainingQueries > 0 &&
+                attemptedAddonIds.size < budget.maxTotalAddons
+            ) {
+                val remainingEligibility = eligibility.mapValues { (addonId, sources) ->
+                    if (addonId in attemptedAddonIds) {
+                        emptyList()
+                    } else {
+                        sources.filterNot { it.sourceId in attemptedSourceIds }
+                    }
                 }
+                val remainingAddons = eligibleAddons.filterNot { it.id in attemptedAddonIds }
+                val remainingAddonBudget = budget.maxTotalAddons - attemptedAddonIds.size
                 val targets = planner.execute(
-                    installed = eligibleAddons,
+                    installed = remainingAddons,
                     eligibility = remainingEligibility,
-                    preferredAddonId = preferred?.preferredAddonId,
+                    preferredAddonId = preferred?.preferredAddonId?.takeIf { it !in attemptedAddonIds },
                     preferredLanguages = preferredLanguages,
                     preferredSourceIds = configuredSourceIds.filterNot { it in attemptedSourceIds },
-                    maxAddons = budget.maxAddons,
-                    maxQueries = remainingQueries,
+                    maxAddons = minOf(budget.maxAddons, remainingAddonBudget),
+                    maxQueries = minOf(
+                        remainingQueries,
+                        PlanFastReadingDiscovery.MAX_INITIAL_QUERIES,
+                    ),
                 )
                 if (targets.isEmpty()) break
                 plannedAnyTarget = true
+                attemptedAddonIds += targets.map(PlannedAddonSearch::addonId)
                 send(FastReadingDiscoveryEvent.Searching(targets))
                 val attemptedBeforeWave = attemptedSourceIds.size
 
