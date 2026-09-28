@@ -2,11 +2,15 @@ package tachiyomi.domain.tsuzuki.chapter.evidence
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
@@ -398,6 +402,9 @@ internal suspend fun invalidateContentOptionsAfterChapterRefresh(
     invalidateInFlight: suspend () -> Unit,
     invalidateCache: suspend () -> Unit,
 ) {
-    invalidateInFlight()
-    invalidateCache()
+    withContext(NonCancellable) {
+        invalidateInFlight()
+        invalidateCache()
+    }
+    currentCoroutineContext().ensureActive()
 }
