@@ -1,0 +1,201 @@
+name: MangaFire real-extension Android test
+
+on:
+  push:
+    branches:
+      - tsuzuki/runtime-e2e-tests
+      - tsuzuki/generic-addon-compatibility
+    paths:
+      - 'test-fixtures/extensions/**'
+      - 'app/src/androidTest/**'
+      - 'app/build.gradle.kts'
+      - '.github/scripts/verify_extension_fixture.py'
+      - '.github/scripts/run_mangafire_android.sh'
+      - '.github/scripts/verify_android_instrumentation.py'
+      - '.github/scripts/test_android_instrumentation.py'
+      - '.github/scripts/summarize_android_instrumentation.py'
+      - '.github/scripts/test_summarize_android_instrumentation.py'
+      - '.github/scripts/test_extension_fixture.py'
+      - '.github/scripts/run_android_instrumentation_route.sh'
+      - '.github/scripts/test_android_instrumentation_route.py'
+      - '.github/scripts/run_android_navigation.sh'
+      - '.github/scripts/verify_android_navigation_instrumentation.py'
+      - '.github/scripts/test_verify_android_navigation_instrumentation.py'
+      - '.github/scripts/verify_mangaball_fixture.py'
+      - '.github/scripts/test_mangaball_fixture.py'
+      - '.github/scripts/mangaball_android_report.py'
+      - '.github/scripts/test_mangaball_android.py'
+      - '.github/scripts/run_mangaball_android.sh'
+      - '.github/scripts/run_android_reader_source_switch.sh'
+      - '.github/scripts/verify_android_reader_source_switch.py'
+      - '.github/scripts/test_verify_android_reader_source_switch.py'
+      - '.github/scripts/summarize_reader_screenshot.py'
+      - '.github/scripts/test_summarize_reader_screenshot.py'
+      - '.github/workflows/mangafire-real-extension.yml'
+  workflow_dispatch:
+    inputs:
+      extension_profile:
+        description: 'Select the isolated real-extension profile'
+        required: true
+        default: mangafire
+        type: choice
+        options:
+          - mangafire
+          - mangaball
+      live_probe:
+        description: 'Run one bounded provider journey when true; MangaBall false is fixture-only'
+        required: true
+        default: false
+        type: boolean
+      instrumentation_suite:
+        description: 'Select offline Reader source-switch tests or existing navigation/provider route'
+        required: true
+        default: navigation
+        type: choice
+        options:
+          - navigation
+          - reader-source-switch
+      reader_source_switch_mode:
+        description: 'Run all Reader cases or only the two detail/inventory race cases'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - detail-races
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mangafire-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture:
+    name: Verify immutable extension fixture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify fixture and regression tests
+        run: |
+          python3 .github/scripts/test_extension_fixture.py
+          python3 .github/scripts/test_android_instrumentation.py
+          python3 .github/scripts/test_summarize_android_instrumentation.py
+          python3 .github/scripts/test_verify_android_navigation_instrumentation.py
+          python3 .github/scripts/test_verify_android_reader_source_switch.py
+          python3 .github/scripts/test_summarize_reader_screenshot.py
+          python3 .github/scripts/test_android_instrumentation_route.py
+          python3 .github/scripts/test_mangaball_android.py
+          python3 .github/scripts/test_mangaball_fixture.py
+          bash -n .github/scripts/run_mangafire_android.sh
+          bash -n .github/scripts/run_mangaball_android.sh
+          bash -n .github/scripts/run_android_instrumentation_route.sh
+          bash -n .github/scripts/run_android_navigation.sh
+          bash -n .github/scripts/run_android_reader_source_switch.sh
+          python3 .github/scripts/verify_extension_fixture.py
+          python3 .github/scripts/verify_mangaball_fixture.py
+
+  compile-android-test:
+    name: Compile real-extension instrumentation
+    needs: fixture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Compile instrumentation sources (no emulator or live requests)
+        run: ./gradlew :app:compileDebugAndroidTestKotlin
+      - name: Verify JUnit methods have JVM void signatures
+        run: |
+          set -euo pipefail
+          for class in MangaFireFixtureInstrumentedTest MangaFireRealReadingJourneyInstrumentedTest MangaBallRealReadingJourneyInstrumentedTest CanonicalTitleSourceNavigationInstrumentedTest CanonicalReaderSourceSwitchInstrumentedTest; do
+            class_file="$(find app/build -type f -name "${class}.class" -print -quit)"
+            test -n "$class_file"
+            suffix="/eu/kanade/tachiyomi/data/tsuzuki/instrumentation/${class}.class"
+            class_dir="${class_file%$suffix}"
+            fqcn="eu.kanade.tachiyomi.data.tsuzuki.instrumentation.${class}"
+            javap -classpath "$class_dir" "$fqcn" > junit-signatures.txt
+            if [[ "$class" == 'MangaFireFixtureInstrumentedTest' ]]; then
+              grep -F 'public final void loadsRealExtensionAndRegistersInternalSources();' junit-signatures.txt
+            elif [[ "$class" == 'MangaFireRealReadingJourneyInstrumentedTest' ]]; then
+              grep -F 'public final void optionalRealEnglishReadingJourney();' junit-signatures.txt
+              grep -F 'public final void instrumentationContextDatabasePersistsCanonicalTitle();' junit-signatures.txt
+            elif [[ "$class" == 'MangaBallRealReadingJourneyInstrumentedTest' ]]; then
+              grep -F 'public final void loadsRealExtensionAndRegistersInternalSourcesAndDisabledPeerIsExcluded();' junit-signatures.txt
+              grep -F 'public final void optionalLivePtBrReadingJourney();' junit-signatures.txt
+            elif [[ "$class" == 'CanonicalReaderSourceSwitchInstrumentedTest' ]]; then
+              grep -F 'public final void sourceAtoBLoadsPagesAndPreservesCanonicalChapterAndObservedPosition();' junit-signatures.txt
+              grep -F 'public final void emptyOrFailingSourceKeepsPreviouslyLoadedReaderSession();' junit-signatures.txt
+              grep -F 'public final void pageCountDifferenceClampsPositionToValidPage();' junit-signatures.txt
+              grep -F 'public final void retiredSourceCallbackCannotChangePublishedSession();' junit-signatures.txt
+              grep -F 'public final void activityRecreationRestoresObservedCanonicalPosition();' junit-signatures.txt
+              grep -F 'public final void repeatedSourceSwitchKeepsPreferenceAndSingleHistoryEntry();' junit-signatures.txt
+              grep -F 'public final void slowSourceDoesNotBlockHealthySourceOption();' junit-signatures.txt
+              grep -F 'public final void cancelledDiscoveryCannotMutateActiveReaderSession();' junit-signatures.txt
+              grep -F 'public final void legacyIntentAttachesPersistedCanonicalMappingAndRecordsCanonicalProgress();' junit-signatures.txt
+              grep -F 'public final void legacyReaderKeepsPagesAfterDetailInventoryOwnerCancellation();' junit-signatures.txt
+              grep -F 'public final void legacyReaderKeepsPagesAfterDetailInventoryInvalidation();' junit-signatures.txt
+            else
+              grep -F 'public final void coldReaderDiscoveryOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
+              grep -F 'public final void warmReaderDiscoveryReusesMainActivityAndOpensCanonicalTitleBindingSheetOnce();' junit-signatures.txt
+              grep -F 'public final void invalidDiscoveryIntentDoesNotOpenTitleOrMutateProgressAndPreferences();' junit-signatures.txt
+            fi
+          done
+
+  emulator:
+    name: Run offline navigation/source-switch or real MangaFire test on isolated emulator
+    # The default dispatch mode remains offline navigation. The source-switch
+    # suite is a separate opt-in and refuses live mode. Provider probes retain
+    # their existing explicit opt-in and push markers.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')))
+    needs: compile-android-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Verify APK fixture
+        run: |
+          python3 .github/scripts/verify_extension_fixture.py
+          python3 .github/scripts/verify_mangaball_fixture.py
+      - name: Assemble app and instrumentation APKs for Reader source-switch route
+        if: github.event_name == 'workflow_dispatch' && inputs.instrumentation_suite == 'reader-source-switch'
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run isolated Android instrumentation
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          # The emulator action runs individual YAML script lines in separate shells.
+          # Keep setup and conditional logic within ONE invoked Bash script.
+          script: bash .github/scripts/run_android_instrumentation_route.sh "${{ github.event_name }}" "${{ inputs.live_probe == true || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[android-fixture]') || contains(github.event.head_commit.message, '[android-live]') || contains(github.event.head_commit.message, '[android-live-mangaball]')) }}" false "${{ inputs.extension_profile || (contains(github.event.head_commit.message, '[android-live-mangaball]') && 'mangaball' || 'mangafire') }}" "${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-live-mangaball]') }}" "${{ inputs.instrumentation_suite || 'navigation' }}" "${{ inputs.reader_source_switch_mode || 'all' }}"
+      - name: Upload sanitized instrumentation results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-navigation-or-mangafire-${{ github.sha }}
+          path: |
+            .github/results/android-navigation/**
+            .github/results/mangafire/**
+            .github/results/mangaball/**
+            .github/results/android-reader-source-switch/**
+          if-no-files-found: ignore
+          retention-days: 3

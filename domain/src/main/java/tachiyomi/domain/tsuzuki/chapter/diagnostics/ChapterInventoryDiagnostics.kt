@@ -2,9 +2,21 @@ package tachiyomi.domain.tsuzuki.chapter.diagnostics
 
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 
 /** Processing boundary recorded by the temporary chapter-inventory diagnostic. */
 enum class ChapterInventoryDiagnosticStage {
+    ADDON_DISCOVERY,
+    SOURCE_ELIGIBILITY,
+    BINDING_SEARCH,
+    BINDING_MATCH,
+    BINDING_MATERIALIZATION,
+    CONTENT_SELECTOR,
+    CONTENT_PROVIDER,
+    SELECTOR,
+    CHAPTER_INVENTORY,
+    CHAPTER_PROBE,
     INVENTORY,
     PROBE,
     RECONCILIATION,
@@ -16,8 +28,16 @@ enum class ChapterInventoryDiagnosticStage {
 enum class ChapterInventoryDiagnosticOutcome {
     SUCCESS,
     EMPTY,
+    DISABLED,
+    NO_MATCH,
+    AMBIGUOUS,
+    CAPTCHA_REQUIRED,
     NETWORK_ERROR,
     EXTENSION_ERROR,
+    HTTP_ERROR,
+    SOURCE_UNAVAILABLE,
+    MALFORMED_RESPONSE,
+    INDETERMINATE,
     TIMEOUT,
     NO_BINDING,
     LOW_CONFIDENCE,
@@ -35,8 +55,33 @@ enum class ChapterInventoryDiagnosticReason {
     IDENTITY_MISMATCH,
     NO_BINDING,
     INVENTORY_EMPTY,
-    BINDING_UNAVAILABLE,
+    BINDING_NOT_MATERIALIZED,
     BINDING_CONFIRMATION_REQUIRED,
+    ADDON_NOT_INSTALLED,
+    ALL_SOURCES_DISABLED,
+    SOURCE_DISABLED,
+    REUSED_BINDING,
+    SOURCE_SEARCH_FAILED,
+    NO_SEARCH_RESULTS,
+    MATCH_BELOW_THRESHOLD,
+    AMBIGUOUS_CANDIDATES,
+    MATERIALIZATION_FAILED,
+    BINDING_PERSISTENCE_FAILED,
+    CAPTCHA_CHALLENGE,
+    NETWORK_FAILURE,
+    TIMEOUT_FAILURE,
+    EXTENSION_FAILURE,
+    HTTP_RESPONSE,
+    HTTP_FORBIDDEN,
+    HTTP_RATE_LIMITED,
+    HTTP_SERVER_ERROR,
+    SOURCE_UNAVAILABLE,
+    MALFORMED_RESPONSE,
+    INDETERMINATE_FAILURE,
+    PROVIDER_FAILED,
+    PROVIDER_NOT_REGISTERED,
+    NO_CHAPTER_VARIANT,
+    CACHED_OPTIONS,
     CACHE_SNAPSHOT,
     REFRESHED_SNAPSHOT,
     PERSISTED_MAPPED,
@@ -53,16 +98,25 @@ enum class ChapterInventoryDiagnosticReason {
 data class ChapterInventoryDiagnosticEvent(
     val stage: ChapterInventoryDiagnosticStage,
     val outcome: ChapterInventoryDiagnosticOutcome,
+    /** Opaque correlation token; the in-memory reporter falls back to its session id. */
+    val correlationId: String? = null,
     val sourceId: Long? = null,
     val addonId: String? = null,
     val language: String? = null,
+    /** Sanitized HTTP status only; never include headers, URL, or response content. */
+    val httpStatus: Int? = null,
     val elapsedMillis: Long? = null,
+    /** One-based title spelling attempt; the raw query is never recorded. */
+    val attempt: Int? = null,
     val received: Int? = null,
     val accepted: Int? = null,
     val provisional: Int? = null,
     val discarded: Int? = null,
     val inferred: Int? = null,
     val unavailable: Int? = null,
+    /** Set only when this boundary is known to prevent content from being offered. */
+    val availabilityBlocked: Boolean = false,
+    val affectedSourceCount: Int? = null,
     val labels: List<String> = emptyList(),
     val gaps: List<Int> = emptyList(),
     val reasons: Map<ChapterInventoryDiagnosticReason, Int> = emptyMap(),
@@ -103,6 +157,73 @@ fun ChapterInventoryDiagnostics.recordIfEnabled(
         if (isRecording(canonicalTitleId)) record(event)
     } catch (_: Exception) {
         // Diagnostic collection is best-effort and must never affect chapter processing.
+    }
+}
+
+/** Closed taxonomy: classify explicit CAPTCHA signals, never infer CAPTCHA from generic IO. */
+object ChapterInventoryDiagnosticFailures {
+    fun classify(error: Throwable): Pair<ChapterInventoryDiagnosticOutcome, ChapterInventoryDiagnosticReason> {
+        val causes = generateSequence(error) { it.cause }.take(5).toList()
+        val sourceFailure = causes.filterIsInstance<ReadingSourceSearchFailure>().firstOrNull()
+        if (sourceFailure != null) {
+            return when (sourceFailure.kind) {
+                ReadingSourceFailureKind.SOURCE_DISABLED ->
+                    ChapterInventoryDiagnosticOutcome.DISABLED to ChapterInventoryDiagnosticReason.SOURCE_DISABLED
+                ReadingSourceFailureKind.SOURCE_UNAVAILABLE ->
+                    ChapterInventoryDiagnosticOutcome.SOURCE_UNAVAILABLE to
+                        ChapterInventoryDiagnosticReason.SOURCE_UNAVAILABLE
+                ReadingSourceFailureKind.HTTP_RESPONSE -> {
+                    val reason = when {
+                        sourceFailure.httpStatus == 403 -> ChapterInventoryDiagnosticReason.HTTP_FORBIDDEN
+                        sourceFailure.httpStatus == 429 -> ChapterInventoryDiagnosticReason.HTTP_RATE_LIMITED
+                        sourceFailure.httpStatus?.let { it in 500..599 } == true ->
+                            ChapterInventoryDiagnosticReason.HTTP_SERVER_ERROR
+                        else -> ChapterInventoryDiagnosticReason.HTTP_RESPONSE
+                    }
+                    ChapterInventoryDiagnosticOutcome.HTTP_ERROR to reason
+                }
+                ReadingSourceFailureKind.NETWORK_FAILURE ->
+                    ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
+                        ChapterInventoryDiagnosticReason.NETWORK_FAILURE
+                ReadingSourceFailureKind.TIMEOUT ->
+                    ChapterInventoryDiagnosticOutcome.TIMEOUT to ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE
+                ReadingSourceFailureKind.CAPTCHA_REQUIRED ->
+                    ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
+                        ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
+                ReadingSourceFailureKind.MALFORMED_RESPONSE ->
+                    ChapterInventoryDiagnosticOutcome.MALFORMED_RESPONSE to
+                        ChapterInventoryDiagnosticReason.MALFORMED_RESPONSE
+                ReadingSourceFailureKind.EXTENSION_FAILURE ->
+                    ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
+                        ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
+                ReadingSourceFailureKind.INDETERMINATE ->
+                    ChapterInventoryDiagnosticOutcome.INDETERMINATE to
+                        ChapterInventoryDiagnosticReason.INDETERMINATE_FAILURE
+            }
+        }
+        return when {
+            causes.any {
+                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
+            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT to ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE
+            causes.any { cause ->
+                val detail = cause.message.orEmpty()
+                detail.contains("captcha_required", ignoreCase = true) ||
+                    detail.contains("shape-selecting captcha", ignoreCase = true)
+            } ->
+                ChapterInventoryDiagnosticOutcome.CAPTCHA_REQUIRED to
+                    ChapterInventoryDiagnosticReason.CAPTCHA_CHALLENGE
+            causes.any {
+                it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketException
+            } ->
+                ChapterInventoryDiagnosticOutcome.NETWORK_ERROR to
+                    ChapterInventoryDiagnosticReason.NETWORK_FAILURE
+            causes.any { it is java.io.IOException } ->
+                ChapterInventoryDiagnosticOutcome.INDETERMINATE to
+                    ChapterInventoryDiagnosticReason.INDETERMINATE_FAILURE
+            else ->
+                ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR to
+                    ChapterInventoryDiagnosticReason.EXTENSION_FAILURE
+        }
     }
 }
 

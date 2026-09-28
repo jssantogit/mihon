@@ -33,8 +33,27 @@ DEV_C = {
     "flags": "",
 }
 
+GENERIC = {
+    "lane": "generic",
+    "task": "assembleGeneric",
+    "apk": "app/build/outputs/apk/generic/app-arm64-v8a-generic.apk",
+    "mapping": "app/build/outputs/mapping/generic",
+    "flags": "",
+}
+
 RULES = (
-    (("main", "tsuzuki/bootstrap", "tsuzuki/diagnostic-chapter-inventory", "tsuzuki/runtime-v2-integration*", "tsuzuki/runtime-v2-torrent*"), RELEASE),
+    (("tsuzuki/generic-addon-compatibility", "tsuzuki/fast-reading-discovery"), GENERIC),
+    (
+        (
+            "main",
+            "tsuzuki/bootstrap",
+            "tsuzuki/diagnostic-chapter-inventory",
+            "tsuzuki/fix-mangafire-binding",
+            "tsuzuki/runtime-v2-integration*",
+            "tsuzuki/runtime-v2-torrent*",
+        ),
+        RELEASE,
+    ),
     (("tsuzuki/mvp-v1-*", "tsuzuki/unified-library-dev-a*", "tsuzuki/runtime-v2-dev-a*"), DEV_A),
     (("tsuzuki/mvp-v2-*", "tsuzuki/unified-library-dev-b*", "tsuzuki/runtime-v2-dev-b*"), DEV_B),
     (("tsuzuki/mvp-v3-*", "tsuzuki/unified-library-dev-c*", "tsuzuki/runtime-v2-dev-c*"), DEV_C),

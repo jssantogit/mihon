@@ -9,7 +9,11 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.model.SChapter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
+import org.json.JSONException
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.repository.ChapterRepository
@@ -18,6 +22,7 @@ import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
@@ -32,10 +37,10 @@ import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
-import java.io.IOException
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import java.math.BigDecimal
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 /**
@@ -74,7 +79,7 @@ class MihonChapterInventoryGateway(
                     addonId = null,
                     error = it.exceptionOrNull()!!,
                     elapsedMillis = 0L,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                    reason = ChapterInventoryDiagnosticReason.BINDING_NOT_MATERIALIZED,
                 )
             }
         val key = MihonInventoryKey(
@@ -94,9 +99,27 @@ class MihonChapterInventoryGateway(
         mapping: SourceTitleMapping,
         mihonMangaId: Long,
     ): Result<SourceChapterInventory> {
+        // Capture at provider fetch START, never at completion or projection.
+        // A cached result keeps this same timestamp when replayed later.
+        val fetchStartedAtMillis = Clock.System.now().toEpochMilliseconds()
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
+            if (manga.source != mapping.sourceId || manga.url != mapping.sourceUrl) {
+                val error = IllegalStateException("Materialized manga identity does not match source mapping")
+                diagnostics.recordIfEnabled(
+                    mapping.canonicalTitleId,
+                    ChapterInventoryDiagnosticEvent(
+                        stage = ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY,
+                        outcome = ChapterInventoryDiagnosticOutcome.INDETERMINATE,
+                        sourceId = mapping.sourceId,
+                        language = mapping.language,
+                        elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
+                        reasons = mapOf(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH to 1),
+                    ),
+                )
+                return Result.failure(error)
+            }
             val source = sourceManager.get(mapping.sourceId)
                 ?: error("Source " + mapping.sourceId + " is unavailable")
             if (source is StubSource) throw SourceNotInstalledException()
@@ -104,12 +127,16 @@ class MihonChapterInventoryGateway(
             val legacyChapters = chapterRepository.getChapterByMangaId(mihonMangaId)
             val legacyByUrl = legacyChapters.associateBy { it.url }
             val networkStart = TimeSource.Monotonic.markNow()
-            val update = source.getMangaUpdate(
-                manga = manga.toSManga(),
-                chapters = legacyChapters.map(Chapter::toSChapter),
-                fetchDetails = false,
-                fetchChapters = true,
-            )
+            // Source implementations may execute their OkHttp call synchronously
+            // inside this suspend API.
+            val update = withContext(Dispatchers.IO) {
+                source.getMangaUpdate(
+                    manga = manga.toSManga(),
+                    chapters = legacyChapters.map(Chapter::toSChapter),
+                    fetchDetails = false,
+                    fetchChapters = true,
+                )
+            }
 
             val networkTime = networkStart.elapsedNow()
             recordInventorySuccess(
@@ -140,6 +167,8 @@ class MihonChapterInventoryGateway(
                     chapters = snapshots,
                     mihonMangaId = mihonMangaId,
                     language = mapping.language,
+                    sourceUrl = mapping.sourceUrl,
+                    fetchStartedAtMillis = fetchStartedAtMillis,
                 ),
             )
         } catch (error: CancellationException) {
@@ -155,12 +184,13 @@ class MihonChapterInventoryGateway(
             }
             throw error
         } catch (error: Throwable) {
+            val structuredError = error.toStructuredChapterInventoryFailure()
             recordInventoryFailure(
                 canonicalTitleId = mapping.canonicalTitleId,
                 sourceId = mapping.sourceId,
                 language = mapping.language,
                 addonId = null,
-                error = error,
+                error = structuredError,
                 elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
             )
             logcat {
@@ -281,7 +311,7 @@ class MihonChapterInventoryGateway(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.INVENTORY,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY,
                 outcome = if (chapters.isEmpty()) {
                     ChapterInventoryDiagnosticOutcome.EMPTY
                 } else {
@@ -314,15 +344,19 @@ class MihonChapterInventoryGateway(
         elapsedMillis: Long,
         reason: ChapterInventoryDiagnosticReason? = null,
     ) {
-        val reasons = reason?.let { mapOf(it to 1) }.orEmpty()
+        val (outcome, failureReason) = ChapterInventoryDiagnosticFailures.classify(
+            error.toStructuredChapterInventoryFailure(),
+        )
+        val reasons = mapOf((reason ?: failureReason) to 1)
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.INVENTORY,
-                outcome = error.toDiagnosticOutcome(),
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY,
+                outcome = outcome,
                 sourceId = sourceId,
                 addonId = addonId,
                 language = language,
+                httpStatus = error.diagnosticHttpStatus(),
                 elapsedMillis = elapsedMillis.coerceAtLeast(0L),
                 received = 0,
                 accepted = 0,
@@ -351,20 +385,29 @@ class MihonChapterInventoryGateway(
     } catch (_: Exception) {
         false
     }
+}
 
-    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome = when {
-        this is TimeoutCancellationException || this is SocketTimeoutException ||
-            causeChain().any { it is TimeoutCancellationException || it is SocketTimeoutException } ->
-            ChapterInventoryDiagnosticOutcome.TIMEOUT
-        this is IOException || causeChain().any { it is IOException || it is UnknownHostException } ->
-            ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
-        else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
+/** Structures a chapter-list failure at the Mihon boundary while retaining its original cause. */
+internal fun Throwable.toStructuredChapterInventoryFailure(): ReadingSourceSearchFailure {
+    if (this is ReadingSourceSearchFailure) return this
+    val causes = generateSequence(this) { it.cause }.take(5).toList()
+    val httpStatus = diagnosticHttpStatus()
+    val kind = when {
+        httpStatus != null -> ReadingSourceFailureKind.HTTP_RESPONSE
+        causes.any { it is java.net.SocketTimeoutException || it is TimeoutCancellationException } ->
+            ReadingSourceFailureKind.TIMEOUT
+        causes.any { it is JSONException || it is SerializationException } ->
+            ReadingSourceFailureKind.MALFORMED_RESPONSE
+        causes.any { cause ->
+            val detail = cause.message.orEmpty()
+            detail.contains("captcha_required", ignoreCase = true) ||
+                detail.contains("shape-selecting captcha", ignoreCase = true)
+        } -> ReadingSourceFailureKind.CAPTCHA_REQUIRED
+        causes.any {
+            it is java.net.UnknownHostException || it is java.net.ConnectException || it is java.net.SocketException
+        } -> ReadingSourceFailureKind.NETWORK_FAILURE
+        causes.any { it is java.io.IOException } -> ReadingSourceFailureKind.INDETERMINATE
+        else -> ReadingSourceFailureKind.EXTENSION_FAILURE
     }
-
-    private fun Throwable.causeChain(): Sequence<Throwable> =
-        generateSequence(cause) { it.cause }.take(MAX_CAUSES)
-
-    private companion object {
-        const val MAX_CAUSES = 5
-    }
+    return ReadingSourceSearchFailure(kind = kind, httpStatus = httpStatus, cause = this)
 }

@@ -6,6 +6,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -31,6 +32,23 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
 
     private val lock = Any()
     private val eventLines = mutableListOf<String>()
+    private val failureSummaries = linkedMapOf<SummaryKey, Int>()
+    private val firstBlockers = linkedMapOf<String, BlockerSummary>()
+    private var eventOrdinal = 0
+
+    private data class BlockerSummary(
+        val stage: String,
+        val outcome: String,
+        val reason: String,
+        val affectedSources: String,
+    )
+
+    private data class SummaryKey(
+        val addonId: String,
+        val stage: String,
+        val outcome: String,
+        val reason: String,
+    )
     private var recordingTitleHash: String? = null
     private var reportTitleHash: String? = null
     private var reportSessionId: String? = null
@@ -46,6 +64,9 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
         val titleHash = hashTitle(canonicalTitleId)
         synchronized(lock) {
             eventLines.clear()
+            failureSummaries.clear()
+            firstBlockers.clear()
+            eventOrdinal = 0
             recordingTitleHash = titleHash
             reportTitleHash = titleHash
             reportSessionId = sessionId
@@ -62,6 +83,9 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
     override fun clear() {
         synchronized(lock) {
             eventLines.clear()
+            failureSummaries.clear()
+            firstBlockers.clear()
+            eventOrdinal = 0
             recordingTitleHash = null
             reportTitleHash = null
             reportSessionId = null
@@ -77,7 +101,44 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
     override fun record(event: ChapterInventoryDiagnosticEvent) {
         synchronized(lock) {
             if (recordingTitleHash == null) return
-            eventLines += event.toSafeLine()
+            val safeAddon = event.addonId?.takeIf(SAFE_ADDON_ID::matches)
+            eventOrdinal = (eventOrdinal + 1).coerceAtMost(MAX_COUNTER)
+            eventLines += event.toSafeLine(
+                correlationId = event.correlationId?.takeIf(SAFE_CORRELATION_ID::matches)
+                    ?: reportSessionId.orEmpty(),
+                ordinal = eventOrdinal,
+            )
+            if (safeAddon != null && event.availabilityBlocked && safeAddon !in firstBlockers &&
+                firstBlockers.size < MAX_FIRST_BLOCKERS
+            ) {
+                val reason = event.reasons.entries
+                    .filter { it.value > 0 }
+                    .minByOrNull { it.key.name }
+                    ?.key?.name ?: "UNSPECIFIED"
+                firstBlockers[safeAddon] = BlockerSummary(
+                    stage = event.stage.name,
+                    outcome = event.outcome.name,
+                    reason = reason,
+                    affectedSources = event.affectedSourceCount?.coerceIn(0, MAX_COUNTER)
+                        ?.toString() ?: "unknown",
+                )
+            }
+            if (safeAddon != null && event.outcome != ChapterInventoryDiagnosticOutcome.SUCCESS) {
+                val issues = event.reasons.filterValues { it > 0 }
+                val reasons = if (issues.isEmpty()) {
+                    listOf("UNSPECIFIED" to 1)
+                } else {
+                    issues.map { (reason, count) -> reason.name to count }
+                }
+                reasons.forEach { (reason, count) ->
+                    val key = SummaryKey(safeAddon, event.stage.name, event.outcome.name, reason)
+                    if (key !in failureSummaries && failureSummaries.size >= MAX_SUMMARIES) {
+                        failureSummaries.remove(failureSummaries.keys.first())
+                    }
+                    val total = (failureSummaries[key] ?: 0).toLong() + count.toLong()
+                    failureSummaries[key] = total.coerceAtMost(MAX_COUNTER.toLong()).toInt()
+                }
+            }
             trimToBounds()
         }
     }
@@ -87,19 +148,27 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
         renderReport()
     }
 
-    private fun ChapterInventoryDiagnosticEvent.toSafeLine(): String = buildString {
+    private fun ChapterInventoryDiagnosticEvent.toSafeLine(
+        correlationId: String,
+        ordinal: Int,
+    ): String = buildString {
         append(stage.name)
         append("|outcome=").append(outcome.name)
+        append("|correlationId=").append(correlationId)
+        append("|event=").append(ordinal)
         sourceId?.takeIf { it >= 0L }?.let { append("|sourceId=").append(it) }
         addonId?.takeIf(SAFE_ADDON_ID::matches)?.let { append("|addonId=").append(it) }
         language?.takeIf(SAFE_LANGUAGE::matches)?.let { append("|language=").append(it) }
+        httpStatus?.takeIf { it in 100..599 }?.let { append("|httpStatus=").append(it) }
         elapsedMillis?.takeIf { it >= 0L }?.let { append("|elapsedMs=").append(it) }
+        attempt?.takeIf { it in 1..MAX_ATTEMPT }?.let { append("|attempt=").append(it) }
         received?.takeIf { it >= 0 }?.let { append("|received=").append(it) }
         accepted?.takeIf { it >= 0 }?.let { append("|accepted=").append(it) }
         provisional?.takeIf { it >= 0 }?.let { append("|provisional=").append(it) }
         discarded?.takeIf { it >= 0 }?.let { append("|discarded=").append(it) }
         inferred?.takeIf { it >= 0 }?.let { append("|inferred=").append(it) }
         unavailable?.takeIf { it >= 0 }?.let { append("|unavailable=").append(it) }
+        affectedSourceCount?.takeIf { it >= 0 }?.let { append("|affectedSources=").append(it) }
         val safeLabels = labels.asSequence()
             .take(MAX_LABELS * 4)
             .mapNotNull(ChapterInventoryDiagnosticLabels::sanitize)
@@ -129,14 +198,39 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
     private fun trimToBounds() {
         while (eventLines.size > maxEvents) eventLines.removeAt(0)
         while (eventLines.isNotEmpty() && reportByteSize() > maxReportBytes) eventLines.removeAt(0)
+        while (failureSummaries.isNotEmpty() && reportByteSize() > maxReportBytes) {
+            failureSummaries.remove(failureSummaries.keys.first())
+        }
+        while (firstBlockers.isNotEmpty() && reportByteSize() > maxReportBytes) {
+            firstBlockers.remove(firstBlockers.keys.last())
+        }
     }
 
     private fun reportByteSize(): Int = renderReport().toByteArray(StandardCharsets.UTF_8).size
 
     private fun renderReport(): String = buildString {
-        appendLine("Tsuzuki chapter inventory diagnostic v1")
+        appendLine("Tsuzuki chapter inventory diagnostic v2")
         append("sessionId=").appendLine(reportSessionId)
         append("titleHash=").appendLine(reportTitleHash)
+        failureSummaries.entries.sortedWith(
+            compareBy<Map.Entry<SummaryKey, Int>> { it.key.addonId }
+                .thenBy { it.key.stage }
+                .thenBy { it.key.outcome }
+                .thenBy { it.key.reason },
+        ).forEach { (key, count) ->
+            append("SUMMARY|addonId=").append(key.addonId)
+            append("|stage=").append(key.stage)
+            append("|outcome=").append(key.outcome)
+            append("|reason=").append(key.reason)
+            append("|count=").appendLine(count)
+        }
+        firstBlockers.forEach { (addonId, blocker) ->
+            append("SUMMARY|addonId=").append(addonId)
+            append("|firstBlockingStage=").append(blocker.stage)
+            append("|outcome=").append(blocker.outcome)
+            append("|affectedSources=").append(blocker.affectedSources)
+            append("|reason=").appendLine(blocker.reason)
+        }
         eventLines.forEach { appendLine(it) }
     }.trimEnd()
 
@@ -158,8 +252,12 @@ class InMemoryChapterInventoryDiagnostics internal constructor(
         const val MAX_REASONS = 20
         const val MAX_CHAPTER_NUMBER = 999_999_999
         const val MAX_COUNTER = 999_999_999
+        const val MAX_ATTEMPT = 4
+        const val MAX_SUMMARIES = 64
+        const val MAX_FIRST_BLOCKERS = 32
         val SESSION_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
         val SAFE_ADDON_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
         val SAFE_LANGUAGE = Regex("^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$")
+        val SAFE_CORRELATION_ID = Regex("^[A-Za-z0-9_-]{1,64}$")
     }
 }

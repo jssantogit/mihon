@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
 import eu.kanade.tachiyomi.extension.model.Extension
+import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -24,8 +25,8 @@ class MihonAddonRepositoryTest {
             pkgName = "eu.kanade.tachiyomi.extension.en.example",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 1L, lang = "en"),
-                FakeSource(id = 2L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 1L, lang = "en"),
+                FakeCatalogueSource(id = 2L, lang = "pt-BR"),
             ),
         )
         val disabled = MutableStateFlow(emptySet<String>())
@@ -45,11 +46,56 @@ class MihonAddonRepositoryTest {
     }
 
     @Test
+    fun `partially disabled multi source addon exposes only enabled sources`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.partial",
+            name = "Example",
+            sources = listOf(
+                FakeCatalogueSource(id = 10L, lang = "en"),
+                FakeCatalogueSource(id = 20L, lang = "pt-BR"),
+            ),
+        )
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { setOf("10") },
+            disabledSourceIdsFlow = flowOf(setOf("10")),
+            setDisabledSourceIds = {},
+        )
+
+        val addon = repository.snapshot().single()
+
+        addon.enabled shouldBe true
+        addon.mihonSourceIds.shouldContainExactlyInAnyOrder(20L)
+    }
+
+    @Test
+    fun `non catalogue internal source is never offered as reading source`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.mixed",
+            name = "Mixed",
+            sources = listOf(
+                FakeSource(id = 11L, lang = "en"),
+                FakeCatalogueSource(id = 12L, lang = "pt-BR"),
+            ),
+        )
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { listOf(extension) },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+        )
+
+        repository.snapshot().single().mihonSourceIds.shouldContainExactlyInAnyOrder(12L)
+    }
+
+    @Test
     fun `update state is exposed at addon level`() = runTest {
         val extension = installedExtension(
             pkgName = "pkg.update",
             name = "Example",
-            sources = listOf(FakeSource(id = 1L, lang = "en")),
+            sources = listOf(FakeCatalogueSource(id = 1L, lang = "en")),
             hasUpdate = true,
         )
         val repository = MihonAddonRepository(
@@ -64,13 +110,49 @@ class MihonAddonRepositoryTest {
     }
 
     @Test
+    fun `no loaded runtime extension produces no installed addon`() = runTest {
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(emptyList()),
+            installedExtensionsSnapshot = { emptyList() },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+        )
+
+        repository.snapshot() shouldBe emptyList()
+    }
+
+    @Test
+    fun `removed extension disappears from installed addon snapshot`() = runTest {
+        val extension = installedExtension(
+            pkgName = "pkg.remove.after-uninstall",
+            name = "Example",
+            sources = listOf(FakeCatalogueSource(id = 10L, lang = "en")),
+        )
+        var installed = listOf(extension)
+        val repository = MihonAddonRepository(
+            installedExtensionsFlow = flowOf(listOf(extension)),
+            installedExtensionsSnapshot = { installed },
+            disabledSourceIds = { emptySet() },
+            disabledSourceIdsFlow = flowOf(emptySet()),
+            setDisabledSourceIds = {},
+            uninstallExtension = { installed = emptyList() },
+        )
+
+        repository.snapshot().single().id shouldBe AddonId(extension.pkgName)
+        repository.uninstall(AddonId(extension.pkgName))
+
+        repository.snapshot() shouldBe emptyList()
+    }
+
+    @Test
     fun `uninstall delegates by addon package rather than source`() = runTest {
         val extension = installedExtension(
             pkgName = "pkg.remove",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 10L, lang = "en"),
-                FakeSource(id = 20L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 10L, lang = "en"),
+                FakeCatalogueSource(id = 20L, lang = "pt-BR"),
             ),
         )
         var removed: Extension.Installed? = null
@@ -94,8 +176,8 @@ class MihonAddonRepositoryTest {
             pkgName = "pkg",
             name = "Example",
             sources = listOf(
-                FakeSource(id = 10L, lang = "en"),
-                FakeSource(id = 20L, lang = "pt-BR"),
+                FakeCatalogueSource(id = 10L, lang = "en"),
+                FakeCatalogueSource(id = 20L, lang = "pt-BR"),
             ),
         )
         val disabled = MutableStateFlow(emptySet<String>())
@@ -132,6 +214,25 @@ class MihonAddonRepositoryTest {
         hasUpdate = hasUpdate,
         isShared = false,
     )
+
+    private class FakeCatalogueSource(
+        override val id: Long,
+        override val lang: String,
+    ) : CatalogueSource {
+        override val name = "Source $id"
+        override val supportsLatest = false
+        override fun getFilterList() = FilterList()
+        override suspend fun getPopularManga(page: Int): MangasPage = error("unused")
+        override suspend fun getLatestUpdates(page: Int): MangasPage = error("unused")
+        override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage = error("unused")
+        override suspend fun getMangaUpdate(
+            manga: SManga,
+            chapters: List<SChapter>,
+            fetchDetails: Boolean,
+            fetchChapters: Boolean,
+        ): SMangaUpdate = error("unused")
+        override suspend fun getPageList(chapter: SChapter): List<Page> = error("unused")
+    }
 
     private class FakeSource(
         override val id: Long,

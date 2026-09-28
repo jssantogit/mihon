@@ -126,3 +126,10 @@ SET manga_id = coalesce(:mangaId, manga_id),
     is_syncing = coalesce(:isSyncing, is_syncing),
     memo = coalesce(:memo, memo)
 WHERE _id = :chapterId;
+
+-- Applied only from the transactional canonical projection outbox.
+projectTsuzukiProgress:
+UPDATE chapters SET
+    read = CASE WHEN read = 1 THEN read ELSE :read END,
+    last_page_read = :lastPageRead
+WHERE _id = :mihonChapterId;

@@ -25,6 +25,27 @@ interface CanonicalReadingRepository {
 
     suspend fun upsertProgress(progress: CanonicalChapterProgress)
 
+    /**
+     * The production SQL repository atomically persists canonical progress and
+     * the pending Mihon projection. The default exists only for non-SQL fakes.
+     */
+    suspend fun recordProgressWithProjection(
+        progress: CanonicalChapterProgress,
+        mihonChapterId: Long,
+    ) = upsertProgress(progress)
+
+    /**
+     * History duration must be enqueued in the SAME SQLite transaction as its
+     * canonical increment, never dispatched as an unacknowledged additive call.
+     */
+    suspend fun recordHistoryWithProjection(
+        update: CanonicalChapterHistoryUpdate,
+        mihonChapterId: Long,
+    ) = recordHistory(update)
+
+    /** Bounded, idempotent replay; the production repository overrides this. */
+    suspend fun drainPendingProjections(limit: Int = 4): Int = 0
+
     suspend fun getHistory(canonicalChapterId: String): CanonicalChapterHistory?
 
     suspend fun recordHistory(update: CanonicalChapterHistoryUpdate)

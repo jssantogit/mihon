@@ -12,9 +12,12 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
@@ -29,10 +32,13 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Clock
 
 class MihonChapterInventoryGatewayTest {
 
@@ -44,7 +50,7 @@ class MihonChapterInventoryGatewayTest {
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title-1")
         val gateway = MihonChapterInventoryGateway(
-            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
             chapterRepository = FakeChapterRepository(emptyList()),
             sourceManager = FakeSourceManager(TestSource(7L) { rawChapters }),
             diagnostics = diagnostics,
@@ -56,7 +62,7 @@ class MihonChapterInventoryGatewayTest {
         inventory.chapters.first().rawNumberHint shouldBe 1.0
         inventory.chapters.last().rawNumberHint shouldBe 234.0
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.INVENTORY
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.SUCCESS
         event.sourceId shouldBe 7L
         event.language shouldBe "en"
@@ -71,7 +77,7 @@ class MihonChapterInventoryGatewayTest {
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title-1")
         val gateway = MihonChapterInventoryGateway(
-            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
             chapterRepository = FakeChapterRepository(emptyList()),
             sourceManager = FakeSourceManager(
                 TestSource(7L) {
@@ -98,7 +104,7 @@ class MihonChapterInventoryGatewayTest {
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title-1")
         val timeoutGateway = MihonChapterInventoryGateway(
-            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
             chapterRepository = FakeChapterRepository(emptyList()),
             sourceManager = FakeSourceManager(TestSource(7L) { throw SocketTimeoutException("private timeout") }),
             diagnostics = diagnostics,
@@ -109,7 +115,7 @@ class MihonChapterInventoryGatewayTest {
         diagnostics.clear()
         diagnostics.start("title-1")
         val emptyGateway = MihonChapterInventoryGateway(
-            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
             chapterRepository = FakeChapterRepository(emptyList()),
             sourceManager = FakeSourceManager(TestSource(7L) { emptyList() }),
             diagnostics = diagnostics,
@@ -118,7 +124,7 @@ class MihonChapterInventoryGatewayTest {
         emptyGateway.fetch(mapping(), refresh = true).getOrThrow().chapters shouldBe emptyList()
 
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.INVENTORY
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.EMPTY
         event.received shouldBe 0
         diagnostics.report().contains("private timeout") shouldBe false
@@ -126,7 +132,7 @@ class MihonChapterInventoryGatewayTest {
 
     @Test
     fun `fetch reads legacy chapters passes them to source and never writes mihon rows`() = runTest {
-        val mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L))
+        val mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title"))
         val legacy = Chapter.create().copy(
             id = 100L,
             mangaId = 42L,
@@ -157,6 +163,7 @@ class MihonChapterInventoryGatewayTest {
         source.lastFetchChapters shouldBe true
         inventory.sourceMappingId shouldBe "mapping-7"
         inventory.canonicalTitleId shouldBe "title-1"
+        inventory.sourceUrl shouldBe "/title"
         inventory.chapters.map { it.sourceChapterId } shouldContainExactly listOf("/new", "/known")
         inventory.chapters.map { it.rawNumberHint } shouldContainExactly listOf(4.5, 3.0)
         inventory.chapters[0].rawSourceOrder shouldBe 0L
@@ -169,8 +176,86 @@ class MihonChapterInventoryGatewayTest {
     }
 
     @Test
+    fun `source chapter fetch runs away from the caller thread`() = runTest {
+        val callerThread = Thread.currentThread()
+        var sourceThread: Thread? = null
+        val source = TestSource(7L) {
+            sourceThread = Thread.currentThread()
+            listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L))
+        }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+        )
+
+        gateway.fetch(mapping(), refresh = true).getOrThrow()
+
+        source.wasCalled shouldBe true
+        (sourceThread === callerThread) shouldBe false
+    }
+
+    @Test
+    fun `inventory captures provider fetch start before the source delivers a result`() = runTest {
+        var sourceEnteredAt = 0L
+        val source = TestSource(7L) {
+            sourceEnteredAt = Clock.System.now().toEpochMilliseconds()
+            listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L))
+        }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+        )
+        val inventory = gateway.fetch(mapping(), refresh = true).getOrThrow()
+        val startedAt = requireNotNull(inventory.fetchStartedAtMillis)
+        (startedAt > 0L) shouldBe true
+        (startedAt <= sourceEnteredAt) shouldBe true
+    }
+
+    @Test
+    fun `gateway refuses invalidated in-flight provider results and retains newer inventory`() = runTest {
+        val releaseOld = CompletableDeferred<Unit>()
+        val oldFetchEntered = CompletableDeferred<Unit>()
+        val fetchCount = AtomicInteger()
+        val source = TestSource(7L) {
+            val request = fetchCount.incrementAndGet()
+            if (request == 1) {
+                oldFetchEntered.complete(Unit)
+                releaseOld.await()
+            }
+            listOf(
+                chapter("/chapter/$request", "Chapter $request", request.toFloat(), null, request.toLong()),
+            )
+        }
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            inventoryCache = cache,
+        )
+
+        val original = async { gateway.fetch(mapping(), refresh = true) }
+        oldFetchEntered.await()
+        val joined = async { gateway.fetch(mapping()) }
+        yield()
+        fetchCount.get() shouldBe 1
+
+        cache.invalidateTitle("title-1")
+        val fresh = gateway.fetch(mapping(), refresh = true).getOrThrow()
+        fresh.chapters.map { it.sourceChapterId } shouldContainExactly listOf("/chapter/2")
+        releaseOld.complete(Unit)
+
+        original.await().isFailure shouldBe true
+        joined.await().isFailure shouldBe true
+        gateway.fetch(mapping()).getOrThrow() shouldBe fresh
+        fetchCount.get() shouldBe 2
+    }
+
+    @Test
     fun `fetch wraps source failures and propagates cancellation`() = runTest {
-        val mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L))
+        val mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title"))
         val chapterRepository = FakeChapterRepository(emptyList())
         val source = TestSource(7L) { throw IllegalStateException("network") }
         val gateway = MihonChapterInventoryGateway(
@@ -194,7 +279,7 @@ class MihonChapterInventoryGatewayTest {
     fun `fetch rejects an unmaterialized mapping before source access`() = runTest {
         val source = TestSource(7L) { emptyList() }
         val gateway = MihonChapterInventoryGateway(
-            FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
             FakeChapterRepository(emptyList()),
             FakeSourceManager(source),
         )
@@ -204,8 +289,56 @@ class MihonChapterInventoryGatewayTest {
     }
 
     @Test
+    fun `fetch rejects materialized manga whose source differs from binding`() = runTest {
+        val diagnostics = RecordingChapterInventoryDiagnostics().also { it.start("title-1") }
+        val source = TestSource(7L) { listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L)) }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(
+                Manga.create().copy(id = 42L, source = 8L, url = "/title"),
+            ),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            diagnostics = diagnostics,
+        )
+
+        val result = gateway.fetch(mapping())
+
+        result.isFailure shouldBe true
+        source.wasCalled shouldBe false
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.INDETERMINATE
+        diagnostics.events.single().reasons shouldBe mapOf(
+            ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH to 1,
+        )
+        diagnostics.report().contains("/title") shouldBe false
+    }
+
+    @Test
+    fun `fetch rejects materialized manga whose source url differs from binding`() = runTest {
+        val diagnostics = RecordingChapterInventoryDiagnostics().also { it.start("title-1") }
+        val source = TestSource(7L) { listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L)) }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(
+                Manga.create().copy(id = 42L, source = 7L, url = "/other-title"),
+            ),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            diagnostics = diagnostics,
+        )
+
+        val result = gateway.fetch(mapping())
+
+        result.isFailure shouldBe true
+        source.wasCalled shouldBe false
+        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.INDETERMINATE
+        diagnostics.events.single().reasons shouldBe mapOf(
+            ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH to 1,
+        )
+        diagnostics.report().contains("/other-title") shouldBe false
+    }
+
+    @Test
     fun `fetch fails for an absent or stub source without writing mihon rows`() = runTest {
-        val mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L))
+        val mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title"))
         val chapterRepository = FakeChapterRepository(emptyList())
 
         val absentGateway = MihonChapterInventoryGateway(
@@ -236,7 +369,7 @@ class MihonChapterInventoryGatewayTest {
         )
         val chapterRepository = FakeChapterRepository(listOf(legacy))
         val gateway = MihonChapterInventoryGateway(
-            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L)),
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
             chapterRepository = chapterRepository,
             sourceManager = FakeSourceManager(null),
         )

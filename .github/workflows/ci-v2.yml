@@ -59,6 +59,7 @@ jobs:
         run: |
           python3 .github/scripts/test_ci_v2_plan.py
           python3 .github/scripts/test_apk_lane.py
+          python3 .github/scripts/test_extension_fixture.py
 
       - name: Resolve verification scope
         id: scope

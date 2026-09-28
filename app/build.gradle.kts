@@ -156,6 +156,16 @@ android {
 
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
+        create("generic") {
+            initWith(release)
+
+            applicationIdSuffix = ".tsuzuki.generic"
+            versionNameSuffix = "-generic-${getLatestCommitCount()}"
+
+            matchingFallbacks.addAll(commonMatchingFallbacks)
+
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        }
         create("benchmark") {
             initWith(release)
 
@@ -375,6 +385,13 @@ dependencies {
     // Tests
     testImplementation(libs.bundles.test)
     testRuntimeOnly(libs.junit.platform.launcher)
+
+    // Separate, opt-in real-extension Android test lane.
+    androidTestImplementation(libs.androidx.test.junit)
+    // The runner is the instrumentation entry point; ext:junit alone does not guarantee its DEX is packaged.
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.okhttp.mockwebserver)
 
     // For detecting memory leaks; see https://square.github.io/leakcanary/
     // debugImplementation(libs.leakCanary.android)

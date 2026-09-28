@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Run in one Bash process: emulator action runs YAML lines in separate shells.
+set -euo pipefail
+live_probe="${1:-false}"
+if [[ "$live_probe" != "true" && "$live_probe" != "false" ]]; then
+  echo "::error::Invalid live_probe value"; exit 2
+fi
+python3 .github/scripts/verify_extension_fixture.py
+apk="test-fixtures/extensions/mangafire-v1.6.34.apk"
+mapfile -t signers < <(find "${ANDROID_HOME:?Missing ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V)
+if (( ${#signers[@]} == 0 )); then echo "::error::Missing apksigner"; exit 1; fi
+"${signers[${#signers[@]}-1]}" verify --verbose "$apk"
+adb install -r "$apk"
+
+# Gradle previously exited green with an XML report containing 0 tests.
+# Explicitly install both APKs and select the AndroidJUnitRunner method.
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+mapfile -t target_apks < <(find app/build/outputs/apk/debug -type f \( -name '*universal*.apk' -o -name 'app-debug.apk' \) | sort)
+mapfile -t test_apks < <(find app/build/outputs/apk/androidTest/debug -type f -name '*.apk' | sort)
+if (( ${#target_apks[@]} != 1 || ${#test_apks[@]} != 1 )); then
+  echo "::error::Expected exactly one debug target APK and instrumentation APK"; exit 1
+fi
+adb install -r "${target_apks[0]}"
+adb install -r "${test_apks[0]}"
+available="$(adb shell pm list instrumentation | tr -d '\r')"
+runner="$(printf '%s\n' "$available" | sed -n '/target=app\.mihon\.dev/ s/^instrumentation:\([^ ]*\).*/\1/p' | grep '/androidx.test.runner.AndroidJUnitRunner$' | head -n 1)"
+if [[ -z "$runner" ]]; then echo "::error::Test runner app.mihon.dev unavailable"; exit 1; fi
+
+output="$(mktemp)"
+trap 'rm -f "$output"' EXIT
+run_one() {
+  local test_class="$1"
+  local method="$2"
+  shift 2
+  local report_dir='.github/results/mangafire'
+  local report_file="${report_dir}/${method}.txt"
+  mkdir -p "$report_dir"
+  local runner_exit=0
+  timeout --foreground 300s adb shell am instrument -w -r -e class "${test_class}#${method}" "$@" "$runner" > "$output" 2>&1 || runner_exit=$?
+  if (( runner_exit != 0 )); then
+    local crash
+    crash="$(mktemp)"
+    adb logcat -d -b crash -v brief > "$crash" 2>/dev/null || true
+    python3 .github/scripts/summarize_android_instrumentation.py "$output" "$crash" > "$report_file"
+    rm -f "$crash"
+    cat "$report_file"
+    echo "::error::Android instrumentation failed or exceeded its 300 second process deadline (exit ${runner_exit})"; exit 1
+  fi
+  if ! python3 .github/scripts/verify_android_instrumentation.py "$output" "$method"; then
+    # This run failed before or during AndroidJUnitRunner. Emit closed, sanitized
+    # diagnostic categories without exception messages, request URLs, or headers.
+    crash="$(mktemp)"
+    adb logcat -d -b crash -v brief > "$crash" 2>/dev/null || true
+    python3 .github/scripts/summarize_android_instrumentation.py "$output" "$crash" > "$report_file"
+    rm -f "$crash"
+    cat "$report_file"
+    exit 1
+  fi
+  python3 .github/scripts/summarize_android_instrumentation.py "$output" "" > "$report_file"
+  cat "$report_file"
+}
+fixture_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireFixtureInstrumentedTest'
+journey_class='eu.kanade.tachiyomi.data.tsuzuki.instrumentation.MangaFireRealReadingJourneyInstrumentedTest'
+run_one "$fixture_class" loadsRealExtensionAndRegistersInternalSources
+run_one "$journey_class" instrumentationContextDatabasePersistsCanonicalTitle
+if [[ "$live_probe" == "true" ]]; then
+  # Explicit manual opt-in only. One work and one internal source; no CAPTCHA circumvention.
+  run_one "$journey_class" optionalRealEnglishReadingJourney -e allowLiveProvider true
+fi

@@ -4,6 +4,7 @@ import dev.zacsweers.metro.Inject
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.ContentOption
+import java.util.Locale
 
 @Inject
 class RankContentOptions {
@@ -12,13 +13,20 @@ class RankContentOptions {
         options: List<ContentOption>,
         preferredAddonId: AddonId?,
         preferredLanguages: List<String>,
+        deviceLocale: Locale = Locale.getDefault(),
     ): List<ContentOption> {
+        val effectiveLanguages = preferredLanguages.ifEmpty {
+            listOf(deviceLocale.toLanguageTag(), deviceLocale.language, "en")
+                .map(String::trim)
+                .filter { it.isNotEmpty() && !it.equals("und", ignoreCase = true) }
+                .distinctBy { it.lowercase(Locale.ROOT) }
+        }
         return options.sortedWith(
             compareBy<ContentOption> { option -> deliveryRank(option.delivery) }
                 .thenBy { option ->
                     if (preferredAddonId != null && option.addonId == preferredAddonId) 0 else 1
                 }
-                .thenBy { option -> languageRank(option.language, preferredLanguages) }
+                .thenBy { option -> languageRank(option.language, effectiveLanguages) }
                 .thenByDescending { option -> option.releaseDate ?: Long.MIN_VALUE }
                 .thenBy { option -> option.addonId.value }
                 .thenBy { option -> option.key },

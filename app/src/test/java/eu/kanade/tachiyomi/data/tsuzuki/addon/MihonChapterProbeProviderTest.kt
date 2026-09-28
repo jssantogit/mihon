@@ -25,6 +25,37 @@ import java.net.SocketTimeoutException
 class MihonChapterProbeProviderTest {
 
     @Test
+    fun `targeted probe only requests the chosen enabled binding`() = runTest {
+        val english = binding("binding-en")
+        val portuguese = binding("binding-pt").copy(providerTitleKey = "8:/dandadan")
+        val fetched = mutableListOf<String>()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(english, portuguese)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { current ->
+                fetched += current.id
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = current.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = emptyList(),
+                        mihonMangaId = 99L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            enabledSourceIds = { setOf(8L) },
+        )
+
+        provider.probeBinding(portuguese).getOrThrow() shouldBe emptyList()
+        fetched shouldBe listOf("binding-pt")
+        provider.probeBinding(english).isFailure shouldBe true
+        fetched shouldBe listOf("binding-pt")
+    }
+
+    @Test
     fun `diagnostic accounts for duplicate fractional and identity-less source rows`() = runTest {
         val binding = binding()
         val diagnostics = RecordingChapterInventoryDiagnostics()
@@ -50,7 +81,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1234L },
             diagnostics = diagnostics,
         )
 
@@ -59,7 +89,7 @@ class MihonChapterProbeProviderTest {
         evidence.size shouldBe 2
         evidence.map { it.rawNumber }.toSet() shouldBe setOf(1.0, 1.5)
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.PROBE
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_PROBE
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
         event.received shouldBe 4
         event.accepted shouldBe 2
@@ -72,6 +102,63 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `One Punch Man 169 raw versus 163 accepted requires per-session discard reasons`() = runTest {
+        // These are two deliberately different synthetic explanations for the
+        // same headline totals. Neither is evidence about current MangaDex.
+        val binding = binding("opm")
+        val unique = (1..163).map { number ->
+            snapshot(binding.id, 7L, "/chapter/$number", "Chapter $number", number.toDouble())
+        }
+        val missingKeys = (1..6).map { number ->
+            snapshot(binding.id, 7L, "", "Special $number", 0.0)
+                .copy(sourceChapterUrl = "")
+        }
+        val inventories = listOf(
+            ("duplicates" to (unique + unique.take(6))) to ChapterInventoryDiagnosticReason.DUPLICATE,
+            ("missing keys" to (unique + missingKeys)) to ChapterInventoryDiagnosticReason.MISSING_SOURCE_ID,
+        )
+
+        inventories.forEach { (scenario, expectedReason) ->
+            val (description, raw) = scenario
+            val diagnostics = RecordingChapterInventoryDiagnostics()
+            diagnostics.start("title")
+            val provider = MihonChapterProbeProvider(
+                addonId = AddonId("mangadex"),
+                contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+                parser = ParseCanonicalChapterLabel(),
+                fetchInventory = {
+                    Result.success(
+                        SourceChapterInventory(
+                            sourceMappingId = binding.id,
+                            sourceId = 7L,
+                            canonicalTitleId = "title",
+                            chapters = raw,
+                            mihonMangaId = 99L,
+                            language = "pt-BR",
+                        ),
+                    )
+                },
+                diagnostics = diagnostics,
+            )
+
+            val accepted = provider.probe("title").getOrThrow()
+            accepted.size shouldBe 163
+            val event = diagnostics.events.single()
+            event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_PROBE
+            event.outcome shouldBe ChapterInventoryDiagnosticOutcome.PARTIAL
+            event.received shouldBe 169
+            event.accepted shouldBe 163
+            event.discarded shouldBe 6
+            event.reasons[expectedReason] shouldBe 6
+            when (description) {
+                "duplicates" -> event.reasons[ChapterInventoryDiagnosticReason.MISSING_SOURCE_ID] shouldBe null
+                "missing keys" -> event.reasons[ChapterInventoryDiagnosticReason.DUPLICATE] shouldBe null
+                else -> error("Unknown synthetic accounting case")
+            }
+        }
+    }
+
+    @Test
     fun `diagnostic records no binding separately from an empty extension inventory`() = runTest {
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title")
@@ -80,20 +167,19 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(emptyList()),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { error("must not fetch") },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
         provider.probe("title").getOrThrow() shouldBe emptyList()
 
         val event = diagnostics.events.single()
-        event.stage shouldBe ChapterInventoryDiagnosticStage.PROBE
+        event.stage shouldBe ChapterInventoryDiagnosticStage.CHAPTER_PROBE
         event.outcome shouldBe ChapterInventoryDiagnosticOutcome.NO_BINDING
         event.reasons[ChapterInventoryDiagnosticReason.NO_BINDING] shouldBe 1
     }
 
     @Test
-    fun `diagnostic classifies wrapped timeouts and IO failures from their causes`() = runTest {
+    fun `diagnostic classifies wrapped timeouts and unknown IO from their causes`() = runTest {
         val binding = binding()
         val diagnostics = RecordingChapterInventoryDiagnostics()
         diagnostics.start("title")
@@ -104,32 +190,32 @@ class MihonChapterProbeProviderTest {
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
             fetchInventory = { Result.failure(timeout) },
-            clock = { 1L },
             diagnostics = diagnostics,
         )
 
         timeoutProvider.probe("title").isFailure shouldBe true
-        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
+        diagnostics.events.first { it.outcome == ChapterInventoryDiagnosticOutcome.TIMEOUT }
+            .outcome shouldBe ChapterInventoryDiagnosticOutcome.TIMEOUT
 
         diagnostics.clear()
         diagnostics.start("title")
-        val network = IllegalStateException("wrapper", IOException("private network detail"))
-        val networkProvider = MihonChapterProbeProvider(
+        val unknownIo = IllegalStateException("wrapper", IOException("private network detail"))
+        val unknownIoProvider = MihonChapterProbeProvider(
             addonId = AddonId("mangadex"),
             contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
             parser = ParseCanonicalChapterLabel(),
-            fetchInventory = { Result.failure(network) },
-            clock = { 1L },
+            fetchInventory = { Result.failure(unknownIo) },
             diagnostics = diagnostics,
         )
 
-        networkProvider.probe("title").isFailure shouldBe true
-        diagnostics.events.single().outcome shouldBe ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
+        unknownIoProvider.probe("title").isFailure shouldBe true
+        diagnostics.events.first { it.outcome == ChapterInventoryDiagnosticOutcome.INDETERMINATE }
+            .outcome shouldBe ChapterInventoryDiagnosticOutcome.INDETERMINATE
         diagnostics.report().contains("private network detail") shouldBe false
     }
 
     @Test
-    fun `source chapter ahead of integration becomes addon provisional evidence`() = runTest {
+    fun `probe evidence keeps inventory fetch start instead of completion time`() = runTest {
         val binding = binding()
         val provider = MihonChapterProbeProvider(
             addonId = AddonId("mangadex"),
@@ -153,10 +239,10 @@ class MihonChapterProbeProviderTest {
                         ),
                         mihonMangaId = 99L,
                         language = "en",
+                        fetchStartedAtMillis = 1234L,
                     ),
                 )
             },
-            clock = { 1234L },
         )
 
         val evidence = provider.probe("title").getOrThrow()
@@ -169,6 +255,100 @@ class MihonChapterProbeProviderTest {
         newChapter.externalChapterKey shouldBe "7:/chapter-211"
         newChapter.rawNumber shouldBe 211.0
         newChapter.observedAt shouldBe 1234L
+    }
+
+    @Test
+    fun `inventory without fetch provenance uses oldest timestamp instead of completion time`() = runTest {
+        val binding = binding()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = 7L,
+                        canonicalTitleId = "title",
+                        chapters = listOf(snapshot(binding.id, 7L, "/chapter-1", "Chapter 1", 1.0)),
+                        mihonMangaId = 99L,
+                        language = "en",
+                    ),
+                )
+            },
+        )
+
+        provider.probe("title").getOrThrow().single().observedAt shouldBe 0L
+    }
+
+    @Test
+    fun `probe records only explicit unambiguous numeric source volumes`() = runTest {
+        val binding = binding()
+        val labels = listOf(
+            "Vol. 12 Ch. 37",
+            "Chapter 38",
+            "Vol.none Ch. 39",
+            "Vol. 1 Ch. 40 Vol. 2 Ch. 40",
+        )
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = 7L,
+                        canonicalTitleId = "title",
+                        chapters = labels.mapIndexed { index, label ->
+                            snapshot(binding.id, 7L, "/chapter-$index", label, (37 + index).toDouble())
+                        },
+                        mihonMangaId = 99L,
+                        language = "en",
+                    ),
+                )
+            },
+        )
+
+        val evidence = provider.probe("title").getOrThrow()
+
+        evidence.associate { it.rawLabel to it.volume } shouldBe mapOf(
+            "Vol. 12 Ch. 37" to 12,
+            "Chapter 38" to null,
+            "Vol.none Ch. 39" to null,
+            "Vol. 1 Ch. 40 Vol. 2 Ch. 40" to null,
+        )
+    }
+
+    @Test
+    fun `disabled internal source binding never fetches inventory or contributes evidence`() = runTest {
+        val english = binding(id = "binding-en")
+        val portuguese = binding(id = "binding-pt").copy(providerTitleKey = "8:/dandadan")
+        val fetched = mutableListOf<String>()
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(english, portuguese)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { binding ->
+                fetched += binding.id
+                Result.success(
+                    SourceChapterInventory(
+                        sourceMappingId = binding.id,
+                        sourceId = 8L,
+                        canonicalTitleId = "title",
+                        chapters = listOf(snapshot(binding.id, 8L, "/pt-1", "Chapter 1", 1.0)),
+                        mihonMangaId = 99L,
+                        language = "pt-BR",
+                    ),
+                )
+            },
+            enabledSourceIds = { setOf(8L) },
+        )
+
+        val observed = provider.probe("title").getOrThrow()
+
+        fetched shouldBe listOf("binding-pt")
+        observed.map { it.externalChapterKey } shouldBe listOf("8:/pt-1")
     }
 
     @Test
@@ -197,7 +377,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         val result = backgroundScope.async {
@@ -240,7 +419,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         provider.probe("title").getOrThrow().single().externalChapterKey shouldBe "8:/chapter-37"
@@ -267,7 +445,6 @@ class MihonChapterProbeProviderTest {
                     ),
                 )
             },
-            clock = { 1L },
         )
 
         provider.probe("title").exceptionOrNull()?.message shouldBe "English inventory unavailable"
@@ -284,7 +461,6 @@ class MihonChapterProbeProviderTest {
                 fetchCalls++
                 error("must not fetch without persisted binding")
             },
-            clock = { 1L },
         )
 
         provider.probe("title").getOrThrow() shouldBe emptyList()

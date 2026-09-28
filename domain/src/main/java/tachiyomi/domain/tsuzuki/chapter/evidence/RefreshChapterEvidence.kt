@@ -2,22 +2,32 @@ package tachiyomi.domain.tsuzuki.chapter.evidence
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableTitle
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
@@ -27,7 +37,9 @@ class RefreshChapterEvidence private constructor(
     private val addonRegistry: AddonRegistry?,
     private val resolveContentBinding: ResolveContentBinding?,
     private val contentOptionCache: ContentOptionCache?,
+    private val inFlightContentResolution: InFlightContentResolution?,
     private val diagnostics: ChapterInventoryDiagnostics,
+    private val discoverReadableTitle: DiscoverReadableTitle?,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
@@ -38,14 +50,38 @@ class RefreshChapterEvidence private constructor(
         addonRegistry: AddonRegistry,
         resolveContentBinding: ResolveContentBinding,
         contentOptionCache: ContentOptionCache,
+        inFlightContentResolution: InFlightContentResolution,
         diagnostics: ChapterInventoryDiagnostics,
+        discoverReadableTitle: DiscoverReadableTitle,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
         addonRegistry = addonRegistry,
         resolveContentBinding = resolveContentBinding,
         contentOptionCache = contentOptionCache,
+        inFlightContentResolution = inFlightContentResolution,
         diagnostics = diagnostics,
+        discoverReadableTitle = discoverReadableTitle,
+        constructorMarker = Unit,
+    )
+
+    constructor(
+        registry: IntegrationRegistry,
+        reconcileChapterEvidence: ReconcileChapterEvidence,
+        addonRegistry: AddonRegistry,
+        resolveContentBinding: ResolveContentBinding,
+        contentOptionCache: ContentOptionCache,
+        diagnostics: ChapterInventoryDiagnostics,
+        discoverReadableTitle: DiscoverReadableTitle? = null,
+    ) : this(
+        registry = registry,
+        reconcileChapterEvidence = reconcileChapterEvidence,
+        addonRegistry = addonRegistry,
+        resolveContentBinding = resolveContentBinding,
+        contentOptionCache = contentOptionCache,
+        inFlightContentResolution = null,
+        diagnostics = diagnostics,
+        discoverReadableTitle = discoverReadableTitle,
         constructorMarker = Unit,
     )
 
@@ -58,31 +94,78 @@ class RefreshChapterEvidence private constructor(
         addonRegistry = null,
         resolveContentBinding = null,
         contentOptionCache = null,
+        inFlightContentResolution = null,
         diagnostics = NoOpChapterInventoryDiagnostics,
+        discoverReadableTitle = null,
         constructorMarker = Unit,
     )
 
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
         return try {
             registry.awaitReady()
+            // Break the zero-binding/zero-chapter deadlock before probing inventories.
+            // Safe, unambiguous matches are persisted; ambiguous matches remain manual.
+            val initialBindings = try {
+                discoverReadableTitle?.execute(canonicalTitleId)?.getOrNull().orEmpty()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Best effort only: existing bindings/integration evidence must still refresh.
+                emptyList()
+            }
             // Integration metadata and Add-on inventories are independent until
-            // reconciliation. Running both concurrently avoids serial network waits.
+            // reconciliation. Running the first pass concurrently avoids serial network waits.
             val evidence = coroutineScope {
                 val integrations = async { collectIntegrationEvidence(canonicalTitleId) }
-                val addons = async { collectAddonEvidence(canonicalTitleId) }
-                (integrations.await() + addons.await()).distinctBy(ChapterEvidence::id)
+                val initialAddons = async { collectAddonEvidence(canonicalTitleId) }
+                val integrationEvidence = integrations.await()
+                var addonEvidence = initialAddons.await()
+
+                // A safe title binding is not proof that its edition actually exposes chapters.
+                // Keep broadening while each newly bound edition is empty, but only while the
+                // discovery result grows. This prevents both a stale-binding dead end and an
+                // unbounded provider sweep.
+                val knownBindingIds = initialBindings.mapTo(linkedSetOf(), ContentBinding::id)
+                var broadenAttempt = 0
+                while (
+                    addonEvidence.isEmpty() &&
+                    broadenAttempt < MAX_EMPTY_BINDING_BROADEN_ATTEMPTS
+                ) {
+                    broadenAttempt++
+                    val broadened = try {
+                        discoverReadableTitle
+                            ?.execute(canonicalTitleId, broadenExistingBindings = true)
+                            ?.getOrNull()
+                            .orEmpty()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
+                    val newBindings = broadened.filter { it.id !in knownBindingIds }
+                    if (newBindings.isEmpty()) break
+                    knownBindingIds += newBindings.map(ContentBinding::id)
+                    addonEvidence = collectAddonEvidence(canonicalTitleId)
+                }
+
+                (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id)
             }
             reconcileChapterEvidence.execute(canonicalTitleId, evidence)
             // Chapter mappings may have changed; never serve stale provider
-            // options that were resolved against a previous evidence graph.
-            contentOptionCache?.invalidateTitle(canonicalTitleId)
+            // work or cached options that were resolved against an older graph.
+            invalidateContentOptionsAfterChapterRefresh(
+                invalidateInFlight = {
+                    inFlightContentResolution?.invalidateTitle(canonicalTitleId)
+                },
+                invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
+            )
             Result.success(Unit)
         } catch (error: CancellationException) {
             if (error is kotlinx.coroutines.TimeoutCancellationException) {
                 recordRefreshOutcome(
                     canonicalTitleId = canonicalTitleId,
                     outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                    reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
                 )
             }
             throw error
@@ -90,7 +173,59 @@ class RefreshChapterEvidence private constructor(
             recordRefreshOutcome(
                 canonicalTitleId = canonicalTitleId,
                 outcome = error.toDiagnosticOutcome(),
-                reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                reason = ChapterInventoryDiagnosticFailures.classify(error).second,
+            )
+            Result.failure(error)
+        }
+    }
+
+    /** Reconcile only the newly linked edition, without refreshing all stored language bindings. */
+    suspend fun executeForBinding(binding: ContentBinding): Result<Unit> {
+        return try {
+            require(
+                binding.canonicalTitleId.isNotBlank() &&
+                    binding.availability == ContentBindingAvailability.AVAILABLE,
+            )
+            val currentRegistry = checkNotNull(addonRegistry)
+            val resolver = checkNotNull(resolveContentBinding)
+            currentRegistry.awaitReady()
+            val persisted = resolver.existingBindingsForRefresh(binding.canonicalTitleId, binding.addonId)
+                .getOrThrow().firstOrNull {
+                    it.id == binding.id && it.providerTitleKey == binding.providerTitleKey &&
+                        it.availability == ContentBindingAvailability.AVAILABLE
+                } ?: error("Selected binding is missing or its internal source is disabled")
+            val provider = currentRegistry.chapterProbeProviders()
+                .firstOrNull { it.addonId == binding.addonId } as? TargetedChapterProbeProvider
+                ?: error("Selected Add-on does not support targeted chapter inventory")
+            val observations = provider.probeBinding(persisted).getOrThrow()
+            require(
+                observations.all {
+                    it.canonicalTitleId == binding.canonicalTitleId &&
+                        it.producerKind == ProducerKind.ADDON &&
+                        it.producerId == binding.addonId.value
+                },
+            ) { "Targeted inventory belongs to another title or Add-on" }
+            reconcileChapterEvidence.execute(binding.canonicalTitleId, observations)
+            invalidateContentOptionsAfterChapterRefresh(
+                invalidateInFlight = {
+                    inFlightContentResolution?.invalidateTitleAddon(
+                        binding.canonicalTitleId,
+                        binding.addonId,
+                    )
+                },
+                invalidateCache = {
+                    contentOptionCache?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
+                },
+            )
+            Result.success(Unit)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            recordRefreshOutcome(
+                canonicalTitleId = binding.canonicalTitleId,
+                addonId = binding.addonId.value,
+                outcome = error.toDiagnosticOutcome(),
+                reason = ChapterInventoryDiagnosticFailures.classify(error).second,
             )
             Result.failure(error)
         }
@@ -152,7 +287,7 @@ class RefreshChapterEvidence private constructor(
                 recordRefreshOutcome(
                     canonicalTitleId = canonicalTitleId,
                     outcome = ChapterInventoryDiagnosticOutcome.TIMEOUT,
-                    reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                    reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
                 )
             }
             throw error
@@ -160,7 +295,7 @@ class RefreshChapterEvidence private constructor(
             recordRefreshOutcome(
                 canonicalTitleId = canonicalTitleId,
                 outcome = error.toDiagnosticOutcome(),
-                reason = ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE,
+                reason = ChapterInventoryDiagnosticFailures.classify(error).second,
             )
             throw error
         }
@@ -173,7 +308,7 @@ class RefreshChapterEvidence private constructor(
                         gate.withPermit {
                             try {
                                 val bindings = resolver
-                                    .executeAll(canonicalTitleId, provider.addonId)
+                                    .existingBindingsForRefresh(canonicalTitleId, provider.addonId)
                                     .getOrElse { error ->
                                         if (error is CancellationException) throw error
                                         val (outcome, reason) = when (error) {
@@ -182,10 +317,8 @@ class RefreshChapterEvidence private constructor(
                                                     ChapterInventoryDiagnosticReason.BINDING_CONFIRMATION_REQUIRED
                                             is ContentBindingNotFoundException ->
                                                 ChapterInventoryDiagnosticOutcome.NO_BINDING to
-                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
-                                            else ->
-                                                error.toDiagnosticOutcome() to
-                                                    ChapterInventoryDiagnosticReason.BINDING_UNAVAILABLE
+                                                    ChapterInventoryDiagnosticReason.NO_BINDING
+                                            else -> ChapterInventoryDiagnosticFailures.classify(error)
                                         }
                                         recordRefreshOutcome(
                                             canonicalTitleId = canonicalTitleId,
@@ -292,7 +425,7 @@ class RefreshChapterEvidence private constructor(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.PROBE,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                 outcome = outcome,
                 addonId = addonId,
                 received = received,
@@ -304,19 +437,22 @@ class RefreshChapterEvidence private constructor(
         )
     }
 
-    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome {
-        val causes = generateSequence(this) { it.cause }.take(MAX_CAUSES).toList()
-        return when {
-            causes.any {
-                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
-            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT
-            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
-            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
-        }
-    }
+    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome =
+        ChapterInventoryDiagnosticFailures.classify(this).first
 
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
-        const val MAX_CAUSES = 5
+        const val MAX_EMPTY_BINDING_BROADEN_ATTEMPTS = 3
     }
+}
+
+internal suspend fun invalidateContentOptionsAfterChapterRefresh(
+    invalidateInFlight: suspend () -> Unit,
+    invalidateCache: suspend () -> Unit,
+) {
+    withContext(NonCancellable) {
+        invalidateInFlight()
+        invalidateCache()
+    }
+    currentCoroutineContext().ensureActive()
 }

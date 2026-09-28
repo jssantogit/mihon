@@ -7,6 +7,7 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
+import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -74,13 +75,13 @@ class MihonAddonRepository internal constructor(
     }
 
     private fun Extension.Installed.toInstalledAddon(disabled: Set<String>): InstalledAddon {
-        val sourceIds = sources.map { it.id }
+        val sourceIds = sources.filterIsInstance<CatalogueSource>().map { it.id }
         return InstalledAddon(
             id = AddonId(pkgName),
             displayName = name,
             enabled = sourceIds.isNotEmpty() && sourceIds.any { it.toString() !in disabled },
             versionName = versionName,
-            mihonSourceIds = sourceIds,
+            mihonSourceIds = sourceIds.filter { it.toString() !in disabled },
             hasSettings = sources.any { it is ConfigurableSource },
             hasUpdate = hasUpdate,
         )

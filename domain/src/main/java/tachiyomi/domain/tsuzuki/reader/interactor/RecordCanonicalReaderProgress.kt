@@ -96,7 +96,11 @@ class RecordCanonicalReaderProgress internal constructor(
             lastVariantId = legacyVariantId,
             updatedAt = updatedAt,
         )
-        repository.upsertProgress(progress)
+        if (mihonChapterId == null) {
+            repository.upsertProgress(progress)
+        } else {
+            repository.recordProgressWithProjection(progress, mihonChapterId)
+        }
 
         if (completed && existing?.read != true) {
             chapterUpdateStateRepository.acknowledge(
@@ -105,13 +109,7 @@ class RecordCanonicalReaderProgress internal constructor(
             )
         }
 
-        if (mihonChapterId != null) {
-            compatibilityGateway.projectProgress(
-                mihonChapterId = mihonChapterId,
-                read = progress.read,
-                lastPageRead = progress.lastPageRead,
-            )
-        }
+        if (mihonChapterId != null) flushDurableProjection()
     }
 
     suspend fun recordHistory(
@@ -122,21 +120,28 @@ class RecordCanonicalReaderProgress internal constructor(
     ) {
         require(sessionReadDuration >= 0L) { "sessionReadDuration must not be negative" }
         val readAt = clock()
-        repository.recordHistory(
-            CanonicalChapterHistoryUpdate(
-                canonicalChapterId = canonicalChapterId,
-                variantId = variantId,
-                readAt = readAt,
-                sessionReadDuration = sessionReadDuration,
-            ),
+        val history = CanonicalChapterHistoryUpdate(
+            canonicalChapterId = canonicalChapterId,
+            variantId = variantId,
+            readAt = readAt,
+            sessionReadDuration = sessionReadDuration,
         )
+        if (mihonChapterId == null) {
+            repository.recordHistory(history)
+        } else {
+            repository.recordHistoryWithProjection(history, mihonChapterId)
+            flushDurableProjection()
+        }
+    }
 
-        if (mihonChapterId != null) {
-            compatibilityGateway.projectHistory(
-                mihonChapterId = mihonChapterId,
-                readAt = readAt,
-                sessionReadDuration = sessionReadDuration,
-            )
+    private suspend fun flushDurableProjection() {
+        try {
+            compatibilityGateway.flushPendingProjections()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Canonical state and the outbox were committed together. The next
+            // Reader checkpoint or application start can safely retry.
         }
     }
 

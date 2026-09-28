@@ -148,6 +148,48 @@ class CanonicalTitleScreenModel(
         return operation
     }
 
+    /**
+     * The binding flow has already fetched and reconciled chapter evidence.
+     * Reload only persisted state here; a second provider refresh can race with
+     * the just-completed evidence graph and delay the newly linked chapter list.
+     */
+    fun reloadReconciledChapters(): Job? {
+        val id = canonicalTitleId ?: return null
+        operation?.cancel()
+        operation = viewModelScope.launch {
+            try {
+                val refreshed = loadLocalState(
+                    canonicalTitleId = id,
+                    includeLegacyDownloadChecks = false,
+                    isRefreshing = false,
+                )
+                if (canonicalTitleId != id) return@launch
+                val current = (_state.value as? CanonicalTitleScreenState.Loaded)
+                    ?.takeIf { it.title.id == id }
+                _state.value = if (current == null) {
+                    refreshed
+                } else {
+                    refreshed.copy(
+                        libraryEntry = current.libraryEntry,
+                        libraryMutationInProgress = current.libraryMutationInProgress,
+                        libraryMutationError = current.libraryMutationError,
+                        downloadInProgressChapterId = current.downloadInProgressChapterId,
+                        downloadSelectionChapterId = current.downloadSelectionChapterId,
+                        downloadError = current.downloadError,
+                        chapterActionError = current.chapterActionError,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val current = _state.value as? CanonicalTitleScreenState.Loaded
+                _state.value = current?.copy(isRefreshing = false, refreshError = error)
+                    ?: CanonicalTitleScreenState.Error(error)
+            }
+        }
+        return operation
+    }
+
     fun startChapterDiagnostics() {
         val id = canonicalTitleId ?: return
         try {

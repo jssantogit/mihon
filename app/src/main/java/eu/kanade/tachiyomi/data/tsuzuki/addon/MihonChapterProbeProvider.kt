@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.addon
 
+import eu.kanade.tachiyomi.data.tsuzuki.diagnosticHttpStatus
+import eu.kanade.tachiyomi.data.tsuzuki.toStructuredChapterInventoryFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -7,8 +9,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
-import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
+import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
+import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
@@ -20,12 +23,12 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import java.util.UUID
-import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 class MihonChapterProbeProvider internal constructor(
@@ -33,15 +36,41 @@ class MihonChapterProbeProvider internal constructor(
     private val contentBindingRepository: ContentBindingRepository,
     private val parser: ParseCanonicalChapterLabel,
     private val fetchInventory: suspend (ContentBinding) -> Result<SourceChapterInventory>,
-    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
-) : ChapterProbeProvider {
+    private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
+    private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
+) : TargetedChapterProbeProvider {
 
-    override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+    override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+        probeSelected(canonicalTitleId, bindingId = null)
+
+    override suspend fun probeBinding(binding: ContentBinding): Result<List<ChapterEvidence>> {
+        if (binding.addonId != addonId || binding.canonicalTitleId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Binding belongs to another Add-on or title"))
+        }
+        return probeSelected(binding.canonicalTitleId, binding.id)
+    }
+
+    private suspend fun probeSelected(
+        canonicalTitleId: String,
+        bindingId: String?,
+    ): Result<List<ChapterEvidence>> {
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
+            val allowedSourceIds = enabledSourceIds?.invoke()
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
-                .filter { it.addonId == addonId && it.availability == ContentBindingAvailability.AVAILABLE }
+                .filter { binding ->
+                    binding.addonId == addonId &&
+                        (bindingId == null || binding.id == bindingId) &&
+                        binding.availability == ContentBindingAvailability.AVAILABLE &&
+                        (
+                            allowedSourceIds == null || binding.providerTitleKey.substringBefore(':')
+                                .toLongOrNull()?.let { it in allowedSourceIds } == true
+                            )
+                }
+            if (bindings.isEmpty() && bindingId != null) {
+                return Result.failure(IllegalStateException("Selected binding unavailable or internal source disabled"))
+            }
             if (bindings.isEmpty()) {
                 recordProbe(
                     canonicalTitleId = canonicalTitleId,
@@ -84,14 +113,37 @@ class MihonChapterProbeProvider internal constructor(
             var successfulInventoryCount = 0
             var firstFailure: Throwable? = null
 
-            for ((_, inventoryResult) in inventoryResults) {
+            for ((binding, inventoryResult) in inventoryResults) {
                 val inventory = inventoryResult.getOrElse { error ->
                     if (error is CancellationException) throw error
                     firstFailure = firstFailure ?: error
+                    val (outcome, reason) = ChapterInventoryDiagnosticFailures.classify(
+                        error.toStructuredChapterInventoryFailure(),
+                    )
+                    reasons.increment(reason)
+                    if (isDiagnosticsRecording(canonicalTitleId)) {
+                        val payload = runCatching { MihonContentBindingPayloadCodec.decode(binding.runtimePayload) }
+                            .getOrNull()
+                        diagnostics.recordIfEnabled(
+                            canonicalTitleId,
+                            ChapterInventoryDiagnosticEvent(
+                                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
+                                outcome = outcome,
+                                addonId = addonId.value,
+                                sourceId = payload?.sourceId,
+                                language = payload?.language,
+                                httpStatus = error.diagnosticHttpStatus(),
+                                received = 0,
+                                reasons = mapOf(reason to 1),
+                            ),
+                        )
+                    }
                     continue
                 }
                 successfulInventoryCount++
-                val observedAt = clock()
+                // Cache replay keeps the gateway's fetch-start. Older inventories
+                // without provenance use the oldest timestamp, not processing time.
+                val observedAt = inventory.fetchStartedAtMillis ?: 0L
                 received += inventory.chapters.size
                 sourceIds += inventory.sourceId
                 languages += inventory.language
@@ -124,7 +176,7 @@ class MihonChapterProbeProvider internal constructor(
                         externalChapterKey = snapshot.sourceId.toString() + ":" + externalKey,
                         rawLabel = snapshot.rawName,
                         rawNumber = snapshot.rawNumberHint,
-                        volume = null,
+                        volume = volumeParser.execute(snapshot.rawName),
                         title = null,
                         observedAt = observedAt,
                         confidence = parsed.confidence,
@@ -202,7 +254,7 @@ class MihonChapterProbeProvider internal constructor(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.PROBE,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                 outcome = outcome,
                 sourceId = sourceId,
                 addonId = addonId.value,
@@ -228,9 +280,10 @@ class MihonChapterProbeProvider internal constructor(
         diagnostics.recordIfEnabled(
             canonicalTitleId,
             ChapterInventoryDiagnosticEvent(
-                stage = ChapterInventoryDiagnosticStage.PROBE,
+                stage = ChapterInventoryDiagnosticStage.CHAPTER_PROBE,
                 outcome = error.toDiagnosticOutcome(),
                 addonId = addonId.value,
+                httpStatus = error.diagnosticHttpStatus(),
                 elapsedMillis = elapsedMillis.coerceAtLeast(0L),
                 received = 0,
                 accepted = 0,
@@ -240,16 +293,8 @@ class MihonChapterProbeProvider internal constructor(
         )
     }
 
-    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome {
-        val causes = generateSequence(this) { it.cause }.take(MAX_CAUSES).toList()
-        return when {
-            causes.any {
-                it is java.net.SocketTimeoutException || it is kotlinx.coroutines.TimeoutCancellationException
-            } -> ChapterInventoryDiagnosticOutcome.TIMEOUT
-            causes.any { it is java.io.IOException } -> ChapterInventoryDiagnosticOutcome.NETWORK_ERROR
-            else -> ChapterInventoryDiagnosticOutcome.EXTENSION_ERROR
-        }
-    }
+    private fun Throwable.toDiagnosticOutcome(): ChapterInventoryDiagnosticOutcome =
+        ChapterInventoryDiagnosticFailures.classify(toStructuredChapterInventoryFailure()).first
 
     private fun isDiagnosticsRecording(canonicalTitleId: String): Boolean = try {
         diagnostics.isRecording(canonicalTitleId)
@@ -274,7 +319,6 @@ class MihonChapterProbeProvider internal constructor(
 
     private companion object {
         const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
-        const val MAX_CAUSES = 5
         const val RELIABLE_CONFIDENCE = 0.95
     }
 }

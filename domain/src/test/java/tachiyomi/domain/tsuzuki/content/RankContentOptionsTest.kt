@@ -4,6 +4,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
+import java.util.Locale
 
 class RankContentOptionsTest {
 
@@ -17,6 +18,37 @@ class RankContentOptionsTest {
 
         ranked.map { it.language } shouldBe listOf("pt-BR", "en")
         ranked.size shouldBe 2
+    }
+
+    @Test
+    fun `device locale and English rank before unrelated recent languages without configured preferences`() {
+        val options = listOf(
+            option("zh", "zh-Hant").copy(releaseDate = 9L),
+            option("en", "en").copy(releaseDate = 1L),
+            option("pt", "pt").copy(releaseDate = 2L),
+            option("br", "pt-BR").copy(releaseDate = 3L),
+        )
+        val ranked = RankContentOptions().execute(
+            options = options,
+            preferredAddonId = null,
+            preferredLanguages = emptyList(),
+            deviceLocale = Locale.forLanguageTag("pt-BR"),
+        )
+
+        ranked.map { it.language } shouldBe listOf("pt-BR", "pt", "en", "zh-Hant")
+        ranked.size shouldBe 4
+    }
+
+    @Test
+    fun `explicit preferred language is not overridden by device locale fallback`() {
+        val ranked = RankContentOptions().execute(
+            options = listOf(option("br", "pt-BR"), option("en", "en")),
+            preferredAddonId = null,
+            preferredLanguages = listOf("en"),
+            deviceLocale = Locale.forLanguageTag("pt-BR"),
+        )
+
+        ranked.map { it.language } shouldBe listOf("en", "pt-BR")
     }
 
     @Test
