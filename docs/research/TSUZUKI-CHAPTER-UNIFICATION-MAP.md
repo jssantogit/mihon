@@ -15,7 +15,7 @@ Sections below that discuss `ReconcileChapterInventory` as an active writer docu
 
 There is now **one canonical reconciliation authority**: `ReconcileChapterEvidence`. `ReconcileLegacyChapterEvidence` is a compatibility adapter/projector for materialized Mihon inventory, not a second identity writer. The independent `ReconcileChapterInventory` implementation was removed in PR #22.
 
-## Reused source URLs: safety guard before writer unification
+## Historical pre-cutover: reused source URLs safety guard
 
 The original legacy reconciler reused a persisted `ChapterVariant` solely
 because `(sourceId, sourceChapterId)` was unchanged, even when a later
@@ -23,7 +23,7 @@ observation described a reliably different chapter or explicitly contradictory
 volume. The evidence reconciler already detects those conflicts and can remap
 source-scoped evidence to the newly supported identity.
 
-**The acceptance branch now fails closed in the legacy writer:** it parses
+**At this pre-cutover checkpoint, the acceptance branch failed closed in the legacy writer:** it parses
 existing source-key observations, checks reliably contradictory chapter
 identities and explicitly incompatible non-null volumes, and rejects the
 affected inventory *before* committing any batch. Existing canonical IDs,
@@ -41,9 +41,9 @@ of unconditional trust in the reused URL. The [focused Domain and App CI
 passed on equivalent production and test source blobs; skipped Format,
 Release and migration jobs in that run do not count as validation.
 
-Full unification is still blocked on legacy Reader acceptance, operational
+At this historical checkpoint, full unification was still blocked on legacy Reader acceptance, operational
 variant projection in the same database transaction as evidence, and
-conflicting-key compatibility coverage.
+conflicting-key compatibility coverage. Those gates were subsequently closed by PR #22 as recorded in the final cutover section.
 
 ## Migration sequence — completed by PR #22
 
