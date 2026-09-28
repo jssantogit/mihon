@@ -706,7 +706,7 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `reliable unqualified add-on observation stays separate from explicit volume candidate`() = runTest {
+    fun `reliable unqualified add-on observation reuses sole explicit volume candidate`() = runTest {
         val fixture = fixture()
         val volumeOne = fixture.addonEvidence(
             id = "volume-one-observation",
@@ -725,17 +725,21 @@ class ReconcileChapterEvidenceTest {
         fixture.reconciler.execute("title", listOf(volumeOne, unknownVolume))
 
         val chapters = fixture.chapterRepository.getByCanonicalTitleId("title")
-        chapters shouldHaveSize 2
-        chapters.single { it.id == "chapter-1" }.volume shouldBe 1
-        val unqualifiedChapter = chapters.single { it.id != "chapter-1" }
-        unqualifiedChapter.volume shouldBe null
-        unqualifiedChapter.baseNumber shouldBe 37
+        chapters shouldHaveSize 1
+        val canonical = chapters.single()
+        canonical.volume shouldBe 1
+        canonical.baseNumber shouldBe 37
         fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 2
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-one",
+            externalChapterKey = "source-one-37",
+        )?.mappedCanonicalChapterId shouldBe canonical.id
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "source-two",
             externalChapterKey = "source-two-37",
-        )?.mappedCanonicalChapterId shouldBe unqualifiedChapter.id
+        )?.mappedCanonicalChapterId shouldBe canonical.id
     }
 
     @Test

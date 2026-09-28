@@ -231,6 +231,55 @@ class DiscoverReadableTitleTest {
     }
 
     @Test
+    fun `empty existing binding can broaden to another configured source`() = runTest {
+        val stale = installed("stale", 1L)
+        val readable = installed("readable", 2L)
+        val existing = binding(stale.id, 1L)
+        val searched = mutableListOf<Long>()
+        val discover = DiscoverReadableTitle(
+            existingBindings = { listOf(existing) },
+            installedAddons = { listOf(stale, readable) },
+            sourceEligibility = { addonId ->
+                if (addonId == stale.id) listOf(source(1L, "en")) else listOf(source(2L, "pt-BR"))
+            },
+            preferredLanguages = { listOf("pt-BR", "en") },
+            preferredSourceIds = { listOf(2L, 1L) },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = if (sourceId == 2L) "pt-BR" else "en",
+                            outcome = if (sourceId == 2L) {
+                                ContentBindingSourceOutcome.BOUND
+                            } else {
+                                ContentBindingSourceOutcome.EMPTY
+                            },
+                            bindings = if (sourceId == 2L) {
+                                listOf(binding(readable.id, 2L))
+                            } else {
+                                emptyList()
+                            },
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        val bindings = discover.execute(
+            canonicalTitleId = "title",
+            broadenExistingBindings = true,
+        ).getOrThrow()
+
+        searched shouldBe listOf(2L)
+        bindings.map { it.providerTitleKey }.toSet() shouldBe setOf("1:/title", "2:/title")
+    }
+
+    @Test
     fun `existing usable reading binding stops title discovery immediately`() = runTest {
         var searches = 0
         val addon = installed("preferred", 42L)
