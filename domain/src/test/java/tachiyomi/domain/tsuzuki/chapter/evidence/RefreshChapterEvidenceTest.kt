@@ -12,6 +12,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -521,6 +522,78 @@ class RefreshChapterEvidenceTest {
         cache.get(
             ContentOptionCacheKey(canonicalTitleId, canonicalChapterId, addonId),
         )?.single()?.delivery shouldBe ContentDelivery.LocalArchive("fixture://revision-2")
+    }
+
+    @Test
+    fun `post-refresh invalidation clears cache when caller is cancelled between owners`() = runTest {
+        val canonicalTitleId = "canonical-title"
+        val canonicalChapterId = "canonical-chapter-1"
+        val addonId = AddonId("fixture-addon")
+        val key = ContentOptionCacheKey(canonicalTitleId, canonicalChapterId, addonId)
+        val cache = ContentOptionCache()
+        val inFlight = InFlightContentResolution(backgroundScope)
+        val staleOption = ContentOption(
+            key = "revision-1",
+            canonicalChapterId = canonicalChapterId,
+            addonId = addonId,
+            language = "en",
+            scanlationGroup = null,
+            releaseDate = null,
+            delivery = ContentDelivery.LocalArchive("fixture://revision-1"),
+        )
+        val freshOption = staleOption.copy(
+            key = "revision-2",
+            delivery = ContentDelivery.LocalArchive("fixture://revision-2"),
+        )
+        cache.put(key, listOf(staleOption))
+
+        val providerStarted = CompletableDeferred<Unit>()
+        val releaseProvider = CompletableDeferred<Unit>()
+        var providerCalls = 0
+        val oldWaiter = async {
+            inFlight.execute(key) {
+                providerCalls++
+                providerStarted.complete(Unit)
+                releaseProvider.await()
+                Result.success(listOf(staleOption))
+            }
+        }
+        runCurrent()
+        providerStarted.await()
+
+        val inFlightInvalidated = CompletableDeferred<Unit>()
+        val allowCacheInvalidation = CompletableDeferred<Unit>()
+        val cleanup = launch {
+            invalidateContentOptionsAfterChapterRefresh(
+                invalidateInFlight = {
+                    inFlight.invalidateTitle(canonicalTitleId)
+                    inFlightInvalidated.complete(Unit)
+                    allowCacheInvalidation.await()
+                },
+                invalidateCache = { cache.invalidateTitle(canonicalTitleId) },
+            )
+        }
+        inFlightInvalidated.await()
+
+        cleanup.cancel()
+        allowCacheInvalidation.complete(Unit)
+        cleanup.join()
+        releaseProvider.complete(Unit)
+        runCurrent()
+
+        cleanup.isCancelled shouldBe true
+        oldWaiter.await().isFailure shouldBe true
+        cache.get(key) shouldBe null
+
+        val freshWaiter = async {
+            inFlight.execute(key) {
+                providerCalls++
+                Result.success(listOf(freshOption))
+            }
+        }
+        runCurrent()
+        freshWaiter.await().getOrThrow().single().delivery shouldBe freshOption.delivery
+        providerCalls shouldBe 2
     }
 
     @Test

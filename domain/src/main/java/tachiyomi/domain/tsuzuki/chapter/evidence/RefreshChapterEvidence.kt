@@ -102,8 +102,12 @@ class RefreshChapterEvidence private constructor(
             reconcileChapterEvidence.execute(canonicalTitleId, evidence)
             // Chapter mappings may have changed; never serve stale provider
             // work or cached options that were resolved against an older graph.
-            inFlightContentResolution?.invalidateTitle(canonicalTitleId)
-            contentOptionCache?.invalidateTitle(canonicalTitleId)
+            invalidateContentOptionsAfterChapterRefresh(
+                invalidateInFlight = {
+                    inFlightContentResolution?.invalidateTitle(canonicalTitleId)
+                },
+                invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
+            )
             Result.success(Unit)
         } catch (error: CancellationException) {
             if (error is kotlinx.coroutines.TimeoutCancellationException) {
@@ -151,8 +155,17 @@ class RefreshChapterEvidence private constructor(
                 },
             ) { "Targeted inventory belongs to another title or Add-on" }
             reconcileChapterEvidence.execute(binding.canonicalTitleId, observations)
-            inFlightContentResolution?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
-            contentOptionCache?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
+            invalidateContentOptionsAfterChapterRefresh(
+                invalidateInFlight = {
+                    inFlightContentResolution?.invalidateTitleAddon(
+                        binding.canonicalTitleId,
+                        binding.addonId,
+                    )
+                },
+                invalidateCache = {
+                    contentOptionCache?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
+                },
+            )
             Result.success(Unit)
         } catch (error: CancellationException) {
             throw error
@@ -379,4 +392,12 @@ class RefreshChapterEvidence private constructor(
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
     }
+}
+
+internal suspend fun invalidateContentOptionsAfterChapterRefresh(
+    invalidateInFlight: suspend () -> Unit,
+    invalidateCache: suspend () -> Unit,
+) {
+    invalidateInFlight()
+    invalidateCache()
 }
