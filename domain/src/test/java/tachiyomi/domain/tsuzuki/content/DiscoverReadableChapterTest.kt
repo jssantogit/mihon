@@ -339,7 +339,9 @@ class DiscoverReadableChapterTest {
 
     @Test
     fun `default discovery stops after ten distinct addons when none are readable`() = runTest {
-        val addons = (1L..12L).map { index -> installed("addon-$index", index) }
+        val addons = (1L..12L).map { index ->
+            installed("addon-${index.toString().padStart(2, '0')}", index)
+        }
         val searched = mutableListOf<Long>()
         val runner = DiscoverReadableChapter(
             lookupExisting = { _, _ -> lookup() },
