@@ -14,11 +14,13 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.chapter.model.Chapter
@@ -445,7 +447,9 @@ class MihonRuntimeEndToEndIntegrationTest {
             journey.refresh()
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
-            val lookup = journey.lookupOptions(chapter.id)
+            // The selector's two-second caller deadline must use real time here. A test scheduler
+            // can advance virtual time while the gateway is fetching on Dispatchers.IO.
+            val lookup = withContext(Dispatchers.IO) { journey.lookupOptions(chapter.id) }
             val options = lookup.options
             val optionLanguages = options.map { it.language }
             if (optionLanguages != listOf("pt-BR")) {
@@ -457,6 +461,13 @@ class MihonRuntimeEndToEndIntegrationTest {
                         journey.partialSourceDiagnosticSummary(chapter.id),
                 )
             }
+            lookup.queriedProviderCount shouldBe 1
+            lookup.failedProviders shouldBe emptyList()
+            journey.diagnostics.events.any {
+                it.stage == ChapterInventoryDiagnosticStage.CONTENT_PROVIDER &&
+                    it.outcome == ChapterInventoryDiagnosticOutcome.SUCCESS &&
+                    it.accepted == 1
+            } shouldBe true
             journey.diagnostics.events.any {
                 it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY &&
                     it.outcome == ChapterInventoryDiagnosticOutcome.HTTP_ERROR && it.language == "en"
