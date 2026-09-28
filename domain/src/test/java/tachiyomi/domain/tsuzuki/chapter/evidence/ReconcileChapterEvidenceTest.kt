@@ -470,6 +470,7 @@ class ReconcileChapterEvidenceTest {
             producerId = "detail-addon",
         ).copy(observedAt = 200L)
         fixture.reconciler.execute("title", listOf(newerDetailObservation))
+        fixture.reconciler.execute("title", listOf(newerDetailObservation))
 
         fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(legacyChapter.id)
         fixture.chapterRepository.getById(legacyChapter.id)?.confirmation shouldBe
