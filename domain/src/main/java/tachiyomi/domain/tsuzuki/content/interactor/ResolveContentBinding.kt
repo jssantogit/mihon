@@ -117,6 +117,26 @@ class ResolveContentBinding internal constructor(
         },
     )
 
+    constructor(
+        contentBindingRepository: ContentBindingRepository,
+        canonicalTitleRepository: CanonicalTitleRepository,
+        addonRepository: AddonRepository,
+        readingSourceGateway: ReadingSourceGateway,
+        scoreSourceTitleMatch: ScoreSourceTitleMatch,
+        addonSourceEligibilityRepository: AddonSourceEligibilityRepository,
+        diagnostics: ChapterInventoryDiagnostics,
+    ) : this(
+        contentBindingRepository = contentBindingRepository,
+        canonicalTitleRepository = canonicalTitleRepository,
+        addonRepository = addonRepository,
+        readingSourceGateway = readingSourceGateway,
+        scoreSourceTitleMatch = scoreSourceTitleMatch,
+        idFactory = { UUID.randomUUID().toString() },
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        diagnostics = diagnostics,
+        addonSourceEligibilityRepository = addonSourceEligibilityRepository,
+    )
+
     suspend fun execute(
         canonicalTitleId: String,
         addonId: AddonId,
