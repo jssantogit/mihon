@@ -236,12 +236,45 @@ class DiscoverReadableTitleTest {
     }
 
     @Test
-    fun `observed chapter evidence skips automatic title discovery`() = runTest {
+    fun `observed editorial chapters without a reading binding still discover content`() = runTest {
         var searches = 0
         val addon = installed("preferred", 42L)
         val discover = DiscoverReadableTitle(
             hasObservedChapters = { true },
             existingBindings = { emptyList() },
+            installedAddons = { listOf(addon) },
+            sourceEligibility = { listOf(source(42L, "en")) },
+            preferredLanguages = { listOf("en") },
+            preferredSourceIds = { listOf(42L) },
+            sourceSearch = { request ->
+                searches++
+                flow {
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = 42L,
+                            language = "en",
+                            outcome = ContentBindingSourceOutcome.BOUND,
+                            bindings = listOf(binding(addon.id, 42L)),
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(42L), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        discover.execute("title").getOrThrow().single().providerTitleKey shouldBe "42:/title"
+        searches shouldBe 1
+    }
+
+    @Test
+    fun `existing usable reading binding stops title discovery immediately`() = runTest {
+        var searches = 0
+        val addon = installed("preferred", 42L)
+        val existing = binding(addon.id, 42L)
+        val discover = DiscoverReadableTitle(
+            hasObservedChapters = { false },
+            existingBindings = { listOf(existing) },
             installedAddons = { listOf(addon) },
             sourceEligibility = { listOf(source(42L, "en")) },
             preferredLanguages = { listOf("en") },
@@ -253,7 +286,7 @@ class DiscoverReadableTitleTest {
             planner = PlanFastReadingDiscovery(),
         )
 
-        discover.execute("title").getOrThrow() shouldBe emptyList()
+        discover.execute("title").getOrThrow() shouldBe listOf(existing)
         searches shouldBe 0
     }
 
