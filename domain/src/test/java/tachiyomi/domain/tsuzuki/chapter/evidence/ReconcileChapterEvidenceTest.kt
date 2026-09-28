@@ -1108,6 +1108,44 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `zero numeric hint conflicting with chapter one cannot create canonical mapping`() = runTest {
+        val fixture = fixture()
+        val conflicting = fixture.addonEvidence(
+            id = "chapter-one-with-zero-hint",
+            rawLabel = "Chapter 1",
+            externalKey = "source-key-zero",
+        ).copy(rawNumber = 0.0)
+
+        fixture.reconciler.execute("title", listOf(conflicting))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-zero",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `fractional numeric hint conflicting with an integer label cannot create canonical mapping`() = runTest {
+        val fixture = fixture()
+        val conflicting = fixture.addonEvidence(
+            id = "chapter-thirty-eight-with-fractional-hint",
+            rawLabel = "Chapter 38",
+            externalKey = "source-key-fractional",
+        ).copy(rawNumber = 0.1)
+
+        fixture.reconciler.execute("title", listOf(conflicting))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-fractional",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `stale same-provider observation is discarded without aborting a fresh sibling`() = runTest {
         val fixture = fixture()
         val current = fixture.addonEvidence(
