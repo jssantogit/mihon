@@ -282,47 +282,47 @@ class DiscoverReadableTitleTest {
     @Test
     fun `existing binding still discovers missing configured reading source without probing unrelated fallback`() =
         runTest {
-        val existingAddon = installed("existing", 1L)
-        val configuredAddon = installed("configured", 2L)
-        val unrelatedAddon = installed("unrelated", 3L)
-        val existing = binding(existingAddon.id, 1L)
-        val searched = mutableListOf<Long>()
-        val discover = DiscoverReadableTitle(
-            existingBindings = { listOf(existing) },
-            installedAddons = { listOf(existingAddon, configuredAddon, unrelatedAddon) },
-            sourceEligibility = { addonId ->
-                when (addonId) {
-                    existingAddon.id -> listOf(source(1L, "en"))
-                    configuredAddon.id -> listOf(source(2L, "pt-BR"))
-                    else -> listOf(source(3L, "pt-BR"))
-                }
-            },
-            preferredLanguages = { listOf("pt-BR", "en") },
-            preferredSourceIds = { listOf(2L, 1L) },
-            sourceSearch = { request ->
-                flow {
-                    val sourceId = requireNotNull(request.allowedSourceIds).single()
-                    searched += sourceId
-                    emit(
-                        ContentBindingSearchProgress.SourceCompleted(
-                            sourceId = sourceId,
-                            language = "pt-BR",
-                            outcome = ContentBindingSourceOutcome.BOUND,
-                            bindings = listOf(binding(configuredAddon.id, sourceId)),
-                        ),
-                    )
-                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
-                }
-            },
-            planner = PlanFastReadingDiscovery(),
-        )
+            val existingAddon = installed("existing", 1L)
+            val configuredAddon = installed("configured", 2L)
+            val unrelatedAddon = installed("unrelated", 3L)
+            val existing = binding(existingAddon.id, 1L)
+            val searched = mutableListOf<Long>()
+            val discover = DiscoverReadableTitle(
+                existingBindings = { listOf(existing) },
+                installedAddons = { listOf(existingAddon, configuredAddon, unrelatedAddon) },
+                sourceEligibility = { addonId ->
+                    when (addonId) {
+                        existingAddon.id -> listOf(source(1L, "en"))
+                        configuredAddon.id -> listOf(source(2L, "pt-BR"))
+                        else -> listOf(source(3L, "pt-BR"))
+                    }
+                },
+                preferredLanguages = { listOf("pt-BR", "en") },
+                preferredSourceIds = { listOf(2L, 1L) },
+                sourceSearch = { request ->
+                    flow {
+                        val sourceId = requireNotNull(request.allowedSourceIds).single()
+                        searched += sourceId
+                        emit(
+                            ContentBindingSearchProgress.SourceCompleted(
+                                sourceId = sourceId,
+                                language = "pt-BR",
+                                outcome = ContentBindingSourceOutcome.BOUND,
+                                bindings = listOf(binding(configuredAddon.id, sourceId)),
+                            ),
+                        )
+                        emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                    }
+                },
+                planner = PlanFastReadingDiscovery(),
+            )
 
-        val bindings = discover.execute("title").getOrThrow()
+            val bindings = discover.execute("title").getOrThrow()
 
-        bindings.map { it.providerTitleKey }.toSet() shouldBe setOf("1:/title", "2:/title")
-        searched shouldBe listOf(2L)
-        searched.contains(3L) shouldBe false
-    }
+            bindings.map { it.providerTitleKey }.toSet() shouldBe setOf("1:/title", "2:/title")
+            searched shouldBe listOf(2L)
+            searched.contains(3L) shouldBe false
+        }
 
     @Test
     fun `existing usable reading binding stops title discovery immediately`() = runTest {
