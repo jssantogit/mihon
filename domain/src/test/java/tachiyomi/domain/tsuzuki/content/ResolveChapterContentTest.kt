@@ -104,7 +104,7 @@ class ResolveChapterContentTest {
     }
 
     @Test
-    fun `first read requires selector even when one provider exists`() = runTest {
+    fun `first read opens directly when exactly one verified option exists`() = runTest {
         val resolver = fixture(
             preference = null,
             automaticFallback = false,
@@ -113,10 +113,9 @@ class ResolveChapterContentTest {
 
         val result = resolver.execute("title", "chapter-37")
 
-        result.shouldBeInstanceOf<ContentResolution.NeedsSelection>()
-        result.options.size shouldBe 1
-        result.preferredAddonId shouldBe null
-        result.preferredUnavailable shouldBe false
+        result.shouldBeInstanceOf<ContentResolution.Direct>()
+        result.option.addonId shouldBe AddonId("mangadex")
+        result.usedFallback shouldBe false
     }
 
     @Test
