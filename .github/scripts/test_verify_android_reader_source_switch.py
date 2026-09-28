@@ -320,12 +320,16 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
     def test_detail_setup_call_trace_accepts_only_sanitized_interceptor_events(self):
         allowed = (
             "C1:INVENTORY_APP_REQUEST_ONLY_IF_CACHED_FALSE",
+            "C1:INVENTORY_APP_REQUEST_ON_MAIN_THREAD_FALSE",
             "C1:INVENTORY_APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_FALSE",
             "C1:INVENTORY_APP_REQUEST_MAX_AGE_POSITIVE",
             "C1:INVENTORY_APP_RESPONSE_HTTP_200_NETWORK_ONLY",
             "C1:INVENTORY_APP_RESPONSE_HTTP_504_CACHE_ONLY",
             "C1:INVENTORY_APP_FAIL_CONNECTION_REFUSED",
             "C1:INVENTORY_APP_FAIL_OTHER_EXCEPTION",
+            "C1:INVENTORY_APP_FAILURE_TYPE_NETWORK_ON_MAIN_THREAD",
+            "C1:INVENTORY_APP_FAILURE_CAUSE_NONE",
+            "C1:INVENTORY_APP_FAILURE_ON_MAIN_THREAD_TRUE",
         )
         for event in allowed:
             with self.subTest(event=event):
@@ -337,6 +341,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "C1:INVENTORY_APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_private-host",
             "C1:INVENTORY_APP_RESPONSE_HTTP_200_private-title",
             "C1:INVENTORY_APP_FAIL_java.net.ConnectException",
+            "C1:INVENTORY_APP_FAILURE_TYPE_private-class",
         ):
             with self.subTest(unsafe=unsafe):
                 self.assertFalse(verifier._valid_detail_call_events(unsafe))

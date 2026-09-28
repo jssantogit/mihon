@@ -276,7 +276,8 @@ class ReconcileChapterEvidence internal constructor(
                     }
                 }
             }
-            val previousEvidence = externalEvidence ?: persistedEvidence[observation.id] ?: previousCrossProducerEvidence
+            val previousEvidence =
+                externalEvidence ?: persistedEvidence[observation.id] ?: previousCrossProducerEvidence
             val mappedChapterId = previousEvidence?.mappedCanonicalChapterId
             val mappedChapter = if (mappedChapterId != null) {
                 (chapters[mappedChapterId] ?: canonicalChapterRepository.getById(mappedChapterId))?.also { chapter ->

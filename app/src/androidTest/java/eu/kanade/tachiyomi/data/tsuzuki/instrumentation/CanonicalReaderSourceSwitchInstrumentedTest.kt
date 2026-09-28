@@ -677,6 +677,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
                                 .takeIf { it }
                         }
+                        assertTrue(
+                            "The actual source A inventory Call must run off the Android main thread",
+                            fixture.sourceA.inventoryCallEvents.get().contains("_APP_REQUEST_ON_MAIN_THREAD_FALSE"),
+                        )
                     } catch (error: Throwable) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_OWNER_CANCEL",
@@ -862,6 +866,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
                                 .takeIf { it }
                         }
+                        assertTrue(
+                            "The actual source A inventory Call must run off the Android main thread",
+                            fixture.sourceA.inventoryCallEvents.get().contains("_APP_REQUEST_ON_MAIN_THREAD_FALSE"),
+                        )
                     } catch (error: Throwable) {
                         fixture.reportDetailInventorySetup(
                             scenario = "DETAIL_INVENTORY_INVALIDATE",
@@ -3201,7 +3209,7 @@ private fun fixtureHttpClient(
         }
     }
 
-    fun failureCategory(error: IOException): String {
+    fun failureCategory(error: Throwable): String {
         val message = error.message.orEmpty().lowercase()
         return when {
             "cleartext" in message -> "CLEARTEXT_BLOCKED"
@@ -3210,8 +3218,28 @@ private fun fixtureHttpClient(
             error is ConnectException -> "CONNECT_FAILURE"
             error is SocketTimeoutException -> "SOCKET_TIMEOUT"
             "canceled" in message -> "CANCELLED"
-            else -> "OTHER_IO_FAILURE"
+            error is IOException -> "OTHER_IO_FAILURE"
+            else -> "OTHER_EXCEPTION"
         }
+    }
+
+    fun exceptionTypeCategory(error: Throwable?): String = when (error) {
+        null -> "NONE"
+        is android.os.NetworkOnMainThreadException -> "NETWORK_ON_MAIN_THREAD"
+        is IOException -> "IO_EXCEPTION"
+        is CancellationException -> "CANCELLATION"
+        is IllegalArgumentException -> "ILLEGAL_ARGUMENT"
+        is IllegalStateException -> "ILLEGAL_STATE"
+        is SecurityException -> "SECURITY_EXCEPTION"
+        else -> "OTHER_EXCEPTION"
+    }
+
+    fun recordAppFailure(callId: String, request: Request, error: Throwable) {
+        recordEvent(callId, request, "APP_FAIL_${failureCategory(error)}")
+        recordEvent(callId, request, "APP_FAILURE_TYPE_${exceptionTypeCategory(error)}")
+        recordEvent(callId, request, "APP_FAILURE_CAUSE_${exceptionTypeCategory(error.cause)}")
+        val onMainThread = android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+        recordEvent(callId, request, "APP_FAILURE_ON_MAIN_THREAD_${onMainThread.toString().uppercase()}")
     }
 
     return OkHttpClient.Builder()
@@ -3220,10 +3248,16 @@ private fun fixtureHttpClient(
             val callId = callIdentifier(call)
             val request = chain.request()
             val cacheControl = request.cacheControl
+            val requestOnMainThread = android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
             recordEvent(
                 callId,
                 request,
                 "APP_REQUEST_ONLY_IF_CACHED_${cacheControl.onlyIfCached.toString().uppercase()}",
+            )
+            recordEvent(
+                callId,
+                request,
+                "APP_REQUEST_ON_MAIN_THREAD_${requestOnMainThread.toString().uppercase()}",
             )
             val hasCacheControlHeader = request.header("Cache-Control") != null
             recordEvent(
@@ -3248,10 +3282,10 @@ private fun fixtureHttpClient(
                 recordEvent(callId, response.request, "APP_RESPONSE_HTTP_${response.code}_$responseSource")
                 response
             } catch (error: IOException) {
-                recordEvent(callId, request, "APP_FAIL_${failureCategory(error)}")
+                recordAppFailure(callId, request, error)
                 throw error
             } catch (error: Throwable) {
-                recordEvent(callId, request, "APP_FAIL_OTHER_EXCEPTION")
+                recordAppFailure(callId, request, error)
                 throw error
             }
         }

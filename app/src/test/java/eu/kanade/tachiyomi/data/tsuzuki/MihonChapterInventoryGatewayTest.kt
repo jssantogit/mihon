@@ -175,6 +175,26 @@ class MihonChapterInventoryGatewayTest {
     }
 
     @Test
+    fun `source chapter fetch runs away from the caller thread`() = runTest {
+        val callerThread = Thread.currentThread()
+        var sourceThread: Thread? = null
+        val source = TestSource(7L) {
+            sourceThread = Thread.currentThread()
+            listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L))
+        }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+        )
+
+        gateway.fetch(mapping(), refresh = true).getOrThrow()
+
+        source.wasCalled shouldBe true
+        (sourceThread === callerThread) shouldBe false
+    }
+
+    @Test
     fun `inventory captures provider fetch start before the source delivers a result`() = runTest {
         var sourceEnteredAt = 0L
         val source = TestSource(7L) {
