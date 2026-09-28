@@ -37,6 +37,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Clock
 
 class MihonChapterInventoryGatewayTest {
@@ -215,11 +216,14 @@ class MihonChapterInventoryGatewayTest {
     @Test
     fun `gateway refuses invalidated in-flight provider results and retains newer inventory`() = runTest {
         val releaseOld = CompletableDeferred<Unit>()
-        var fetchCount = 0
+        val oldFetchEntered = CompletableDeferred<Unit>()
+        val fetchCount = AtomicInteger()
         val source = TestSource(7L) {
-            fetchCount++
-            val request = fetchCount
-            if (request == 1) releaseOld.await()
+            val request = fetchCount.incrementAndGet()
+            if (request == 1) {
+                oldFetchEntered.complete(Unit)
+                releaseOld.await()
+            }
             listOf(
                 chapter("/chapter/$request", "Chapter $request", request.toFloat(), null, request.toLong()),
             )
@@ -233,10 +237,10 @@ class MihonChapterInventoryGatewayTest {
         )
 
         val original = async { gateway.fetch(mapping(), refresh = true) }
-        yield()
+        oldFetchEntered.await()
         val joined = async { gateway.fetch(mapping()) }
         yield()
-        fetchCount shouldBe 1
+        fetchCount.get() shouldBe 1
 
         cache.invalidateTitle("title-1")
         val fresh = gateway.fetch(mapping(), refresh = true).getOrThrow()
@@ -246,7 +250,7 @@ class MihonChapterInventoryGatewayTest {
         original.await().isFailure shouldBe true
         joined.await().isFailure shouldBe true
         gateway.fetch(mapping()).getOrThrow() shouldBe fresh
-        fetchCount shouldBe 2
+        fetchCount.get() shouldBe 2
     }
 
     @Test
