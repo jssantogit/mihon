@@ -84,6 +84,22 @@ fun MoreScreen() {
 }
 """
 
+VALID_BASE_STRINGS = """
+<resources>
+    <string name="app_name" translatable="false">Tsuzuki</string>
+</resources>
+"""
+
+VALID_SETTINGS = """
+rootProject.name = "Tsuzuki"
+"""
+
+VALID_README = """
+# Tsuzuki
+
+Independent Android manga reader derived from Mihon.
+"""
+
 
 class IdentityContractTest(unittest.TestCase):
     def make_repo(
@@ -96,6 +112,9 @@ class IdentityContractTest(unittest.TestCase):
         apk_workflow=VALID_APK_WORKFLOW,
         about_screen=VALID_ABOUT_SCREEN,
         more_screen=VALID_MORE_SCREEN,
+        base_strings=VALID_BASE_STRINGS,
+        settings=VALID_SETTINGS,
+        readme=VALID_README,
     ):
         temp_dir = tempfile.TemporaryDirectory()
         root = Path(temp_dir.name)
@@ -107,6 +126,9 @@ class IdentityContractTest(unittest.TestCase):
             ".github/workflows/apk.yml": apk_workflow,
             "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt": about_screen,
             "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt": more_screen,
+            "i18n/src/commonMain/moko-resources/base/strings.xml": base_strings,
+            "settings.gradle.kts": settings,
+            "README.md": readme,
         }
         for relative, content in files.items():
             path = root / relative
@@ -177,6 +199,30 @@ class IdentityContractTest(unittest.TestCase):
         root = self.make_repo(more_screen=inherited)
         errors = check_contract(root)
         self.assertIn("More screen still exposes inherited Mihon support/help entry points", errors)
+
+    def test_base_product_name_must_be_tsuzuki(self):
+        root = self.make_repo(base_strings=VALID_BASE_STRINGS.replace(">Tsuzuki<", ">Mihon<"))
+        self.assertIn("base app_name must be Tsuzuki", check_contract(root))
+
+    def test_gradle_project_name_must_be_tsuzuki(self):
+        root = self.make_repo(settings=VALID_SETTINGS.replace('"Tsuzuki"', '"Mihon"'))
+        self.assertIn("rootProject.name must be Tsuzuki", check_contract(root))
+
+    def test_readme_must_identify_tsuzuki(self):
+        root = self.make_repo(readme=VALID_README.replace("# Tsuzuki", "# Mihon"))
+        self.assertIn("README must identify Tsuzuki as the project", check_contract(root))
+
+    def test_inherited_mihon_release_workflows_are_rejected(self):
+        root = self.make_repo()
+        release = root / ".github/workflows/release.yml"
+        release.parent.mkdir(parents=True, exist_ok=True)
+        release.write_text("if: github.repository == 'mihonapp/mihon'\n", encoding="utf-8")
+        self.assertIn("inherited Mihon release workflow is active", check_contract(root))
+
+        release.unlink()
+        website = root / ".github/workflows/update_website.yml"
+        website.write_text("https://api.github.com/repos/mihonapp/website/dispatches\n", encoding="utf-8")
+        self.assertIn("inherited Mihon website workflow is active", check_contract(root))
 
 
 if __name__ == "__main__":
