@@ -1049,6 +1049,7 @@ class MihonContentProviderTest {
         materializations shouldBe 0
     }
 
+    // Physical One Piece regression: conflicting provider numbers must fail closed.
     @Test
     fun `parsed chapter label is rejected when Mihon numeric hint points to another integer chapter`() = runTest {
         val linked = binding(id = "binding-one-piece", sourceKey = "7:/one-piece")
