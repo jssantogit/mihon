@@ -280,7 +280,8 @@ class DiscoverReadableTitleTest {
     }
 
     @Test
-    fun `existing binding still discovers missing configured reading source without probing unrelated fallback`() = runTest {
+    fun `existing binding still discovers missing configured reading source without probing unrelated fallback`() =
+        runTest {
         val existingAddon = installed("existing", 1L)
         val configuredAddon = installed("configured", 2L)
         val unrelatedAddon = installed("unrelated", 3L)
