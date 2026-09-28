@@ -224,6 +224,64 @@ class DiscoverReadableChapterTest {
     }
 
     @Test
+    fun `chapter discovery spends remaining query budget on a second addon wave`() = runTest {
+        val first = installed("a-first", 1L)
+        val second = installed("b-second", 2L)
+        val mangaDot = installed("c-mangadot", 3L)
+        val searched = mutableListOf<Long>()
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, binding ->
+                if (binding.addonId == mangaDot.id) lookup(option("c-mangadot", "en")) else lookup()
+            },
+            installedAddons = { listOf(first, second, mangaDot) },
+            sourceEligibility = { addonId ->
+                when (addonId) {
+                    first.id -> listOf(source(1L, "en"))
+                    second.id -> listOf(source(2L, "en"))
+                    else -> listOf(source(3L, "en"))
+                }
+            },
+            contentPreference = { null },
+            globalLanguages = { listOf("en") },
+            deviceLocale = { Locale.US },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = if (sourceId == 3L) {
+                                ContentBindingSourceOutcome.BOUND
+                            } else {
+                                ContentBindingSourceOutcome.EMPTY
+                            },
+                            bindings = if (sourceId == 3L) {
+                                listOf(binding("c-mangadot", sourceId))
+                            } else {
+                                emptyList()
+                            },
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            refreshBinding = { Result.success(Unit) },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        val events = runner.discover("title", "chapter").toList()
+
+        searched.toSet() shouldBe setOf(1L, 2L, 3L)
+        events.filterIsInstance<FastReadingDiscoveryEvent.Ready>()
+            .single().options.single().addonId shouldBe mangaDot.id
+        events.last().let { it as FastReadingDiscoveryEvent.Completed }.reason shouldBe
+            FastDiscoveryCompletion.FOUND
+    }
+
+    @Test
     fun `healthy fast edition is emitted while earlier bound edition is still refreshing`() = runTest {
         val slow = installed("portuguese", 7L)
         val fast = installed("english", 8L)
