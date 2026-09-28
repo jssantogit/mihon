@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
+import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
@@ -32,10 +33,19 @@ import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
+import tachiyomi.domain.tsuzuki.content.ContentDelivery
+import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.content.ContentPreference
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCacheKey
+import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
+import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
+import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -43,6 +53,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -372,6 +383,143 @@ class RefreshChapterEvidenceTest {
         }
         chapters.getByCanonicalTitleId("canonical-title")
             .map { it.displayNumber } shouldContainExactly listOf("1")
+    }
+
+    @Test
+    fun `title refresh does not share a prior in-flight content lookup with a new caller`() = runTest {
+        val canonicalTitleId = "canonical-title"
+        val addonId = AddonId("fixture-addon")
+        val cache = ContentOptionCache()
+        val inFlight = InFlightContentResolution(backgroundScope)
+        val chapters = FakeCanonicalChapterRepository()
+        val evidence = FakeChapterEvidenceRepository()
+        val reconcile = ReconcileChapterEvidence(
+            parser = ParseCanonicalChapterLabel(),
+            canonicalChapterRepository = chapters,
+            evidenceRepository = evidence,
+            idFactory = { "canonical-chapter-1" },
+            clock = { 100L },
+        )
+
+        fun inventoryEvidence(observedAt: Long) = ChapterEvidence(
+            id = "fixture-chapter-1",
+            canonicalTitleId = canonicalTitleId,
+            producerKind = ProducerKind.ADDON,
+            producerId = addonId.value,
+            externalChapterKey = "/chapter/1",
+            rawLabel = "Chapter 1",
+            rawNumber = 1.0,
+            volume = null,
+            title = null,
+            observedAt = observedAt,
+            confidence = 0.8,
+            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+        )
+
+        reconcile.execute(canonicalTitleId, listOf(inventoryEvidence(observedAt = 1L)))
+        val canonicalChapterId = chapters.getByCanonicalTitleId(canonicalTitleId).single().id
+        val staleProviderStarted = CompletableDeferred<Unit>()
+        val releaseStaleProvider = CompletableDeferred<Unit>()
+        var providerCalls = 0
+        val contentProvider = object : ContentProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun resolve(
+                canonicalTitleId: String,
+                canonicalChapterId: String,
+            ): Result<List<ContentOption>> {
+                providerCalls++
+                val revision = evidence.getByCanonicalTitleId(canonicalTitleId)
+                    .single().evidence.observedAt
+                if (providerCalls == 1) {
+                    staleProviderStarted.complete(Unit)
+                    releaseStaleProvider.await()
+                }
+                return Result.success(
+                    listOf(
+                        ContentOption(
+                            key = "revision-$revision",
+                            canonicalChapterId = canonicalChapterId,
+                            addonId = addonId,
+                            language = "en",
+                            scanlationGroup = null,
+                            releaseDate = null,
+                            delivery = ContentDelivery.LocalArchive("fixture://revision-$revision"),
+                        ),
+                    ),
+                )
+            }
+        }
+        val probeProvider = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(listOf(inventoryEvidence(observedAt = 2L)))
+        }
+        val addonRegistry = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = listOf(contentProvider)
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probeProvider)
+        }
+        val binding = ContentBinding(
+            id = "fixture-binding",
+            canonicalTitleId = canonicalTitleId,
+            addonId = addonId,
+            providerTitleKey = "fixture-title",
+            matchConfidence = 1.0,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val bindingResolver = mockk<ResolveContentBinding>()
+        coEvery {
+            bindingResolver.existingBindingsForRefresh(canonicalTitleId, addonId)
+        } returns Result.success(listOf(binding))
+        val refresh = RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = reconcile,
+            addonRegistry = addonRegistry,
+            resolveContentBinding = bindingResolver,
+            contentOptionCache = cache,
+            diagnostics = NoOpChapterInventoryDiagnostics,
+        )
+        val preferenceRepository = object : ContentPreferenceRepository {
+            override suspend fun get(canonicalTitleId: String): ContentPreference? = null
+            override fun observe(canonicalTitleId: String): Flow<ContentPreference?> = MutableStateFlow(null)
+            override suspend fun upsert(preference: ContentPreference) = Unit
+            override suspend fun delete(canonicalTitleId: String) = Unit
+        }
+        val selector = ResolveChapterContent(
+            addonRegistry = addonRegistry,
+            contentPreferenceRepository = preferenceRepository,
+            readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore()),
+            rankContentOptions = RankContentOptions(),
+            contentOptionCache = cache,
+            inFlightContentResolution = inFlight,
+        )
+
+        val priorLookup = async { selector.lookupOptions(canonicalTitleId, canonicalChapterId) }
+        runCurrent()
+        staleProviderStarted.await()
+
+        refresh.execute(canonicalTitleId).isSuccess shouldBe true
+        evidence.getByCanonicalTitleId(canonicalTitleId).single().evidence.observedAt shouldBe 2L
+
+        val lookupAfterRefresh = async { selector.lookupOptions(canonicalTitleId, canonicalChapterId) }
+        runCurrent()
+        releaseStaleProvider.complete(Unit)
+
+        val priorResult = priorLookup.await()
+        val refreshedResult = lookupAfterRefresh.await()
+        priorResult.options shouldBe emptyList()
+        refreshedResult.options.single().delivery shouldBe
+            ContentDelivery.LocalArchive("fixture://revision-2")
+        refreshedResult.failedProviders shouldBe emptyList()
+        providerCalls shouldBe 2
+        cache.get(
+            ContentOptionCacheKey(canonicalTitleId, canonicalChapterId, addonId),
+        )?.single()?.delivery shouldBe ContentDelivery.LocalArchive("fixture://revision-2")
     }
 
     @Test
