@@ -60,10 +60,10 @@ VALID_APP_INFO = """package eu.kanade.tachiyomi
 object AppInfo
 """
 
-VALID_BACKUP_CREATOR = """
+VALID_BACKUP_CREATOR = '''
 private val FILENAME_REGEX = """${BuildConfig.APPLICATION_ID}_\\d{4}.tachibk""".toRegex()
 fun getFilename(): String = "${BuildConfig.APPLICATION_ID}.tachibk"
-"""
+'''
 
 VALID_APK_WORKFLOW = """
 env:
