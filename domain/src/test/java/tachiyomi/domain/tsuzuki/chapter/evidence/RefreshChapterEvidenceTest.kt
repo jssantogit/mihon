@@ -43,6 +43,7 @@ import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCacheKey
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
+import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableTitle
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -283,21 +284,60 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
-    fun `refresh without existing bindings never starts implicit addon search`() = runTest {
-        val addonId = AddonId("multisource")
-        var observedResolver: ResolveContentBinding? = null
-        val refresh = refreshWithProbe(
-            diagnostics = RecordingDiagnostics(),
+    fun `refresh without existing bindings discovers configured title source before addon probe`() = runTest {
+        val addonId = AddonId("preferred-addon")
+        val binding = ContentBinding(
+            id = "auto-binding",
+            canonicalTitleId = "canonical-title",
             addonId = addonId,
-            bindingAvailable = false,
-            result = Result.success(emptyList()),
-            onResolver = { observedResolver = it },
+            providerTitleKey = "42:/death-note",
+            matchConfidence = 1.0,
+            verifiedByUser = false,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        var bindingAvailable = false
+        var probeCalls = 0
+        val discover = mockk<DiscoverReadableTitle>()
+        coEvery { discover.execute("canonical-title") } coAnswers {
+            bindingAvailable = true
+            Result.success(listOf(binding))
+        }
+        val probe = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                probeCalls++
+                return Result.success(emptyList())
+            }
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery { resolver.existingBindingsForRefresh("canonical-title", addonId) } coAnswers {
+            Result.success(if (bindingAvailable) listOf(binding) else emptyList())
+        }
+        val refresh = RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = FakeCanonicalChapterRepository(),
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+            discoverReadableTitle = discover,
         )
 
         refresh.execute("canonical-title").isSuccess shouldBe true
-        coVerify(exactly = 0) {
-            requireNotNull(observedResolver).executeAll("canonical-title", addonId)
-        }
+
+        coVerify(exactly = 1) { discover.execute("canonical-title") }
+        probeCalls shouldBe 1
     }
 
     @Test
