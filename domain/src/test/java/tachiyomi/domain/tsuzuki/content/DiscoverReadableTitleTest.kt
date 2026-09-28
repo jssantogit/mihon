@@ -63,6 +63,57 @@ class DiscoverReadableTitleTest {
     }
 
     @Test
+    fun `automatic title discovery broadens after the first bounded batch is empty`() = runTest {
+        val first = installed("a-first", 1L)
+        val second = installed("b-second", 2L)
+        val fallback = installed("c-fallback", 3L)
+        val searched = mutableListOf<Long>()
+        val discover = DiscoverReadableTitle(
+            hasObservedChapters = { false },
+            existingBindings = { emptyList() },
+            installedAddons = { listOf(first, second, fallback) },
+            sourceEligibility = { addonId ->
+                when (addonId) {
+                    first.id -> listOf(source(1L, "en"))
+                    second.id -> listOf(source(2L, "en"))
+                    else -> listOf(source(3L, "en"))
+                }
+            },
+            preferredLanguages = { listOf("en") },
+            preferredSourceIds = { emptyList() },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = if (sourceId == 3L) {
+                                ContentBindingSourceOutcome.BOUND
+                            } else {
+                                ContentBindingSourceOutcome.EMPTY
+                            },
+                            bindings = if (sourceId == 3L) {
+                                listOf(binding(fallback.id, sourceId))
+                            } else {
+                                emptyList()
+                            },
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        val bindings = discover.execute("title").getOrThrow()
+
+        bindings.map { it.providerTitleKey } shouldBe listOf("3:/title")
+        searched shouldBe listOf(1L, 2L, 3L)
+    }
+
+    @Test
     fun `observed chapter evidence skips automatic title discovery`() = runTest {
         var searches = 0
         val addon = installed("preferred", 42L)
