@@ -1090,6 +1090,90 @@ class MihonContentProviderTest {
         materializations shouldBe 0
     }
 
+    // Physical Tokyo Ghoul regression: a provider row labelled Chapter 1 with a zero
+    // Mihon hint must never be offered as canonical Chapter 0 (or trusted as Chapter 1).
+    @Test
+    fun `zero numeric hint contradicting an explicit chapter label is rejected by content provider`() = runTest {
+        val linked = binding(id = "binding-tokyo-ghoul", sourceKey = "7:/tokyo-ghoul")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-1",
+            canonicalTitleId = "title",
+            displayNumber = "1",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 1,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-1", "en").copy(
+                            rawName = "Chapter 1",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 1L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    // Physical Kimetsu regression: fractional placeholder hints must not override a
+    // different explicit chapter label and leak an unrelated source row into Reader.
+    @Test
+    fun `fractional numeric hint contradicting an explicit integer label is rejected by content provider`() = runTest {
+        val linked = binding(id = "binding-kimetsu", sourceKey = "7:/kimetsu")
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-38",
+            canonicalTitleId = "title",
+            displayNumber = "38",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 38,
+            confidence = 1.0,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-38", "en").copy(
+                            rawName = "Chapter 38",
+                            rawNumberHint = 0.1,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 38L))
+            },
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
     @Test
     fun `persisted exact provider evidence disambiguates a sibling canonical id across volumes`() = runTest {
         val linked = binding(id = "binding-tokyo-ghoul", sourceKey = "7:/tokyo-ghoul")
