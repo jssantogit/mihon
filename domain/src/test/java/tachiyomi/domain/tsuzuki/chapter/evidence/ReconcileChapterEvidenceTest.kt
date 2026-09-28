@@ -13,8 +13,11 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 
 class ReconcileChapterEvidenceTest {
@@ -289,7 +292,7 @@ class ReconcileChapterEvidenceTest {
             externalChapterKey = "stable-source-key",
         )?.mappedCanonicalChapterId shouldBe originalChapterId
         fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
-            listOf(originalChapterId, "historical-duplicate")
+            listOf(originalChapterId)
     }
 
     @Test
@@ -378,6 +381,290 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `stale legacy observation from another producer cannot fork newer mapped chapter evidence`() = runTest {
+        val fixture = fixture()
+        val detailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(detailObservation))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        val staleLegacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(staleLegacyObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 1
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe chapterTwo.id
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        ) shouldBe null
+    }
+
+    @Test
+    fun `older legacy observation matching newer detail identity may reuse its canonical mapping`() = runTest {
+        val fixture = fixture()
+        val detailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(detailObservation))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        val legacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(legacyObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe chapterTwo.id
+    }
+
+    @Test
+    fun `newer detail conflict cannot fork an existing legacy source chapter identity`() = runTest {
+        val fixture = fixture()
+        val legacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(legacyObservation))
+        val legacyChapter = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+        val existingVariant = ChapterVariant(
+            id = "legacy-variant",
+            canonicalChapterId = legacyChapter.id,
+            sourceId = 101L,
+            sourceChapterId = "/chapter/shared",
+            rawName = "Chapter 1",
+        )
+        fixture.chapterRepository.upsertVariant(existingVariant)
+
+        val newerDetailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(newerDetailObservation))
+        fixture.reconciler.execute("title", listOf(newerDetailObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(legacyChapter.id)
+        fixture.chapterRepository.getById(legacyChapter.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.CONFLICTED
+        fixture.chapterRepository.getVariantBySourceIdentity(101L, "/chapter/shared") shouldBe existingVariant
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe legacyChapter.id
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `newer legacy conflict cannot fork an existing detail source chapter identity`() = runTest {
+        val fixture = fixture()
+        val detailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(detailObservation))
+        val detailChapter = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+        val existingVariant = ChapterVariant(
+            id = "detail-variant",
+            canonicalChapterId = detailChapter.id,
+            sourceId = 101L,
+            sourceChapterId = "/chapter/shared",
+            rawName = "Chapter 2",
+        )
+        fixture.chapterRepository.upsertVariant(existingVariant)
+
+        val newerLegacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(newerLegacyObservation))
+        fixture.reconciler.execute("title", listOf(newerLegacyObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(detailChapter.id)
+        fixture.chapterRepository.getVariantBySourceIdentity(101L, "/chapter/shared") shouldBe existingVariant
+        fixture.chapterRepository.getVariantsByCanonicalChapterId(detailChapter.id) shouldBe listOf(existingVariant)
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe detailChapter.id
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `conflicting addon observations with the same fetch start are discarded without aborting refresh`() = runTest {
+        val fixture = fixture()
+        val firstObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(firstObservation))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        val contradictoryReplay = fixture.addonEvidence(
+            id = "detail-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(contradictoryReplay))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        val persisted = fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )
+        persisted?.evidence?.rawLabel shouldBe "Chapter 2"
+        persisted?.mappedCanonicalChapterId shouldBe chapterTwo.id
+    }
+
+    @Test
+    fun `identical addon observation replay at the same fetch start remains idempotent`() = runTest {
+        val fixture = fixture()
+        val original = fixture.addonEvidence(
+            id = "detail-observation-original",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(original))
+        val chapterTwo = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.reconciler.execute("title", listOf(original.copy(id = "detail-observation-replay")))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(chapterTwo.id)
+        val persisted = fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )
+        persisted?.evidence shouldBe original
+        persisted?.mappedCanonicalChapterId shouldBe chapterTwo.id
+    }
+
+    @Test
+    fun `editorial evidence may change at the same caller timestamp`() = runTest {
+        val fixture = fixture()
+        val firstObservation = fixture.editorialEvidence(
+            rawLabel = "Chapter 1",
+            externalKey = "editorial-chapter-shared",
+        )
+        fixture.reconciler.execute("title", listOf(firstObservation))
+
+        val sameTimestampUpdate = fixture.editorialEvidence(
+            rawLabel = "Chapter 2",
+            externalKey = "editorial-chapter-shared",
+        ).copy(observedAt = firstObservation.observedAt)
+        fixture.reconciler.execute("title", listOf(sameTimestampUpdate))
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.INTEGRATION,
+            "mal",
+            "editorial-chapter-shared",
+        )?.evidence?.rawLabel shouldBe "Chapter 2"
+    }
+
+    @Test
+    fun `legacy evidence adapter rehomes a reused URL without losing an independently supported chapter`() =
+        runTest {
+            val fixture = fixture()
+            val volumeOne = existingChapter("chapter-volume-1", volume = 1)
+            val volumeTwo = existingChapter("chapter-volume-2", volume = 2)
+            fixture.chapterRepository.upsert(volumeOne)
+            fixture.chapterRepository.upsert(volumeTwo)
+            val adapter = LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume())
+
+            fun sourceInventory(sourceId: Long, label: String) = SourceChapterInventory(
+                sourceMappingId = "mapping-" + sourceId,
+                sourceId = sourceId,
+                canonicalTitleId = "title",
+                language = if (sourceId == 101L) "en" else "pt-BR",
+                chapters = listOf(
+                    SourceChapterSnapshot(
+                        sourceId = sourceId,
+                        sourceMappingId = "mapping-" + sourceId,
+                        sourceChapterId = "/reused-key",
+                        rawName = label,
+                        rawNumberHint = 4.0,
+                    ),
+                ),
+            )
+            val en = sourceInventory(101L, "Vol. 1 Ch. 4")
+            val pt = sourceInventory(202L, "Vol. 1 Ch. 4")
+            fixture.reconciler.execute(
+                "title",
+                adapter.adapt(en, 10L) + adapter.adapt(pt, 10L),
+            )
+
+            suspend fun mappedChapter(sourceId: Long): String? =
+                fixture.evidenceRepository.getByProducerExternalKey(
+                    ProducerKind.ADDON,
+                    "mihon-legacy:title:" + sourceId,
+                    "$sourceId:/reused-key",
+                )?.mappedCanonicalChapterId
+            mappedChapter(101L) shouldBe volumeOne.id
+            mappedChapter(202L) shouldBe volumeOne.id
+
+            // A reused URL is not proof that the new edition is still volume 1.
+            fixture.reconciler.execute(
+                "title",
+                adapter.adapt(sourceInventory(101L, "Vol. 2 Ch. 4"), 20L),
+            )
+            mappedChapter(101L) shouldBe volumeTwo.id
+            mappedChapter(202L) shouldBe volumeOne.id
+            fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id }.toSet() shouldBe
+                setOf(volumeOne.id, volumeTwo.id)
+
+            // A later partial inventory never discards evidence for an omitted source.
+            fixture.reconciler.execute("title", adapter.adapt(en.copy(chapters = emptyList()), 30L))
+            mappedChapter(101L) shouldBe volumeTwo.id
+            mappedChapter(202L) shouldBe volumeOne.id
+        }
+
+    @Test
     fun `changed volume on stable key conflicts old chapter and rehomes evidence`() = runTest {
         val fixture = fixture()
         fixture.reconciler.execute(
@@ -401,7 +688,7 @@ class ReconcileChapterEvidenceTest {
                     rawLabel = "Chapter 37",
                     externalKey = "reused-source-key",
                     volume = 2,
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -416,7 +703,7 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `unmapped observation without volume does not join the only explicit volume candidate`() = runTest {
+    fun `reliable unqualified add-on observation reuses sole explicit volume candidate`() = runTest {
         val fixture = fixture()
         val volumeOne = fixture.addonEvidence(
             id = "volume-one-observation",
@@ -436,12 +723,135 @@ class ReconcileChapterEvidenceTest {
 
         val chapters = fixture.chapterRepository.getByCanonicalTitleId("title")
         chapters shouldHaveSize 1
-        chapters.single().volume shouldBe 1
+        val canonical = chapters.single()
+        canonical.volume shouldBe 1
+        canonical.baseNumber shouldBe 37
         fixture.evidenceRepository.getByCanonicalTitleId("title") shouldHaveSize 2
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-one",
+            externalChapterKey = "source-one-37",
+        )?.mappedCanonicalChapterId shouldBe canonical.id
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "source-two",
             externalChapterKey = "source-two-37",
+        )?.mappedCanonicalChapterId shouldBe canonical.id
+    }
+
+    @Test
+    fun `legacy unqualified mapping rehomes to sole explicit volume candidate on refresh`() = runTest {
+        val fixture = fixture()
+        val qualified = existingChapter("chapter-qualified", volume = 1)
+        val legacy = existingChapter("chapter-legacy", volume = null)
+        fixture.chapterRepository.upsert(qualified)
+        fixture.chapterRepository.upsert(legacy)
+
+        val observation = fixture.addonEvidence(
+            id = "legacy-evidence",
+            rawLabel = "Chapter 4",
+            externalKey = "source-4",
+            producerId = "source-two",
+        )
+        fixture.evidenceRepository.upsert(
+            evidence = observation,
+            mappedCanonicalChapterId = legacy.id,
+        )
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(observation.copy(id = "refresh", observedAt = 20L)),
+        )
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "source-two",
+            externalChapterKey = "source-4",
+        )?.mappedCanonicalChapterId shouldBe qualified.id
+    }
+
+    @Test
+    fun `reliable addon refresh removes unsupported exact duplicate of a stably mapped zero chapter`() = runTest {
+        val fixture = fixture()
+        val observation = fixture.addonEvidence(
+            id = "mangadex-zero",
+            rawLabel = "Chapter 0",
+            externalKey = "mangadex-zero",
+        )
+        fixture.reconciler.execute("title", listOf(observation))
+        val mappedZero = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+
+        fixture.chapterRepository.upsert(
+            existingChapter("legacy-zero").copy(
+                displayNumber = "0",
+                baseNumber = 0,
+            ),
+        )
+        fixture.reconciler.execute("title", listOf(observation.copy(id = "refresh")))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(mappedZero.id)
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "mangadex-zero",
+        )?.mappedCanonicalChapterId shouldBe mappedZero.id
+    }
+
+    @Test
+    fun `unqualified add-on evidence stays unmapped when multiple unqualified candidates exist`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-first"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-second"))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.addonEvidence(rawLabel = "Chapter 4", externalKey = "ambiguous-chapter-4")),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-first", "chapter-second")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "ambiguous-chapter-4",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `editorial unqualified evidence stays unmapped beside an explicit volume candidate`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-volume-1", volume = 1))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.editorialEvidence(rawLabel = "Chapter 4", externalKey = "editorial-chapter-4")),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf("chapter-volume-1")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.INTEGRATION,
+            producerId = "mal",
+            externalChapterKey = "editorial-chapter-4",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `editorial unqualified evidence remains ambiguous beside qualified and unqualified candidates`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-unqualified"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-volume-1", volume = 1))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(fixture.editorialEvidence(rawLabel = "Chapter 4", externalKey = "editorial-chapter-4")),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-unqualified", "chapter-volume-1")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.INTEGRATION,
+            producerId = "mal",
+            externalChapterKey = "editorial-chapter-4",
         )?.mappedCanonicalChapterId shouldBe null
     }
 
@@ -469,7 +879,7 @@ class ReconcileChapterEvidenceTest {
 
         fixture.reconciler.execute(
             "title",
-            listOf(volumeOne.copy(id = "first-source-refresh", volume = null)),
+            listOf(volumeOne.copy(id = "first-source-refresh", volume = null, observedAt = 20L)),
         )
 
         fixture.chapterRepository.getByCanonicalTitleId("title") shouldHaveSize 2
@@ -562,7 +972,7 @@ class ReconcileChapterEvidenceTest {
                     id = "observation-2",
                     rawLabel = "Chapter 37 - Revised title",
                     externalKey = "stable-37",
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -594,7 +1004,7 @@ class ReconcileChapterEvidenceTest {
                     id = "changed-observation",
                     rawLabel = "Chapter 13",
                     externalKey = "same-key",
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -627,7 +1037,7 @@ class ReconcileChapterEvidenceTest {
                     id = "changed",
                     rawLabel = "Chapter 126",
                     externalKey = "stable-key",
-                ),
+                ).copy(observedAt = 20L),
             ),
         )
 
@@ -657,7 +1067,8 @@ class ReconcileChapterEvidenceTest {
         fixture.reconciler.execute(
             "title",
             listOf(
-                fixture.addonEvidence(id = "en-new", rawLabel = "Chapter 126", externalKey = "en-stable"),
+                fixture.addonEvidence(id = "en-new", rawLabel = "Chapter 126", externalKey = "en-stable")
+                    .copy(observedAt = 20L),
             ),
         )
 
@@ -675,6 +1086,165 @@ class ReconcileChapterEvidenceTest {
             producerId = "addon",
             externalChapterKey = "pt-4",
         )?.mappedCanonicalChapterId shouldBe chapter4.id
+    }
+
+    @Test
+    fun `conflicting positive numeric hint cannot create a canonical mapping from the label alone`() = runTest {
+        val fixture = fixture()
+        val conflicting = fixture.addonEvidence(
+            id = "chapter-one-with-wrong-hint",
+            rawLabel = "Chapter 1",
+            externalKey = "source-key-826",
+        ).copy(rawNumber = 826.0)
+
+        fixture.reconciler.execute("title", listOf(conflicting))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-826",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `zero numeric hint conflicting with chapter one cannot create canonical mapping`() = runTest {
+        val fixture = fixture()
+        val conflicting = fixture.addonEvidence(
+            id = "chapter-one-with-zero-hint",
+            rawLabel = "Chapter 1",
+            externalKey = "source-key-zero",
+        ).copy(rawNumber = 0.0)
+
+        fixture.reconciler.execute("title", listOf(conflicting))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-zero",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `fractional numeric hint conflicting with an integer label cannot create canonical mapping`() = runTest {
+        val fixture = fixture()
+        val conflicting = fixture.addonEvidence(
+            id = "chapter-thirty-eight-with-fractional-hint",
+            rawLabel = "Chapter 38",
+            externalKey = "source-key-fractional",
+        ).copy(rawNumber = 0.1)
+
+        fixture.reconciler.execute("title", listOf(conflicting))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-fractional",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `titled zero placeholder cannot create canonical mapping without trustworthy identity`() = runTest {
+        val fixture = fixture()
+        val ambiguous = fixture.addonEvidence(
+            id = "chapter-zero-titled-placeholder",
+            rawLabel = "Chapter 0: Tragedy",
+            externalKey = "source-key-zero-title",
+        ).copy(rawNumber = 0.0)
+
+        fixture.reconciler.execute("title", listOf(ambiguous))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-zero-title",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `deleted fractional tombstone cannot create canonical mapping`() = runTest {
+        val fixture = fixture()
+        val deleted = fixture.addonEvidence(
+            id = "deleted-fractional-placeholder",
+            rawLabel = "Chapter 0.1: vol.[DELETED] ch.[DELETED]",
+            externalKey = "source-key-deleted-fractional",
+        ).copy(rawNumber = 0.1)
+
+        fixture.reconciler.execute("title", listOf(deleted))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-deleted-fractional",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `plain zero and fractional chapter evidence remain valid`() = runTest {
+        val fixture = fixture()
+        val zero = fixture.addonEvidence(
+            id = "chapter-zero",
+            rawLabel = "Chapter 0",
+            externalKey = "source-key-zero",
+        ).copy(rawNumber = 0.0)
+        val half = fixture.addonEvidence(
+            id = "chapter-zero-half",
+            rawLabel = "Chapter 0.5",
+            externalKey = "source-key-zero-half",
+        ).copy(rawNumber = 0.5)
+
+        fixture.reconciler.execute("title", listOf(zero, half))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title")
+            .map { it.displayNumber }
+            .toSet() shouldBe setOf("0", "0.5")
+    }
+
+    @Test
+    fun `stale same-provider observation is discarded without aborting a fresh sibling`() = runTest {
+        val fixture = fixture()
+        val current = fixture.addonEvidence(
+            id = "current-one",
+            rawLabel = "Chapter 1",
+            externalKey = "source-key-1",
+        ).copy(observedAt = 20L)
+        fixture.reconciler.execute("title", listOf(current))
+        val chapterOneId = fixture.chapterRepository.getByCanonicalTitleId("title").single().id
+
+        val stale = current.copy(
+            id = "stale-one",
+            rawLabel = "Chapter 826",
+            rawNumber = 826.0,
+            observedAt = 10L,
+        )
+        val freshSibling = fixture.addonEvidence(
+            id = "fresh-two",
+            rawLabel = "Chapter 2",
+            externalKey = "source-key-2",
+        ).copy(observedAt = 30L)
+
+        fixture.reconciler.execute("title", listOf(stale, freshSibling))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title")
+            .mapNotNull { it.baseNumber }
+            .toSet() shouldBe setOf(1, 2)
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-1",
+        )?.mappedCanonicalChapterId shouldBe chapterOneId
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-2",
+        )?.mappedCanonicalChapterId shouldBe fixture.chapterRepository
+            .getByCanonicalTitleId("title")
+            .single { it.baseNumber == 2 }
+            .id
     }
 
     @Test
@@ -871,6 +1441,7 @@ class ReconcileChapterEvidenceTest {
 
     private class FakeCanonicalChapterRepository : CanonicalChapterRepository {
         private val chapters = linkedMapOf<String, CanonicalChapter>()
+        private val variants = linkedMapOf<Pair<Long, String>, ChapterVariant>()
         private val state = MutableStateFlow<List<CanonicalChapter>>(emptyList())
 
         override suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<CanonicalChapter> =
@@ -883,26 +1454,58 @@ class ReconcileChapterEvidenceTest {
         override suspend fun getVariantBySourceIdentity(
             sourceId: Long,
             sourceChapterId: String,
-        ): ChapterVariant? = null
+        ): ChapterVariant? = variants[sourceId to sourceChapterId]
 
         override suspend fun getVariantsByCanonicalChapterId(canonicalChapterId: String): List<ChapterVariant> =
-            emptyList()
+            variants.values.filter { it.canonicalChapterId == canonicalChapterId }
 
         override suspend fun getVariantsBySourceMappingId(sourceMappingId: String): List<ChapterVariant> =
-            emptyList()
+            variants.values.filter { it.sourceMappingId == sourceMappingId }
 
         override suspend fun upsert(chapter: CanonicalChapter) {
             chapters[chapter.id] = chapter
             state.value = chapters.values.toList()
         }
 
-        override suspend fun upsertVariant(variant: ChapterVariant) = Unit
+        override suspend fun upsertVariant(variant: ChapterVariant) {
+            variants[variant.sourceId to variant.sourceChapterId] = variant
+        }
+
+        override suspend fun consolidateExactDuplicateIfSafe(
+            canonicalTitleId: String,
+            preferredChapterId: String,
+            duplicateChapterId: String,
+        ): Boolean {
+            val preferred = chapters[preferredChapterId] ?: return false
+            val duplicate = chapters[duplicateChapterId] ?: return false
+            if (
+                preferred.canonicalTitleId != canonicalTitleId ||
+                duplicate.canonicalTitleId != canonicalTitleId ||
+                preferred.type != tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR ||
+                duplicate.type != tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR ||
+                preferred.identity != duplicate.identity ||
+                preferred.volume != duplicate.volume
+            ) {
+                return false
+            }
+            variants.replaceAll { _, variant ->
+                if (variant.canonicalChapterId == duplicateChapterId) {
+                    variant.copy(canonicalChapterId = preferredChapterId)
+                } else {
+                    variant
+                }
+            }
+            chapters.remove(duplicateChapterId)
+            state.value = chapters.values.toList()
+            return true
+        }
 
         override suspend fun upsertBatch(
             chapters: List<CanonicalChapter>,
             variants: List<ChapterVariant>,
         ) {
             chapters.forEach { upsert(it) }
+            variants.forEach { upsertVariant(it) }
         }
     }
 }

@@ -717,6 +717,7 @@ class ReaderViewModel(
                                 activeContentLabel = canonicalContentLabel(nextSource?.name, selectedOption),
                                 activeContentOptionKey = selectedOption?.key,
                                 viewerChapters = nextViewerChapters,
+                                currentPage = nextChapter.requestedPage + 1,
                                 bookmarked = nextChapter.chapter.bookmark,
                                 canonicalCanNavigatePrevious = previous != null,
                                 canonicalCanNavigateNext = next != null,

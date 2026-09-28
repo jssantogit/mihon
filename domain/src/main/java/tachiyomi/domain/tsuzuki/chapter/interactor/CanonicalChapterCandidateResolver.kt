@@ -17,16 +17,34 @@ internal object CanonicalChapterCandidateResolver {
         candidates: List<CanonicalChapter>,
         observedVolume: Int?,
         hasExplicitVolumePrefix: Boolean = false,
+        allowUnqualifiedCandidateCreation: Boolean = false,
     ): CanonicalChapterCandidateResolution {
         if (candidates.isEmpty()) return CanonicalChapterCandidateResolution.NoMatch
 
         if (observedVolume == null) {
-            if (hasExplicitVolumePrefix || candidates.any { it.volume != null }) {
+            if (hasExplicitVolumePrefix) {
                 return CanonicalChapterCandidateResolution.Ambiguous
             }
-            return candidates.singleOrNull()
-                ?.let(CanonicalChapterCandidateResolution::UniqueMatch)
-                ?: CanonicalChapterCandidateResolution.Ambiguous
+
+            val unqualifiedCandidates = candidates.filter { it.volume == null }
+            if (unqualifiedCandidates.size > 1) return CanonicalChapterCandidateResolution.Ambiguous
+            if (unqualifiedCandidates.size == 1) {
+                if (unqualifiedCandidates.size != candidates.size && !allowUnqualifiedCandidateCreation) {
+                    return CanonicalChapterCandidateResolution.Ambiguous
+                }
+                return CanonicalChapterCandidateResolution.UniqueMatch(unqualifiedCandidates.single())
+            }
+            // Reliable Add-on inventory may omit volume metadata even when another
+            // source supplied it. Reuse a sole candidate instead of duplicating the
+            // same numbered chapter. Editorial/unqualified evidence remains fail-closed,
+            // and multiple volume candidates are always ambiguous.
+            return if (allowUnqualifiedCandidateCreation) {
+                candidates.singleOrNull()
+                    ?.let(CanonicalChapterCandidateResolution::UniqueMatch)
+                    ?: CanonicalChapterCandidateResolution.Ambiguous
+            } else {
+                CanonicalChapterCandidateResolution.Ambiguous
+            }
         }
 
         val matchingVolume = candidates.filter { it.volume == observedVolume }

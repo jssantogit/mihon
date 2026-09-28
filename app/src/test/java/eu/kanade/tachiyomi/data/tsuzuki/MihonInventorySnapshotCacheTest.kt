@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -31,6 +32,33 @@ class MihonInventorySnapshotCacheTest {
         cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
         cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
         requests shouldBe 1
+    }
+
+    @Test
+    fun `cached inventories preserve original provider timestamps until an actual refetch`() = runTest {
+        var now = 0L
+        var providerStartedAt = 100L
+        val cache = MihonInventorySnapshotCache({ now }, 100L, 4)
+        var fetchCount = 0
+        val fetch: suspend () -> Result<SourceChapterInventory> = {
+            fetchCount++
+            Result.success(inventory.copy(fetchStartedAtMillis = providerStartedAt))
+        }
+
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 100L
+        now = 50L
+        providerStartedAt = 200L
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 100L
+        fetchCount shouldBe 1
+
+        cache.getOrFetch(key, refresh = true, fetch = fetch)
+            .getOrThrow().fetchStartedAtMillis shouldBe 200L
+        fetchCount shouldBe 2
+
+        now = 151L
+        providerStartedAt = 300L
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 300L
+        fetchCount shouldBe 3
     }
 
     @Test
@@ -91,27 +119,131 @@ class MihonInventorySnapshotCacheTest {
     }
 
     @Test
-    fun `invalidated in-flight inventory cannot overwrite a fresh snapshot`() = runTest {
+    fun `invalidated in-flight inventory fails its original caller and cannot overwrite a fresh snapshot`() = runTest {
         val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
         val releaseOldFetch = CompletableDeferred<Unit>()
         var requests = 0
         val fetch: suspend () -> Result<SourceChapterInventory> = {
             requests++
+            val startedAt = if (requests == 1) 100L else 200L
             if (requests == 1) releaseOldFetch.await()
-            Result.success(inventory)
+            Result.success(inventory.copy(fetchStartedAtMillis = startedAt))
         }
 
         val obsolete = async { cache.getOrFetch(key, fetch = fetch) }
         yield()
         requests shouldBe 1
 
+        // A binding change invalidates this title while the original network
+        // request is still in progress. The original caller must fail closed.
         cache.invalidateTitle("title")
-        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 200L
         requests shouldBe 2
 
         releaseOldFetch.complete(Unit)
-        obsolete.await().getOrThrow() shouldBe inventory
-        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe inventory
+        obsolete.await().isFailure shouldBe true
+        cache.getOrFetch(key, fetch = fetch).getOrThrow().fetchStartedAtMillis shouldBe 200L
+        requests shouldBe 2
+    }
+
+    @Test
+    fun `invalidating a shared in-flight lookup fails all earlier waiters but not the fresh request`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val releaseOldFetch = CompletableDeferred<Unit>()
+        var requests = 0
+        val fetch: suspend () -> Result<SourceChapterInventory> = {
+            requests++
+            if (requests == 1) releaseOldFetch.await()
+            Result.success(inventory.copy(fetchStartedAtMillis = requests * 100L))
+        }
+
+        val original = async { cache.getOrFetch(key, fetch = fetch) }
+        yield()
+        val joined = async { cache.getOrFetch(key, fetch = fetch) }
+        yield()
+        requests shouldBe 1
+
+        cache.invalidateTitle("title")
+        val replacement = cache.getOrFetch(key, fetch = fetch).getOrThrow()
+        replacement.fetchStartedAtMillis shouldBe 200L
+        releaseOldFetch.complete(Unit)
+        original.await().isFailure shouldBe true
+        joined.await().isFailure shouldBe true
+        cache.getOrFetch(key, fetch = fetch).getOrThrow() shouldBe replacement
+        requests shouldBe 2
+    }
+
+    @Test
+    fun `cancelling a joiner does not cancel the fetch owner`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val fetchStarted = CompletableDeferred<Unit>()
+        val releaseFetch = CompletableDeferred<Unit>()
+        var requests = 0
+        val owner = async {
+            cache.getOrFetch(key) {
+                requests++
+                fetchStarted.complete(Unit)
+                releaseFetch.await()
+                Result.success(inventory)
+            }
+        }
+        fetchStarted.await()
+
+        val joiner = async { cache.getOrFetch(key) { error("A joiner must not start another provider request") } }
+        yield()
+        requests shouldBe 1
+        joiner.isActive shouldBe true
+        joiner.cancel()
+        joiner.join()
+        owner.isActive shouldBe true
+
+        releaseFetch.complete(Unit)
+        owner.await().getOrThrow() shouldBe inventory
+        cache.getOrFetch(key) { error("The successful owner result should be cached") }.getOrThrow() shouldBe inventory
+        requests shouldBe 1
+    }
+
+    @Test
+    fun `cancelling the fetch owner returns failure to joiners without cancelling their reader`() = runTest {
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val fetchStarted = CompletableDeferred<Unit>()
+        var requests = 0
+        val owner = async {
+            cache.getOrFetch(key) {
+                requests++
+                fetchStarted.complete(Unit)
+                CompletableDeferred<Unit>().await()
+                Result.success(inventory)
+            }
+        }
+        fetchStarted.await()
+
+        val joiner = async {
+            cache.getOrFetch(key) {
+                error("A joiner must not start another provider request")
+            }
+        }
+        yield()
+        requests shouldBe 1
+        joiner.isActive shouldBe true
+
+        owner.cancel()
+        owner.join()
+
+        var cancelled = false
+        val joinerResult = try {
+            joiner.await()
+        } catch (_: CancellationException) {
+            cancelled = true
+            null
+        }
+        cancelled shouldBe false
+        requireNotNull(joinerResult).isFailure shouldBe true
+
+        cache.getOrFetch(key) {
+            requests++
+            Result.success(inventory)
+        }.getOrThrow() shouldBe inventory
         requests shouldBe 2
     }
 

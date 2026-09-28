@@ -65,6 +65,7 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
@@ -92,6 +93,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     @Inject private lateinit var networkHelper: NetworkHelper
 
     @Inject private lateinit var sourceManager: SourceManager
+
+    @Inject private lateinit var canonicalReadingRepository: CanonicalReadingRepository
 
     @Inject private lateinit var widgetManager: WidgetManager
 
@@ -135,6 +138,26 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         // Show notification to disable Incognito Mode when it's enabled
         basePreferences.incognitoMode.changes()
             .onEach { enabled ->
+                if (!enabled) {
+                    // Replay interrupted local-only Mihon projections after a
+                    // process restart or on leaving incognito mode. Never probe
+                    // providers or block the main thread.
+                    scope.launch(Dispatchers.IO) {
+                        repeat(32) {
+                            if (basePreferences.incognitoMode.get()) return@launch
+                            try {
+                                if (canonicalReadingRepository.drainPendingProjections(limit = 16) < 16) {
+                                    return@launch
+                                }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                logcat(LogPriority.ERROR, error) { "Local Reader projection recovery failed" }
+                                return@launch
+                            }
+                        }
+                    }
+                }
                 if (enabled) {
                     disableIncognitoReceiver.register()
                     notify(

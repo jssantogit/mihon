@@ -16,6 +16,11 @@ data class ContentOptionCacheKey(
     val addonId: AddonId,
 )
 
+internal data class ContentOptionCacheToken(
+    val key: ContentOptionCacheKey,
+    val generation: Long,
+)
+
 @SingleIn(AppScope::class)
 class ContentOptionCache internal constructor(
     private val clock: () -> Long,
@@ -38,6 +43,8 @@ class ContentOptionCache internal constructor(
 
     private val mutex = Mutex()
     private val entries = LinkedHashMap<ContentOptionCacheKey, Entry>(16, 0.75f, true)
+    private val activeLookups = mutableMapOf<ContentOptionCacheKey, Int>()
+    private val generations = mutableMapOf<ContentOptionCacheKey, Long>()
 
     suspend fun get(key: ContentOptionCacheKey): List<ContentOption>? {
         val now = clock()
@@ -45,6 +52,7 @@ class ContentOptionCache internal constructor(
             val entry = entries[key] ?: return@withLock null
             if (entry.expiresAt <= now) {
                 entries.remove(key)
+                if (key !in activeLookups) generations.remove(key)
                 return@withLock null
             }
             entry.options
@@ -57,31 +65,54 @@ class ContentOptionCache internal constructor(
     ) {
         val ttl = if (options.isEmpty()) emptyTtlMillis else successTtlMillis
         if (ttl <= 0L || maxEntries <= 0) return
-        val entry = Entry(
-            options = options.toList(),
-            expiresAt = clock() + ttl,
-        )
         mutex.withLock {
-            entries[key] = entry
-            while (entries.size > maxEntries) {
-                val eldest = entries.entries.iterator()
-                if (eldest.hasNext()) {
-                    eldest.next()
-                    eldest.remove()
-                }
+            putLocked(key, options, ttl)
+        }
+    }
+
+    internal suspend fun beginLookup(key: ContentOptionCacheKey): ContentOptionCacheToken = mutex.withLock {
+        activeLookups[key] = (activeLookups[key] ?: 0) + 1
+        ContentOptionCacheToken(key, generations[key] ?: 0L)
+    }
+
+    /** A timed-out or invalidated provider result cannot repopulate the cache. */
+    internal suspend fun putIfCurrent(
+        token: ContentOptionCacheToken,
+        options: List<ContentOption>,
+    ): Boolean {
+        val ttl = if (options.isEmpty()) emptyTtlMillis else successTtlMillis
+        return mutex.withLock {
+            if ((generations[token.key] ?: 0L) != token.generation) return@withLock false
+            if (ttl > 0L && maxEntries > 0) putLocked(token.key, options, ttl)
+            true
+        }
+    }
+
+    internal suspend fun finishLookup(token: ContentOptionCacheToken) {
+        mutex.withLock {
+            val count = (activeLookups[token.key] ?: 1) - 1
+            if (count <= 0) {
+                activeLookups.remove(token.key)
+                if (token.key !in entries) generations.remove(token.key)
+            } else {
+                activeLookups[token.key] = count
             }
         }
     }
 
     suspend fun invalidateAddon(addonId: AddonId) {
         mutex.withLock {
-            entries.keys.removeAll { it.addonId == addonId }
+            invalidateLocked { it.addonId == addonId }
         }
+    }
+
+    internal suspend fun invalidate(key: ContentOptionCacheKey) {
+        mutex.withLock { invalidateLocked { it == key } }
     }
 
     suspend fun invalidateTitleAddon(canonicalTitleId: String, addonId: AddonId) {
         mutex.withLock {
-            entries.keys.removeAll {
+            invalidateLocked {
                 it.canonicalTitleId == canonicalTitleId && it.addonId == addonId
             }
         }
@@ -89,7 +120,7 @@ class ContentOptionCache internal constructor(
 
     suspend fun invalidateTitle(canonicalTitleId: String) {
         mutex.withLock {
-            entries.keys.removeAll { it.canonicalTitleId == canonicalTitleId }
+            invalidateLocked { it.canonicalTitleId == canonicalTitleId }
         }
     }
 
@@ -98,7 +129,7 @@ class ContentOptionCache internal constructor(
         canonicalChapterId: String,
     ) {
         mutex.withLock {
-            entries.keys.removeAll {
+            invalidateLocked {
                 it.canonicalTitleId == canonicalTitleId &&
                     it.canonicalChapterId == canonicalChapterId
             }
@@ -106,7 +137,34 @@ class ContentOptionCache internal constructor(
     }
 
     suspend fun clear() {
-        mutex.withLock { entries.clear() }
+        mutex.withLock { invalidateLocked { true } }
+    }
+
+    private fun putLocked(key: ContentOptionCacheKey, options: List<ContentOption>, ttl: Long) {
+        entries[key] = Entry(
+            options = options.toList(),
+            expiresAt = clock() + ttl,
+        )
+        while (entries.size > maxEntries) {
+            val eldest = entries.entries.iterator()
+            if (eldest.hasNext()) {
+                val evicted = eldest.next().key
+                eldest.remove()
+                if (evicted !in activeLookups) generations.remove(evicted)
+            }
+        }
+    }
+
+    private fun invalidateLocked(predicate: (ContentOptionCacheKey) -> Boolean) {
+        val keys = (entries.keys + activeLookups.keys).filter(predicate).toSet()
+        keys.forEach { key ->
+            entries.remove(key)
+            if (key in activeLookups) {
+                generations[key] = (generations[key] ?: 0L) + 1
+            } else {
+                generations.remove(key)
+            }
+        }
     }
 
     companion object {

@@ -15,8 +15,10 @@ import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -71,6 +73,29 @@ internal class LocalMihonSourceHarness(
                 .body(body)
                 .build(),
         )
+    }
+
+    /**
+     * Deterministic endpoint fixtures for flows which repeat discovery or
+     * refresh. FIFO search replies must not be consumed as chapter inventory.
+     */
+    fun respondByPath(language: String, responses: Map<String, String>) {
+        val fixtureServer = requireNotNull(serversByLanguage[language]) {
+            "No fixture server for language $language"
+        }
+        fixtureServer.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val body = responses[request.url.encodedPath]
+                    ?: return MockResponse.Builder()
+                        .code(404)
+                        .body("Unexpected synthetic fixture route")
+                        .build()
+                return MockResponse.Builder()
+                    .code(200)
+                    .body(body)
+                    .build()
+            }
+        }
     }
 
     fun requestCount(language: String): Int =

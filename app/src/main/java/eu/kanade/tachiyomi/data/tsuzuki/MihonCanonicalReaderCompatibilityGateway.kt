@@ -8,6 +8,7 @@ import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.history.repository.HistoryRepository
+import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReaderCompatibilityGateway
 import java.util.Date
 
@@ -17,7 +18,12 @@ import java.util.Date
 class MihonCanonicalReaderCompatibilityGateway(
     private val chapterRepository: ChapterRepository,
     private val historyRepository: HistoryRepository,
+    private val canonicalReadingRepository: CanonicalReadingRepository,
 ) : CanonicalReaderCompatibilityGateway {
+
+    override suspend fun flushPendingProjections() {
+        canonicalReadingRepository.drainPendingProjections(limit = 4)
+    }
 
     override suspend fun projectProgress(
         mihonChapterId: Long,

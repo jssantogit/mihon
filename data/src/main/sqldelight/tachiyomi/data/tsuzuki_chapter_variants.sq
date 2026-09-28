@@ -108,3 +108,9 @@ ON CONFLICT(id) DO UPDATE SET
     raw_source_order = excluded.raw_source_order,
     raw_source_metadata = excluded.raw_source_metadata,
     updated_at = excluded.updated_at;
+
+
+rekeyTsuzukiChapterVariantsCanonicalChapter:
+UPDATE tsuzuki_chapter_variants
+SET canonical_chapter_id = :preferredChapterId
+WHERE canonical_chapter_id = :duplicateChapterId;

@@ -9,7 +9,9 @@ import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.model.SChapter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import org.json.JSONException
 import tachiyomi.core.common.util.system.logcat
@@ -38,6 +40,7 @@ import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import java.math.BigDecimal
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 /**
@@ -96,6 +99,9 @@ class MihonChapterInventoryGateway(
         mapping: SourceTitleMapping,
         mihonMangaId: Long,
     ): Result<SourceChapterInventory> {
+        // Capture at provider fetch START, never at completion or projection.
+        // A cached result keeps this same timestamp when replayed later.
+        val fetchStartedAtMillis = Clock.System.now().toEpochMilliseconds()
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val manga = mangaRepository.getMangaById(mihonMangaId)
@@ -121,12 +127,16 @@ class MihonChapterInventoryGateway(
             val legacyChapters = chapterRepository.getChapterByMangaId(mihonMangaId)
             val legacyByUrl = legacyChapters.associateBy { it.url }
             val networkStart = TimeSource.Monotonic.markNow()
-            val update = source.getMangaUpdate(
-                manga = manga.toSManga(),
-                chapters = legacyChapters.map(Chapter::toSChapter),
-                fetchDetails = false,
-                fetchChapters = true,
-            )
+            // Source implementations may execute their OkHttp call synchronously
+            // inside this suspend API.
+            val update = withContext(Dispatchers.IO) {
+                source.getMangaUpdate(
+                    manga = manga.toSManga(),
+                    chapters = legacyChapters.map(Chapter::toSChapter),
+                    fetchDetails = false,
+                    fetchChapters = true,
+                )
+            }
 
             val networkTime = networkStart.elapsedNow()
             recordInventorySuccess(
@@ -157,6 +167,8 @@ class MihonChapterInventoryGateway(
                     chapters = snapshots,
                     mihonMangaId = mihonMangaId,
                     language = mapping.language,
+                    sourceUrl = mapping.sourceUrl,
+                    fetchStartedAtMillis = fetchStartedAtMillis,
                 ),
             )
         } catch (error: CancellationException) {

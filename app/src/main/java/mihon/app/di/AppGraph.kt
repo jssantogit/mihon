@@ -1,6 +1,7 @@
 package mihon.app.di
 
 import android.content.Context
+import app.cash.sqldelight.db.SqlDriver
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provides
@@ -43,6 +44,7 @@ import eu.kanade.tachiyomi.util.CrashLogUtil
 import kotlinx.serialization.json.Json
 import mihon.core.metro.IsDebugBuild
 import mihon.domain.extension.interactor.GetExtensionStoreCountAsFlow
+import tachiyomi.data.Database
 import tachiyomi.domain.backup.service.BackupPreferences
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.ResetCategoryFlags
@@ -81,6 +83,10 @@ interface AppGraph : ViewModelGraph {
     fun inject(extensionInstallActivity: ExtensionInstallActivity)
 
     val context: Context
+
+    // AppScope singletons also used by isolated Android Reader instrumentation.
+    val database: Database
+    val sqlDriver: SqlDriver
 
     val viewModelFactory: MetroViewModelFactory
 

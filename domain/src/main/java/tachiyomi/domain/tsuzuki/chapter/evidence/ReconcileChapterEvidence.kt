@@ -14,6 +14,8 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.CanonicalChapterCandidateReso
 import tachiyomi.domain.tsuzuki.chapter.interactor.ChapterMutationGate
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
+import tachiyomi.domain.tsuzuki.chapter.interactor.hasConflictingIntegerChapterHint
+import tachiyomi.domain.tsuzuki.chapter.interactor.isUnsafeProvisionalChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterIdentity
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
@@ -65,6 +67,20 @@ class ReconcileChapterEvidence internal constructor(
         canonicalTitleId: String,
         evidence: List<ChapterEvidence>,
     ) {
+        executeAndProject(canonicalTitleId, evidence) {}
+    }
+
+    /**
+     * Runs an optional operational projection after the canonical/evidence writes
+     * but before the same persistence transaction commits. A projection failure
+     * rolls back all three kinds of rows. The projection may only use the
+     * persisted result, never infer a chapter ID from a raw source label.
+     */
+    suspend fun <T> executeAndProject(
+        canonicalTitleId: String,
+        evidence: List<ChapterEvidence>,
+        project: suspend (List<PersistedChapterEvidence>) -> T,
+    ): T {
         require(canonicalTitleId.isNotBlank()) { "Canonical title id is required" }
         require(evidence.all { it.canonicalTitleId == canonicalTitleId }) {
             "All chapter evidence must belong to canonical title $canonicalTitleId"
@@ -81,24 +97,90 @@ class ReconcileChapterEvidence internal constructor(
                     discarded = 0,
                 ),
             )
-            return
-        }
-        mutationGate.withLock {
-            evidenceRepository.withTransaction {
-                reconcileUncontended(canonicalTitleId, evidence)
+            return mutationGate.withLock {
+                evidenceRepository.withTransaction {
+                    project(emptyList())
+                }
             }
         }
+        return mutationGate.withLock {
+            evidenceRepository.withTransaction {
+                project(reconcileUncontended(canonicalTitleId, evidence))
+            }
+        }
+    }
+
+    private suspend fun consolidateExactLegacyDuplicates(
+        canonicalTitleId: String,
+        chapters: List<CanonicalChapter>,
+        persistedEvidence: List<PersistedChapterEvidence>,
+    ): Boolean {
+        val supportCountByChapter = persistedEvidence
+            .mapNotNull(PersistedChapterEvidence::mappedCanonicalChapterId)
+            .groupingBy { it }
+            .eachCount()
+        val groups = chapters
+            .filter {
+                it.type == tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR &&
+                    it.identity.isNumbered
+            }
+            .groupBy { it.identity to it.volume }
+            .values
+            .filter { group ->
+                group.size > 1 && group.any { supportCountByChapter.getOrDefault(it.id, 0) > 0 }
+            }
+
+        var changed = false
+        groups.forEach { duplicateGroup ->
+            val ordered = duplicateGroup.sortedWith(
+                compareByDescending<CanonicalChapter> { supportCountByChapter.getOrDefault(it.id, 0) }
+                    .thenByDescending { it.confirmation == CanonicalChapterConfirmation.CONFIRMED }
+                    .thenBy { it.createdAt }
+                    .thenBy { it.id },
+            )
+            var preferred = ordered.first()
+            ordered.drop(1).forEach { candidate ->
+                val forward = canonicalChapterRepository.consolidateExactDuplicateIfSafe(
+                    canonicalTitleId = canonicalTitleId,
+                    preferredChapterId = preferred.id,
+                    duplicateChapterId = candidate.id,
+                )
+                if (forward) {
+                    changed = true
+                } else {
+                    val reverse = canonicalChapterRepository.consolidateExactDuplicateIfSafe(
+                        canonicalTitleId = canonicalTitleId,
+                        preferredChapterId = candidate.id,
+                        duplicateChapterId = preferred.id,
+                    )
+                    if (reverse) {
+                        preferred = candidate
+                        changed = true
+                    }
+                }
+            }
+        }
+        return changed
     }
 
     private suspend fun reconcileUncontended(
         canonicalTitleId: String,
         evidence: List<ChapterEvidence>,
-    ) {
-        val chapters = canonicalChapterRepository
-            .getByCanonicalTitleId(canonicalTitleId)
-            .associateByTo(linkedMapOf(), CanonicalChapter::id)
-        val persistedEvidence = evidenceRepository
-            .getByCanonicalTitleId(canonicalTitleId)
+    ): List<PersistedChapterEvidence> {
+        var chapterSnapshot = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+        var evidenceSnapshot = evidenceRepository.getByCanonicalTitleId(canonicalTitleId)
+        if (
+            consolidateExactLegacyDuplicates(
+                canonicalTitleId = canonicalTitleId,
+                chapters = chapterSnapshot,
+                persistedEvidence = evidenceSnapshot,
+            )
+        ) {
+            chapterSnapshot = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+            evidenceSnapshot = evidenceRepository.getByCanonicalTitleId(canonicalTitleId)
+        }
+        val chapters = chapterSnapshot.associateByTo(linkedMapOf(), CanonicalChapter::id)
+        val persistedEvidence = evidenceSnapshot
             .associateBy { it.evidence.id }
             .toMutableMap()
         val persistedEvidenceByExternalKey = persistedEvidence.values
@@ -139,6 +221,28 @@ class ReconcileChapterEvidence internal constructor(
             }
             val existing = externalKey?.let(persistedEvidenceByExternalKey::get)
                 ?: persistedEvidence[observation.id]
+            // Two in-flight provider refreshes can complete out of order even
+            // though their writes share the chapter mutation gate. A delayed
+            // response may never overwrite a newer persisted observation.
+            val previousObservation = existing?.evidence
+            if (previousObservation != null) {
+                require(observation.observedAt >= previousObservation.observedAt) {
+                    "Stale chapter evidence cannot replace a newer observation"
+                }
+                // Add-on source inventories carry the provider fetch-start timestamp.
+                // Equal starts do not establish ordering, so only exact replays are safe.
+                // Editorial Integration evidence can use caller timestamps and is not
+                // subject to this source-inventory rule.
+                val hasStableAddonSourceIdentity =
+                    observation.producerKind == ProducerKind.ADDON &&
+                        !observation.externalChapterKey.isNullOrBlank()
+                if (hasStableAddonSourceIdentity) {
+                    require(
+                        observation.observedAt != previousObservation.observedAt ||
+                            observation.copy(id = previousObservation.id) == previousObservation,
+                    ) { "Conflicting Add-on evidence shares the same provider fetch timestamp" }
+                }
+            }
             val stableId = existing?.evidence?.id ?: observation.id
             existing?.evidence?.externalChapterKey?.let { previousExternalKey ->
                 if (previousExternalKey != observation.externalChapterKey) {
@@ -169,6 +273,18 @@ class ReconcileChapterEvidence internal constructor(
         var discardedCount = 0
 
         for (observation in evidence) {
+            if (
+                isSupersededSameProducerObservation(
+                    observation = observation,
+                    persistedEvidence = persistedEvidence,
+                    persistedEvidenceByExternalKey = persistedEvidenceByExternalKey,
+                )
+            ) {
+                discardedCount++
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+                continue
+            }
+
             val parsed = try {
                 parser.execute(observation.rawLabel, observation.rawNumber)
             } catch (error: Throwable) {
@@ -187,16 +303,45 @@ class ReconcileChapterEvidence internal constructor(
                 throw error
             }
             ChapterInventoryDiagnosticLabels.fromIdentity(parsed.identity)?.let(diagnosticLabels::add)
+            val numericHintConflicts = hasConflictingIntegerChapterHint(parsed, observation.rawNumber)
+            val unsafeProvisionalEvidence = observation.producerKind == ProducerKind.ADDON &&
+                observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+                isUnsafeProvisionalChapterEvidence(parsed, observation.rawLabel, observation.rawNumber)
+            val identityEvidenceUnsafe = numericHintConflicts || unsafeProvisionalEvidence
             val parsedIdentityIsReliable = observation.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
-                parsed.identity.isSpecific
+                parsed.identity.isSpecific &&
+                !identityEvidenceUnsafe
+            if (identityEvidenceUnsafe) {
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+            }
+
+            if (
+                observation.producerKind == ProducerKind.ADDON &&
+                isSupersededCrossProducerObservation(
+                    observation = observation,
+                    parsedIdentityIsReliable = parsedIdentityIsReliable,
+                    parsedIdentity = parsed.identity,
+                    currentChapters = chapters,
+                    persistedEvidence = persistedEvidence.values,
+                )
+            ) {
+                // The fetch began before newer evidence was recorded for this exact
+                // Mihon source/chapter key. Do not persist a stale cross-producer row
+                // or let its label create a second canonical identity.
+                discardedCount++
+                reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
+                continue
+            }
 
             if (
                 observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
                 !parsedIdentityIsReliable
             ) {
                 provisionalCount++
-                reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
+                if (!identityEvidenceUnsafe) {
+                    reasonCounts.increment(ChapterInventoryDiagnosticReason.LOW_CONFIDENCE)
+                }
                 stageEvidence(observation, mappedCanonicalChapterId = null)
                 continue
             }
@@ -206,7 +351,20 @@ class ReconcileChapterEvidence internal constructor(
                     EvidenceExternalKey(observation.producerKind, observation.producerId, externalKey),
                 ]
             }
-            val previousEvidence = externalEvidence ?: persistedEvidence[observation.id]
+            val previousCrossProducerEvidence = crossProducerMappedEvidence(
+                observation = observation,
+                persistedEvidence = persistedEvidence.values,
+            )
+            val previousCrossProducerMappedChapterId = previousCrossProducerEvidence?.mappedCanonicalChapterId
+            val previousCrossProducerMappedChapter = previousCrossProducerMappedChapterId?.let { chapterId ->
+                (chapters[chapterId] ?: canonicalChapterRepository.getById(chapterId))?.also { chapter ->
+                    require(chapter.canonicalTitleId == canonicalTitleId) {
+                        "Cross-producer evidence mapping points to chapter from another canonical title"
+                    }
+                }
+            }
+            val previousEvidence =
+                externalEvidence ?: persistedEvidence[observation.id] ?: previousCrossProducerEvidence
             val mappedChapterId = previousEvidence?.mappedCanonicalChapterId
             val mappedChapter = if (mappedChapterId != null) {
                 (chapters[mappedChapterId] ?: canonicalChapterRepository.getById(mappedChapterId))?.also { chapter ->
@@ -231,12 +389,30 @@ class ReconcileChapterEvidence internal constructor(
             }
 
             val identityCandidates = chaptersByIdentity[parsed.identity].orEmpty()
+            val legacyUnqualifiedMergeTarget = if (
+                parsedIdentityIsReliable &&
+                observation.producerKind == ProducerKind.ADDON &&
+                observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+                observation.volume == null &&
+                mappedChapter != null &&
+                mappedChapter.volume == null
+            ) {
+                identityCandidates
+                    .filter { it.id != mappedChapter.id }
+                    .singleOrNull()
+                    ?.takeIf { it.volume != null }
+            } else {
+                null
+            }
             val candidateResolution = if (parsedIdentityIsReliable) {
                 CanonicalChapterCandidateResolver.resolve(
                     candidates = identityCandidates,
                     observedVolume = observation.volume,
                     hasExplicitVolumePrefix = observation.volume == null &&
                         volumeParser.hasExplicitVolumePrefix(observation.rawLabel),
+                    allowUnqualifiedCandidateCreation =
+                    observation.producerKind == ProducerKind.ADDON &&
+                        observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL,
                 )
             } else {
                 CanonicalChapterCandidateResolution.NoMatch
@@ -281,6 +457,28 @@ class ReconcileChapterEvidence internal constructor(
                 chapterUpserts[conflicted.id] = conflicted
             }
 
+            val conflictsWithOlderCrossProducerMapping = previousCrossProducerEvidence != null &&
+                observation.observedAt > previousCrossProducerEvidence.evidence.observedAt &&
+                previousCrossProducerMappedChapter != null &&
+                parsedIdentityIsReliable &&
+                previousCrossProducerMappedChapter.identity.isSpecific &&
+                (
+                    previousCrossProducerMappedChapter.identity != parsed.identity ||
+                        (
+                            previousCrossProducerMappedChapter.volume != null && observation.volume != null &&
+                                previousCrossProducerMappedChapter.volume != observation.volume
+                            )
+                    )
+            if (conflictsWithOlderCrossProducerMapping) {
+                // A newer observation from the other Add-on path can disagree with
+                // the label attached to this source key. Keep the mapped identity
+                // and its user state intact until the conflict is resolved; retain
+                // the newer evidence without forking a second readable chapter.
+                provisionalCount++
+                stageEvidence(observation, mappedCanonicalChapterId = null)
+                continue
+            }
+
             if (ambiguousIdentity) {
                 provisionalCount++
                 reasonCounts.increment(ChapterInventoryDiagnosticReason.IDENTITY_MISMATCH)
@@ -293,6 +491,7 @@ class ReconcileChapterEvidence internal constructor(
             // canonical row/user state is preserved; only the provider evidence
             // moves, preventing chapter 4 from ever resolving to chapter 126.
             val selected = when {
+                legacyUnqualifiedMergeTarget != null -> legacyUnqualifiedMergeTarget
                 mappedIdentityConflicts -> reusableByIdentity ?: newChapter(
                     canonicalTitleId = canonicalTitleId,
                     observation = observation,
@@ -336,7 +535,8 @@ class ReconcileChapterEvidence internal constructor(
         }
 
         canonicalChapterRepository.upsertBatch(chapterUpserts.values.toList(), emptyList())
-        evidenceRepository.upsertBatch(evidenceUpserts).forEach { persisted ->
+        val persistedWrites = evidenceRepository.upsertBatch(evidenceUpserts)
+        persistedWrites.forEach { persisted ->
             persistedEvidence[persisted.evidence.id] = persisted
         }
 
@@ -386,6 +586,7 @@ class ReconcileChapterEvidence internal constructor(
                 },
             ),
         )
+        return persistedWrites
     }
 
     private fun MutableMap<ChapterInventoryDiagnosticReason, Int>.increment(
@@ -400,9 +601,14 @@ class ReconcileChapterEvidence internal constructor(
         volumeIsAmbiguous: Boolean,
     ): Boolean {
         val parsed = parser.execute(evidence.rawLabel, evidence.rawNumber)
+        val unsafeSourceEvidence = evidence.producerKind == ProducerKind.ADDON &&
+            evidence.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+            isUnsafeProvisionalChapterEvidence(parsed, evidence.rawLabel, evidence.rawNumber)
         return evidence.confidence >= RELIABLE_CONFIDENCE &&
             parsed.confidence >= RELIABLE_CONFIDENCE &&
             parsed.identity.isSpecific &&
+            !hasConflictingIntegerChapterHint(parsed, evidence.rawNumber) &&
+            !unsafeSourceEvidence &&
             parsed.identity == chapter.identity &&
             when {
                 evidence.volume == null -> !volumeIsAmbiguous
@@ -410,6 +616,97 @@ class ReconcileChapterEvidence internal constructor(
                 else -> evidence.volume == chapter.volume
             }
     }
+
+    private fun isSupersededSameProducerObservation(
+        observation: ChapterEvidence,
+        persistedEvidence: Map<String, PersistedChapterEvidence>,
+        persistedEvidenceByExternalKey: Map<EvidenceExternalKey, PersistedChapterEvidence>,
+    ): Boolean {
+        if (
+            observation.producerKind != ProducerKind.ADDON ||
+            observation.externalChapterKey.isNullOrBlank()
+        ) {
+            return false
+        }
+        val externalKey = EvidenceExternalKey(
+            observation.producerKind,
+            observation.producerId,
+            observation.externalChapterKey,
+        )
+        val previous = persistedEvidenceByExternalKey[externalKey]
+            ?: persistedEvidence[observation.id]
+            ?: return false
+        if (observation.observedAt < previous.evidence.observedAt) return true
+        if (observation.observedAt > previous.evidence.observedAt) return false
+
+        // Equal provider fetch-start timestamps do not establish ordering. A byte-for-byte
+        // replay is idempotent; contradictory data is stale/ambiguous and must not abort
+        // unrelated provider evidence in the same refresh.
+        return observation.copy(id = previous.evidence.id) != previous.evidence
+    }
+
+    private suspend fun isSupersededCrossProducerObservation(
+        observation: ChapterEvidence,
+        parsedIdentityIsReliable: Boolean,
+        parsedIdentity: CanonicalChapterIdentity,
+        currentChapters: Map<String, CanonicalChapter>,
+        persistedEvidence: Collection<PersistedChapterEvidence>,
+    ): Boolean {
+        val externalKey = observation.externalChapterKey ?: return false
+        val candidates = persistedEvidence.filter { persisted ->
+            persisted.evidence.producerKind == ProducerKind.ADDON &&
+                persisted.evidence.producerId != observation.producerId &&
+                (
+                    observation.producerId.startsWith(LEGACY_PRODUCER_PREFIX) ||
+                        persisted.evidence.producerId.startsWith(LEGACY_PRODUCER_PREFIX)
+                    ) &&
+                persisted.evidence.externalChapterKey == externalKey
+        }
+        if (candidates.isEmpty()) return false
+        val latestObservedAt = candidates.maxOf { it.evidence.observedAt }
+        if (latestObservedAt < observation.observedAt) return false
+        val latest = candidates.filter { it.evidence.observedAt == latestObservedAt }
+        val selected = latest.first()
+        if (latest.drop(1).any { !samePersistedObservation(selected, it) }) return true
+
+        val mappedChapterId = selected.mappedCanonicalChapterId ?: return true
+        val mappedChapter = currentChapters[mappedChapterId]
+            ?: canonicalChapterRepository.getById(mappedChapterId)
+            ?: error("Newer chapter evidence maps to missing chapter $mappedChapterId")
+        require(mappedChapter.canonicalTitleId == observation.canonicalTitleId) {
+            "Newer chapter evidence maps to a chapter from another canonical title"
+        }
+
+        val sameReliableIdentity = parsedIdentityIsReliable &&
+            mappedChapter.identity.isSpecific &&
+            parsedIdentity == mappedChapter.identity
+        return !sameReliableIdentity || observation.volume != mappedChapter.volume
+    }
+
+    private fun crossProducerMappedEvidence(
+        observation: ChapterEvidence,
+        persistedEvidence: Collection<PersistedChapterEvidence>,
+    ): PersistedChapterEvidence? {
+        if (observation.producerKind != ProducerKind.ADDON) return null
+        val externalKey = observation.externalChapterKey ?: return null
+        val observationIsLegacy = observation.producerId.startsWith(LEGACY_PRODUCER_PREFIX)
+        return persistedEvidence
+            .filter { persisted ->
+                persisted.evidence.producerKind == ProducerKind.ADDON &&
+                    persisted.evidence.producerId != observation.producerId &&
+                    persisted.evidence.producerId.startsWith(LEGACY_PRODUCER_PREFIX) != observationIsLegacy &&
+                    persisted.evidence.externalChapterKey == externalKey &&
+                    persisted.mappedCanonicalChapterId != null
+            }
+            .maxByOrNull { it.evidence.observedAt }
+    }
+
+    private fun samePersistedObservation(
+        first: PersistedChapterEvidence,
+        second: PersistedChapterEvidence,
+    ): Boolean = first.evidence.copy(id = "") == second.evidence.copy(id = "") &&
+        first.mappedCanonicalChapterId == second.mappedCanonicalChapterId &&
+        first.rawMetadata.contentEquals(second.rawMetadata)
 
     private fun newChapter(
         canonicalTitleId: String,
@@ -450,6 +747,7 @@ class ReconcileChapterEvidence internal constructor(
     }
 
     private companion object {
+        const val LEGACY_PRODUCER_PREFIX = "mihon-legacy:"
         const val RELIABLE_CONFIDENCE = 0.95
     }
 

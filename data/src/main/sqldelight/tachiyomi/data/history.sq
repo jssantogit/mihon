@@ -73,3 +73,17 @@ WHERE chapter_id = :chapterId;
 getReadDuration:
 SELECT coalesce(sum(time_read), 0)
 FROM history;
+
+-- Strict, additive update from the canonical outbox. Must be in the same
+-- transaction as acknowledging its pending duration, never called through
+-- HistoryRepositoryImpl.upsertHistory (which swallows failures).
+projectTsuzukiHistory:
+INSERT INTO history(chapter_id, last_read, time_read)
+VALUES (:mihonChapterId, :readAt, :duration)
+ON CONFLICT(chapter_id) DO UPDATE SET
+    last_read = CASE
+        WHEN history.last_read IS NULL OR history.last_read < excluded.last_read
+        THEN excluded.last_read
+        ELSE history.last_read
+    END,
+    time_read = history.time_read + excluded.time_read;
