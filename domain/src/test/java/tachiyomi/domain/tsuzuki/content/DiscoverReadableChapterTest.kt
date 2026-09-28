@@ -223,6 +223,7 @@ class DiscoverReadableChapterTest {
             FastDiscoveryCompletion.FOUND
     }
 
+    // Physical AoT/JJK regression: keep searching within the remaining bounded budget.
     @Test
     fun `chapter discovery spends remaining query budget on a second addon wave`() = runTest {
         val first = installed("a-first", 1L)
