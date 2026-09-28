@@ -67,6 +67,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchMode
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchProgress
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSearchRequest
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingSourceOutcome
+import tachiyomi.domain.tsuzuki.content.interactor.ContentOptionLookup
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -444,12 +445,16 @@ class MihonRuntimeEndToEndIntegrationTest {
             journey.refresh()
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
-            val options = journey.options(chapter.id)
+            val lookup = journey.lookupOptions(chapter.id)
+            val options = lookup.options
             val optionLanguages = options.map { it.language }
             if (optionLanguages != listOf("pt-BR")) {
                 throw AssertionError(
                     "Expected the pt-BR option to survive the English HTTP 503; " +
-                        "actualLanguages=$optionLanguages; ${journey.partialSourceDiagnosticSummary(chapter.id)}",
+                        "actualLanguages=$optionLanguages; " +
+                        "providerLookup=queried:${lookup.queriedProviderCount}," +
+                        "failed:${lookup.failedProviders.size},options:${lookup.options.size}; " +
+                        journey.partialSourceDiagnosticSummary(chapter.id),
                 )
             }
             journey.diagnostics.events.any {
@@ -964,7 +969,9 @@ class MihonRuntimeEndToEndIntegrationTest {
         suspend fun refresh() = refresh.execute(canonicalTitleId).getOrThrow()
         suspend fun refreshBinding(binding: ContentBinding) = refresh.executeForBinding(binding).getOrThrow()
         suspend fun installedSources() = harness.gateway.listInstalled("en")
-        suspend fun options(chapterId: String) = selector.lookupOptions(canonicalTitleId, chapterId).options
+        suspend fun lookupOptions(chapterId: String): ContentOptionLookup =
+            selector.lookupOptions(canonicalTitleId, chapterId)
+
         suspend fun partialSourceDiagnosticSummary(chapterId: String): String {
             val languageBySourceId = harness.sources.associate { it.id to it.lang }
             val bindingsByLanguage = bindings.getByTitle(canonicalTitleId)
@@ -1018,6 +1025,18 @@ class MihonRuntimeEndToEndIntegrationTest {
                         ",blocked=${event.availabilityBlocked},reasons=$reasons)"
                 }
                 .ifEmpty { "NONE" }
+            val selectorDiagnostics = diagnostics.events
+                .filter { it.stage == ChapterInventoryDiagnosticStage.CONTENT_SELECTOR }
+                .joinToString(",") { event ->
+                    val reasons = event.reasons.entries.sortedBy { it.key.name }
+                        .joinToString(",") { (reason, count) -> "${reason.name}:$count" }
+                        .ifEmpty { "NONE" }
+                    "${event.outcome.name}(received=${event.received ?: "UNKNOWN"}" +
+                        ",accepted=${event.accepted ?: "UNKNOWN"}" +
+                        ",discarded=${event.discarded ?: "UNKNOWN"}" +
+                        ",blocked=${event.availabilityBlocked},reasons=$reasons)"
+                }
+                .ifEmpty { "NONE" }
             fun countsByLanguage(counts: Map<String, Int>): String = counts.entries
                 .joinToString(",") { (language, count) -> "$language:$count" }
                 .ifEmpty { "NONE" }
@@ -1035,7 +1054,8 @@ class MihonRuntimeEndToEndIntegrationTest {
                 "|evidenceByLanguage=$evidenceSummary" +
                 "|variantsByLanguage=${countsByLanguage(variantsByLanguage)}" +
                 "|inventoryDiagnosticsByLanguage=$inventoryDiagnostics" +
-                "|contentProviderDiagnostics=$providerDiagnostics"
+                "|contentProviderDiagnostics=$providerDiagnostics" +
+                "|contentSelectorDiagnostics=$selectorDiagnostics"
         }
         suspend fun prepare(option: ContentOption) =
             readerPreparation.execute(option.canonicalChapterId, selectedOption = option)
