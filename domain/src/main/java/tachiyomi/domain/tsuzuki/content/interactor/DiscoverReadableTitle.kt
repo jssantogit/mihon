@@ -123,24 +123,18 @@ class DiscoverReadableTitle internal constructor(
             val missingConfiguredSourceIds = configuredSourceIds
                 .filterNot { it in attemptedSourceIds }
                 .toSet()
-            if (
-                currentBindings.isNotEmpty() &&
-                !broadenExistingBindings &&
-                missingConfiguredSourceIds.isEmpty()
-            ) {
-                return Result.success(currentBindings)
-            }
+            val currentBoundAddonIds = currentBindings.mapTo(linkedSetOf(), ContentBinding::addonId)
             val discovered = mutableListOf<ContentBinding>()
 
             for (wave in 0 until MAX_TITLE_DISCOVERY_WAVES) {
+                val remainingConfiguredSourceIds = missingConfiguredSourceIds
+                    .filterNot { it in attemptedSourceIds }
+                    .toSet()
+                val restrictToConfigured = !broadenExistingBindings && remainingConfiguredSourceIds.isNotEmpty()
                 val remainingEligibility = baseEligibility.mapValues { (_, sources) ->
                     sources.filterNot { source ->
                         source.sourceId in attemptedSourceIds ||
-                            (
-                                currentBindings.isNotEmpty() &&
-                                    !broadenExistingBindings &&
-                                    source.sourceId !in missingConfiguredSourceIds
-                                )
+                            (restrictToConfigured && source.sourceId !in remainingConfiguredSourceIds)
                     }
                 }
                 val targets = planner.execute(
@@ -196,7 +190,8 @@ class DiscoverReadableTitle internal constructor(
                     discovered += result.bindings
                 }
                 val remainingConfigured = missingConfiguredSourceIds.any { it !in attemptedSourceIds }
-                if (discovered.isNotEmpty() && !remainingConfigured) break
+                val boundAddonCount = (currentBoundAddonIds + discovered.map(ContentBinding::addonId)).size
+                if (!remainingConfigured && boundAddonCount >= MIN_AUTOMATIC_ADDON_BINDINGS) break
                 if (attemptedSourceIds.size == before) break
             }
             Result.success((currentBindings + discovered).distinctBy(ContentBinding::id))
@@ -214,6 +209,7 @@ class DiscoverReadableTitle internal constructor(
 
     private companion object {
         const val MAX_TITLE_DISCOVERY_WAVES = 3
+        const val MIN_AUTOMATIC_ADDON_BINDINGS = 2
         const val TITLE_DISCOVERY_SOURCE_TIMEOUT_MILLIS = 3_000L
     }
 }

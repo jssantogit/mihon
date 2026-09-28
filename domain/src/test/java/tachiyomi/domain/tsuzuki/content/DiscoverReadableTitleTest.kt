@@ -325,6 +325,44 @@ class DiscoverReadableTitleTest {
         }
 
     @Test
+    fun `one existing addon searches a bounded second automatic addon fallback`() = runTest {
+        val existingAddon = installed("existing", 1L)
+        val fallbackAddon = installed("fallback", 2L)
+        val existing = binding(existingAddon.id, 1L)
+        val searched = mutableListOf<Long>()
+        val discover = DiscoverReadableTitle(
+            existingBindings = { listOf(existing) },
+            installedAddons = { listOf(existingAddon, fallbackAddon) },
+            sourceEligibility = { addonId ->
+                if (addonId == existingAddon.id) listOf(source(1L, "en")) else listOf(source(2L, "pt-BR"))
+            },
+            preferredLanguages = { listOf("pt-BR", "en") },
+            preferredSourceIds = { emptyList() },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "pt-BR",
+                            outcome = ContentBindingSourceOutcome.BOUND,
+                            bindings = listOf(binding(fallbackAddon.id, sourceId)),
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            planner = PlanFastReadingDiscovery(),
+        )
+
+        val bindings = discover.execute("title").getOrThrow()
+
+        bindings.map(ContentBinding::addonId).toSet() shouldBe setOf(existingAddon.id, fallbackAddon.id)
+        searched shouldBe listOf(2L)
+    }
+
+    @Test
     fun `existing usable reading binding stops title discovery immediately`() = runTest {
         var searches = 0
         val addon = installed("preferred", 42L)

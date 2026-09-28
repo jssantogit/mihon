@@ -293,7 +293,7 @@ class ReconcileChapterEvidenceTest {
             externalChapterKey = "stable-source-key",
         )?.mappedCanonicalChapterId shouldBe originalChapterId
         fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
-            listOf(originalChapterId, "historical-duplicate")
+            listOf(originalChapterId)
     }
 
     @Test
@@ -774,29 +774,30 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
-    fun `reliable addon refresh collapses exact legacy duplicate canonical rows`() = runTest {
+    fun `reliable addon refresh removes unsupported exact duplicate of a stably mapped zero chapter`() = runTest {
         val fixture = fixture()
-        fixture.chapterRepository.upsert(existingChapter("chapter-first"))
-        fixture.chapterRepository.upsert(existingChapter("chapter-second"))
+        val observation = fixture.addonEvidence(
+            id = "mangadex-zero",
+            rawLabel = "Chapter 0",
+            externalKey = "mangadex-zero",
+        )
+        fixture.reconciler.execute("title", listOf(observation))
+        val mappedZero = fixture.chapterRepository.getByCanonicalTitleId("title").single()
 
-        fixture.reconciler.execute(
-            "title",
-            listOf(
-                fixture.addonEvidence(
-                    id = "fresh-chapter-four",
-                    rawLabel = "Chapter 4",
-                    externalKey = "source-four",
-                ),
+        fixture.chapterRepository.upsert(
+            existingChapter("legacy-zero").copy(
+                displayNumber = "0",
+                baseNumber = 0,
             ),
         )
+        fixture.reconciler.execute("title", listOf(observation.copy(id = "refresh")))
 
-        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
-            listOf("chapter-first")
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(mappedZero.id)
         fixture.evidenceRepository.getByProducerExternalKey(
             producerKind = ProducerKind.ADDON,
             producerId = "addon",
-            externalChapterKey = "source-four",
-        )?.mappedCanonicalChapterId shouldBe "chapter-first"
+            externalChapterKey = "mangadex-zero",
+        )?.mappedCanonicalChapterId shouldBe mappedZero.id
     }
 
     @Test

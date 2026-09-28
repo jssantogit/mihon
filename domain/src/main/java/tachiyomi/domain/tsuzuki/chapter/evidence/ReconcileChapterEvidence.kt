@@ -111,8 +111,12 @@ class ReconcileChapterEvidence internal constructor(
     private suspend fun consolidateExactLegacyDuplicates(
         canonicalTitleId: String,
         chapters: List<CanonicalChapter>,
-    ): List<CanonicalChapter> {
-        val mutable = chapters.associateByTo(linkedMapOf(), CanonicalChapter::id)
+        persistedEvidence: List<PersistedChapterEvidence>,
+    ): Boolean {
+        val supportCountByChapter = persistedEvidence
+            .mapNotNull(PersistedChapterEvidence::mappedCanonicalChapterId)
+            .groupingBy { it }
+            .eachCount()
         val groups = chapters
             .filter {
                 it.type == tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR &&
@@ -120,14 +124,17 @@ class ReconcileChapterEvidence internal constructor(
             }
             .groupBy { it.identity to it.volume }
             .values
-            .filter { it.size > 1 }
+            .filter { group ->
+                group.size > 1 && group.any { supportCountByChapter.getOrDefault(it.id, 0) > 0 }
+            }
 
         var changed = false
         groups.forEach { duplicateGroup ->
             val ordered = duplicateGroup.sortedWith(
-                compareByDescending<CanonicalChapter> {
-                    it.confirmation == CanonicalChapterConfirmation.CONFIRMED
-                }.thenBy { it.createdAt }.thenBy { it.id },
+                compareByDescending<CanonicalChapter> { supportCountByChapter.getOrDefault(it.id, 0) }
+                    .thenByDescending { it.confirmation == CanonicalChapterConfirmation.CONFIRMED }
+                    .thenBy { it.createdAt }
+                    .thenBy { it.id },
             )
             var preferred = ordered.first()
             ordered.drop(1).forEach { candidate ->
@@ -137,7 +144,6 @@ class ReconcileChapterEvidence internal constructor(
                     duplicateChapterId = candidate.id,
                 )
                 if (forward) {
-                    mutable.remove(candidate.id)
                     changed = true
                 } else {
                     val reverse = canonicalChapterRepository.consolidateExactDuplicateIfSafe(
@@ -146,32 +152,33 @@ class ReconcileChapterEvidence internal constructor(
                         duplicateChapterId = preferred.id,
                     )
                     if (reverse) {
-                        mutable.remove(preferred.id)
                         preferred = candidate
                         changed = true
                     }
                 }
             }
         }
-        return if (changed) {
-            canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
-        } else {
-            mutable.values.toList()
-        }
+        return changed
     }
 
     private suspend fun reconcileUncontended(
         canonicalTitleId: String,
         evidence: List<ChapterEvidence>,
     ): List<PersistedChapterEvidence> {
-        val initialChapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
-        val normalizedChapters = consolidateExactLegacyDuplicates(
-            canonicalTitleId = canonicalTitleId,
-            chapters = initialChapters,
-        )
-        val chapters = normalizedChapters.associateByTo(linkedMapOf(), CanonicalChapter::id)
-        val persistedEvidence = evidenceRepository
-            .getByCanonicalTitleId(canonicalTitleId)
+        var chapterSnapshot = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+        var evidenceSnapshot = evidenceRepository.getByCanonicalTitleId(canonicalTitleId)
+        if (
+            consolidateExactLegacyDuplicates(
+                canonicalTitleId = canonicalTitleId,
+                chapters = chapterSnapshot,
+                persistedEvidence = evidenceSnapshot,
+            )
+        ) {
+            chapterSnapshot = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+            evidenceSnapshot = evidenceRepository.getByCanonicalTitleId(canonicalTitleId)
+        }
+        val chapters = chapterSnapshot.associateByTo(linkedMapOf(), CanonicalChapter::id)
+        val persistedEvidence = evidenceSnapshot
             .associateBy { it.evidence.id }
             .toMutableMap()
         val persistedEvidenceByExternalKey = persistedEvidence.values
