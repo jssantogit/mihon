@@ -1219,6 +1219,7 @@ class MihonContentProviderTest {
         materializations shouldBe 0
     }
 
+    // Physical Tokyo Ghoul: a lone MangaDot Chapter 0 must not terminate discovery as readable.
     @Test
     fun `single provider plain zero is not trusted without independent chapter support`() = runTest {
         val linked = binding(
