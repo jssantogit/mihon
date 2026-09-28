@@ -34,12 +34,17 @@ internal object CanonicalChapterCandidateResolver {
                 }
                 return CanonicalChapterCandidateResolution.UniqueMatch(unqualifiedCandidates.single())
             }
-            // Unknown volume is not a reason to duplicate an otherwise unique
-            // chapter identity. Reuse a sole candidate regardless of its known volume.
-            // If the same chapter number exists in multiple volumes, remain fail-closed.
-            return candidates.singleOrNull()
-                ?.let(CanonicalChapterCandidateResolution::UniqueMatch)
-                ?: CanonicalChapterCandidateResolution.Ambiguous
+            // Reliable Add-on inventory may omit volume metadata even when another
+            // source supplied it. Reuse a sole candidate instead of duplicating the
+            // same numbered chapter. Editorial/unqualified evidence remains fail-closed,
+            // and multiple volume candidates are always ambiguous.
+            return if (allowUnqualifiedCandidateCreation) {
+                candidates.singleOrNull()
+                    ?.let(CanonicalChapterCandidateResolution::UniqueMatch)
+                    ?: CanonicalChapterCandidateResolution.Ambiguous
+            } else {
+                CanonicalChapterCandidateResolution.Ambiguous
+            }
         }
 
         val matchingVolume = candidates.filter { it.volume == observedVolume }
