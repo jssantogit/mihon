@@ -420,8 +420,22 @@ class CanonicalChapterRepositoryImplTest {
             projection.execute(listOf(original), observedAt = 100L)
             val oldVariant = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
             val before = evidenceRepository.getByCanonicalTitleId("title-1")
-            val good = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 5", "/chapter/5")
-            val bad = legacyInventory(8L, "mapping-2", "pt-BR", "Vol. 2 Ch. 6", "/chapter/6")
+            val good = legacyInventory(
+                7L,
+                "mapping-1",
+                "en",
+                "Vol. 1 Ch. 5",
+                "/chapter/5",
+                rawNumberHint = 5.0,
+            )
+            val bad = legacyInventory(
+                8L,
+                "mapping-2",
+                "pt-BR",
+                "Vol. 2 Ch. 6",
+                "/chapter/6",
+                rawNumberHint = 6.0,
+            )
             // Fail after the first variant INSERT, not during source validation,
             // so the database proves the whole projection transaction rolls back.
             driver.execute(
@@ -505,7 +519,13 @@ class CanonicalChapterRepositoryImplTest {
             )
             evidenceRepository.upsert(newerEvidence, mappedCanonicalChapterId = null)
 
-            val stale = legacyInventory(7L, "mapping-1", "en", "Chapter 1").copy(
+            val stale = legacyInventory(
+                7L,
+                "mapping-1",
+                "en",
+                "Chapter 1",
+                rawNumberHint = 1.0,
+            ).copy(
                 fetchStartedAtMillis = 100L,
             )
             projection.execute(listOf(stale), observedAt = 300L) shouldBe emptyList()
@@ -1024,9 +1044,7 @@ class CanonicalChapterRepositoryImplTest {
             }
 
             val delayed = en.copy(chapters = en.chapters.map { it.copy(rawName = "Vol. 1 Ch. 4 - delayed") })
-            shouldThrow<IllegalArgumentException> {
-                projector.execute(listOf(delayed), observedAt = 250L)
-            }
+            projector.execute(listOf(delayed), observedAt = 250L) shouldBe emptyList()
 
             repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
             repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe englishBefore
@@ -1039,9 +1057,7 @@ class CanonicalChapterRepositoryImplTest {
                 fetchStartedAtMillis = 150L,
                 chapters = en.chapters.map { it.copy(rawName = "Vol. 1 Ch. 4 - stale cached response") },
             )
-            shouldThrow<IllegalArgumentException> {
-                projector.execute(listOf(cachedDelayed), observedAt = 400L)
-            }
+            projector.execute(listOf(cachedDelayed), observedAt = 400L) shouldBe emptyList()
             repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
             repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe englishBefore
 
@@ -1076,9 +1092,7 @@ class CanonicalChapterRepositoryImplTest {
             val ambiguous = initial.copy(
                 chapters = initial.chapters.map { it.copy(rawName = "Vol. 2 Ch. 4") },
             )
-            shouldThrow<IllegalArgumentException> {
-                projection.execute(listOf(ambiguous), observedAt = 600L)
-            }
+            projection.execute(listOf(ambiguous), observedAt = 600L) shouldBe emptyList()
 
             repository.getByCanonicalTitleId("title-1") shouldBe chaptersBefore
             repository.getVariantBySourceIdentity(7L, "/chapter/4") shouldBe variantBefore
