@@ -1146,6 +1146,65 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `titled zero placeholder cannot create canonical mapping without trustworthy identity`() = runTest {
+        val fixture = fixture()
+        val ambiguous = fixture.addonEvidence(
+            id = "chapter-zero-titled-placeholder",
+            rawLabel = "Chapter 0: Tragedy",
+            externalKey = "source-key-zero-title",
+        ).copy(rawNumber = 0.0)
+
+        fixture.reconciler.execute("title", listOf(ambiguous))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-zero-title",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `deleted fractional tombstone cannot create canonical mapping`() = runTest {
+        val fixture = fixture()
+        val deleted = fixture.addonEvidence(
+            id = "deleted-fractional-placeholder",
+            rawLabel = "Chapter 0.1: vol.[DELETED] ch.[DELETED]",
+            externalKey = "source-key-deleted-fractional",
+        ).copy(rawNumber = 0.1)
+
+        fixture.reconciler.execute("title", listOf(deleted))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-key-deleted-fractional",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
+    fun `plain zero and fractional chapter evidence remain valid`() = runTest {
+        val fixture = fixture()
+        val zero = fixture.addonEvidence(
+            id = "chapter-zero",
+            rawLabel = "Chapter 0",
+            externalKey = "source-key-zero",
+        ).copy(rawNumber = 0.0)
+        val half = fixture.addonEvidence(
+            id = "chapter-zero-half",
+            rawLabel = "Chapter 0.5",
+            externalKey = "source-key-zero-half",
+        ).copy(rawNumber = 0.5)
+
+        fixture.reconciler.execute("title", listOf(zero, half))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title")
+            .map { it.displayNumber }
+            .toSet() shouldBe setOf("0", "0.5")
+    }
+
+    @Test
     fun `stale same-provider observation is discarded without aborting a fresh sibling`() = runTest {
         val fixture = fixture()
         val current = fixture.addonEvidence(
