@@ -482,6 +482,7 @@ class RefreshChapterEvidenceTest {
             addonRegistry = addonRegistry,
             resolveContentBinding = bindingResolver,
             contentOptionCache = cache,
+            inFlightContentResolution = inFlight,
             diagnostics = NoOpChapterInventoryDiagnostics,
         )
         val preferenceRepository = object : ContentPreferenceRepository {

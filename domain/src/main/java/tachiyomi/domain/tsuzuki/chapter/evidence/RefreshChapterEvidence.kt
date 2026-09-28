@@ -20,6 +20,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
+import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingConfirmationRequiredException
 import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundException
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
@@ -31,11 +32,31 @@ class RefreshChapterEvidence private constructor(
     private val addonRegistry: AddonRegistry?,
     private val resolveContentBinding: ResolveContentBinding?,
     private val contentOptionCache: ContentOptionCache?,
+    private val inFlightContentResolution: InFlightContentResolution?,
     private val diagnostics: ChapterInventoryDiagnostics,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
     @Inject
+    constructor(
+        registry: IntegrationRegistry,
+        reconcileChapterEvidence: ReconcileChapterEvidence,
+        addonRegistry: AddonRegistry,
+        resolveContentBinding: ResolveContentBinding,
+        contentOptionCache: ContentOptionCache,
+        inFlightContentResolution: InFlightContentResolution,
+        diagnostics: ChapterInventoryDiagnostics,
+    ) : this(
+        registry = registry,
+        reconcileChapterEvidence = reconcileChapterEvidence,
+        addonRegistry = addonRegistry,
+        resolveContentBinding = resolveContentBinding,
+        contentOptionCache = contentOptionCache,
+        inFlightContentResolution = inFlightContentResolution,
+        diagnostics = diagnostics,
+        constructorMarker = Unit,
+    )
+
     constructor(
         registry: IntegrationRegistry,
         reconcileChapterEvidence: ReconcileChapterEvidence,
@@ -49,6 +70,7 @@ class RefreshChapterEvidence private constructor(
         addonRegistry = addonRegistry,
         resolveContentBinding = resolveContentBinding,
         contentOptionCache = contentOptionCache,
+        inFlightContentResolution = null,
         diagnostics = diagnostics,
         constructorMarker = Unit,
     )
@@ -62,6 +84,7 @@ class RefreshChapterEvidence private constructor(
         addonRegistry = null,
         resolveContentBinding = null,
         contentOptionCache = null,
+        inFlightContentResolution = null,
         diagnostics = NoOpChapterInventoryDiagnostics,
         constructorMarker = Unit,
     )
@@ -78,7 +101,8 @@ class RefreshChapterEvidence private constructor(
             }
             reconcileChapterEvidence.execute(canonicalTitleId, evidence)
             // Chapter mappings may have changed; never serve stale provider
-            // options that were resolved against a previous evidence graph.
+            // work or cached options that were resolved against an older graph.
+            inFlightContentResolution?.invalidateTitle(canonicalTitleId)
             contentOptionCache?.invalidateTitle(canonicalTitleId)
             Result.success(Unit)
         } catch (error: CancellationException) {
@@ -127,6 +151,7 @@ class RefreshChapterEvidence private constructor(
                 },
             ) { "Targeted inventory belongs to another title or Add-on" }
             reconcileChapterEvidence.execute(binding.canonicalTitleId, observations)
+            inFlightContentResolution?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
             contentOptionCache?.invalidateTitleAddon(binding.canonicalTitleId, binding.addonId)
             Result.success(Unit)
         } catch (error: CancellationException) {
