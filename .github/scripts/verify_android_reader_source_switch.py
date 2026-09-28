@@ -109,7 +109,8 @@ DETAIL_SETUP_DIAGNOSTIC_KEYS = (
     "scenario", "state", "localLoad", "refreshing", "startJob", "stateError", "refreshError",
     "integrationReady", "addonReady", "providerCount", "bindingGate", "sourceEligible",
     "bindingSelection", "bindingPayload", "manga", "source", "fixtureOrigin", "fixturePath",
-    "aHttp", "bHttp", "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
+    "aHttp", "bHttp", "serverRequests", "unknownSourceRequests", "aOther", "bOther",
+    "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
     "routeRendered", "routeTitleMatches", "routeModel", "probe",
 )
 DETAIL_SETUP_STATES = {"LOADING", "LOADED", "ERROR"}
@@ -135,6 +136,12 @@ DETAIL_SETUP_HTTP_OUTCOMES = {
     "SocketTimeoutException:SOCKET_TIMEOUT",
     "IOException:CLEARTEXT_BLOCKED", "IOException:CANCELLED", "IOException:OTHER_IO_FAILURE",
 }
+
+
+def _valid_detail_http_outcome(value: str) -> bool:
+    return value in DETAIL_SETUP_HTTP_OUTCOMES or re.fullmatch(r"HTTP_[1-5][0-9]{2}", value) is not None
+
+
 DETAIL_SETUP_ROUTE_MODELS = {"SCREEN", "UNKNOWN"}
 DETAIL_SETUP_PROBE_STAGES = {"UI", "CHAPTER_PROBE", "CHAPTER_INVENTORY"}
 DETAIL_SETUP_PROBE_OUTCOMES = {
@@ -440,8 +447,8 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         or fields["source"] not in DETAIL_SETUP_SOURCE
         or fields["fixtureOrigin"] not in DETAIL_SETUP_FIXTURE_MATCH
         or fields["fixturePath"] not in DETAIL_SETUP_FIXTURE_MATCH
-        or fields["aHttp"] not in DETAIL_SETUP_HTTP_OUTCOMES
-        or fields["bHttp"] not in DETAIL_SETUP_HTTP_OUTCOMES
+        or not _valid_detail_http_outcome(fields["aHttp"])
+        or not _valid_detail_http_outcome(fields["bHttp"])
         or fields["routeRendered"] not in {"TRUE", "FALSE"}
         or fields["routeTitleMatches"] not in {"TRUE", "FALSE"}
         or fields["routeModel"] not in DETAIL_SETUP_ROUTE_MODELS
@@ -452,7 +459,10 @@ def _detail_setup_diagnostic(output: str, method: str) -> dict[str, str] | None:
         return {"evidence": "MALFORMED"}
     if any(
         not re.fullmatch(r"[0-9]{1,6}", fields[key])
-        for key in ("aChapterRequests", "bChapterRequests", "aInventory", "aHeld")
+        for key in (
+            "serverRequests", "unknownSourceRequests", "aOther", "bOther",
+            "aChapterRequests", "bChapterRequests", "aInventory", "aHeld",
+        )
     ):
         return {"evidence": "MALFORMED"}
     if fields["probe"] != "NONE":

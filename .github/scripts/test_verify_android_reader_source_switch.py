@@ -212,6 +212,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            + "|serverRequests=2|unknownSourceRequests=0|aOther=0|bOther=0"
             + "|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
             + "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING"
@@ -238,6 +239,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             "integrationReady=TRUE|addonReady=TRUE|providerCount=2|bindingGate=ELIGIBLE"
             "|sourceEligible=TRUE|bindingSelection=SELECTED|bindingPayload=MATCH|manga=MATCH"
             "|source=SOURCE_A|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=STARTED|bHttp=NOT_STARTED"
+            "|serverRequests=2|unknownSourceRequests=0|aOther=0|bOther=0"
             "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
             "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
             "|probe=CHAPTER_PROBE:NO_BINDING:NO_BINDING",
@@ -254,6 +256,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             + "|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED|aInventory=0|aHeld=0"
             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+            + "|serverRequests=0|unknownSourceRequests=0|aOther=0|bOther=0"
             + "|aChapterRequests=0|bChapterRequests=0"
             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
         )
@@ -297,6 +300,30 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             {"evidence": "MALFORMED"},
             verifier._detail_setup_diagnostic(with_wrong_fixture_origin, method),
         )
+        with_unbounded_server_count = base.replace("serverRequests=0", "serverRequests=private")
+        self.assertEqual(
+            {"evidence": "MALFORMED"},
+            verifier._detail_setup_diagnostic(with_unbounded_server_count, method),
+        )
+
+    def test_detail_setup_diagnostic_accepts_sanitized_http_statuses(self):
+        method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
+        base = (
+            verifier.DETAIL_SETUP_DIAGNOSTIC_PREFIX
+            + "scenario=DETAIL_INVENTORY_INVALIDATE|state=LOADED|localLoad=PASSED|refreshing=TRUE"
+            + "|startJob=ACTIVE|stateError=NONE|refreshError=NONE|integrationReady=TRUE|addonReady=TRUE"
+            + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
+            + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
+            + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=HTTP_404|bHttp=HTTP_503"
+            + "|serverRequests=2|unknownSourceRequests=1|aOther=0|bOther=0"
+            + "|aChapterRequests=1|bChapterRequests=1|aInventory=0|aHeld=0"
+            + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN|probe=NONE"
+        )
+        fields = verifier._detail_setup_diagnostic(base, method)
+        self.assertIsNotNone(fields)
+        self.assertEqual("HTTP_404", fields["aHttp"])
+        self.assertEqual("2", fields["serverRequests"])
+        self.assertEqual("1", fields["unknownSourceRequests"])
 
     def test_detail_probe_parser_matches_domain_outcome_and_reason_enums(self):
         source = (
@@ -326,6 +353,7 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
                             + "|providerCount=1|bindingGate=ELIGIBLE|sourceEligible=TRUE|bindingSelection=SELECTED"
                             + "|bindingPayload=MATCH|manga=MATCH|source=SOURCE_A"
                             + "|fixtureOrigin=MATCH|fixturePath=MATCH|aHttp=NOT_STARTED|bHttp=NOT_STARTED"
+                            + "|serverRequests=0|unknownSourceRequests=0|aOther=0|bOther=0"
                             + "|aChapterRequests=0|bChapterRequests=0|aInventory=0|aHeld=0"
                             + "|routeRendered=TRUE|routeTitleMatches=TRUE|routeModel=SCREEN"
                             + f"|probe={stage}:{outcome}:{reason}"

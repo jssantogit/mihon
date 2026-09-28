@@ -444,6 +444,50 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `newer detail conflict cannot fork an existing legacy source chapter identity`() = runTest {
+        val fixture = fixture()
+        val legacyObservation = fixture.addonEvidence(
+            id = "legacy-chapter-one",
+            rawLabel = "Chapter 1",
+            externalKey = "101:/chapter/shared",
+            producerId = "mihon-legacy:title:101",
+        ).copy(observedAt = 100L)
+        fixture.reconciler.execute("title", listOf(legacyObservation))
+        val legacyChapter = fixture.chapterRepository.getByCanonicalTitleId("title").single()
+        val existingVariant = ChapterVariant(
+            id = "legacy-variant",
+            canonicalChapterId = legacyChapter.id,
+            sourceId = 101L,
+            sourceChapterId = "/chapter/shared",
+            rawName = "Chapter 1",
+        )
+        fixture.chapterRepository.upsertVariant(existingVariant)
+
+        val newerDetailObservation = fixture.addonEvidence(
+            id = "detail-chapter-two",
+            rawLabel = "Chapter 2",
+            externalKey = "101:/chapter/shared",
+            producerId = "detail-addon",
+        ).copy(observedAt = 200L)
+        fixture.reconciler.execute("title", listOf(newerDetailObservation))
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe listOf(legacyChapter.id)
+        fixture.chapterRepository.getById(legacyChapter.id)?.confirmation shouldBe
+            CanonicalChapterConfirmation.CONFLICTED
+        fixture.chapterRepository.getVariantBySourceIdentity(101L, "/chapter/shared") shouldBe existingVariant
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "mihon-legacy:title:101",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe legacyChapter.id
+        fixture.evidenceRepository.getByProducerExternalKey(
+            ProducerKind.ADDON,
+            "detail-addon",
+            "101:/chapter/shared",
+        )?.mappedCanonicalChapterId shouldBe null
+    }
+
+    @Test
     fun `conflicting addon observations with the same fetch start fail closed`() = runTest {
         val fixture = fixture()
         val firstObservation = fixture.addonEvidence(

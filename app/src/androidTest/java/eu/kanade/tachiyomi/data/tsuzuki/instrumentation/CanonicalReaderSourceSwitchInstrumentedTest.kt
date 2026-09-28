@@ -1932,7 +1932,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
         fun assertInventoryFixtureUrl(entry: LegacyReaderEntry) {
             val preflight = inventoryGatewayPreflight(entry)
-            assertEquals("Fixture source must retain MockWebServer's advertised origin", "MATCH", preflight.fixtureOrigin)
+            assertEquals(
+                "Fixture source must retain MockWebServer's advertised origin",
+                "MATCH",
+                preflight.fixtureOrigin,
+            )
             assertEquals("Fixture inventory path must match the local dispatcher route", "MATCH", preflight.fixturePath)
         }
 
@@ -2236,6 +2240,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             "|fixturePath=${gatewayPreflight.fixturePath}" +
                             "|aHttp=${sourceA.inventoryCallOutcome.get()}" +
                             "|bHttp=${sourceB.inventoryCallOutcome.get()}" +
+                            "|serverRequests=${server.requestCount}" +
+                            "|unknownSourceRequests=${dispatcher.unknownSourceRequestCount()}" +
+                            "|aOther=${dispatcher.routeCounts(sourceA.token).other}" +
+                            "|bOther=${dispatcher.routeCounts(sourceB.token).other}" +
                             "|aChapterRequests=${sourceA.chapterListRequestCount.get()}" +
                             "|bChapterRequests=${sourceB.chapterListRequestCount.get()}" +
                             "|aInventory=${dispatcher.routeCounts(token).inventory}" +
@@ -2286,8 +2294,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val actualInventoryUrl = URI(sourceA.baseUrl + legacyEntry.manga.url)
             val fixtureOrigin = if (
                 serverUrl.scheme == sourceBaseUrl.scheme &&
-                    serverUrl.host == sourceBaseUrl.host &&
-                    serverUrl.port == sourceBaseUrl.port
+                serverUrl.host == sourceBaseUrl.host &&
+                serverUrl.port == sourceBaseUrl.port
             ) {
                 "MATCH"
             } else {
@@ -2865,6 +2873,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
         private val routeRequestCounts =
             java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        private val unknownSourceRequests = AtomicInteger()
         private val heldResponses = java.util.concurrent.ConcurrentHashMap<String, CountDownLatch>()
         private val heldInventoryResponses = java.util.concurrent.ConcurrentHashMap<String, CountDownLatch>()
         private val heldRequestCounts =
@@ -2900,10 +2909,13 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
 
         fun imageRequestCount(token: String): Int = imageRequestCounts[token]?.get() ?: 0
 
+        fun unknownSourceRequestCount(): Int = unknownSourceRequests.get()
+
         fun routeCounts(token: String): FixtureRouteCounts = FixtureRouteCounts(
             search = routeRequestCount(token, "search"),
             inventory = routeRequestCount(token, "inventory"),
             pages = routeRequestCount(token, "pages"),
+            other = routeRequestCount(token, "other"),
         )
 
         private fun routeRequestCount(token: String, route: String): Int =
@@ -2913,10 +2925,13 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val path = request.url.encodedPath
             if (path.startsWith("/reader/")) {
                 val token = path.removePrefix("/reader/").substringBefore('/')
-                val behavior = behaviors[token] ?: return MockResponse.Builder()
-                    .code(404)
-                    .body("unknown fixture source")
-                    .build()
+                val behavior = behaviors[token] ?: run {
+                    unknownSourceRequests.incrementAndGet()
+                    return MockResponse.Builder()
+                        .code(404)
+                        .body("unknown fixture source")
+                        .build()
+                }
                 val route = when (path) {
                     "/reader/$token/search" -> "search"
                     "/reader/$token/manga" -> "inventory"
@@ -3131,11 +3146,13 @@ private data class FixtureRouteCounts(
     val search: Int,
     val inventory: Int,
     val pages: Int,
+    val other: Int,
 ) {
     operator fun minus(previous: FixtureRouteCounts) = FixtureRouteCounts(
         search = (search - previous.search).coerceAtLeast(0),
         inventory = (inventory - previous.inventory).coerceAtLeast(0),
         pages = (pages - previous.pages).coerceAtLeast(0),
+        other = (other - previous.other).coerceAtLeast(0),
     )
 }
 
@@ -3153,7 +3170,15 @@ private fun fixtureHttpClient(
             }
 
             override fun callEnd(call: Call) {
-                if (isInventoryCall(call)) inventoryCallOutcome.set("COMPLETED")
+                if (isInventoryCall(call) && inventoryCallOutcome.get() == "STARTED") {
+                    inventoryCallOutcome.set("COMPLETED")
+                }
+            }
+
+            override fun responseHeadersEnd(call: Call, response: Response) {
+                if (isInventoryCall(call)) {
+                    inventoryCallOutcome.set("HTTP_${response.code}")
+                }
             }
 
             override fun callFailed(call: Call, ioe: IOException) {
