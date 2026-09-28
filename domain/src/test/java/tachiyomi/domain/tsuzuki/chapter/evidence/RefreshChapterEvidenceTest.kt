@@ -388,7 +388,7 @@ class RefreshChapterEvidenceTest {
                             producerId = readableAddon.value,
                             externalChapterKey = "2:chapter-1",
                             rawLabel = "Chapter 1",
-                            rawNumber = 1,
+                            rawNumber = 1.0,
                             volume = null,
                             title = null,
                             observedAt = 10L,
