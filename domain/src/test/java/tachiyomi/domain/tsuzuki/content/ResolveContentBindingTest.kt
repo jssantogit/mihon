@@ -725,6 +725,7 @@ class ResolveContentBindingTest {
         gateway.searchedQueries shouldBe listOf("One-Punch Man", "One Punch Man")
     }
 
+    // Physical happy-path regression: catalog aliases are search aids, never identity proof.
     @Test
     fun `official catalog alias can safely establish an automatic reading binding`() = runTest {
         val repository = FakeContentBindingRepository(null)
