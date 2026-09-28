@@ -302,6 +302,21 @@ class ReconcileChapterEvidence internal constructor(
             }
 
             val identityCandidates = chaptersByIdentity[parsed.identity].orEmpty()
+            val legacyUnqualifiedMergeTarget = if (
+                parsedIdentityIsReliable &&
+                observation.producerKind == ProducerKind.ADDON &&
+                observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
+                observation.volume == null &&
+                mappedChapter != null &&
+                mappedChapter.volume == null
+            ) {
+                identityCandidates
+                    .filter { it.id != mappedChapter.id }
+                    .singleOrNull()
+                    ?.takeIf { it.volume != null }
+            } else {
+                null
+            }
             val candidateResolution = if (parsedIdentityIsReliable) {
                 CanonicalChapterCandidateResolver.resolve(
                     candidates = identityCandidates,
@@ -389,6 +404,7 @@ class ReconcileChapterEvidence internal constructor(
             // canonical row/user state is preserved; only the provider evidence
             // moves, preventing chapter 4 from ever resolving to chapter 126.
             val selected = when {
+                legacyUnqualifiedMergeTarget != null -> legacyUnqualifiedMergeTarget
                 mappedIdentityConflicts -> reusableByIdentity ?: newChapter(
                     canonicalTitleId = canonicalTitleId,
                     observation = observation,
