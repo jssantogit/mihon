@@ -3179,32 +3179,90 @@ private fun fixtureHttpClient(
     inventoryCallEvents: AtomicReference<String>,
     expectedOrigin: URI,
 ): OkHttpClient {
-    val callSequence = AtomicInteger()
+    fun callIdentifier(call: Call): String = java.lang.Integer.toHexString(System.identityHashCode(call))
+
+    fun requestKind(url: okhttp3.HttpUrl): String {
+        val originMatches = url.scheme == expectedOrigin.scheme &&
+            url.host == expectedOrigin.host &&
+            url.port == expectedOrigin.port
+        if (!originMatches) return "ORIGIN_MISMATCH"
+        return when {
+            url.encodedPath == "/reader/$token/manga" -> "INVENTORY"
+            url.encodedPath.startsWith("/reader/$token/") -> "SOURCE_OTHER"
+            else -> "OTHER"
+        }
+    }
+
+    fun recordEvent(callId: String, request: Request, event: String) {
+        val value = "C$callId:${requestKind(request.url)}_$event"
+        inventoryCallEvents.updateAndGet { current ->
+            val prior = current.split(',').filter { it != "NONE" }
+            (prior + value).takeLast(8).joinToString(",").ifBlank { "NONE" }
+        }
+    }
+
+    fun failureCategory(error: IOException): String {
+        val message = error.message.orEmpty().lowercase()
+        return when {
+            "cleartext" in message -> "CLEARTEXT_BLOCKED"
+            error is UnknownHostException -> "DNS_FAILURE"
+            error is ConnectException && "refused" in message -> "CONNECTION_REFUSED"
+            error is ConnectException -> "CONNECT_FAILURE"
+            error is SocketTimeoutException -> "SOCKET_TIMEOUT"
+            "canceled" in message -> "CANCELLED"
+            else -> "OTHER_IO_FAILURE"
+        }
+    }
+
     return OkHttpClient.Builder()
-        .eventListenerFactory {
-            val callId = java.lang.Integer.toHexString(callSequence.incrementAndGet())
+        .addInterceptor { chain ->
+            val call = chain.call()
+            val callId = callIdentifier(call)
+            val request = chain.request()
+            val cacheControl = request.cacheControl
+            recordEvent(
+                callId,
+                request,
+                "APP_REQUEST_ONLY_IF_CACHED_${cacheControl.onlyIfCached.toString().uppercase()}",
+            )
+            val hasCacheControlHeader = request.header("Cache-Control") != null
+            recordEvent(
+                callId,
+                request,
+                "APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_${hasCacheControlHeader.toString().uppercase()}",
+            )
+            val maxAgeCategory = when {
+                cacheControl.maxAgeSeconds < 0 -> "NONE"
+                cacheControl.maxAgeSeconds == 0 -> "ZERO"
+                else -> "POSITIVE"
+            }
+            recordEvent(callId, request, "APP_REQUEST_MAX_AGE_$maxAgeCategory")
+            try {
+                val response = chain.proceed(request)
+                val responseSource = when {
+                    response.cacheResponse != null && response.networkResponse != null -> "CACHE_AND_NETWORK"
+                    response.cacheResponse != null -> "CACHE_ONLY"
+                    response.networkResponse != null -> "NETWORK_ONLY"
+                    else -> "NO_CACHE_OR_NETWORK_METADATA"
+                }
+                recordEvent(callId, response.request, "APP_RESPONSE_HTTP_${response.code}_$responseSource")
+                response
+            } catch (error: IOException) {
+                recordEvent(callId, request, "APP_FAIL_${failureCategory(error)}")
+                throw error
+            } catch (error: Throwable) {
+                recordEvent(callId, request, "APP_FAIL_OTHER_EXCEPTION")
+                throw error
+            }
+        }
+        .eventListenerFactory { call ->
+            val callId = callIdentifier(call)
             object : EventListener() {
                 private fun isInventoryCall(call: Call): Boolean =
                     call.request().url.encodedPath == "/reader/$token/manga"
 
-                private fun requestKind(url: okhttp3.HttpUrl): String {
-                    val originMatches = url.scheme == expectedOrigin.scheme &&
-                        url.host == expectedOrigin.host &&
-                        url.port == expectedOrigin.port
-                    if (!originMatches) return "ORIGIN_MISMATCH"
-                    return when {
-                        url.encodedPath == "/reader/$token/manga" -> "INVENTORY"
-                        url.encodedPath.startsWith("/reader/$token/") -> "SOURCE_OTHER"
-                        else -> "OTHER"
-                    }
-                }
-
                 private fun recordEvent(call: Call, event: String, request: Request = call.request()) {
-                    val value = "C$callId:${requestKind(request.url)}_$event"
-                    inventoryCallEvents.updateAndGet { current ->
-                        val prior = current.split(',').filter { it != "NONE" }
-                        (prior + value).takeLast(8).joinToString(",").ifBlank { "NONE" }
-                    }
+                    recordEvent(callId, request, event)
                 }
 
                 override fun callStart(call: Call) {
@@ -3283,16 +3341,7 @@ private fun fixtureHttpClient(
                 }
 
                 override fun callFailed(call: Call, ioe: IOException) {
-                    val message = ioe.message.orEmpty().lowercase()
-                    val category = when {
-                        "cleartext" in message -> "CLEARTEXT_BLOCKED"
-                        ioe is UnknownHostException -> "DNS_FAILURE"
-                        ioe is ConnectException && "refused" in message -> "CONNECTION_REFUSED"
-                        ioe is ConnectException -> "CONNECT_FAILURE"
-                        ioe is SocketTimeoutException -> "SOCKET_TIMEOUT"
-                        "canceled" in message -> "CANCELLED"
-                        else -> "OTHER_IO_FAILURE"
-                    }
+                    val category = failureCategory(ioe)
                     recordEvent(call, "FAIL_$category")
                     if (isInventoryCall(call)) {
                         val exceptionClass = when (ioe) {

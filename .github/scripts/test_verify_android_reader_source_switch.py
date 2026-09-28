@@ -317,6 +317,30 @@ class VerifyAndroidReaderSourceSwitchTest(unittest.TestCase):
             verifier._detail_setup_diagnostic(with_unbounded_server_count, method),
         )
 
+    def test_detail_setup_call_trace_accepts_only_sanitized_interceptor_events(self):
+        allowed = (
+            "C1:INVENTORY_APP_REQUEST_ONLY_IF_CACHED_FALSE",
+            "C1:INVENTORY_APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_FALSE",
+            "C1:INVENTORY_APP_REQUEST_MAX_AGE_POSITIVE",
+            "C1:INVENTORY_APP_RESPONSE_HTTP_200_NETWORK_ONLY",
+            "C1:INVENTORY_APP_RESPONSE_HTTP_504_CACHE_ONLY",
+            "C1:INVENTORY_APP_FAIL_CONNECTION_REFUSED",
+            "C1:INVENTORY_APP_FAIL_OTHER_EXCEPTION",
+        )
+        for event in allowed:
+            with self.subTest(event=event):
+                self.assertTrue(verifier._valid_detail_call_events(event))
+
+        safe_trace = ",".join(allowed[:4])
+        self.assertTrue(verifier._valid_detail_call_events(safe_trace))
+        for unsafe in (
+            "C1:INVENTORY_APP_REQUEST_CACHE_CONTROL_HEADER_PRESENT_private-host",
+            "C1:INVENTORY_APP_RESPONSE_HTTP_200_private-title",
+            "C1:INVENTORY_APP_FAIL_java.net.ConnectException",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assertFalse(verifier._valid_detail_call_events(unsafe))
+
     def test_detail_setup_diagnostic_accepts_sanitized_http_statuses(self):
         method = "legacyReaderKeepsPagesAfterDetailInventoryInvalidation"
         base = (
