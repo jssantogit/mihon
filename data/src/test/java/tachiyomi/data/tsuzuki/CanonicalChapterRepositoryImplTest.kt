@@ -583,47 +583,44 @@ class CanonicalChapterRepositoryImplTest {
     }
 
     @Test
-    fun `staged projection keeps an unqualified chapter separate from a volume candidate`() = runBlocking<Unit> {
-        val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
-        val projection = ReconcileLegacyChapterEvidence(
-            LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
-            ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
-            repository,
-            SourceTitleMappingRepositoryImpl(database),
-        )
-        val volumeOne = chapter("chapter-volume-1").copy(volume = 1)
-        repository.upsert(volumeOne)
-        val explicit = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 1", rawNumberHint = 1.0)
-        val unqualified = legacyInventory(
-            8L,
-            "mapping-2",
-            "pt-BR",
-            "Chapter 1",
-            "/chapter/plain",
-            rawNumberHint = 1.0,
-        )
+    fun `staged projection reuses sole explicit volume candidate for reliable unqualified source`() =
+        runBlocking<Unit> {
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            val projection = ReconcileLegacyChapterEvidence(
+                LegacyInventoryEvidenceAdapter(ParseCanonicalChapterVolume()),
+                ReconcileChapterEvidence(ParseCanonicalChapterLabel(), repository, evidenceRepository),
+                repository,
+                SourceTitleMappingRepositoryImpl(database),
+            )
+            val volumeOne = chapter("chapter-volume-1").copy(volume = 1)
+            repository.upsert(volumeOne)
+            val explicit = legacyInventory(7L, "mapping-1", "en", "Vol. 1 Ch. 1", rawNumberHint = 1.0)
+            val unqualified = legacyInventory(
+                8L,
+                "mapping-2",
+                "pt-BR",
+                "Chapter 1",
+                "/chapter/plain",
+                rawNumberHint = 1.0,
+            )
 
-        projection.execute(listOf(explicit, unqualified), observedAt = 200L).size shouldBe 2
+            projection.execute(listOf(explicit, unqualified), observedAt = 200L).size shouldBe 2
 
-        val chapters = repository.getByCanonicalTitleId("title-1")
-        chapters.size shouldBe 2
-        chapters.single { it.id == volumeOne.id }.volume shouldBe 1
-        val unqualifiedChapter = chapters.single { it.id != volumeOne.id }
-        unqualifiedChapter.volume shouldBe null
-        unqualifiedChapter.baseNumber shouldBe 1
-        repository.getVariantBySourceIdentity(7L, "/chapter/4")?.canonicalChapterId shouldBe volumeOne.id
-        repository.getVariantBySourceIdentity(8L, "/chapter/plain")?.canonicalChapterId shouldBe
-            unqualifiedChapter.id
+            val chapters = repository.getByCanonicalTitleId("title-1")
+            chapters.map { it.id } shouldBe listOf(volumeOne.id)
+            chapters.single().volume shouldBe 1
+            chapters.single().baseNumber shouldBe 1
+            repository.getVariantBySourceIdentity(7L, "/chapter/4")?.canonicalChapterId shouldBe volumeOne.id
+            repository.getVariantBySourceIdentity(8L, "/chapter/plain")?.canonicalChapterId shouldBe volumeOne.id
 
-        val chapterIdsBeforeReorderedReplay = chapters.map { it.id }.toSet()
-        val explicitVariantBeforeReplay = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
-        val unqualifiedVariantBeforeReplay = requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/plain"))
-        projection.execute(listOf(unqualified, explicit), observedAt = 300L).size shouldBe 2
+            val explicitVariantBeforeReplay = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
+            val unqualifiedVariantBeforeReplay = requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/plain"))
+            projection.execute(listOf(unqualified, explicit), observedAt = 300L).size shouldBe 2
 
-        repository.getByCanonicalTitleId("title-1").map { it.id }.toSet() shouldBe chapterIdsBeforeReorderedReplay
-        repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe explicitVariantBeforeReplay.id
-        repository.getVariantBySourceIdentity(8L, "/chapter/plain")?.id shouldBe unqualifiedVariantBeforeReplay.id
-    }
+            repository.getByCanonicalTitleId("title-1").map { it.id } shouldBe listOf(volumeOne.id)
+            repository.getVariantBySourceIdentity(7L, "/chapter/4")?.id shouldBe explicitVariantBeforeReplay.id
+            repository.getVariantBySourceIdentity(8L, "/chapter/plain")?.id shouldBe unqualifiedVariantBeforeReplay.id
+        }
 
     @Test
     fun `staged projection retains fractional chapters after a partial inventory omits one URL`() =
