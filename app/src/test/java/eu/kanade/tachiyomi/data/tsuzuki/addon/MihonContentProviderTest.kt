@@ -1344,8 +1344,9 @@ class MihonContentProviderTest {
             ),
         )
 
-        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
-        materializations shouldBe 0
+        provider.resolve("title", requested.id).getOrThrow().single()
+            .delivery shouldBe ContentDelivery.Mihon(7L, 70L, 0L)
+        materializations shouldBe 1
     }
 
     @Test
@@ -1429,9 +1430,8 @@ class MihonContentProviderTest {
             },
         )
 
-        provider.resolve("title", requested.id).getOrThrow().single()
-            .delivery shouldBe ContentDelivery.Mihon(7L, 70L, 0L)
-        materializations shouldBe 1
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
     }
 
     @Test
