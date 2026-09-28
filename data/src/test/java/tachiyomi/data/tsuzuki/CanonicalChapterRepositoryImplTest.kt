@@ -614,7 +614,8 @@ class CanonicalChapterRepositoryImplTest {
             repository.getVariantBySourceIdentity(8L, "/chapter/plain")?.canonicalChapterId shouldBe volumeOne.id
 
             val explicitVariantBeforeReplay = requireNotNull(repository.getVariantBySourceIdentity(7L, "/chapter/4"))
-            val unqualifiedVariantBeforeReplay = requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/plain"))
+            val unqualifiedVariantBeforeReplay =
+                requireNotNull(repository.getVariantBySourceIdentity(8L, "/chapter/plain"))
             projection.execute(listOf(unqualified, explicit), observedAt = 300L).size shouldBe 2
 
             repository.getByCanonicalTitleId("title-1").map { it.id } shouldBe listOf(volumeOne.id)
