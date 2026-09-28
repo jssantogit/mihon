@@ -19,12 +19,14 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnost
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.interactor.isInferredChapter
 import tachiyomi.domain.tsuzuki.chapter.interactor.isUnsafeProvisionalChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
+import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
@@ -519,13 +521,13 @@ class MihonContentProvider internal constructor(
     }
 
     private fun CanonicalChapter.isRegularZero(): Boolean =
-        type == tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR &&
+        type == CanonicalChapterType.REGULAR &&
             baseNumber == 0 &&
             part == null &&
             alphaSuffix == null
 
     private fun hasIndependentRegularZeroSupport(
-        evidence: List<tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence>,
+        evidence: List<PersistedChapterEvidence>,
         canonicalChapter: CanonicalChapter,
         currentAddonId: AddonId,
     ): Boolean {
