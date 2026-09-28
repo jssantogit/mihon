@@ -441,31 +441,23 @@ class MihonRuntimeEndToEndIntegrationTest {
                 harness.enqueue(body = "/manga/one-punch-man\tOne-Punch Man", language = source.lang)
             }
             harness.enqueue(status = 503, body = "server_error", language = "en")
+            // The provider may fetch EN again because failed inventories are not cached.
+            harness.enqueue(status = 503, body = "server_error", language = "en")
             harness.enqueue(body = "/chapter/1\tChapter 1\t1\tFixture Group", language = "pt-BR")
             val journey = RuntimeJourney(harness, "canonical-opm-partial-source", backgroundScope)
             journey.bind()
             journey.refresh()
 
             val chapter = journey.canonicalChapters.getByCanonicalTitleId(journey.canonicalTitleId).single()
-            // The selector's two-second caller deadline must use real time here. A test scheduler
-            // can advance virtual time while the gateway is fetching on Dispatchers.IO.
+            // Mihon HttpSource performs blocking calls; match the production IO boundary here.
             val lookup = withContext(Dispatchers.IO) { journey.lookupOptions(chapter.id) }
             val options = lookup.options
-            val optionLanguages = options.map { it.language }
-            if (optionLanguages != listOf("pt-BR")) {
-                throw AssertionError(
-                    "Expected the pt-BR option to survive the English HTTP 503; " +
-                        "actualLanguages=$optionLanguages; " +
-                        "providerLookup=queried:${lookup.queriedProviderCount}," +
-                        "failed:${lookup.failedProviders.size},options:${lookup.options.size}; " +
-                        journey.partialSourceDiagnosticSummary(chapter.id),
-                )
-            }
+            options.map { it.language } shouldBe listOf("pt-BR")
             lookup.queriedProviderCount shouldBe 1
             lookup.failedProviders shouldBe emptyList()
             journey.diagnostics.events.any {
                 it.stage == ChapterInventoryDiagnosticStage.CONTENT_PROVIDER &&
-                    it.outcome == ChapterInventoryDiagnosticOutcome.SUCCESS &&
+                    it.outcome == ChapterInventoryDiagnosticOutcome.PARTIAL &&
                     it.accepted == 1
             } shouldBe true
             journey.diagnostics.events.any {
@@ -984,91 +976,6 @@ class MihonRuntimeEndToEndIntegrationTest {
         suspend fun lookupOptions(chapterId: String): ContentOptionLookup =
             selector.lookupOptions(canonicalTitleId, chapterId)
 
-        suspend fun partialSourceDiagnosticSummary(chapterId: String): String {
-            val languageBySourceId = harness.sources.associate { it.id to it.lang }
-            val bindingsByLanguage = bindings.getByTitle(canonicalTitleId)
-                .groupingBy { binding ->
-                    val payload = MihonContentBindingPayloadCodec.decode(binding.runtimePayload)
-                    languageBySourceId[payload.sourceId] ?: "UNKNOWN"
-                }
-                .eachCount()
-                .toSortedMap()
-            val persistedEvidence = evidence.getByCanonicalTitleId(canonicalTitleId)
-            val evidenceByLanguage = persistedEvidence.groupBy { persisted ->
-                val sourceId = persisted.evidence.externalChapterKey
-                    ?.substringBefore(':')
-                    ?.toLongOrNull()
-                sourceId?.let(languageBySourceId::get) ?: "UNKNOWN"
-            }.toSortedMap()
-            val variantsByLanguage = canonicalChapters.getVariantsByCanonicalChapterId(chapterId)
-                .groupingBy(ChapterVariant::language)
-                .eachCount()
-                .toSortedMap()
-            val inventoryDiagnostics = diagnostics.events
-                .filter { it.stage == ChapterInventoryDiagnosticStage.CHAPTER_INVENTORY }
-                .groupBy { event ->
-                    event.language?.takeIf { it in languageBySourceId.values }
-                        ?: event.sourceId?.let(languageBySourceId::get)
-                        ?: "UNKNOWN"
-                }
-                .toSortedMap()
-                .entries
-                .joinToString(",") { (language, events) ->
-                    val outcomes = events.joinToString(",") { event ->
-                        val reasons = event.reasons.entries.sortedBy { it.key.name }
-                            .joinToString(",") { (reason, count) -> "${reason.name}:$count" }
-                            .ifEmpty { "NONE" }
-                        "${event.outcome.name}(received=${event.received ?: "UNKNOWN"}" +
-                            ",accepted=${event.accepted ?: "UNKNOWN"}" +
-                            ",provisional=${event.provisional ?: "UNKNOWN"}" +
-                            ",discarded=${event.discarded ?: "UNKNOWN"}" +
-                            ",http=${event.httpStatus ?: "NONE"},reasons=$reasons)"
-                    }
-                    "$language:$outcomes"
-                }
-                .ifEmpty { "NONE" }
-            val providerDiagnostics = diagnostics.events
-                .filter { it.stage == ChapterInventoryDiagnosticStage.CONTENT_PROVIDER }
-                .joinToString(",") { event ->
-                    val reasons = event.reasons.entries.sortedBy { it.key.name }
-                        .joinToString(",") { (reason, count) -> "${reason.name}:$count" }
-                        .ifEmpty { "NONE" }
-                    "${event.outcome.name}(accepted=${event.accepted ?: "UNKNOWN"}" +
-                        ",blocked=${event.availabilityBlocked},reasons=$reasons)"
-                }
-                .ifEmpty { "NONE" }
-            val selectorDiagnostics = diagnostics.events
-                .filter { it.stage == ChapterInventoryDiagnosticStage.CONTENT_SELECTOR }
-                .joinToString(",") { event ->
-                    val reasons = event.reasons.entries.sortedBy { it.key.name }
-                        .joinToString(",") { (reason, count) -> "${reason.name}:$count" }
-                        .ifEmpty { "NONE" }
-                    "${event.outcome.name}(received=${event.received ?: "UNKNOWN"}" +
-                        ",accepted=${event.accepted ?: "UNKNOWN"}" +
-                        ",discarded=${event.discarded ?: "UNKNOWN"}" +
-                        ",blocked=${event.availabilityBlocked},reasons=$reasons)"
-                }
-                .ifEmpty { "NONE" }
-            fun countsByLanguage(counts: Map<String, Int>): String = counts.entries
-                .joinToString(",") { (language, count) -> "$language:$count" }
-                .ifEmpty { "NONE" }
-            val evidenceSummary = evidenceByLanguage.entries
-                .joinToString(",") { (language, records) ->
-                    val mapped = records.count { it.mappedCanonicalChapterId != null }
-                    "$language:${records.size}(mapped=$mapped)"
-                }
-                .ifEmpty { "NONE" }
-            val requestCounts = harness.sources.sortedBy { it.lang }
-                .joinToString(",") { source -> "${source.lang}:${harness.requestCount(source.lang)}" }
-                .ifEmpty { "NONE" }
-            return "requestsByLanguage=$requestCounts" +
-                "|bindingsByLanguage=${countsByLanguage(bindingsByLanguage)}" +
-                "|evidenceByLanguage=$evidenceSummary" +
-                "|variantsByLanguage=${countsByLanguage(variantsByLanguage)}" +
-                "|inventoryDiagnosticsByLanguage=$inventoryDiagnostics" +
-                "|contentProviderDiagnostics=$providerDiagnostics" +
-                "|contentSelectorDiagnostics=$selectorDiagnostics"
-        }
         suspend fun prepare(option: ContentOption) =
             readerPreparation.execute(option.canonicalChapterId, selectedOption = option)
 
