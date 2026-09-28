@@ -774,6 +774,32 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `reliable addon refresh collapses exact legacy duplicate canonical rows`() = runTest {
+        val fixture = fixture()
+        fixture.chapterRepository.upsert(existingChapter("chapter-first"))
+        fixture.chapterRepository.upsert(existingChapter("chapter-second"))
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(
+                fixture.addonEvidence(
+                    id = "fresh-chapter-four",
+                    rawLabel = "Chapter 4",
+                    externalKey = "source-four",
+                ),
+            ),
+        )
+
+        fixture.chapterRepository.getByCanonicalTitleId("title").map { it.id } shouldBe
+            listOf("chapter-first")
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-four",
+        )?.mappedCanonicalChapterId shouldBe "chapter-first"
+    }
+
+    @Test
     fun `unqualified add-on evidence stays unmapped when multiple unqualified candidates exist`() = runTest {
         val fixture = fixture()
         fixture.chapterRepository.upsert(existingChapter("chapter-first"))
