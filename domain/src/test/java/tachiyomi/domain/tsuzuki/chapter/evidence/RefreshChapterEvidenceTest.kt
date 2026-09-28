@@ -434,6 +434,106 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `refresh keeps broadening past multiple empty safe bindings until readable inventory is found`() = runTest {
+        val staleAddon = AddonId("stale")
+        val emptyAddon = AddonId("empty")
+        val readableAddon = AddonId("readable")
+        fun binding(id: String, addonId: AddonId, sourceId: Long, path: String) = ContentBinding(
+            id = id,
+            canonicalTitleId = "canonical-title",
+            addonId = addonId,
+            providerTitleKey = "$sourceId:$path",
+            matchConfidence = 1.0,
+            verifiedByUser = false,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val staleBinding = binding("stale-binding", staleAddon, 1L, "/empty")
+        val emptyBinding = binding("empty-binding", emptyAddon, 2L, "/also-empty")
+        val readableBinding = binding("readable-binding", readableAddon, 3L, "/tokyo-ghoul")
+
+        var discoveryWave = 0
+        val discover = mockk<DiscoverReadableTitle>()
+        coEvery { discover.execute("canonical-title") } returns Result.success(listOf(staleBinding))
+        coEvery {
+            discover.execute("canonical-title", broadenExistingBindings = true)
+        } coAnswers {
+            discoveryWave++
+            when (discoveryWave) {
+                1 -> Result.success(listOf(staleBinding, emptyBinding))
+                else -> Result.success(listOf(staleBinding, emptyBinding, readableBinding))
+            }
+        }
+
+        fun emptyProbe(addonId: AddonId) = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(emptyList())
+        }
+        val readableProbe = object : ChapterProbeProvider {
+            override val addonId: AddonId = readableAddon
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(
+                    listOf(
+                        ChapterEvidence(
+                            id = "tokyo-ghoul-1",
+                            canonicalTitleId = canonicalTitleId,
+                            producerKind = ProducerKind.ADDON,
+                            producerId = readableAddon.value,
+                            externalChapterKey = "3:chapter-1",
+                            rawLabel = "Chapter 1",
+                            rawNumber = 1.0,
+                            volume = null,
+                            title = null,
+                            observedAt = 10L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                    ),
+                )
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> =
+                listOf(emptyProbe(staleAddon), emptyProbe(emptyAddon), readableProbe)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery { resolver.existingBindingsForRefresh("canonical-title", staleAddon) } returns
+            Result.success(listOf(staleBinding))
+        coEvery { resolver.existingBindingsForRefresh("canonical-title", emptyAddon) } coAnswers {
+            Result.success(if (discoveryWave >= 1) listOf(emptyBinding) else emptyList())
+        }
+        coEvery { resolver.existingBindingsForRefresh("canonical-title", readableAddon) } coAnswers {
+            Result.success(if (discoveryWave >= 2) listOf(readableBinding) else emptyList())
+        }
+
+        val chapters = FakeCanonicalChapterRepository()
+        val refresh = RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+            discoverReadableTitle = discover,
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+
+        coVerify(exactly = 2) {
+            discover.execute("canonical-title", broadenExistingBindings = true)
+        }
+        chapters.getByCanonicalTitleId("canonical-title")
+            .map { it.displayNumber } shouldContainExactly listOf("1")
+    }
+
+    @Test
     fun `editorial refresh bounds simultaneous provider requests`() = runTest {
         val unblock = CompletableDeferred<Unit>()
         var concurrent = 0
