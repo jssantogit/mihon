@@ -726,6 +726,36 @@ class ResolveContentBindingTest {
     }
 
     @Test
+    fun `official catalog alias can safely establish an automatic reading binding`() = runTest {
+        val repository = FakeContentBindingRepository(null)
+        val gateway = FakeReadingSourceGateway(
+            searchResultsByQuery = mapOf(
+                (7L to "Attack on Titan") to listOf(
+                    candidate(sourceId = 7L, sourceUrl = "/attack-on-titan", title = "Attack on Titan"),
+                ),
+            ),
+            materialized = MaterializedReadingSource(
+                mihonMangaId = 42L,
+                sourceId = 7L,
+                sourceUrl = "/attack-on-titan",
+                language = "en",
+                runtimePayload = byteArrayOf(1),
+            ),
+        )
+        val resolver = resolver(
+            repository = repository,
+            gateway = gateway,
+            title = "Shingeki no Kyojin",
+            searchTitles = listOf("Shingeki no Kyojin", "Attack on Titan"),
+        )
+
+        val bindings = resolver.executeAll("title", AddonId("mangadex")).getOrThrow()
+
+        bindings.single().providerTitleKey shouldBe "7:/attack-on-titan"
+        gateway.searchedQueries shouldBe listOf("Shingeki no Kyojin", "Attack on Titan")
+    }
+
+    @Test
     fun `alternative title query still requires confirmation when multiple candidates tie`() = runTest {
         val gateway = FakeReadingSourceGateway(
             searchResultsByQuery = mapOf(
@@ -992,6 +1022,7 @@ class ResolveContentBindingTest {
         addonSources: List<AddonSourceEligibility> = emptyList(),
         addonSourceEligibilityRepository: AddonSourceEligibilityRepository? = null,
         addonEnabled: Boolean = true,
+        searchTitles: List<String>? = null,
     ): ResolveContentBinding {
         var nextId = 0
         return ResolveContentBinding(
@@ -1005,6 +1036,9 @@ class ResolveContentBindingTest {
             diagnostics = diagnostics,
             addonSourceEligibilityRepository = addonSourceEligibilityRepository
                 ?: AddonSourceEligibilityRepository { addonSources },
+            titleSearchTerms = { canonicalTitle ->
+                searchTitles ?: listOf(canonicalTitle.displayTitle)
+            },
         )
     }
 
