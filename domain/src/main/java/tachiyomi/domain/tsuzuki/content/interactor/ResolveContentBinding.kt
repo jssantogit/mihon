@@ -37,6 +37,8 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
 import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
@@ -59,6 +61,9 @@ class ResolveContentBinding internal constructor(
     private val clock: () -> Long,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val addonSourceEligibilityRepository: AddonSourceEligibilityRepository? = null,
+    private val titleSearchTerms: suspend (CanonicalTitle) -> List<String> = { title ->
+        listOf(title.displayTitle)
+    },
 ) {
 
     @Inject
@@ -69,6 +74,7 @@ class ResolveContentBinding internal constructor(
         readingSourceGateway: ReadingSourceGateway,
         scoreSourceTitleMatch: ScoreSourceTitleMatch,
         addonSourceEligibilityRepository: AddonSourceEligibilityRepository,
+        integrationRegistry: IntegrationRegistry,
         diagnostics: ChapterInventoryDiagnostics,
     ) : this(
         contentBindingRepository = contentBindingRepository,
@@ -80,6 +86,35 @@ class ResolveContentBinding internal constructor(
         clock = { Clock.System.now().toEpochMilliseconds() },
         diagnostics = diagnostics,
         addonSourceEligibilityRepository = addonSourceEligibilityRepository,
+        titleSearchTerms = { title ->
+            val terms = linkedSetOf(title.displayTitle)
+            try {
+                integrationRegistry.awaitReady()
+                val providers = integrationRegistry.metadataProviders()
+                    .associateBy { it.integrationId.value.lowercase() }
+                canonicalTitleRepository.getExternalIdentities(title.id)
+                    .asSequence()
+                    .filter { it.verified }
+                    .take(MAX_EXTERNAL_IDENTITIES_FOR_SEARCH)
+                    .forEach { identity ->
+                        val provider = providers[identity.provider.lowercase()] ?: return@forEach
+                        val item = provider.getDetails(identity.externalId).getOrNull() ?: return@forEach
+                        terms += item.title
+                        item.titles.values.forEach { alias -> terms += alias }
+                    }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Catalog metadata is an optional search aid. The canonical display title
+                // remains sufficient to keep source discovery functional when metadata fails.
+            }
+            terms.asSequence()
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinctBy { it.lowercase() }
+                .take(MAX_TITLE_SEARCH_TERMS)
+                .toList()
+        },
     )
 
     suspend fun execute(
@@ -193,6 +228,7 @@ class ResolveContentBinding internal constructor(
             return@flow
         }
 
+        val searchTerms = resolvedTitleSearchTerms(canonicalTitle)
         val (orderedSourceIds, sourceLanguages) = orderSources(
             enabledSourceIds = enabledSourceIds,
             preferredLanguages = request.preferredLanguages,
@@ -217,6 +253,7 @@ class ResolveContentBinding internal constructor(
                             sourceRank = sourceRank,
                             language = sourceLanguages[sourceId],
                             canonicalTitle = canonicalTitle,
+                            searchTerms = searchTerms,
                             persistenceLock = persistenceLock,
                         )
                         send(event)
@@ -238,7 +275,8 @@ class ResolveContentBinding internal constructor(
         sourceId: Long,
         sourceRank: Int,
         language: String?,
-        canonicalTitle: tachiyomi.domain.tsuzuki.model.CanonicalTitle,
+        canonicalTitle: CanonicalTitle,
+        searchTerms: List<String>,
         persistenceLock: Mutex,
     ): ContentBindingSearchProgress.SourceCompleted {
         val (candidates, searchFailure) = try {
@@ -247,7 +285,7 @@ class ResolveContentBinding internal constructor(
                     canonicalTitleId = request.canonicalTitleId,
                     addonId = request.addonId,
                     sourceId = sourceId,
-                    title = canonicalTitle.displayTitle,
+                    titles = searchTerms,
                 )
             }
         } catch (_: TimeoutCancellationException) {
@@ -297,7 +335,7 @@ class ResolveContentBinding internal constructor(
             )
         }
 
-        val scored = scoreCandidates(canonicalTitle.displayTitle, sourceRank, candidates)
+        val scored = scoreCandidates(searchTerms, sourceRank, candidates)
         val decision = decideCandidates(scored)
         if (searchFailure != null && decision !is CandidateDecision.Confirmation) {
             return failedSource(
@@ -592,16 +630,18 @@ class ResolveContentBinding internal constructor(
     }
 
     private fun scoreCandidates(
-        canonicalTitle: String,
+        canonicalTitles: List<String>,
         sourceRank: Int,
         candidates: List<ReadingSourceCandidate>,
     ): List<ScoredSourceCandidate> = candidates.map { candidate ->
         ScoredSourceCandidate(
             candidate = candidate,
-            confidence = scoreSourceTitleMatch(
-                targetTitle = canonicalTitle,
-                candidateTitle = candidate.title,
-            ),
+            confidence = canonicalTitles.maxOfOrNull { canonicalTitle ->
+                scoreSourceTitleMatch(
+                    targetTitle = canonicalTitle,
+                    candidateTitle = candidate.title,
+                )
+            } ?: 0.0,
             sourcePreferenceRank = sourceRank,
         )
     }.sortedByDescending { it.confidence }
@@ -698,6 +738,7 @@ class ResolveContentBinding internal constructor(
                 "Canonical title $canonicalTitleId does not exist",
             )
 
+        val searchTerms = resolvedTitleSearchTerms(canonicalTitle)
         val selected = mutableListOf<ScoredSourceCandidate>()
         val confirmationCandidates = mutableListOf<ScoredSourceCandidate>()
         val searchGate = Semaphore(MAX_CONCURRENT_SOURCE_SEARCHES)
@@ -708,11 +749,11 @@ class ResolveContentBinding internal constructor(
                 .mapIndexed { sourceRank, sourceId ->
                     async {
                         val (results, failure) = searchGate.withPermit {
-                            searchSourceTitle(canonicalTitleId, addonId, sourceId, canonicalTitle.displayTitle)
+                            searchSourceTitle(canonicalTitleId, addonId, sourceId, searchTerms)
                         }
                         Triple(
                             sourceRank,
-                            scoreCandidates(canonicalTitle.displayTitle, sourceRank, results),
+                            scoreCandidates(searchTerms, sourceRank, results),
                             failure,
                         )
                     }
@@ -930,10 +971,10 @@ class ResolveContentBinding internal constructor(
         canonicalTitleId: String,
         addonId: AddonId,
         sourceId: Long,
-        title: String,
+        titles: List<String>,
     ): Pair<List<ReadingSourceCandidate>, Throwable?> {
         val collected = mutableListOf<ReadingSourceCandidate>()
-        for ((attemptIndex, query) in titleSearchQueries(title).withIndex()) {
+        for ((attemptIndex, query) in titleSearchQueries(titles).withIndex()) {
             val started = TimeSource.Monotonic.markNow()
             val response = try {
                 readingSourceGateway.search(sourceId, query)
@@ -975,14 +1016,17 @@ class ResolveContentBinding internal constructor(
                 reason = if (matches.isEmpty()) ChapterInventoryDiagnosticReason.NO_SEARCH_RESULTS else null,
             )
             collected += matches
-            val ranked = collected.distinctBy { it.sourceId to it.sourceUrl }
-                .sortedByDescending { scoreSourceTitleMatch(title, it.title) }
+            val ranked = scoreCandidates(
+                canonicalTitles = titles,
+                sourceRank = 0,
+                candidates = collected.distinctBy { it.sourceId to it.sourceUrl },
+            )
             val best = ranked.firstOrNull()
             val runnerUp = ranked.getOrNull(1)
             if (best != null) {
-                val bestScore = scoreSourceTitleMatch(title, best.title)
+                val bestScore = best.confidence
                 val unambiguous = runnerUp == null ||
-                    bestScore - scoreSourceTitleMatch(title, runnerUp.title) > AUTO_MATCH_MARGIN
+                    bestScore - runnerUp.confidence > AUTO_MATCH_MARGIN
                 if (bestScore >= AUTO_MATCH_THRESHOLD && unambiguous) {
                     break
                 }
@@ -991,26 +1035,52 @@ class ResolveContentBinding internal constructor(
         return collected.distinctBy { it.sourceId to it.sourceUrl } to null
     }
 
-    private fun titleSearchQueries(title: String): List<String> = buildList {
-        add(title)
-        if ('-' in title) {
-            val spaced = title.replace(Regex("\\s*-\\s*"), " ")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-            if (spaced.isNotBlank()) {
-                add(spaced)
-                val words = spaced.split(" ").filter(String::isNotBlank)
-                if (words.size in 2..5) {
-                    for (index in 1 until words.size) {
-                        add(
-                            words.take(index).joinToString(" ") + "-" +
-                                words.drop(index).joinToString(" "),
-                        )
+    private suspend fun resolvedTitleSearchTerms(title: CanonicalTitle): List<String> {
+        val resolved = try {
+            titleSearchTerms(title)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        return (listOf(title.displayTitle) + resolved)
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinctBy { it.lowercase() }
+            .take(MAX_TITLE_SEARCH_TERMS)
+            .ifEmpty { listOf(title.displayTitle) }
+    }
+
+    private fun titleSearchQueries(titles: List<String>): List<String> {
+        val normalized = titles
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinctBy { it.lowercase() }
+        val punctuationVariants = normalized.flatMap { title ->
+            buildList {
+                if ('-' in title) {
+                    val spaced = title.replace(Regex("\\s*-\\s*"), " ")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                    if (spaced.isNotBlank() && !spaced.equals(title, ignoreCase = true)) {
+                        add(spaced)
+                        val words = spaced.split(" ").filter(String::isNotBlank)
+                        if (words.size in 2..5) {
+                            for (index in 1 until words.size) {
+                                add(
+                                    words.take(index).joinToString(" ") + "-" +
+                                        words.drop(index).joinToString(" "),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
-    }.distinct().take(MAX_TITLE_SEARCH_QUERIES)
+        return (normalized + punctuationVariants)
+            .distinctBy { it.lowercase() }
+            .take(MAX_TITLE_SEARCH_QUERIES)
+    }
 
     private suspend fun requireExecutableAddon(canonicalTitleId: String, addonId: AddonId): InstalledAddon {
         val addon = addonRepository.snapshot().firstOrNull { it.id == addonId }
@@ -1146,7 +1216,9 @@ class ResolveContentBinding internal constructor(
         const val AUTO_MATCH_MARGIN = 0.08
         const val CONFIRMATION_THRESHOLD = 0.70
         const val MAX_CONFIRMATION_CANDIDATES = 5
-        const val MAX_TITLE_SEARCH_QUERIES = 3
+        const val MAX_TITLE_SEARCH_QUERIES = 6
+        const val MAX_TITLE_SEARCH_TERMS = 6
+        const val MAX_EXTERNAL_IDENTITIES_FOR_SEARCH = 3
         const val MAX_CONCURRENT_SOURCE_SEARCHES = 4
     }
 }
