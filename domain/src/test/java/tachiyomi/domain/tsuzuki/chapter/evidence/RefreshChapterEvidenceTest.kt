@@ -517,6 +517,8 @@ class RefreshChapterEvidenceTest {
         coEvery {
             bindingResolver.existingBindingsForRefresh(canonicalTitleId, addonId)
         } returns Result.success(listOf(binding))
+        val titleDiscovery = mockk<DiscoverReadableTitle>()
+        coEvery { titleDiscovery.execute(canonicalTitleId) } returns Result.success(emptyList())
         val refresh = RefreshChapterEvidence(
             registry = registry(emptyList()),
             reconcileChapterEvidence = reconcile,
@@ -525,6 +527,7 @@ class RefreshChapterEvidenceTest {
             contentOptionCache = cache,
             inFlightContentResolution = inFlight,
             diagnostics = NoOpChapterInventoryDiagnostics,
+            discoverReadableTitle = titleDiscovery,
         )
         val preferenceRepository = object : ContentPreferenceRepository {
             override suspend fun get(canonicalTitleId: String): ContentPreference? = null
