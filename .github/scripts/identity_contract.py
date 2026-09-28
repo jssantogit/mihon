@@ -1,0 +1,116 @@
+from pathlib import Path
+import re
+import sys
+
+TRACKER_OAUTH_HOSTS = (
+    "anilist-auth",
+    "bangumi-auth",
+    "mangabaka-auth",
+    "myanimelist-auth",
+    "shikimori-auth",
+    "hikka-auth",
+)
+
+SIGNING_SECRET_NAMES = (
+    "TSUZUKI_KEYSTORE_BASE64",
+    "TSUZUKI_KEYSTORE_PASSWORD",
+    "TSUZUKI_KEY_ALIAS",
+    "TSUZUKI_KEY_PASSWORD",
+)
+
+
+def _read(root: Path, relative: str, errors: list[str]) -> str:
+    path = root / relative
+    if not path.is_file():
+        errors.append(f"required contract file is missing: {relative}")
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _intent_filter_has(manifest: str, *, scheme: str, host: str) -> bool:
+    blocks = re.findall(r"<intent-filter\b[\s\S]*?</intent-filter>", manifest)
+    scheme_marker = f'android:scheme="{scheme}"'
+    host_marker = f'android:host="{host}"'
+    return any(scheme_marker in block and host_marker in block for block in blocks)
+
+
+def check_contract(root: Path) -> list[str]:
+    root = Path(root)
+    errors: list[str] = []
+
+    build = _read(root, "app/build.gradle.kts", errors)
+    manifest = _read(root, "app/src/main/AndroidManifest.xml", errors)
+    app_info = _read(root, "app/src/main/java/eu/kanade/tachiyomi/AppInfo.kt", errors)
+    backup_creator = _read(
+        root,
+        "app/src/main/java/eu/kanade/tachiyomi/data/backup/create/BackupCreator.kt",
+        errors,
+    )
+    apk_workflow = _read(root, ".github/workflows/apk.yml", errors)
+
+    if build:
+        application_id = re.search(r'\bapplicationId\s*=\s*"([^"]+)"', build)
+        if application_id is None or application_id.group(1) != "app.mihon":
+            errors.append("applicationId must remain app.mihon")
+
+        namespace = re.search(r'\bnamespace\s*=\s*"([^"]+)"', build)
+        if namespace is None or namespace.group(1) != "eu.kanade.tachiyomi":
+            errors.append("Android namespace must remain eu.kanade.tachiyomi")
+
+    if manifest:
+        if not _intent_filter_has(manifest, scheme="tachiyomi", host="add-repo"):
+            errors.append("legacy tachiyomi://add-repo contract is missing")
+
+        if not _intent_filter_has(manifest, scheme="mihon", host="extension-store"):
+            errors.append("legacy mihon://extension-store contract is missing")
+
+        if not _intent_filter_has(manifest, scheme="tsuzuki", host="auth"):
+            errors.append("tsuzuki://auth callback contract is missing")
+
+        for host in TRACKER_OAUTH_HOSTS:
+            if not _intent_filter_has(manifest, scheme="mihon", host=host):
+                errors.append(f"tracker OAuth host {host} is missing")
+
+        if 'android:authorities="${applicationId}.provider"' not in manifest:
+            errors.append("FileProvider authority must remain ${applicationId}.provider")
+
+        if 'android:authorities="${applicationId}.shizuku"' not in manifest:
+            errors.append("Shizuku authority must remain ${applicationId}.shizuku")
+
+        if ".tachibk" not in manifest:
+            errors.append("legacy .tachibk restore contract is missing")
+
+    if app_info:
+        if "package eu.kanade.tachiyomi" not in app_info or "object AppInfo" not in app_info:
+            errors.append("extension-facing AppInfo namespace changed")
+
+    if backup_creator:
+        if "BuildConfig.APPLICATION_ID" not in backup_creator:
+            errors.append("backup filename must continue to derive from BuildConfig.APPLICATION_ID")
+        if ".tachibk" not in backup_creator:
+            errors.append("backup filename must preserve .tachibk compatibility")
+
+    if apk_workflow:
+        for name in SIGNING_SECRET_NAMES:
+            if f"secrets.{name}" not in apk_workflow:
+                errors.append(f"APK workflow no longer references {name}")
+
+    return errors
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parents[2]
+    errors = check_contract(repo_root)
+
+    if errors:
+        print("Tsuzuki identity compatibility contract FAILED:")
+        for error in errors:
+            print(f"- {error}")
+        return 1
+
+    print("Tsuzuki identity compatibility contract OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
