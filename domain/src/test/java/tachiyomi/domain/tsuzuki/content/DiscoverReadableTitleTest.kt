@@ -280,6 +280,7 @@ class DiscoverReadableTitleTest {
         bindings.map { it.providerTitleKey }.toSet() shouldBe setOf("1:/title", "2:/title")
     }
 
+    // Physical Tokyo Ghoul regression: an existing English binding must not suppress configured pt-BR discovery.
     @Test
     fun `existing binding still discovers missing configured reading source without probing unrelated fallback`() =
         runTest {
