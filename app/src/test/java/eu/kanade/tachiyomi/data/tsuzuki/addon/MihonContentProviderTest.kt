@@ -1344,9 +1344,8 @@ class MihonContentProviderTest {
             ),
         )
 
-        provider.resolve("title", requested.id).getOrThrow().single()
-            .delivery shouldBe ContentDelivery.Mihon(7L, 70L, 0L)
-        materializations shouldBe 1
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
     }
 
     @Test
@@ -1395,7 +1394,7 @@ class MihonContentProviderTest {
     }
 
     @Test
-    fun `plain regular chapter zero remains readable`() = runTest {
+    fun `plain regular chapter zero fails closed when it has no independent source support`() = runTest {
         val linked = binding(id = "binding-legitimate-zero", sourceKey = "7:/series")
         val requested = CanonicalChapter(
             id = "canonical-chapter-0",
