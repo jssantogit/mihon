@@ -99,6 +99,7 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.RefreshCanonicalChapters
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentPreference
@@ -677,9 +678,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
                                 .takeIf { it }
                         }
-                        assertTrue(
+                        assertEquals(
                             "The actual source A inventory Call must run off the Android main thread",
-                            fixture.sourceA.inventoryCallEvents.get().contains("_APP_REQUEST_ON_MAIN_THREAD_FALSE"),
+                            "FALSE",
+                            fixture.sourceA.inventoryRequestOnMainThread.get(),
                         )
                     } catch (error: Throwable) {
                         fixture.reportDetailInventorySetup(
@@ -866,9 +868,10 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                             (routes.inventory == 1 && fixture.dispatcher.heldInventoryRequestCount(token) == 1)
                                 .takeIf { it }
                         }
-                        assertTrue(
+                        assertEquals(
                             "The actual source A inventory Call must run off the Android main thread",
-                            fixture.sourceA.inventoryCallEvents.get().contains("_APP_REQUEST_ON_MAIN_THREAD_FALSE"),
+                            "FALSE",
+                            fixture.sourceA.inventoryRequestOnMainThread.get(),
                         )
                     } catch (error: Throwable) {
                         fixture.reportDetailInventorySetup(
@@ -2077,9 +2080,11 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
             val gateway = exactPrivateField(
                 refresh,
                 "chapterInventoryGateway",
-                MihonChapterInventoryGateway::class.java,
+                ChapterInventoryGateway::class.java,
             )
-            return exactPrivateField(gateway, "inventoryCache", MihonInventorySnapshotCache::class.java)
+            val mihonGateway = gateway as? MihonChapterInventoryGateway
+                ?: throw AssertionError("Reader must use Mihon's chapter inventory gateway")
+            return exactPrivateField(mihonGateway, "inventoryCache", MihonInventorySnapshotCache::class.java)
         }
 
         fun detailInventorySnapshotCache(
@@ -2663,6 +2668,8 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                 val sourceBInventoryCall = AtomicReference("NOT_STARTED")
                 val sourceAInventoryCallEvents = AtomicReference("NONE")
                 val sourceBInventoryCallEvents = AtomicReference("NONE")
+                val sourceAInventoryRequestOnMainThread = AtomicReference("NOT_SEEN")
+                val sourceBInventoryRequestOnMainThread = AtomicReference("NOT_SEEN")
                 val sourceA = ReaderFixtureHttpSource(
                     displayName = "Synthetic Reader A $runId",
                     token = "reader-$runId-a",
@@ -2671,10 +2678,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         token = "reader-$runId-a",
                         inventoryCallOutcome = sourceAInventoryCall,
                         inventoryCallEvents = sourceAInventoryCallEvents,
+                        inventoryRequestOnMainThread = sourceAInventoryRequestOnMainThread,
                         expectedOrigin = URI(baseUrl),
                     ),
                     inventoryCallOutcome = sourceAInventoryCall,
                     inventoryCallEvents = sourceAInventoryCallEvents,
+                    inventoryRequestOnMainThread = sourceAInventoryRequestOnMainThread,
                 )
                 val sourceB = ReaderFixtureHttpSource(
                     displayName = "Synthetic Reader B $runId",
@@ -2684,10 +2693,12 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
                         token = "reader-$runId-b",
                         inventoryCallOutcome = sourceBInventoryCall,
                         inventoryCallEvents = sourceBInventoryCallEvents,
+                        inventoryRequestOnMainThread = sourceBInventoryRequestOnMainThread,
                         expectedOrigin = URI(baseUrl),
                     ),
                     inventoryCallOutcome = sourceBInventoryCall,
                     inventoryCallEvents = sourceBInventoryCallEvents,
+                    inventoryRequestOnMainThread = sourceBInventoryRequestOnMainThread,
                 )
                 val addonA = AddonId("test.tsuzuki.reader.$runId.a")
                 val addonB = AddonId("test.tsuzuki.reader.$runId.b")
@@ -3049,6 +3060,7 @@ class CanonicalReaderSourceSwitchInstrumentedTest {
         override val client: OkHttpClient,
         val inventoryCallOutcome: AtomicReference<String>,
         val inventoryCallEvents: AtomicReference<String>,
+        val inventoryRequestOnMainThread: AtomicReference<String>,
     ) : HttpSource() {
         val chapterListRequestCount = AtomicInteger()
         override val name: String = displayName
@@ -3185,6 +3197,7 @@ private fun fixtureHttpClient(
     token: String,
     inventoryCallOutcome: AtomicReference<String>,
     inventoryCallEvents: AtomicReference<String>,
+    inventoryRequestOnMainThread: AtomicReference<String>,
     expectedOrigin: URI,
 ): OkHttpClient {
     fun callIdentifier(call: Call): String = java.lang.Integer.toHexString(System.identityHashCode(call))
@@ -3249,6 +3262,15 @@ private fun fixtureHttpClient(
             val request = chain.request()
             val cacheControl = request.cacheControl
             val requestOnMainThread = android.os.Looper.myLooper() == android.os.Looper.getMainLooper()
+            if (requestKind(request.url) == "INVENTORY") {
+                inventoryRequestOnMainThread.updateAndGet { current ->
+                    when {
+                        requestOnMainThread -> "TRUE"
+                        current == "NOT_SEEN" -> "FALSE"
+                        else -> current
+                    }
+                }
+            }
             recordEvent(
                 callId,
                 request,
