@@ -1,49 +1,72 @@
-Looking to report an issue/bug or make a feature request? Please refer to the [README file](https://github.com/mihonapp/mihon#issues-feature-requests-and-contributing).
+# Contributing to Tsuzuki
 
----
+Thanks for your interest in contributing to Tsuzuki.
 
-Thanks for your interest in contributing to Mihon!
+Tsuzuki is under active architectural development, so changes should follow the current specs and implementation plans rather than assuming that inherited Mihon behavior is always authoritative.
 
+## Before contributing
 
-# Code contributions
+Review the relevant documents under:
 
-Pull requests are welcome!
+- `docs/superpowers/specs/`
+- `docs/superpowers/plans/`
 
-If you're interested in taking on [an open issue](https://github.com/mihonapp/mihon/issues), please comment on it so others are aware.
-You do not need to ask for permission nor an assignment.
+For large or architectural changes, open an issue or discussion in this repository before implementing a competing design.
 
-## Prerequisites
+## Development requirements
 
-Before you start, please note that the ability to use following technologies is **required** and that existing contributors will not actively teach them to you.
+The project is primarily Kotlin/Android and expects familiarity with:
 
-- Basic [Android development](https://developer.android.com/)
-- [Kotlin](https://kotlinlang.org/)
+- Android development;
+- Kotlin;
+- Git and GitHub Actions.
 
-### Tools
+### Validation
 
-- [Android Studio](https://developer.android.com/studio)
-- Emulator or phone with developer options enabled to test changes.
+For this repository:
 
-## Getting help
+- **do not run Gradle locally for project validation**;
+- Gradle verification is performed through GitHub Actions;
+- behavioral fixes should include regression coverage when practical;
+- do not disable or skip tests merely to make CI pass;
+- do not describe planner-skipped CI jobs as passed.
 
-- Join [the Discord server](https://discord.gg/mihon) for online help and to ask questions while developing.
+Small non-Gradle tools used by repository automation may be tested directly when appropriate.
 
-# Translations
+## Tsuzuki-specific engineering rules
 
-Translations are done externally via Weblate. See [our website](https://mihon.app/docs/contribute#translation) for more details.
+Please preserve these project contracts unless an accepted spec explicitly changes them:
 
+- canonical identity must not be inferred by title equality alone;
+- metadata providers and reading/content providers remain separate concerns;
+- ambiguous chapter/content identity should fail closed;
+- Mihon/Tachiyomi extension compatibility should not be broken for cosmetic renaming;
+- persistent identifiers such as package IDs, deep links, authorities, backup formats, and signing identity require an explicit migration plan;
+- do not perform global `Mihon`/Tachiyomi → Tsuzuki replacements.
 
-# Forks
+## Upstream changes
 
-Forks are allowed so long as they abide by [the project's LICENSE](https://github.com/mihonapp/mihon/blob/main/LICENSE).
+Tsuzuki is derived from [Mihon](https://github.com/mihonapp/mihon), but it does not attempt to mirror upstream continuously.
 
-When creating a fork, remember to:
+Useful upstream changes may be selectively ported when they fit Tsuzuki. A port should be reviewed as a Tsuzuki change, because a valid Mihon change can still conflict with Tsuzuki architecture.
 
-- To avoid confusion with the main app:
-    - Change the app name
-    - Change the app icon
-    - Change or disable the [app update checker](https://github.com/mihonapp/mihon/blob/main/app/src/main/java/eu/kanade/tachiyomi/data/updater/AppUpdateChecker.kt)
-- To avoid installation conflicts:
-    - Change the `applicationId` in [`build.gradle.kts`](https://github.com/mihonapp/mihon/blob/main/app/build.gradle.kts)
-- To avoid having your data polluting the main app's analytics and crash report services:
-    - If you want to use Firebase analytics, replace [`google-services.json`](https://github.com/mihonapp/mihon/blob/main/app/src/standard/google-services.json) with your own
+If a bug belongs to Mihon itself rather than Tsuzuki-specific code, contributors may also choose to report or fix it upstream separately.
+
+## Pull requests
+
+A pull request should:
+
+- explain what changed and why;
+- reference the relevant issue/spec/plan when one exists;
+- include tests for behavioral changes;
+- note any compatibility or migration implications;
+- include screenshots for visible UI changes when useful;
+- have the relevant GitHub Actions checks green.
+
+Keep unrelated refactors out of focused changes whenever possible.
+
+## License and attribution
+
+Contributions are made under the repository's Apache-2.0 license.
+
+Do not remove inherited upstream copyright, attribution, or third-party license information unless the legal basis for doing so is clear and documented.
