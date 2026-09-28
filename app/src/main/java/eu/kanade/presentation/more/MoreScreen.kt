@@ -144,23 +144,9 @@ fun MoreScreen(
             }
             item {
                 TextPreferenceWidget(
-                    title = stringResource(MR.strings.label_support_us),
-                    icon = MaterialSymbols.Rounded.VolunteerActivism,
-                    onPreferenceClick = onClickSupport,
-                )
-            }
-            item {
-                TextPreferenceWidget(
                     title = stringResource(MR.strings.pref_category_about),
                     icon = MaterialSymbols.Rounded.Info,
                     onPreferenceClick = onClickAbout,
-                )
-            }
-            item {
-                TextPreferenceWidget(
-                    title = stringResource(MR.strings.label_help),
-                    icon = MaterialSymbols.AutoMirroredRounded.Help,
-                    onPreferenceClick = { uriHandler.openUri(Constants.URL_HELP) },
                 )
             }
         }
