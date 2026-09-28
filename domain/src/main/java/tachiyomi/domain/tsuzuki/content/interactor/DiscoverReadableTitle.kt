@@ -190,8 +190,17 @@ class DiscoverReadableTitle internal constructor(
                     discovered += result.bindings
                 }
                 val remainingConfigured = missingConfiguredSourceIds.any { it !in attemptedSourceIds }
+                val allBindings = currentBindings + discovered
                 val boundAddonCount = (currentBoundAddonIds + discovered.map(ContentBinding::addonId)).size
-                if (!remainingConfigured && boundAddonCount >= MIN_AUTOMATIC_ADDON_BINDINGS) break
+                val configuredBindingFound = allBindings
+                    .mapNotNull { it.providerTitleKey.substringBefore(':').toLongOrNull() }
+                    .any { it in configuredSourceIds }
+                if (
+                    !remainingConfigured &&
+                    (configuredBindingFound || boundAddonCount >= MIN_AUTOMATIC_ADDON_BINDINGS)
+                ) {
+                    break
+                }
                 if (attemptedSourceIds.size == before) break
             }
             Result.success((currentBindings + discovered).distinctBy(ContentBinding::id))
