@@ -73,6 +73,16 @@ env:
   TSUZUKI_KEY_PASSWORD: ${{ secrets.TSUZUKI_KEY_PASSWORD }}
 """
 
+VALID_ABOUT_SCREEN = """
+val projectSource = "https://github.com/jssantogit/mihon"
+val upstream = "https://github.com/mihonapp/mihon"
+"""
+
+VALID_MORE_SCREEN = """
+fun MoreScreen() {
+    // Tsuzuki-owned navigation only.
+}
+
 
 class IdentityContractTest(unittest.TestCase):
     def make_repo(
@@ -83,6 +93,8 @@ class IdentityContractTest(unittest.TestCase):
         app_info=VALID_APP_INFO,
         backup_creator=VALID_BACKUP_CREATOR,
         apk_workflow=VALID_APK_WORKFLOW,
+        about_screen=VALID_ABOUT_SCREEN,
+        more_screen=VALID_MORE_SCREEN,
     ):
         temp_dir = tempfile.TemporaryDirectory()
         root = Path(temp_dir.name)
@@ -92,6 +104,8 @@ class IdentityContractTest(unittest.TestCase):
             "app/src/main/java/eu/kanade/tachiyomi/AppInfo.kt": app_info,
             "app/src/main/java/eu/kanade/tachiyomi/data/backup/create/BackupCreator.kt": backup_creator,
             ".github/workflows/apk.yml": apk_workflow,
+            "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt": about_screen,
+            "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt": more_screen,
         }
         for relative, content in files.items():
             path = root / relative
@@ -147,6 +161,21 @@ class IdentityContractTest(unittest.TestCase):
     def test_persistent_tsuzuki_signing_secret_names_are_required(self):
         root = self.make_repo(apk_workflow=VALID_APK_WORKFLOW.replace("TSUZUKI_KEY_ALIAS", "NEW_KEY_ALIAS"))
         self.assertIn("APK workflow no longer references TSUZUKI_KEY_ALIAS", check_contract(root))
+
+    def test_about_screen_rejects_mihon_public_identity_links(self):
+        inherited = VALID_ABOUT_SCREEN + '\nval site = "https://mihon.app"\n'
+        root = self.make_repo(about_screen=inherited)
+        self.assertIn("About screen exposes Mihon-owned public identity links", check_contract(root))
+
+    def test_about_screen_rejects_mihon_release_channel(self):
+        root = self.make_repo(about_screen=VALID_ABOUT_SCREEN + "\nval release = RELEASE_URL\n")
+        self.assertIn("About screen still exposes the inherited Mihon release channel", check_contract(root))
+
+    def test_more_screen_rejects_inherited_support_and_help_entries(self):
+        inherited = VALID_MORE_SCREEN + "\nval support = MR.strings.label_support_us\nval help = Constants.URL_HELP\n"
+        root = self.make_repo(more_screen=inherited)
+        errors = check_contract(root)
+        self.assertIn("More screen still exposes inherited Mihon support/help entry points", errors)
 
 
 if __name__ == "__main__":
