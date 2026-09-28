@@ -433,6 +433,7 @@ class RefreshChapterEvidenceTest {
             .map { it.displayNumber } shouldContainExactly listOf("1")
     }
 
+    // Physical Tokyo Ghoul regression: safe-but-empty bindings must not block a later readable source.
     @Test
     fun `refresh keeps broadening past multiple empty safe bindings until readable inventory is found`() = runTest {
         val staleAddon = AddonId("stale")
