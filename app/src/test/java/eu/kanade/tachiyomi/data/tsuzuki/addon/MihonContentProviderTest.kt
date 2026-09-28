@@ -1174,6 +1174,7 @@ class MihonContentProviderTest {
         materializations shouldBe 0
     }
 
+    // Physical Tokyo Ghoul regression: MangaDot exposed a chapter-zero row whose pages were chapter one.
     @Test
     fun `titled zero placeholder is never offered as a readable regular zero`() = runTest {
         val linked = binding(id = "binding-tokyo-ghoul-zero", sourceKey = "7:/tokyo-ghoul")
