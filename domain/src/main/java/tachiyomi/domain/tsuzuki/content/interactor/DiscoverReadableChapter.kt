@@ -322,8 +322,8 @@ class DiscoverReadableChapter internal constructor(
                                                             continue
                                                         }
                                                         if (!attemptedBindingGate.withLock {
-                                                            attemptedBindingIds.add(binding.id)
-                                                        }
+                                                                attemptedBindingIds.add(binding.id)
+                                                            }
                                                         ) {
                                                             continue
                                                         }
