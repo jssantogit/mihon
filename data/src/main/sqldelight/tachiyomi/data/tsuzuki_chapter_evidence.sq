@@ -114,3 +114,9 @@ ORDER BY
     observed_at ASC,
     id ASC
 LIMIT 1;
+
+
+rekeyTsuzukiChapterEvidenceMapping:
+UPDATE tsuzuki_chapter_evidence
+SET mapped_canonical_chapter_id = :preferredChapterId
+WHERE mapped_canonical_chapter_id = :duplicateChapterId;

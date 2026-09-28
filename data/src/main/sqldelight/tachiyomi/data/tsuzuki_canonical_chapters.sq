@@ -73,3 +73,16 @@ ON CONFLICT(id) DO UPDATE SET
     confidence = excluded.confidence,
     updated_at = excluded.updated_at,
     confirmation_state = excluded.confirmation_state;
+
+
+countTsuzukiCanonicalChapterProtectedState:
+SELECT
+    (SELECT count(*) FROM tsuzuki_chapter_progress WHERE canonical_chapter_id = :canonicalChapterId) +
+    (SELECT count(*) FROM tsuzuki_chapter_history WHERE canonical_chapter_id = :canonicalChapterId) +
+    (SELECT count(*) FROM tsuzuki_canonical_downloads WHERE canonical_chapter_id = :canonicalChapterId) +
+    (SELECT count(*) FROM tsuzuki_chapter_update_state WHERE canonical_chapter_id = :canonicalChapterId) +
+    (SELECT count(*) FROM tsuzuki_mihon_projection_queue WHERE canonical_chapter_id = :canonicalChapterId);
+
+deleteTsuzukiCanonicalChapterById:
+DELETE FROM tsuzuki_canonical_chapters
+WHERE id = :canonicalChapterId;

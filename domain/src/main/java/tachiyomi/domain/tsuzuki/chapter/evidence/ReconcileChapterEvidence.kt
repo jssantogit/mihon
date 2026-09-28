@@ -108,13 +108,68 @@ class ReconcileChapterEvidence internal constructor(
         }
     }
 
+    private suspend fun consolidateExactLegacyDuplicates(
+        canonicalTitleId: String,
+        chapters: List<CanonicalChapter>,
+    ): List<CanonicalChapter> {
+        val mutable = chapters.associateByTo(linkedMapOf(), CanonicalChapter::id)
+        val groups = chapters
+            .filter {
+                it.type == tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR &&
+                    it.identity.isNumbered
+            }
+            .groupBy { it.identity to it.volume }
+            .values
+            .filter { it.size > 1 }
+
+        var changed = false
+        groups.forEach { duplicateGroup ->
+            val ordered = duplicateGroup.sortedWith(
+                compareByDescending<CanonicalChapter> {
+                    it.confirmation == CanonicalChapterConfirmation.CONFIRMED
+                }.thenBy { it.createdAt }.thenBy { it.id },
+            )
+            var preferred = ordered.first()
+            ordered.drop(1).forEach { candidate ->
+                val forward = canonicalChapterRepository.consolidateExactDuplicateIfSafe(
+                    canonicalTitleId = canonicalTitleId,
+                    preferredChapterId = preferred.id,
+                    duplicateChapterId = candidate.id,
+                )
+                if (forward) {
+                    mutable.remove(candidate.id)
+                    changed = true
+                } else {
+                    val reverse = canonicalChapterRepository.consolidateExactDuplicateIfSafe(
+                        canonicalTitleId = canonicalTitleId,
+                        preferredChapterId = candidate.id,
+                        duplicateChapterId = preferred.id,
+                    )
+                    if (reverse) {
+                        mutable.remove(preferred.id)
+                        preferred = candidate
+                        changed = true
+                    }
+                }
+            }
+        }
+        return if (changed) {
+            canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+        } else {
+            mutable.values.toList()
+        }
+    }
+
     private suspend fun reconcileUncontended(
         canonicalTitleId: String,
         evidence: List<ChapterEvidence>,
     ): List<PersistedChapterEvidence> {
-        val chapters = canonicalChapterRepository
-            .getByCanonicalTitleId(canonicalTitleId)
-            .associateByTo(linkedMapOf(), CanonicalChapter::id)
+        val initialChapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
+        val normalizedChapters = consolidateExactLegacyDuplicates(
+            canonicalTitleId = canonicalTitleId,
+            chapters = initialChapters,
+        )
+        val chapters = normalizedChapters.associateByTo(linkedMapOf(), CanonicalChapter::id)
         val persistedEvidence = evidenceRepository
             .getByCanonicalTitleId(canonicalTitleId)
             .associateBy { it.evidence.id }

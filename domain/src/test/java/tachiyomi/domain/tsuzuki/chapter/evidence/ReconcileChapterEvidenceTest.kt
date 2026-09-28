@@ -1314,6 +1314,35 @@ class ReconcileChapterEvidenceTest {
             variants[variant.sourceId to variant.sourceChapterId] = variant
         }
 
+        override suspend fun consolidateExactDuplicateIfSafe(
+            canonicalTitleId: String,
+            preferredChapterId: String,
+            duplicateChapterId: String,
+        ): Boolean {
+            val preferred = chapters[preferredChapterId] ?: return false
+            val duplicate = chapters[duplicateChapterId] ?: return false
+            if (
+                preferred.canonicalTitleId != canonicalTitleId ||
+                duplicate.canonicalTitleId != canonicalTitleId ||
+                preferred.type != tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR ||
+                duplicate.type != tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType.REGULAR ||
+                preferred.identity != duplicate.identity ||
+                preferred.volume != duplicate.volume
+            ) {
+                return false
+            }
+            variants.replaceAll { _, variant ->
+                if (variant.canonicalChapterId == duplicateChapterId) {
+                    variant.copy(canonicalChapterId = preferredChapterId)
+                } else {
+                    variant
+                }
+            }
+            chapters.remove(duplicateChapterId)
+            state.value = chapters.values.toList()
+            return true
+        }
+
         override suspend fun upsertBatch(
             chapters: List<CanonicalChapter>,
             variants: List<ChapterVariant>,

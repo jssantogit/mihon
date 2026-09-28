@@ -94,9 +94,6 @@ class DiscoverReadableTitle internal constructor(
         require(canonicalTitleId.isNotBlank())
         return try {
             val currentBindings = existingBindings(canonicalTitleId)
-            if (currentBindings.isNotEmpty() && !broadenExistingBindings) {
-                return Result.success(currentBindings)
-            }
 
             val installed = installedAddons()
                 .filter { it.enabled && it.mihonSourceIds.isNotEmpty() }
@@ -123,11 +120,28 @@ class DiscoverReadableTitle internal constructor(
             val attemptedSourceIds = currentBindings.mapNotNullTo(mutableSetOf()) { binding ->
                 binding.providerTitleKey.substringBefore(':').toLongOrNull()
             }
+            val missingConfiguredSourceIds = configuredSourceIds
+                .filterNot { it in attemptedSourceIds }
+                .toSet()
+            if (
+                currentBindings.isNotEmpty() &&
+                !broadenExistingBindings &&
+                missingConfiguredSourceIds.isEmpty()
+            ) {
+                return Result.success(currentBindings)
+            }
             val discovered = mutableListOf<ContentBinding>()
 
             for (wave in 0 until MAX_TITLE_DISCOVERY_WAVES) {
                 val remainingEligibility = baseEligibility.mapValues { (_, sources) ->
-                    sources.filterNot { it.sourceId in attemptedSourceIds }
+                    sources.filterNot { source ->
+                        source.sourceId in attemptedSourceIds ||
+                            (
+                                currentBindings.isNotEmpty() &&
+                                    !broadenExistingBindings &&
+                                    source.sourceId !in missingConfiguredSourceIds
+                                )
+                    }
                 }
                 val targets = planner.execute(
                     installed = installed,
@@ -181,7 +195,8 @@ class DiscoverReadableTitle internal constructor(
                     attemptedSourceIds += result.queriedSourceIds
                     discovered += result.bindings
                 }
-                if (discovered.isNotEmpty()) break
+                val remainingConfigured = missingConfiguredSourceIds.any { it !in attemptedSourceIds }
+                if (discovered.isNotEmpty() && !remainingConfigured) break
                 if (attemptedSourceIds.size == before) break
             }
             Result.success((currentBindings + discovered).distinctBy(ContentBinding::id))
