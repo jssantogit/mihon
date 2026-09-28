@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -206,6 +207,156 @@ class CanonicalReadingRepositoryImplTest {
         repository.getProgress("chapter-1") shouldBe null
         repository.getHistory("chapter-1") shouldBe null
         chapterRepository.getById("chapter-2")!!.id shouldBe "chapter-2"
+    }
+
+    @Test
+    fun `durable projection coalesces page checkpoints and delivers history duration once`() = runBlocking<Unit> {
+        seedOperationalChapter()
+        repository.recordProgressWithProjection(
+            CanonicalChapterProgress("chapter-1", read = false, lastPageRead = 4L, updatedAt = 100L),
+            mihonChapterId = 77L,
+        )
+        repository.recordProgressWithProjection(
+            CanonicalChapterProgress("chapter-1", read = true, lastPageRead = 2L, updatedAt = 200L),
+            mihonChapterId = 77L,
+        )
+        repository.recordHistoryWithProjection(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 200L, sessionReadDuration = 30L),
+            mihonChapterId = 77L,
+        )
+        repository.recordHistoryWithProjection(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 300L, sessionReadDuration = 20L),
+            mihonChapterId = 77L,
+        )
+
+        legacyState() shouldBe Triple(0L, 0L, 0L)
+        repository.getProgress("chapter-1")?.lastPageRead shouldBe 2L
+        repository.getHistory("chapter-1")?.totalReadDuration shouldBe 50L
+
+        repository.drainPendingProjectionsAt(limit = 4, nowMillis = 1_000L) shouldBe 1
+        legacyState() shouldBe Triple(1L, 2L, 50L)
+        repository.drainPendingProjectionsAt(limit = 4, nowMillis = 2_000L) shouldBe 0
+        legacyState() shouldBe Triple(1L, 2L, 50L)
+    }
+
+    @Test
+    fun `failed projection rolls back legacy writes and recovers after process restart`() = runBlocking<Unit> {
+        seedOperationalChapter()
+        repository.recordProgressWithProjection(
+            CanonicalChapterProgress("chapter-1", read = true, lastPageRead = 6L, updatedAt = 300L),
+            mihonChapterId = 77L,
+        )
+        repository.recordHistoryWithProjection(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 300L, sessionReadDuration = 30L),
+            mihonChapterId = 77L,
+        )
+
+        repository.drainPendingProjectionsAt(
+            limit = 1,
+            nowMillis = 1_000L,
+            beforeAcknowledge = { error("injected crash before outbox acknowledgement") },
+        ) shouldBe 0
+
+        legacyState() shouldBe Triple(0L, 0L, 0L)
+        repository.getProgress("chapter-1")?.lastPageRead shouldBe 6L
+        repository.getHistory("chapter-1")?.totalReadDuration shouldBe 30L
+
+        // Model process restart: instantiate a new repository on the same persisted database.
+        val afterRestart = CanonicalReadingRepositoryImpl(database)
+        afterRestart.drainPendingProjectionsAt(limit = 1, nowMillis = 120_000L) shouldBe 1
+        legacyState() shouldBe Triple(1L, 6L, 30L)
+        afterRestart.drainPendingProjectionsAt(limit = 1, nowMillis = 121_000L) shouldBe 0
+    }
+
+    @Test
+    fun `new page after a failed projection resets backoff without double counting history`() = runBlocking<Unit> {
+        seedOperationalChapter()
+        repository.recordHistoryWithProjection(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 100L, sessionReadDuration = 10L),
+            mihonChapterId = 77L,
+        )
+        repository.drainPendingProjectionsAt(
+            limit = 1,
+            nowMillis = 1_000L,
+            beforeAcknowledge = { error("retryable fault") },
+        ) shouldBe 0
+        repository.drainPendingProjectionsAt(limit = 1, nowMillis = 1_001L) shouldBe 0
+
+        repository.recordProgressWithProjection(
+            CanonicalChapterProgress("chapter-1", lastPageRead = 3L, updatedAt = 200L),
+            mihonChapterId = 77L,
+        )
+        repository.drainPendingProjectionsAt(limit = 1, nowMillis = 1_002L) shouldBe 1
+        legacyState() shouldBe Triple(0L, 3L, 10L)
+    }
+
+    @Test
+    fun `failed outbox insert rolls back canonical history without losing older reading data`() = runBlocking<Unit> {
+        seedOperationalChapter()
+        repository.recordHistory(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 100L, sessionReadDuration = 20L),
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TRIGGER fail_tsuzuki_projection_enqueue
+            BEFORE INSERT ON tsuzuki_mihon_projection_queue
+            BEGIN SELECT RAISE(ABORT, 'synthetic outbox failure'); END
+            """.trimIndent(),
+            0,
+        ).await()
+        try {
+            shouldThrow<Exception> {
+                repository.recordHistoryWithProjection(
+                    CanonicalChapterHistoryUpdate("chapter-1", readAt = 200L, sessionReadDuration = 10L),
+                    mihonChapterId = 77L,
+                )
+            }
+            repository.getHistory("chapter-1")?.totalReadDuration shouldBe 20L
+            legacyState() shouldBe Triple(0L, 0L, 0L)
+        } finally {
+            driver.execute(null, "DROP TRIGGER fail_tsuzuki_projection_enqueue", 0).await()
+        }
+        repository.recordHistoryWithProjection(
+            CanonicalChapterHistoryUpdate("chapter-1", readAt = 300L, sessionReadDuration = 10L),
+            mihonChapterId = 77L,
+        )
+        repository.drainPendingProjectionsAt(limit = 1, nowMillis = 1_000L) shouldBe 1
+        repository.getHistory("chapter-1")?.totalReadDuration shouldBe 30L
+        legacyState() shouldBe Triple(0L, 0L, 10L)
+    }
+
+    private suspend fun seedOperationalChapter() {
+        driver.execute(
+            null,
+            """
+            INSERT INTO mangas(
+                _id, source, url, title, status, favorite, initialized,
+                viewer, chapter_flags, cover_last_modified, date_added
+            ) VALUES (77, 7, '/title', 'Fixture', 0, 0, 0, 0, 0, 0, 0)
+            """.trimIndent(),
+            0,
+        ).await()
+        driver.execute(
+            null,
+            """
+            INSERT INTO chapters(
+                _id, manga_id, url, name, read, bookmark, last_page_read,
+                chapter_number, source_order, date_fetch, date_upload
+            ) VALUES (77, 77, '/chapter/1', 'Chapter 1', 0, 0, 0, 1, 0, 0, 0)
+            """.trimIndent(),
+            0,
+        ).await()
+    }
+
+    private suspend fun legacyState(): Triple<Long, Long, Long> {
+        val chapter = database.chaptersQueries.getChapterById(77L).awaitAsOne()
+        val history = database.historyQueries.getHistoryByMangaId(77L).awaitAsList().firstOrNull()
+        return Triple(
+            if (chapter.read) 1L else 0L,
+            chapter.last_page_read,
+            history?.time_read ?: 0L,
+        )
     }
 
     private suspend fun seedTitleMappingAndChapters() {

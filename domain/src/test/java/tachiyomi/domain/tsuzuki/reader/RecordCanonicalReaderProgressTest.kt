@@ -130,6 +130,19 @@ class RecordCanonicalReaderProgressTest {
         var projectedHistory: ProjectedHistory? = null
         var canonicalProgressWasPresentForPage = false
         var canonicalHistoryWasPresent = false
+        var flushCalls = 0
+
+        override suspend fun flushPendingProjections() {
+            flushCalls++
+            repository.queuedPage?.let {
+                projectedPage = it
+                canonicalProgressWasPresentForPage = repository.progress != null
+            }
+            repository.queuedHistory?.let {
+                projectedHistory = it
+                canonicalHistoryWasPresent = repository.lastHistoryUpdate != null
+            }
+        }
 
         override suspend fun projectProgress(
             mihonChapterId: Long,
@@ -202,6 +215,24 @@ class RecordCanonicalReaderProgressTest {
     private class FakeCanonicalReadingRepository : CanonicalReadingRepository {
         var progress: CanonicalChapterProgress? = null
         var lastHistoryUpdate: CanonicalChapterHistoryUpdate? = null
+        var queuedPage: ProjectedPage? = null
+        var queuedHistory: ProjectedHistory? = null
+
+        override suspend fun recordProgressWithProjection(
+            progress: CanonicalChapterProgress,
+            mihonChapterId: Long,
+        ) {
+            this.progress = progress
+            queuedPage = ProjectedPage(mihonChapterId, progress.read, progress.lastPageRead)
+        }
+
+        override suspend fun recordHistoryWithProjection(
+            update: CanonicalChapterHistoryUpdate,
+            mihonChapterId: Long,
+        ) {
+            lastHistoryUpdate = update
+            queuedHistory = ProjectedHistory(mihonChapterId, update.readAt, update.sessionReadDuration)
+        }
 
         override suspend fun getProgress(canonicalChapterId: String): CanonicalChapterProgress? = progress
 

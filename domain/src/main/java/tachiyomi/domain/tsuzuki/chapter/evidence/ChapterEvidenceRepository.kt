@@ -6,7 +6,16 @@ data class PersistedChapterEvidence(
     val rawMetadata: ByteArray = byteArrayOf(),
 )
 
+data class ChapterEvidenceWrite(
+    val evidence: ChapterEvidence,
+    val mappedCanonicalChapterId: String?,
+)
+
 interface ChapterEvidenceRepository {
+
+    /** Run chapter and evidence writes against the same persistence transaction. */
+    suspend fun <T> withTransaction(block: suspend () -> T): T = block()
+
     suspend fun getByCanonicalTitleId(canonicalTitleId: String): List<PersistedChapterEvidence>
 
     suspend fun getByProducerExternalKey(
@@ -19,4 +28,7 @@ interface ChapterEvidenceRepository {
         evidence: ChapterEvidence,
         mappedCanonicalChapterId: String?,
     ): PersistedChapterEvidence
+
+    suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>): List<PersistedChapterEvidence> =
+        writes.map { write -> upsert(write.evidence, write.mappedCanonicalChapterId) }
 }

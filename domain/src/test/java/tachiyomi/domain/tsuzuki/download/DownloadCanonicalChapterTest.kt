@@ -4,6 +4,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
@@ -122,7 +123,7 @@ class DownloadCanonicalChapterTest {
         fixture.repository.value?.canonicalChapterId shouldBe "chapter-1"
     }
 
-    private fun fixture(
+    private fun TestScope.fixture(
         preference: ContentPreference?,
         providers: List<ContentProvider>,
         existingArtifact: CanonicalDownloadArtifact? = null,
@@ -135,7 +136,7 @@ class DownloadCanonicalChapterTest {
             readerPreferences = CanonicalReaderPreferences(InMemoryPreferenceStore()),
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
         )
         val repository = FakeCanonicalDownloadRepository(existingArtifact)
         val gateway = FakeCanonicalDownloadGateway(gatewayArtifact)

@@ -501,8 +501,16 @@ class ReaderActivity : BaseActivity() {
      * Called when the activity is destroyed. Cleans up the viewer, configuration and any view.
      */
     override fun onDestroy() {
+        // A configuration change retains ReaderViewModel but destroys this Activity's view tree.
+        // Do not leave its old, detached Viewer in the retained state: the replacement Activity
+        // needs a fresh Viewer bound to its own container to display the restored page.
+        val ownedViewer = viewModel.state.value.viewer
+            ?.takeIf { ::binding.isInitialized && it.getView().parent === binding.viewerContainer }
         super.onDestroy()
-        viewModel.state.value.viewer?.destroy()
+        ownedViewer?.destroy()
+        if (ownedViewer != null && viewModel.state.value.viewer === ownedViewer) {
+            viewModel.onViewerLoaded(null)
+        }
         config = null
         menuToggleToast?.cancel()
         readingModeToast?.cancel()

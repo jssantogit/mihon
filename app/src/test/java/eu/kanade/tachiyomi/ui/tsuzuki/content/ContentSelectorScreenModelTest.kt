@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -845,7 +846,7 @@ class ContentSelectorScreenModelTest {
         empty.discoveryAttempted shouldBe true
     }
 
-    private fun model(
+    private fun TestScope.model(
         providers: List<ContentProvider>,
         addons: List<InstalledAddon>,
         preferenceRepository: FakeContentPreferenceRepository = FakeContentPreferenceRepository(null),
@@ -860,7 +861,7 @@ class ContentSelectorScreenModelTest {
             readerPreferences = readerPreferences,
             rankContentOptions = RankContentOptions(),
             contentOptionCache = ContentOptionCache(),
-            inFlightContentResolution = InFlightContentResolution(),
+            inFlightContentResolution = InFlightContentResolution(backgroundScope),
         )
         return ContentSelectorScreenModel(
             resolveChapterContent = resolver,

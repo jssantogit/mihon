@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.addon.repository.AddonSourceEligibilityRepositor
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
@@ -26,6 +27,7 @@ class MihonAddonProviderFactory(
     private val chapterInventoryGateway: MihonChapterInventoryGateway,
     private val chapterInventoryDiagnostics: ChapterInventoryDiagnostics,
     private val sourceEligibilityRepository: AddonSourceEligibilityRepository,
+    private val volumeParser: ParseCanonicalChapterVolume,
 ) {
 
     fun contentProvider(addonId: AddonId) = MihonContentProvider(
@@ -38,6 +40,7 @@ class MihonAddonProviderFactory(
         materializeDelivery = ::materializeDelivery,
         diagnostics = chapterInventoryDiagnostics,
         enabledSourceIds = { enabledSources(addonId) },
+        volumeParser = volumeParser,
     )
 
     fun chapterProbeProvider(addonId: AddonId) = MihonChapterProbeProvider(
@@ -47,6 +50,7 @@ class MihonAddonProviderFactory(
         fetchInventory = { binding -> chapterInventoryGateway.fetch(binding, refresh = true) },
         diagnostics = chapterInventoryDiagnostics,
         enabledSourceIds = { enabledSources(addonId) },
+        volumeParser = volumeParser,
     )
 
     private suspend fun enabledSources(addonId: AddonId): Set<Long> =

@@ -38,6 +38,7 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
 import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
@@ -184,6 +185,7 @@ internal class ProductionMihonJourneyComposition(
         canonicalChapterRepository = canonicalChapterRepository,
         chapterEvidenceRepository = chapterEvidenceRepository,
         parser = chapterLabelParser,
+        volumeParser = ParseCanonicalChapterVolume(),
         chapterInventoryGateway = chapterInventoryGateway,
         chapterInventoryDiagnostics = diagnostics,
         sourceEligibilityRepository = sourceEligibilityRepository,

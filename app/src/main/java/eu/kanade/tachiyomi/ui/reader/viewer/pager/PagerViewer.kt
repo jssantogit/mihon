@@ -279,16 +279,20 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         // Remove listener so the change in item doesn't trigger it
         pager.removeOnPageChangeListener(pagerListener)
 
+        val replacingCurrentChapter = adapter.currentChapter !== chapters.currChapter
         val forceTransition = config.alwaysShowChapterTransition ||
             adapter.items.getOrNull(pager.currentItem) is ChapterTransition
         adapter.setChapters(chapters, forceTransition)
 
-        // Layout the pager once a chapter is being set
-        if (pager.isGone) {
-            logcat { "Pager first layout" }
-            val pages = chapters.currChapter.pages ?: return
-            moveToPage(pages[min(chapters.currChapter.requestedPage, pages.lastIndex)])
-            pager.isVisible = true
+        // Updating an already-visible pager can leave its old item index on the
+        // replacement's end transition when the new source has fewer pages.
+        // Position the newly published chapter by its prepared/clamped index;
+        // do not reposition on same-chapter adjacent-page preloads.
+        if (pager.isGone || replacingCurrentChapter) {
+            chapters.currChapter.pages?.takeIf { it.isNotEmpty() }?.let { pages ->
+                moveToPage(pages[min(chapters.currChapter.requestedPage, pages.lastIndex)])
+                pager.isVisible = true
+            }
         }
 
         pager.addOnPageChangeListener(pagerListener)

@@ -391,6 +391,7 @@ dependencies {
     // The runner is the instrumentation entry point; ext:junit alone does not guarantee its DEX is packaged.
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.okhttp.mockwebserver)
 
     // For detecting memory leaks; see https://square.github.io/leakcanary/
     // debugImplementation(libs.leakCanary.android)

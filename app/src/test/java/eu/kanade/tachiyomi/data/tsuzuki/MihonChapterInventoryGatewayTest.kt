@@ -12,9 +12,12 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
@@ -34,6 +37,8 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceTitleMapping
 import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Clock
 
 class MihonChapterInventoryGatewayTest {
 
@@ -158,6 +163,7 @@ class MihonChapterInventoryGatewayTest {
         source.lastFetchChapters shouldBe true
         inventory.sourceMappingId shouldBe "mapping-7"
         inventory.canonicalTitleId shouldBe "title-1"
+        inventory.sourceUrl shouldBe "/title"
         inventory.chapters.map { it.sourceChapterId } shouldContainExactly listOf("/new", "/known")
         inventory.chapters.map { it.rawNumberHint } shouldContainExactly listOf(4.5, 3.0)
         inventory.chapters[0].rawSourceOrder shouldBe 0L
@@ -167,6 +173,84 @@ class MihonChapterInventoryGatewayTest {
         inventory.chapters[0].rawSourceMetadata shouldBe JsonObject(mapOf("source" to JsonPrimitive("memo")))
         chapterRepository.writeCount shouldBe 0
         mangaRepository.writeCount shouldBe 0
+    }
+
+    @Test
+    fun `source chapter fetch runs away from the caller thread`() = runTest {
+        val callerThread = Thread.currentThread()
+        var sourceThread: Thread? = null
+        val source = TestSource(7L) {
+            sourceThread = Thread.currentThread()
+            listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L))
+        }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+        )
+
+        gateway.fetch(mapping(), refresh = true).getOrThrow()
+
+        source.wasCalled shouldBe true
+        (sourceThread === callerThread) shouldBe false
+    }
+
+    @Test
+    fun `inventory captures provider fetch start before the source delivers a result`() = runTest {
+        var sourceEnteredAt = 0L
+        val source = TestSource(7L) {
+            sourceEnteredAt = Clock.System.now().toEpochMilliseconds()
+            listOf(chapter("/chapter/1", "Chapter 1", 1f, null, 1L))
+        }
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+        )
+        val inventory = gateway.fetch(mapping(), refresh = true).getOrThrow()
+        val startedAt = requireNotNull(inventory.fetchStartedAtMillis)
+        (startedAt > 0L) shouldBe true
+        (startedAt <= sourceEnteredAt) shouldBe true
+    }
+
+    @Test
+    fun `gateway refuses invalidated in-flight provider results and retains newer inventory`() = runTest {
+        val releaseOld = CompletableDeferred<Unit>()
+        val oldFetchEntered = CompletableDeferred<Unit>()
+        val fetchCount = AtomicInteger()
+        val source = TestSource(7L) {
+            val request = fetchCount.incrementAndGet()
+            if (request == 1) {
+                oldFetchEntered.complete(Unit)
+                releaseOld.await()
+            }
+            listOf(
+                chapter("/chapter/$request", "Chapter $request", request.toFloat(), null, request.toLong()),
+            )
+        }
+        val cache = MihonInventorySnapshotCache({ 0L }, 100L, 4)
+        val gateway = MihonChapterInventoryGateway(
+            mangaRepository = FakeMangaRepository(Manga.create().copy(id = 42L, source = 7L, url = "/title")),
+            chapterRepository = FakeChapterRepository(emptyList()),
+            sourceManager = FakeSourceManager(source),
+            inventoryCache = cache,
+        )
+
+        val original = async { gateway.fetch(mapping(), refresh = true) }
+        oldFetchEntered.await()
+        val joined = async { gateway.fetch(mapping()) }
+        yield()
+        fetchCount.get() shouldBe 1
+
+        cache.invalidateTitle("title-1")
+        val fresh = gateway.fetch(mapping(), refresh = true).getOrThrow()
+        fresh.chapters.map { it.sourceChapterId } shouldContainExactly listOf("/chapter/2")
+        releaseOld.complete(Unit)
+
+        original.await().isFailure shouldBe true
+        joined.await().isFailure shouldBe true
+        gateway.fetch(mapping()).getOrThrow() shouldBe fresh
+        fetchCount.get() shouldBe 2
     }
 
     @Test

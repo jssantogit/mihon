@@ -93,6 +93,25 @@ class PlanFastReadingDiscoveryTest {
     }
 
     @Test
+    fun `configured source order outranks addon package size during automatic discovery`() {
+        val preferred = installed("preferred-large", 30L, 31L, 32L)
+        val smaller = installed("small", 20L)
+        val result = planner.execute(
+            installed = listOf(smaller, preferred),
+            eligibility = mapOf(
+                preferred.id to listOf(source(30L, "en"), source(31L, "en"), source(32L, "en")),
+                smaller.id to listOf(source(20L, "en")),
+            ),
+            preferredAddonId = null,
+            preferredLanguages = listOf("en"),
+            preferredSourceIds = listOf(30L, 20L),
+        )
+
+        result.first().addonId shouldBe preferred.id
+        result.first().allowedSourceIds.first() shouldBe 30L
+    }
+
+    @Test
     fun `initial budgets are respected even for two large multilingual packages`() {
         val first = installed("first", 1L, 2L, 3L, 4L, 5L)
         val second = installed("second", 6L, 7L, 8L, 9L, 10L)

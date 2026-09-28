@@ -23,12 +23,12 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
+import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import java.util.UUID
-import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 class MihonChapterProbeProvider internal constructor(
@@ -36,9 +36,9 @@ class MihonChapterProbeProvider internal constructor(
     private val contentBindingRepository: ContentBindingRepository,
     private val parser: ParseCanonicalChapterLabel,
     private val fetchInventory: suspend (ContentBinding) -> Result<SourceChapterInventory>,
-    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
+    private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
 ) : TargetedChapterProbeProvider {
 
     override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
@@ -141,7 +141,9 @@ class MihonChapterProbeProvider internal constructor(
                     continue
                 }
                 successfulInventoryCount++
-                val observedAt = clock()
+                // Cache replay keeps the gateway's fetch-start. Older inventories
+                // without provenance use the oldest timestamp, not processing time.
+                val observedAt = inventory.fetchStartedAtMillis ?: 0L
                 received += inventory.chapters.size
                 sourceIds += inventory.sourceId
                 languages += inventory.language
@@ -174,7 +176,7 @@ class MihonChapterProbeProvider internal constructor(
                         externalChapterKey = snapshot.sourceId.toString() + ":" + externalKey,
                         rawLabel = snapshot.rawName,
                         rawNumber = snapshot.rawNumberHint,
-                        volume = null,
+                        volume = volumeParser.execute(snapshot.rawName),
                         title = null,
                         observedAt = observedAt,
                         confidence = parsed.confidence,

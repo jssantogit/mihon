@@ -8,6 +8,9 @@ package tachiyomi.domain.tsuzuki.reader.service
  */
 interface CanonicalReaderCompatibilityGateway {
 
+    /** Trigger bounded replay of atomic canonical-to-Mihon projection outbox. */
+    suspend fun flushPendingProjections() = Unit
+
     suspend fun projectProgress(
         mihonChapterId: Long,
         read: Boolean,

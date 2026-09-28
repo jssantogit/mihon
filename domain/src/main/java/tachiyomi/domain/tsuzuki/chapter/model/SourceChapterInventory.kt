@@ -11,6 +11,10 @@ data class SourceChapterInventory(
     val chapters: List<SourceChapterSnapshot>,
     val mihonMangaId: Long? = null,
     val language: String = "",
+    /** Source title URL at inventory fetch time; required for safe staged projection. */
+    val sourceUrl: String = "",
+    /** Original provider fetch-start timestamp, also retained in cached inventories. */
+    val fetchStartedAtMillis: Long? = null,
 ) {
     val mappingId: String
         get() = sourceMappingId
