@@ -22,7 +22,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
-import tachiyomi.domain.tsuzuki.chapter.interactor.hasConflictingIntegerChapterHint
+import tachiyomi.domain.tsuzuki.chapter.interactor.isUnsafeProvisionalChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.isInferredChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
@@ -126,7 +126,7 @@ class MihonContentProvider internal constructor(
                         persisted.evidence.rawNumber,
                     )
                     if (
-                        hasConflictingIntegerChapterHint(parsed, persisted.evidence.rawNumber) ||
+                        isUnsafeProvisionalChapterEvidence(parsed, persisted.evidence.rawLabel, persisted.evidence.rawNumber) ||
                         !parsed.identity.isSpecific ||
                         parsed.identity != canonicalChapter.identity ||
                         mappedChapter.identity != canonicalChapter.identity
@@ -166,7 +166,7 @@ class MihonContentProvider internal constructor(
                 if (identity.first !in boundSourceIds) return@forEach
                 val volumeLabel = sourceVolumeLabel(persisted.evidence.rawLabel)
                 val parsed = parser.execute(persisted.evidence.rawLabel, persisted.evidence.rawNumber)
-                if (hasConflictingIntegerChapterHint(parsed, persisted.evidence.rawNumber)) {
+                if (isUnsafeProvisionalChapterEvidence(parsed, persisted.evidence.rawLabel, persisted.evidence.rawNumber)) {
                     conflictingMappedEvidenceIdentities += identity
                     return@forEach
                 }
@@ -276,7 +276,7 @@ class MihonContentProvider internal constructor(
                     // from a trusted binding. Never offer chapter 126 as chapter 4
                     // even if an old provider URL was reused.
                     val parsed = parser.execute(snapshot.rawName, snapshot.rawNumberHint)
-                    if (hasConflictingIntegerChapterHint(parsed, snapshot.rawNumberHint)) continue
+                    if (isUnsafeProvisionalChapterEvidence(parsed, snapshot.rawName, snapshot.rawNumberHint)) continue
                     val mapped = identity in sourceIdentities
                     val volumeLabel = sourceVolumeLabel(snapshot.rawName)
                     if (volumeLabel.explicit && volumeLabel.number == null) continue
