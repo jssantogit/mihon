@@ -338,6 +338,47 @@ class DiscoverReadableChapterTest {
     }
 
     @Test
+    fun `default discovery stops after ten distinct addons when none are readable`() = runTest {
+        val addons = (1L..12L).map { index -> installed("addon-$index", index) }
+        val searched = mutableListOf<Long>()
+        val runner = DiscoverReadableChapter(
+            lookupExisting = { _, _ -> lookup() },
+            lookupAfterBinding = { _, _, _ -> lookup() },
+            installedAddons = { addons },
+            sourceEligibility = { addonId ->
+                val sourceId = addons.indexOfFirst { it.id == addonId }.toLong() + 1L
+                listOf(source(sourceId, "en"))
+            },
+            contentPreference = { null },
+            globalLanguages = { listOf("en") },
+            deviceLocale = { Locale.US },
+            sourceSearch = { request ->
+                flow {
+                    val sourceId = requireNotNull(request.allowedSourceIds).single()
+                    searched += sourceId
+                    emit(
+                        ContentBindingSearchProgress.SourceCompleted(
+                            sourceId = sourceId,
+                            language = "en",
+                            outcome = ContentBindingSourceOutcome.EMPTY,
+                        ),
+                    )
+                    emit(ContentBindingSearchProgress.Completed(listOf(sourceId), 0))
+                }
+            },
+            refreshBinding = { Result.success(Unit) },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        val events = runner.discover("title", "chapter").toList()
+
+        searched shouldBe (1L..10L).toList()
+        events.filterIsInstance<FastReadingDiscoveryEvent.Ready>().size shouldBe 0
+        events.last().let { it as FastReadingDiscoveryEvent.Completed }.reason shouldBe
+            FastDiscoveryCompletion.EXHAUSTED
+    }
+
+    @Test
     fun `healthy fast edition is emitted while earlier bound edition is still refreshing`() = runTest {
         val slow = installed("portuguese", 7L)
         val fast = installed("english", 8L)
