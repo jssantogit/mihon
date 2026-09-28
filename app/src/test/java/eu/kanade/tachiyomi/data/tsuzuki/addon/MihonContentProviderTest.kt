@@ -1177,7 +1177,11 @@ class MihonContentProviderTest {
     // Physical Tokyo Ghoul regression: MangaDot exposed a chapter-zero row whose pages were chapter one.
     @Test
     fun `titled zero placeholder is never offered as a readable regular zero`() = runTest {
-        val linked = binding(id = "binding-tokyo-ghoul-zero", sourceKey = "7:/tokyo-ghoul")
+        val linked = binding(
+            id = "binding-tokyo-ghoul-zero",
+            sourceKey = "7:/tokyo-ghoul",
+            addonId = "mangadot",
+        )
         val requested = CanonicalChapter(
             id = "canonical-chapter-0",
             canonicalTitleId = "title",
@@ -1216,8 +1220,142 @@ class MihonContentProviderTest {
     }
 
     @Test
+    fun `single provider plain zero is not trusted without independent chapter support`() = runTest {
+        val linked = binding(
+            id = "binding-tokyo-ghoul-plain-zero",
+            sourceKey = "7:/tokyo-ghoul",
+            addonId = "mangadot",
+        )
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0",
+            canonicalTitleId = "title",
+            displayNumber = "0",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            confidence = 1.0,
+        )
+        val mangadotEvidence = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = "mangadot-zero",
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = "mangadot",
+                externalChapterKey = "7:/chapter-zero",
+                rawLabel = "Chapter 0",
+                rawNumber = 0.0,
+                volume = null,
+                title = null,
+                observedAt = 10L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = requested.id,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangadot"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "en",
+                        snapshot(7L, it.id, "/chapter-zero", "en").copy(
+                            rawName = "Chapter 0",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 1L))
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(listOf(mangadotEvidence)),
+        )
+
+        provider.resolve("title", requested.id).getOrThrow() shouldBe emptyList()
+        materializations shouldBe 0
+    }
+
+    @Test
+    fun `regular zero remains readable when another addon independently maps the same chapter`() = runTest {
+        val linked = binding(
+            id = "binding-hxh-zero",
+            sourceKey = "7:/hunter-x-hunter",
+            addonId = "mangaflix",
+        )
+        val requested = CanonicalChapter(
+            id = "canonical-chapter-0",
+            canonicalTitleId = "title",
+            displayNumber = "0",
+            type = CanonicalChapterType.REGULAR,
+            baseNumber = 0,
+            confidence = 1.0,
+        )
+        fun zeroEvidence(id: String, producerId: String, sourceId: Long) = PersistedChapterEvidence(
+            evidence = ChapterEvidence(
+                id = id,
+                canonicalTitleId = "title",
+                producerKind = ProducerKind.ADDON,
+                producerId = producerId,
+                externalChapterKey = "$sourceId:/chapter-zero",
+                rawLabel = "Chapter 0",
+                rawNumber = 0.0,
+                volume = null,
+                title = null,
+                observedAt = 10L,
+                confidence = 1.0,
+                authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+            ),
+            mappedCanonicalChapterId = requested.id,
+        )
+        var materializations = 0
+        val provider = MihonContentProvider(
+            addonId = AddonId("mangaflix"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(linked)),
+            canonicalChapterRepository = FakeCanonicalChapterRepository(emptyList(), requested),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = {
+                Result.success(
+                    inventory(
+                        it.id,
+                        7L,
+                        "pt-BR",
+                        snapshot(7L, it.id, "/chapter-zero", "pt-BR").copy(
+                            rawName = "Chapter 0",
+                            rawNumberHint = 0.0,
+                        ),
+                    ),
+                )
+            },
+            materializeDelivery = { _, _ ->
+                materializations++
+                Result.success(ContentDelivery.Mihon(7L, 70L, 0L))
+            },
+            chapterEvidenceRepository = FakeChapterEvidenceRepository(
+                listOf(
+                    zeroEvidence("mangaflix-zero", "mangaflix", 7L),
+                    zeroEvidence("mangadex-zero", "mangadex", 8L),
+                ),
+            ),
+        )
+
+        provider.resolve("title", requested.id).getOrThrow().single()
+            .delivery shouldBe ContentDelivery.Mihon(7L, 70L, 0L)
+        materializations shouldBe 1
+    }
+
+    @Test
     fun `deleted fractional tombstone is never offered as readable content`() = runTest {
-        val linked = binding(id = "binding-kimetsu-deleted", sourceKey = "7:/kimetsu")
+        val linked = binding(
+            id = "binding-kimetsu-deleted",
+            sourceKey = "7:/kimetsu",
+            addonId = "mangadot",
+        )
         val requested = CanonicalChapter(
             id = "canonical-chapter-0-1",
             canonicalTitleId = "title",
@@ -1376,10 +1514,14 @@ class MihonContentProviderTest {
         options.map { it.delivery } shouldBe listOf(ContentDelivery.Mihon(7L, 70L, 371L))
     }
 
-    private fun binding(id: String, sourceKey: String) = ContentBinding(
+    private fun binding(
+        id: String,
+        sourceKey: String,
+        addonId: String = "mangadex",
+    ) = ContentBinding(
         id = id,
         canonicalTitleId = "title",
-        addonId = AddonId("mangadex"),
+        addonId = AddonId(addonId),
         providerTitleKey = sourceKey,
         matchConfidence = 1.0,
         verifiedByUser = false,
