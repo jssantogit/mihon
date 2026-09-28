@@ -155,6 +155,114 @@ class CanonicalChapterRepositoryImplTest {
     }
 
     @Test
+    fun `safe exact duplicate consolidation rekeys evidence and variants before deleting duplicate`() =
+        runBlocking<Unit> {
+            val preferred = chapter("chapter-preferred")
+            val duplicate = chapter("chapter-duplicate")
+            repository.upsert(preferred)
+            repository.upsert(duplicate)
+            repository.upsertVariant(
+                variant(
+                    id = "variant-preferred",
+                    canonicalChapterId = preferred.id,
+                    sourceId = 7L,
+                    sourceChapterId = "/preferred",
+                    sourceMappingId = "mapping-1",
+                ),
+            )
+            repository.upsertVariant(
+                variant(
+                    id = "variant-duplicate",
+                    canonicalChapterId = duplicate.id,
+                    sourceId = 8L,
+                    sourceChapterId = "/duplicate",
+                    sourceMappingId = "mapping-2",
+                ),
+            )
+            val evidenceRepository = tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl(database)
+            evidenceRepository.upsert(
+                ChapterEvidence(
+                    id = "evidence-preferred",
+                    canonicalTitleId = "title-1",
+                    producerKind = ProducerKind.ADDON,
+                    producerId = "source-7",
+                    externalChapterKey = "7:/preferred",
+                    rawLabel = "Chapter 1",
+                    rawNumber = 1.0,
+                    volume = null,
+                    title = null,
+                    observedAt = 100L,
+                    confidence = 1.0,
+                    authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                ),
+                preferred.id,
+            )
+            evidenceRepository.upsert(
+                ChapterEvidence(
+                    id = "evidence-duplicate",
+                    canonicalTitleId = "title-1",
+                    producerKind = ProducerKind.ADDON,
+                    producerId = "source-8",
+                    externalChapterKey = "8:/duplicate",
+                    rawLabel = "Chapter 1",
+                    rawNumber = 1.0,
+                    volume = null,
+                    title = null,
+                    observedAt = 100L,
+                    confidence = 1.0,
+                    authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                ),
+                duplicate.id,
+            )
+
+            repository.consolidateExactDuplicateIfSafe(
+                canonicalTitleId = "title-1",
+                preferredChapterId = preferred.id,
+                duplicateChapterId = duplicate.id,
+            ) shouldBe true
+
+            repository.getByCanonicalTitleId("title-1").map { it.id } shouldBe listOf(preferred.id)
+            repository.getVariantBySourceIdentity(7L, "/preferred")?.canonicalChapterId shouldBe preferred.id
+            repository.getVariantBySourceIdentity(8L, "/duplicate")?.canonicalChapterId shouldBe preferred.id
+            evidenceRepository.getByCanonicalTitleId("title-1")
+                .map { it.mappedCanonicalChapterId }
+                .toSet() shouldBe setOf(preferred.id)
+        }
+
+    @Test
+    fun `exact duplicate consolidation refuses to delete chapter with reading progress`() = runBlocking<Unit> {
+        val preferred = chapter("chapter-preferred")
+        val duplicate = chapter("chapter-duplicate")
+        repository.upsert(preferred)
+        repository.upsert(duplicate)
+        database.tsuzuki_chapter_progressQueries.upsertTsuzukiChapterProgress(
+            canonicalChapterId = duplicate.id,
+            read = false,
+            lastPageRead = 3L,
+            lastVariantId = null,
+            updatedAt = 200L,
+        )
+
+        repository.consolidateExactDuplicateIfSafe(
+            canonicalTitleId = "title-1",
+            preferredChapterId = preferred.id,
+            duplicateChapterId = duplicate.id,
+        ) shouldBe false
+
+        repository.getByCanonicalTitleId("title-1").map { it.id }.toSet() shouldBe
+            setOf(preferred.id, duplicate.id)
+        database.tsuzuki_chapter_progressQueries.getTsuzukiChapterProgress(duplicate.id)
+            .awaitAsOneOrNull() shouldBe
+            tachiyomi.data.Tsuzuki_chapter_progress(
+                canonical_chapter_id = duplicate.id,
+                read = false,
+                last_page_read = 3L,
+                last_variant_id = null,
+                updated_at = 200L,
+            )
+    }
+
+    @Test
     fun `batch writes commit and rollback atomically`() = runBlocking<Unit> {
         repository.upsertBatch(
             chapters = listOf(chapter("chapter-committed")),
