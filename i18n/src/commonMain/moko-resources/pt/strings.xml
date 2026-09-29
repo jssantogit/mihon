@@ -896,4 +896,5 @@
     <string name="donationCampaign.contactPlatform">Discord</string>
     <string name="donationCampaign.dismiss">Ignorar</string>
     <string name="tsuzuki_personalizations_title">Personalizações</string>
+    <string name="tsuzuki_reading_settings_title">Leitura</string>
 </resources>
