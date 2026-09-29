@@ -25,6 +25,7 @@ data class BGMSubject(
     val volumes: Long = 0,
     val eps: Long = 0,
     val rating: BGMSubjectRating?,
+    val tags: List<BGMSubjectTag> = emptyList(),
     val platform: String?,
 ) {
     fun toTrackSearch(trackerId: Long): TrackSearch = TrackSearch.create(trackerId).apply {
@@ -37,6 +38,8 @@ data class BGMSubject(
             this@BGMSubject.summary?.trim().orEmpty()
         }
         score = rating?.score ?: -1.0
+        score_votes = rating?.total
+        tags = this@BGMSubject.tags.map { it.name }
         tracking_url = "https://bangumi.tv/subject/${this@BGMSubject.id}"
         total_chapters = eps
         total_volumes = volumes
@@ -55,4 +58,11 @@ data class BGMSubjectImages(
 // Incomplete DTO with only our needed attributes
 data class BGMSubjectRating(
     val score: Double?,
+    val total: Int? = null,
+)
+
+@Serializable
+data class BGMSubjectTag(
+    val name: String,
+    val count: Int? = null,
 )
