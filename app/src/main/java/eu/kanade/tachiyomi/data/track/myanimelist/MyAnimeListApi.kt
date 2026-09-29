@@ -52,6 +52,17 @@ class MyAnimeListApi(
 
     private val json: Json by injectLazy()
 
+    private val publicClient = client.newBuilder()
+        .addInterceptor { chain ->
+            chain.proceed(
+                authorizeRequest(
+                    request = chain.request(),
+                    clientId = requireClientId(),
+                    accessToken = null,
+                ),
+            )
+        }
+        .build()
     private val authClient = client.newBuilder().addInterceptor(interceptor).build()
 
     suspend fun getAccessToken(authCode: String): MALOAuth {
@@ -94,7 +105,7 @@ class MyAnimeListApi(
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()
             with(json) {
-                authClient.newCall(GET(url.toString()))
+                publicClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALSearchResult>()
                     .data
@@ -118,7 +129,7 @@ class MyAnimeListApi(
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()
             with(json) {
-                authClient.newCall(GET(url.toString()))
+                publicClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALSearchResult>()
                     .data
@@ -135,7 +146,7 @@ class MyAnimeListApi(
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()
             with(json) {
-                authClient.newCall(GET(url.toString()))
+                publicClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALManga>()
                     .let { it.toTrackSearch(trackerId) }
