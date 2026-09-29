@@ -35,7 +35,7 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
-    fun `kitsu and mal are disabled by default when no settings rows exist`() = runTest(dispatcher) {
+    fun `all unified integrations are disabled by default when no settings rows exist` = runTest(dispatcher) {
         val repository = FakeIntegrationSettingsRepository()
         val model = TsuzukiIntegrationsSettingsScreenModel(repository)
 
@@ -43,8 +43,20 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
 
         val state = model.state.value
             .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
-        state.items.map { it.id.value } shouldContainExactly listOf("kitsu", "mal")
-        state.items.map { it.enabled } shouldContainExactly listOf(false, false)
+        state.items.map { it.id.value } shouldContainExactly listOf(
+            "kitsu",
+            "mal",
+            "mangaupdates",
+            "mangabaka",
+            "bangumi",
+            "shikimori",
+            "hikka",
+            "anilist",
+            "komga",
+            "kavita",
+            "suwayomi",
+        )
+        state.items.all { !it.enabled } shouldBe true
     }
 
     @Test
