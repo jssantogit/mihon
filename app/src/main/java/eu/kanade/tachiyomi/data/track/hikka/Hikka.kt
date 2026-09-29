@@ -29,13 +29,43 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
             .toImmutableList()
 
         private const val SEARCH_ID_PREFIX = "id:"
+        private const val INTEGRATION_ID = "hikka"
+        private const val CLIENT_REFERENCE_KEY = "client_reference"
+        private const val CLIENT_SECRET_KEY = "client_secret"
     }
 
     private val json: Json by injectLazy()
 
     private val interceptor by lazy { HikkaInterceptor(this) }
 
-    private val api by lazy { HikkaApi(id, client, interceptor) }
+    private val api by lazy { HikkaApi(id, client, interceptor, ::requireClientSecret) }
+
+    fun getClientReference(): String =
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_REFERENCE_KEY).get().trim()
+
+    fun getClientSecret(): String =
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_SECRET_KEY).get().trim()
+
+    fun hasApplicationCredentials(): Boolean =
+        getClientReference().isNotBlank() && getClientSecret().isNotBlank()
+
+    fun setApplicationCredentials(clientReference: String, clientSecret: String) {
+        val normalizedReference = clientReference.trim()
+        val normalizedSecret = clientSecret.trim()
+        if (normalizedReference == getClientReference() && normalizedSecret == getClientSecret()) return
+
+        logout()
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_REFERENCE_KEY).set(normalizedReference)
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_SECRET_KEY).set(normalizedSecret)
+    }
+
+    fun authUrl() = HikkaApi.authUrl(requireClientReference())
+
+    internal fun requireClientReference(): String =
+        getClientReference().ifBlank { throw HikkaCredentialsMissing() }
+
+    internal fun requireClientSecret(): String =
+        getClientSecret().ifBlank { throw HikkaCredentialsMissing() }
 
     override val supportsReadingDates: Boolean = true
 
