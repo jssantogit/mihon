@@ -19,7 +19,7 @@ The primary signature is Jade on Midnight.
 - Do not add text, shadows, gradients, glow, or outlines to the launcher mark.
 - The `T` is negative space; it is not a separately colored object.
 - Launcher reference scale: 64%.
-- Android adaptive foreground and monochrome scale: 61%.
+- Android adaptive foreground and monochrome scale: 58%.
 - Monochrome uses the same geometry as the adaptive foreground.
 - The Android splash uses the same mark on Midnight and follows native SplashScreen sizing rules.
 
