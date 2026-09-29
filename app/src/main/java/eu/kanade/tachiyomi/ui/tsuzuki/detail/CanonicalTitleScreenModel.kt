@@ -42,6 +42,7 @@ import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
+import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
 import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
@@ -70,6 +71,7 @@ sealed interface CanonicalTitleScreenState {
         val author: String? = null,
         val description: String? = null,
         val genres: List<String> = emptyList(),
+        val metadataSources: List<String> = emptyList(),
         val isRefreshing: Boolean = false,
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
@@ -117,6 +119,7 @@ class CanonicalTitleScreenModel(
     private val refreshChapterEvidence: RefreshChapterEvidence,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
     private val mangaRepository: MangaRepository? = null,
+    private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -169,6 +172,7 @@ class CanonicalTitleScreenModel(
                 val refreshed = loadLocalState(
                     canonicalTitleId = id,
                     includeLegacyDownloadChecks = false,
+                    includeIntegrationMetadata = false,
                     isRefreshing = false,
                 )
                 if (canonicalTitleId != id) return@launch
@@ -399,6 +403,7 @@ class CanonicalTitleScreenModel(
             _state.value = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
                 includeLegacyDownloadChecks = false,
+                includeIntegrationMetadata = false,
                 isRefreshing = true,
             )
             logcat {
@@ -458,6 +463,7 @@ class CanonicalTitleScreenModel(
             val refreshed = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
                 includeLegacyDownloadChecks = true,
+                includeIntegrationMetadata = true,
                 isRefreshing = false,
                 refreshError = errors.firstOrNull(),
             )
@@ -493,7 +499,8 @@ class CanonicalTitleScreenModel(
     private suspend fun loadLocalState(
         canonicalTitleId: String,
         includeLegacyDownloadChecks: Boolean,
-        isRefreshing: Boolean,
+        includeIntegrationMetadata: Boolean,
+        isRefreshing: Boolean:
         refreshError: Throwable? = null,
     ): CanonicalTitleScreenState.Loaded {
         val title = canonicalTitleRepository.getById(canonicalTitleId)
