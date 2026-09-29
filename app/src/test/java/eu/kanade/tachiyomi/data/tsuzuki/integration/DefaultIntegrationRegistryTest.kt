@@ -20,6 +20,7 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
@@ -103,6 +104,57 @@ class DefaultIntegrationRegistryTest {
             "komga",
             "kavita",
             "suwayomi",
+        )
+    }
+
+    @Test
+    fun `metadata capability switches are independent`() = runTest {
+        val kitsu = FakeMetadataProvider("kitsu")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(
+                listOf(
+                    IntegrationSettings(
+                        integrationId = IntegrationId("kitsu"),
+                        enabled = true,
+                        configJson = """{"metadata":true,"metadata_artwork":false}""",
+                    ),
+                ),
+            ),
+            metadataProviders = setOf(kitsu),
+        )
+
+        registry.metadataProviders() shouldContainExactly listOf(kitsu)
+        registry.metadataProviders(IntegrationCapability.METADATA_ARTWORK) shouldBe emptyList()
+        registry.isGlobalCapabilityActive(
+            IntegrationId("kitsu"),
+            IntegrationCapability.METADATA_BASIC,
+        ) shouldBe true
+        registry.isGlobalCapabilityActive(
+            IntegrationId("kitsu"),
+            IntegrationCapability.METADATA_ARTWORK,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `unified manifests preserve legacy tracker ids`() = runTest {
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(emptyList()),
+        )
+
+        registry.manifests().associate { it.integrationId.value to it.legacyTrackerId } shouldBe mapOf(
+            "kitsu" to 3L,
+            "mal" to 1L,
+            "mangaupdates" to 7L,
+            "mangabaka" to 11L,
+            "bangumi" to 5L,
+            "shikimori" to 4L,
+            "hikka" to 10L,
+            "anilist" to 2L,
+            "komga" to 6L,
+            "kavita" to 8L,
+            "suwayomi" to 9L,
         )
     }
 
