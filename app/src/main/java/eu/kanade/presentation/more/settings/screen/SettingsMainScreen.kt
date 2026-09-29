@@ -21,8 +21,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
@@ -204,11 +204,6 @@ object SettingsMainScreen : Screen() {
                     titleRes = MR.strings.tsuzuki_account_title,
                     icon = MaterialSymbols.Rounded.Security,
                     screen = SettingsTsuzukiAccountScreen,
-                ),
-                Item(
-                    titleRes = MR.strings.tsuzuki_sync_title,
-                    icon = MaterialSymbols.Rounded.Sync,
-                    screen = SettingsTsuzukiSyncScreen,
                 ),
             ),
         ),
