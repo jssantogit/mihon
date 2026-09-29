@@ -74,18 +74,6 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
-    fun `policy restricted provider cannot enter global search resolution`() = runTest {
-        val anilist = FakeSearchProvider("anilist")
-        val registry = registry(
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            settings = MutableStateFlow(fakeSettings("anilist" to true)),
-            searchProviders = setOf(anilist),
-        )
-
-        registry.searchProviders() shouldBe emptyList()
-    }
-
-    @Test
     fun `personal server metadata stays server scoped`() = runTest {
         val komga = FakeMetadataProvider("komga")
         val registry = registry(
@@ -102,18 +90,6 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
-    fun `commercially restricted metadata cannot enter global search`() = runTest {
-        val mangaBaka = FakeSearchProvider("mangabaka")
-        val registry = registry(
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-            settings = MutableStateFlow(fakeSettings("mangabaka" to true)),
-            searchProviders = setOf(mangaBaka),
-        )
-
-        registry.searchProviders() shouldBe emptyList()
-    }
-
-    @Test
     fun `registry exposes unified integration manifests`() = runTest {
         val registry = registry(
             scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
@@ -124,11 +100,9 @@ class DefaultIntegrationRegistryTest {
             "kitsu",
             "mal",
             "mangaupdates",
-            "mangabaka",
             "bangumi",
             "shikimori",
             "hikka",
-            "anilist",
             "komga",
             "kavita",
             "suwayomi",
@@ -175,11 +149,9 @@ class DefaultIntegrationRegistryTest {
             "kitsu" to 3L,
             "mal" to 1L,
             "mangaupdates" to 7L,
-            "mangabaka" to 11L,
             "bangumi" to 5L,
             "shikimori" to 4L,
             "hikka" to 10L,
-            "anilist" to 2L,
             "komga" to 6L,
             "kavita" to 8L,
             "suwayomi" to 9L,
