@@ -949,6 +949,10 @@
     <string name="tsuzuki_tracking_disconnect_summary">A sessão existente será encerrada, mas os dados locais serão preservados.</string>
     <string name="tsuzuki_tracking_server_configuration">Configuração do servidor</string>
     <string name="tsuzuki_tracking_server_configuration_summary">Este serviço reutiliza a configuração da fonte/add-on correspondente. O Tsuzuki não duplica o URL nem a chave do servidor neste ecrã.</string>
+    <string name="tsuzuki_tracking_source_missing">Fonte compatível não instalada</string>
+    <string name="tsuzuki_tracking_source_missing_summary">Instale a fonte correspondente de Komga, Kavita ou Suwayomi/Tachidesk antes de ativar esta integração de servidor.</string>
+    <string name="tsuzuki_tracking_source_configuration_summary">O endereço e as credenciais do servidor são geridos por esta fonte.</string>
+    <string name="tsuzuki_tracking_configure_source">Configurar fonte</string>
     <string name="tsuzuki_tracking_login_browser">A autenticação é concluída no navegador.</string>
     <string name="tsuzuki_tracking_login_kitsu">Entre com o e-mail e a palavra-passe usados no Kitsu.</string>
     <string name="tsuzuki_tracking_login_mangaupdates">Entre com o utilizador e a palavra-passe usados no MangaUpdates.</string>
