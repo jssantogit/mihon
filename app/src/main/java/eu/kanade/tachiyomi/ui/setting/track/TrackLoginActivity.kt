@@ -22,20 +22,11 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
 
         lifecycleScope.launch {
             when (uri.host) {
-                "bangumi-auth" -> handleBangumi(data["code"])
                 "myanimelist-auth" -> handleMyAnimeList(data["code"])
                 "shikimori-auth" -> handleShikimori(data["code"])
                 "hikka-auth" -> handleHikka(data["reference"])
             }
             returnToSettings()
-        }
-    }
-
-    private suspend fun handleBangumi(code: String?) {
-        if (code != null) {
-            trackerManager.bangumi.login(code)
-        } else {
-            trackerManager.bangumi.logout()
         }
     }
 
