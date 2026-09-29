@@ -46,7 +46,6 @@ import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
 import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
-import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
@@ -137,7 +136,14 @@ object SettingsTrackingScreen : SearchableSettings {
                 preferenceItems = listOf(
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.myAnimeList,
-                        login = { context.openInBrowser(MyAnimeListApi.authUrl(), forceDefaultBrowser = true) },
+                        login = {
+                            val tracker = trackerManager.myAnimeList
+                            if (tracker.hasClientId()) {
+                                context.openInBrowser(tracker.authUrl(), forceDefaultBrowser = true)
+                            } else {
+                                context.toast(MR.strings.tsuzuki_mal_client_id_required)
+                            }
+                        },
                         logout = { dialog = LogoutDialog(trackerManager.myAnimeList) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
