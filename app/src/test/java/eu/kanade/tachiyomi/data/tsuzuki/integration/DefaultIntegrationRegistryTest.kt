@@ -73,6 +73,40 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
+    fun `policy restricted provider cannot enter global search resolution`() = runTest {
+        val anilist = FakeSearchProvider("anilist")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("anilist" to true)),
+            searchProviders = setOf(anilist),
+        )
+
+        registry.searchProviders() shouldBe emptyList()
+    }
+
+    @Test
+    fun `registry exposes unified integration manifests`() = runTest {
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(emptyList()),
+        )
+
+        registry.manifests().map { it.integrationId.value }.toSet() shouldBe setOf(
+            "kitsu",
+            "mal",
+            "mangaupdates",
+            "mangabaka",
+            "bangumi",
+            "shikimori",
+            "hikka",
+            "anilist",
+            "komga",
+            "kavita",
+            "suwayomi",
+        )
+    }
+
+    @Test
     fun `registry reflects settings changes without being reconstructed`() = runTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val settings = MutableStateFlow(fakeSettings("kitsu" to false))
