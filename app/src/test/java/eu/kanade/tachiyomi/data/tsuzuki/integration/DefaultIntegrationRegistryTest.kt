@@ -65,7 +65,7 @@ class DefaultIntegrationRegistryTest {
         )
 
         registry.searchProviders() shouldContainExactly listOf(malSearch)
-        registry.discoveryProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
+        registry.discoveryProviders() shouldBe emptyList()
         registry.metadataProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
         registry.chapterEvidenceProviders().map { it.producerId } shouldContainExactly listOf("mal")
         registry.ratingsProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
