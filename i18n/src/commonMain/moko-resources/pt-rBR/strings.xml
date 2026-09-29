@@ -943,6 +943,6 @@
     <string name="drive_sync_info">A sincronização privada inclui atualmente Biblioteca, Coleções e mapeamentos/preferências lógicas de fontes. Downloads, cache de páginas e credenciais de trackers nunca são sincronizados.</string>
     <string name="drive_sync_failed_to_start">Não foi possível executar a sincronização do Drive.</string>
 
-    <string name="tsuzuki_personalizations_title">Personalizações</string>
+    <string name="tsuzuki_account_title">Conta</string>\n    <string name="tsuzuki_integrations_title">Integrações</string>\n    <string name="tsuzuki_addons_title">Add-ons</string>\n    <string name="tsuzuki_personalizations_title">Personalizações</string>
     <string name="tsuzuki_reading_settings_title">Leitura</string>
 </resources>
