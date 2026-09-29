@@ -1026,12 +1026,11 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
     <string name="tsuzuki_integration_provider_kitsu">Catálogo público e metadados com monitoramento de conta opcional. Usa a configuração de cliente Kitsu existente no aplicativo.</string>
     <string name="tsuzuki_integration_provider_mal">Conexão de conta OAuth2/PKCE e metadados de catálogo. O Tsuzuki usa o Client ID do aplicativo; um Client ID pessoal não é necessário no uso normal.</string>
     <string name="tsuzuki_integration_provider_mangaupdates">Metadados públicos focados em mangá, com listas e avaliações da conta. A atribuição é preservada quando os dados são usados.</string>
-    <string name="tsuzuki_integration_provider_mangabaka">A compatibilidade da conta permanece disponível. O uso global de catálogo e crosswalk continua bloqueado enquanto as condições de licença não estiverem resolvidas.</string>
     <string name="tsuzuki_integration_provider_bangumi">Busca/metadados e monitoramento de conta estão disponíveis com atribuição ao provedor.</string>
     <string name="tsuzuki_integration_provider_shikimori">O monitoramento de conta existente permanece disponível. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
     <string name="tsuzuki_integration_provider_hikka">O monitoramento de conta existente permanece disponível. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
-    <string name="tsuzuki_integration_provider_anilist">Apenas monitoramento de compatibilidade. Catálogo global e enriquecimento de metadados ficam desativados sem a permissão necessária.</string>
     <string name="tsuzuki_integration_provider_komga">Integração de servidor pessoal. Endereço e credenciais são reutilizados da configuração da fonte Komga instalada.</string>
     <string name="tsuzuki_integration_provider_kavita">Integração de servidor pessoal. Endereço e chave de API são reutilizados da configuração da fonte Kavita instalada.</string>
     <string name="tsuzuki_integration_provider_suwayomi">Integração de servidor pessoal de leitura. Conexão e configurações de fontes são reutilizadas da fonte Suwayomi/Tachidesk instalada.</string>
 </resources>
+
