@@ -6,28 +6,37 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.data.track.bangumi.BangumiIntegrationApi
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
+import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import kotlin.coroutines.cancellation.CancellationException
 
-@Inject
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
+@ContributesIntoSet(AppScope::class, binding = binding<DiscoveryProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<MetadataProvider>())
-class BangumiIntegrationProvider(
-    trackerManager: TrackerManager,
-) : SearchProvider, MetadataProvider {
-    private val tracker = trackerManager.bangumi
+class BangumiIntegrationProvider private constructor(
+    private val api: BangumiIntegrationApi,
+) : SearchProvider, DiscoveryProvider, MetadataProvider {
+
+    @Inject
+    constructor(trackerManager: TrackerManager) : this(trackerManager.bangumi.integrationApi)
+
     override val integrationId = IntegrationId("bangumi")
 
     override suspend fun search(query: CatalogQuery): Result<CatalogPage> = capture {
         val text = query.query?.trim().orEmpty()
         if (text.isEmpty()) return@capture CatalogPage(emptyList(), false)
-        val all = tracker.search(text)
-        val page = all.drop(query.offset.coerceAtLeast(0)).take(query.limit.coerceAtLeast(0))
+
+        val all = api.search(text)
+        val page = all
+            .drop(query.offset.coerceAtLeast(0))
+            .take(query.limit.coerceAtLeast(0))
+
         CatalogPage(
             items = page.map { it.toIntegrationCatalogItem(integrationId.value) },
             hasNextPage = query.offset + page.size < all.size,
@@ -35,12 +44,32 @@ class BangumiIntegrationProvider(
         )
     }
 
-    override suspend fun getDetails(externalId: String) = capture {
-        tracker.search("id:$externalId")
-            .firstOrNull()
-            ?.toIntegrationCatalogItem(integrationId.value)
-            ?: error("Bangumi title not found: $externalId")
+    override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+    override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> = capture {
+        val items = api.browse(
+            sort = BANGUMI_RANK_SORT,
+            offset = offset,
+            limit = limit,
+        ).map { it.toIntegrationCatalogItem(integrationId.value) }
+
+        CatalogPage(
+            items = items,
+            hasNextPage = limit > 0 && items.size == limit,
+        )
     }
+
+    override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+    override suspend fun getDetails(externalId: String) = capture {
+        api.getMangaDetails(externalId.requireBangumiId())
+            .toIntegrationCatalogItem(integrationId.value)
+    }
+
+    private fun String.requireBangumiId(): Int =
+        toIntOrNull() ?: throw IllegalArgumentException("Invalid Bangumi external id: $this")
 
     private suspend fun <T> capture(block: suspend () -> T): Result<T> = try {
         Result.success(block())
@@ -48,5 +77,12 @@ class BangumiIntegrationProvider(
         throw error
     } catch (error: Throwable) {
         Result.failure(error)
+    }
+
+    companion object {
+        private const val BANGUMI_RANK_SORT = "rank"
+
+        internal fun forTest(api: BangumiIntegrationApi): BangumiIntegrationProvider =
+            BangumiIntegrationProvider(api)
     }
 }
