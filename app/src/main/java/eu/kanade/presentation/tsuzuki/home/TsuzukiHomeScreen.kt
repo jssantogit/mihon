@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarTitle
+import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
@@ -221,44 +222,9 @@ private fun CatalogHomeCard(
     item: CatalogItem,
     onClick: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier
-            .width(180.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 3,
-            )
-            item.score?.let { score ->
-                Text(
-                    text = "${score.value}/${score.maxValue}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = item.format.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                Text(
-                    text = item.status.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-        }
-    }
+    CatalogCompactCard(
+        item = item,
+        onClick = onClick,
+        modifier = Modifier.width(140.dp),
+    )
 }
