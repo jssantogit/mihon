@@ -645,12 +645,12 @@ class CanonicalTitleScreenModel(
             author = integrationMetadata
                 ?.authors
                 ?.value
-                ?.takeIf(List<String>::isNotEmpty)
+                ?.takeIf { it.isNotEmpty() }
                 ?.joinToString()
                 ?: integrationMetadata
                     ?.artists
                     ?.value
-                    ?.takeIf(List<String>::isNotEmpty)
+                    ?.takeIf { it.isNotEmpty() }
                     ?.joinToString()
                 ?: metadata?.author,
             description = integrationMetadata?.synopsis?.value ?: metadata?.description,
