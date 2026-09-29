@@ -21,6 +21,10 @@ data class MURecord(
     val ratingVotes: Int? = null,
     @SerialName("latest_chapter")
     val latestChapter: Int? = null,
+    val genres: List<MUGenre> = emptyList(),
+    val categories: List<MUCategory> = emptyList(),
+    val status: String? = null,
+    val completed: Boolean? = null,
     val authors: List<MUAuthor> = emptyList(),
 ) {
     fun toTrackSearch(id: Long): TrackSearch {
@@ -31,12 +35,30 @@ data class MURecord(
             cover_url = this@MURecord.image?.url?.original ?: ""
             summary = this@MURecord.description?.htmlDecode() ?: ""
             tracking_url = this@MURecord.url ?: ""
-            publishing_status = ""
-            publishing_type = this@MURecord.type.toString()
+            publishing_status = when {
+                this@MURecord.completed == true -> "Finished"
+                else -> this@MURecord.status.orEmpty()
+            }
+            publishing_type = this@MURecord.type.orEmpty()
             start_date = this@MURecord.year.toString()
             score = this@MURecord.bayesianRating?.takeIf { it > 0 } ?: -1.0
+            score_votes = this@MURecord.ratingVotes
             authors = this@MURecord.authors.filter { it.type == "Author" }.map { it.name }
             artists = this@MURecord.authors.filter { it.type == "Artist" }.map { it.name }
+            genres = this@MURecord.genres.map { it.genre }
+            tags = this@MURecord.categories.map { it.category }
         }
     }
 }
+
+
+@Serializable
+data class MUGenre(
+    val genre: String,
+)
+
+@Serializable
+data class MUCategory(
+    val category: String,
+    val votes: Int? = null,
+)
