@@ -79,7 +79,7 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                     ) {
                         item(key = "tracking_behavior") {
                             ListItem(
-                                headlineContent = { Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_title)) },
+                                headlineContent = {\n                                    Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_title))\n                                },
                                 supportingContent = {
                                     Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_summary))
                                 },
@@ -240,7 +240,7 @@ class SettingsTsuzukiIntegrationDetailScreen(
                     if (item.restrictedCapabilities.isNotEmpty()) {
                         item {
                             ListItem(
-                                headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_blocked_features)) },
+                                headlineContent = {\n                                    Text(stringResource(MR.strings.tsuzuki_integration_blocked_features))\n                                },
                                 supportingContent = {
                                     Text(stringResource(MR.strings.tsuzuki_integration_blocked_features_summary))
                                 },
@@ -262,9 +262,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
                     ) {
                         item {
                             ListItem(
-                                headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_account_tracking)) },
+                                headlineContent = {\n                                    Text(stringResource(MR.strings.tsuzuki_integration_account_tracking))\n                                },
                                 supportingContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integration_account_tracking_summary, item.label))
+                                    Text(\n                                        stringResource(\n                                            MR.strings.tsuzuki_integration_account_tracking_summary,\n                                            item.label,\n                                        ),\n                                    )
                                 },
                                 modifier = Modifier.clickable {
                                     navigator.push(
