@@ -25,36 +25,36 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationAuthState
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationCapability
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationConfigState
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationSettingsItem
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsScreenModel
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsState
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoAuthState
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoCapability
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoConfigState
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoSettingsItem
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçõesSettingsScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçõesSettingsState
 
-class SettingsTsuzukiIntegrationsScreen : Screen() {
+class SettingsTsuzukiIntegraçõesScreen : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val screenModel =
-            metroViewModel<TsuzukiIntegrationsSettingsScreenModel>()
+            metroViewModel<TsuzukiIntegraçõesSettingsScreenModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
 
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Integrations") },
+                    title = { Text("Integrações") },
                     navigationIcon = {
                         TextButton(onClick = navigator::pop) {
-                            Text("Back")
+                            Text("Voltar")
                         }
                     },
                 )
             },
         ) { contentPadding ->
             when (val current = state) {
-                TsuzukiIntegrationsSettingsState.Loading -> {
+                TsuzukiIntegraçõesSettingsState.Loading -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -66,7 +66,7 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                     }
                 }
 
-                is TsuzukiIntegrationsSettingsState.Loaded -> {
+                is TsuzukiIntegraçõesSettingsState.Loaded -> {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -76,16 +76,16 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                             items = current.items,
                             key = { it.id.value },
                         ) { item ->
-                            IntegrationSettingRow(
+                            IntegraçãoSettingRow(
                                 item = item,
-                                onEnabledChange = {
-                                    screenModel.setEnabled(
+                                onAtivadaChange = {
+                                    screenModel.setAtivada(
                                         id = item.id,
                                         enabled = it,
                                     )
                                 },
                                 onOpen = {
-                                    navigator.push(SettingsTsuzukiIntegrationDetailScreen(item.id.value))
+                                    navigator.push(SettingsTsuzukiIntegraçãoDetailScreen(item.id.value))
                                 },
                             )
                             HorizontalDivider()
@@ -97,25 +97,25 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
     }
 }
 
-class SettingsTsuzukiIntegrationDetailScreen(
+class SettingsTsuzukiIntegraçãoDetailScreen(
     private val integrationId: String,
 ) : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val screenModel = metroViewModel<TsuzukiIntegrationsSettingsScreenModel>()
+        val screenModel = metroViewModel<TsuzukiIntegraçõesSettingsScreenModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
-        val item = (state as? TsuzukiIntegrationsSettingsState.Loaded)
+        val item = (state as? TsuzukiIntegraçõesSettingsState.Loaded)
             ?.items
             ?.firstOrNull { it.id.value == integrationId }
 
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(item?.label ?: "Integration") },
+                    title = { Text(item?.label ?: "Integração") },
                     navigationIcon = {
-                        TextButton(onClick = navigator::pop) { Text("Back") }
+                        TextButton(onClick = navigator::pop) { Text("Voltar") }
                     },
                 )
             },
@@ -138,13 +138,13 @@ class SettingsTsuzukiIntegrationDetailScreen(
                 ) {
                     item {
                         ListItem(
-                            headlineContent = { Text("Enabled") },
-                            supportingContent = { Text("Use ${item.label} as a Tsuzuki metadata provider") },
+                            headlineContent = { Text("Ativada") },
+                            supportingContent = { Text("Usar ${item.label} como provedor no Tsuzuki") },
                             trailingContent = {
                                 Switch(
                                     checked = item.enabled,
                                     onCheckedChange = {
-                                        screenModel.setEnabled(item.id, it)
+                                        screenModel.setAtivada(item.id, it)
                                     },
                                 )
                             },
@@ -152,26 +152,37 @@ class SettingsTsuzukiIntegrationDetailScreen(
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Capabilities") },
+                            headlineContent = { Text("Recursos") },
                             supportingContent = {
-                                Text(
-                                    item.capabilities.joinToString(
-                                        " • ",
-                                        transform = TsuzukiIntegrationCapability::label,
-                                    ),
+                                Text("Escolha quais recursos deste provedor o Tsuzuki pode usar.")
+                            },
+                        )
+                    }
+                    items(
+                        items = item.capabilities,
+                        key = { it.name },
+                    ) { capability ->
+                        ListItem(
+                            headlineContent = { Text(capability.label()) },
+                            trailingContent = {
+                                Switch(
+                                    checked = item.capabilityEnabled[capability] ?: true,
+                                    onCheckedChange = {
+                                        screenModel.setCapabilityEnabled(item.id, capability, it)
+                                    },
                                 )
                             },
                         )
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Configuration") },
+                            headlineContent = { Text("Configuração") },
                             supportingContent = { Text(item.configState.label()) },
                         )
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Authentication") },
+                            headlineContent = { Text("Autenticação") },
                             supportingContent = { Text(item.authState.label()) },
                         )
                     }
@@ -182,9 +193,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
 }
 
 @Composable
-private fun IntegrationSettingRow(
-    item: TsuzukiIntegrationSettingsItem,
-    onEnabledChange: (Boolean) -> Unit,
+private fun IntegraçãoSettingRow(
+    item: TsuzukiIntegraçãoSettingsItem,
+    onAtivadaChange: (Boolean) -> Unit,
     onOpen: () -> Unit,
 ) {
     ListItem(
@@ -196,42 +207,42 @@ private fun IntegrationSettingRow(
                 Text(
                     item.capabilities.joinToString(
                         separator = " • ",
-                        transform = TsuzukiIntegrationCapability::label,
+                        transform = TsuzukiIntegraçãoCapability::label,
                     ),
                 )
                 Text(
-                    text = "Config: ${item.configState.label()}",
+                    text = "Configuração: ${item.configState.label()}",
                 )
                 Text(
-                    text = "Auth: ${item.authState.label()}",
+                    text = "Autenticação: ${item.authState.label()}",
                 )
             }
         },
         trailingContent = {
             Switch(
                 checked = item.enabled,
-                onCheckedChange = onEnabledChange,
+                onCheckedChange = onAtivadaChange,
             )
         },
         modifier = Modifier.clickable(onClick = onOpen),
     )
 }
 
-private fun TsuzukiIntegrationCapability.label(): String = when (this) {
-    TsuzukiIntegrationCapability.SEARCH -> "Search"
-    TsuzukiIntegrationCapability.DISCOVERY -> "Discover"
-    TsuzukiIntegrationCapability.METADATA -> "Metadata"
-    TsuzukiIntegrationCapability.RATINGS -> "Ratings"
-    TsuzukiIntegrationCapability.CHAPTER_EVIDENCE -> "Chapter evidence"
-    TsuzukiIntegrationCapability.TRACKING -> "Tracking"
+private fun TsuzukiIntegraçãoCapability.label(): String = when (this) {
+    TsuzukiIntegraçãoCapability.SEARCH -> "Busca"
+    TsuzukiIntegraçãoCapability.DISCOVERY -> "Descobrir"
+    TsuzukiIntegraçãoCapability.METADATA -> "Metadados"
+    TsuzukiIntegraçãoCapability.RATINGS -> "Avaliações"
+    TsuzukiIntegraçãoCapability.CHAPTER_EVIDENCE -> "Evidência de capítulos"
+    TsuzukiIntegraçãoCapability.TRACKING -> "Monitoramento"
 }
 
-private fun TsuzukiIntegrationConfigState.label(): String = when (this) {
-    TsuzukiIntegrationConfigState.DEFAULT -> "Default"
-    TsuzukiIntegrationConfigState.CUSTOM -> "Custom"
+private fun TsuzukiIntegraçãoConfigState.label(): String = when (this) {
+    TsuzukiIntegraçãoConfigState.DEFAULT -> "Padrão"
+    TsuzukiIntegraçãoConfigState.CUSTOM -> "Personalizada"
 }
 
-private fun TsuzukiIntegrationAuthState.label(): String = when (this) {
-    TsuzukiIntegrationAuthState.NOT_REQUIRED -> "Not required"
-    TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY -> "Managed by existing service session"
+private fun TsuzukiIntegraçãoAuthState.label(): String = when (this) {
+    TsuzukiIntegraçãoAuthState.NOT_REQUIRED -> "Não necessária"
+    TsuzukiIntegraçãoAuthState.MANAGED_EXTERNALLY -> "Gerenciada pela sessão existente do serviço"
 }
