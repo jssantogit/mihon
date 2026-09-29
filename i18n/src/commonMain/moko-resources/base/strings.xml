@@ -1207,4 +1207,16 @@
     <string name="tsuzuki_tracking_login_local">Activates the integration using the service's local configuration.</string>
     <string name="tsuzuki_metadata_sources">Metadata: %s</string>
     <string name="tsuzuki_tracking_login_failed">Could not connect</string>
+
+    <string name="tsuzuki_integration_provider_kitsu">Public catalog and metadata with optional account tracking. Uses the app's existing Kitsu client configuration.</string>
+    <string name="tsuzuki_integration_provider_mal">OAuth2/PKCE account connection plus catalog metadata. Tsuzuki uses the app client ID; a personal client ID is not required for normal use.</string>
+    <string name="tsuzuki_integration_provider_mangaupdates">Manga-focused public metadata with account lists and ratings. Attribution is preserved when its data is used.</string>
+    <string name="tsuzuki_integration_provider_mangabaka">Account compatibility remains available. Global catalog and crosswalk use stays blocked where licensing conditions are unresolved.</string>
+    <string name="tsuzuki_integration_provider_bangumi">Metadata/search and account tracking are available with provider attribution.</string>
+    <string name="tsuzuki_integration_provider_shikimori">Existing account tracking remains available. Catalog expansion stays disabled until current API terms are verified.</string>
+    <string name="tsuzuki_integration_provider_hikka">Existing account tracking remains available. Catalog expansion stays disabled until current API terms are verified.</string>
+    <string name="tsuzuki_integration_provider_anilist">Compatibility tracking only. Global catalog and metadata enrichment stay disabled unless the required permission is obtained.</string>
+    <string name="tsuzuki_integration_provider_komga">Personal-server integration. Server address and credentials are reused from the installed Komga source configuration.</string>
+    <string name="tsuzuki_integration_provider_kavita">Personal-server integration. Server address and API key are reused from the installed Kavita source configuration.</string>
+    <string name="tsuzuki_integration_provider_suwayomi">Personal reading-server integration. Connection and source settings are reused from the installed Suwayomi/Tachidesk source.</string>
 </resources>
