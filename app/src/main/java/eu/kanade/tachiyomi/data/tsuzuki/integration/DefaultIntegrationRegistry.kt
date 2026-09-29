@@ -128,9 +128,6 @@ class DefaultIntegrationRegistry(
         }
         .toSet()
 
-    private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean {
-        val typed = IntegrationCapability.entries.firstOrNull { it.configKey == capability }
-        return typed?.let { IntegrationSettingsConfig.decode(configJson).capabilityEnabled(it) }
-            ?: true
-    }
+    private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean =
+        IntegrationSettingsConfig.decode(configJson).capabilityEnabled(capability)
 }
