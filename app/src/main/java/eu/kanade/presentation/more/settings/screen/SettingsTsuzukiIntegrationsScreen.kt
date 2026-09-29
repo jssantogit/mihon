@@ -174,6 +174,19 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             },
                         )
                     }
+                    if (TsuzukiIntegrationCapability.TRACKING in item.capabilities) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text("Conta e monitoramento") },
+                                supportingContent = {
+                                    Text("Conectar conta e gerenciar preferências de monitoramento")
+                                },
+                                modifier = Modifier.clickable {
+                                    navigator.push(SettingsTrackingScreen)
+                                },
+                            )
+                        }
+                    }
                     item {
                         ListItem(
                             headlineContent = { Text("Configuração") },
