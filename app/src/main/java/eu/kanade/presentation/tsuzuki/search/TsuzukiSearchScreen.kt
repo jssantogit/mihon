@@ -53,11 +53,6 @@ fun TsuzukiSearchScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Search") },
-                actions = {
-                    TextButton(onClick = onOpenIntegrations) {
-                        Text("Integrations")
-                    }
-                },
             )
         },
     ) { contentPadding ->
