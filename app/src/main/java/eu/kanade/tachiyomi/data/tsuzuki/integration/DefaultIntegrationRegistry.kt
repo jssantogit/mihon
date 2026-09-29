@@ -14,6 +14,10 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -61,41 +65,53 @@ class DefaultIntegrationRegistry(
         .map { Unit }
 
     override fun searchProviders(): List<SearchProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("search")
         return searchProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun discoveryProviders(): List<DiscoveryProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("discovery")
         return discoveryProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun metadataProviders(): List<MetadataProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("metadata")
         return metadataProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("chapter_evidence")
         return chapterEvidenceProviders.filter { it.producerId in enabledIds }
     }
 
     override fun ratingsProviders(): List<RatingsProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("ratings")
         return ratingsProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun trackingProviders(): List<TrackingProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("tracking")
         return trackingProviders.filter { it.integrationId.value in enabledIds }
     }
 
-    private fun enabledIntegrationIds(): Set<String> = settings.value
+    private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
         .groupBy { it.integrationId.value }
         .mapNotNull { (integrationId, values) ->
             values.maxByOrNull(IntegrationSettings::updatedAt)
                 ?.takeIf(IntegrationSettings::enabled)
+                ?.takeIf { it.capabilityEnabled(capability) }
                 ?.let { integrationId }
         }
         .toSet()
+
+    private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean {
+        val config = runCatching {
+            Json.parseToJsonElement(configJson) as? JsonObject
+        }.getOrNull()
+        return config
+            ?.get(capability)
+            ?.jsonPrimitive
+            ?.booleanOrNull
+            ?: true
+    }
 }
