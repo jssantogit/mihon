@@ -47,6 +47,7 @@ data class IntegrationManifest(
     val displayName: String,
     val category: IntegrationCategory,
     val capabilities: Map<IntegrationCapability, CapabilityPolicy>,
+    val legacyTrackerId: Long? = null,
 ) {
     fun declares(capability: IntegrationCapability): Boolean = capability in capabilities
 
