@@ -70,6 +70,7 @@ fun CollectionsScreen(
     var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
     var selectedCollectionId by remember(initialCollectionId) { mutableStateOf(initialCollectionId) }
     var selectedFolderId by remember(initialFolderId) { mutableStateOf(initialFolderId) }
+    var selectedListId by remember { mutableStateOf<String?>(null) }
 
     val readyState = state as? CollectionsScreenState.Ready
     val selectedCollection = readyState?.collections?.firstOrNull {
@@ -78,16 +79,19 @@ fun CollectionsScreen(
     val selectedFolder = selectedCollection?.folders?.firstOrNull {
         it.folder.id == selectedFolderId
     }
+    val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
 
     Scaffold(
         modifier = modifier,
         topBar = {
             AppBar(
-                title = selectedFolder?.folder?.title
+                title = selectedList?.title
+                    ?: selectedFolder?.folder?.title
                     ?: selectedCollection?.collection?.title
                     ?: "Collections",
                 navigateUp = {
                     when {
+                        selectedListId != null -> selectedListId = null
                         selectedFolderId != null -> selectedFolderId = null
                         selectedCollectionId != null -> selectedCollectionId = null
                         else -> navigateUp()
@@ -154,11 +158,17 @@ fun CollectionsScreen(
                     onDelete = { deleteTarget = it },
                     selectedCollectionId = selectedCollectionId,
                     selectedFolderId = selectedFolderId,
+                    selectedListId = selectedListId,
                     onOpenCollection = {
                         selectedCollectionId = it
                         selectedFolderId = null
+                        selectedListId = null
                     },
-                    onOpenFolder = { selectedFolderId = it },
+                    onOpenFolder = {
+                        selectedFolderId = it
+                        selectedListId = null
+                    },
+                    onOpenList = { selectedListId = it },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
@@ -359,12 +369,15 @@ private fun CollectionsReadyContent(
     onDelete: (DeleteTarget) -> Unit,
     selectedCollectionId: String?,
     selectedFolderId: String?,
+    selectedListId: String?,
     onOpenCollection: (String) -> Unit,
     onOpenFolder: (String) -> Unit,
+    onOpenList: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val selectedCollection = collections.firstOrNull { it.collection.id == selectedCollectionId }
     val selectedFolder = selectedCollection?.folders?.firstOrNull { it.folder.id == selectedFolderId }
+    val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
 
     LazyColumn(
         modifier = modifier,
@@ -431,21 +444,31 @@ private fun CollectionsReadyContent(
                         )
                     }
                 }
-                selectedFolder.lists.forEach { list ->
-                    item(key = "list:${list.id}") {
+                if (selectedList == null) {
+                    selectedFolder.lists.forEach { list ->
+                        item(key = "list:${list.id}") {
+                            ListSummaryRow(
+                                list = list,
+                                onOpen = { onOpenList(list.id) },
+                            )
+                        }
+                    }
+                    if (childFolders.isEmpty() && selectedFolder.lists.isEmpty()) {
+                        item(key = "empty_folder") {
+                            Text("This folder has no subfolders or Lists yet.")
+                        }
+                    }
+                } else {
+                    item(key = "list_detail:${selectedList.id}") {
                         ListRow(
                             folderDepth = 0,
-                            list = list,
-                            runtimeState = listRuntimeStates[list.id] ?: CollectionListRuntimeState.Idle,
+                            list = selectedList,
+                            runtimeState = listRuntimeStates[selectedList.id]
+                                ?: CollectionListRuntimeState.Idle,
                             onAction = onAction,
                             onEdit = onEdit,
                             onDelete = onDelete,
                         )
-                    }
-                }
-                if (childFolders.isEmpty() && selectedFolder.lists.isEmpty()) {
-                    item(key = "empty_folder") {
-                        Text("This folder has no subfolders or Lists yet.")
                     }
                 }
             }
@@ -634,6 +657,33 @@ private fun FolderRow(
         }
 
         HorizontalDivider()
+    }
+}
+
+@Composable
+private fun ListSummaryRow(
+    list: CollectionList,
+    onOpen: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = list.title,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = list.providerId,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
