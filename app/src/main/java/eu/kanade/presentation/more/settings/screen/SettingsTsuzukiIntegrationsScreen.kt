@@ -147,7 +147,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
                 TopAppBar(
                     title = { Text(item?.label ?: stringResource(MR.strings.tsuzuki_integration_fallback_title)) },
                     navigationIcon = {
-                        TextButton(onClick = navigator::pop) { Text(stringResource(MR.strings.tsuzuki_navigation_back)) }
+                        TextButton(onClick = navigator::pop) {
+                            Text(stringResource(MR.strings.tsuzuki_navigation_back))
+                        }
                     },
                 )
             },
