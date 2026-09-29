@@ -152,9 +152,9 @@ internal object DefaultIntegrationManifests {
         personalServer("komga", "Komga", 6L),
         personalServer("kavita", "Kavita", 8L),
         personalServer(
-            id = "suwayomi",
-            name = "Suwayomi",
-            legacyTrackerId = 9L,
+            "suwayomi",
+            "Suwayomi",
+            9L,
             IntegrationCapability.READING_CONTENT,
             IntegrationCapability.DOWNLOADS,
         ),
