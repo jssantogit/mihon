@@ -1,6 +1,7 @@
 package eu.kanade.presentation.more.settings.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ListItem
@@ -26,23 +27,29 @@ object SettingsTsuzukiPersonalizationsScreen : Screen() {
                 TopAppBar(
                     title = { Text("Personalizações") },
                     navigationIcon = {
-                        TextButton(onClick = navigator::pop) {
-                            Text("Voltar")
-                        }
+                        TextButton(onClick = navigator::pop) { Text("Voltar") }
                     },
                 )
             },
         ) { contentPadding ->
-            ListItem(
-                headlineContent = { Text("Collections") },
-                supportingContent = {
-                    Text("Organize coleções, pastas e listas exibidas pelo Tsuzuki")
-                },
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding)
-                    .clickable { navigator.push(CollectionsScreen()) },
-            )
+                    .padding(contentPadding),
+            ) {
+                ListItem(
+                    headlineContent = { Text("Aparência") },
+                    supportingContent = { Text("Tema, idioma visual, data e hora") },
+                    modifier = Modifier.clickable { navigator.push(SettingsAppearanceScreen) },
+                )
+                ListItem(
+                    headlineContent = { Text("Collections") },
+                    supportingContent = {
+                        Text("Organize coleções, pastas e listas exibidas pelo Tsuzuki")
+                    },
+                    modifier = Modifier.clickable { navigator.push(CollectionsScreen()) },
+                )
+            }
         }
     }
 }
