@@ -34,6 +34,7 @@ class TrackSearch : Track {
 
     override lateinit var tracking_url: String
 
+    // Optional enrichment shared by tracker-backed catalog integrations.
     var authors: List<String> = emptyList()
 
     var artists: List<String> = emptyList()
