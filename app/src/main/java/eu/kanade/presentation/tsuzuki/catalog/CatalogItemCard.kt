@@ -130,7 +130,6 @@ fun CatalogCompactCard(
     }
 }
 
-
 internal fun catalogRatingLabel(score: CatalogScore): String {
     val percentage = if (score.maxValue > 0.0) {
         (score.value / score.maxValue * 100.0)
