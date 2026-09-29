@@ -146,3 +146,9 @@ Before declaring the front complete, report:
 - CI run URL/ID and gate results
 - any intentionally deferred visual-design items
 - human smoke checklist
+
+## Execution status — 2026-09-29
+
+Front 2 was merged to `main` at `88dfa4fd597d26641abaf77812b9309e820b6d11`.
+CI v2.1 run `36544772478` passed Change Planner, Format, Tests — App, and CI Gate.
+The user explicitly requested the installable APK smoke build after merge.
