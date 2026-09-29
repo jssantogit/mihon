@@ -23,12 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarTitle
-import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeRow
-import tachiyomi.domain.tsuzuki.home.model.HomeRowContent
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.presentation.core.components.material.Scaffold
 
@@ -37,7 +34,7 @@ fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
     onRemoveFromContinueReading: (HomeContinueReadingItem) -> Unit,
-    onCatalogItem: (CatalogItem) -> Unit,
+    onFolder: (collectionId: String, folderId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -88,7 +85,7 @@ fun TsuzukiHomeScreen(
                             item(key = "collection_row_${section.collectionId}_${row.listId}") {
                                 ConfiguredHomeRow(
                                     row = row,
-                                    onCatalogItem = onCatalogItem,
+                                    onClick = { onFolder(section.collectionId, row.listId) },
                                 )
                             }
                         }
@@ -180,51 +177,22 @@ private fun ContinueReadingCard(
 @Composable
 private fun ConfiguredHomeRow(
     row: HomeRow,
-    onCatalogItem: (CatalogItem) -> Unit,
+    onClick: () -> Unit,
 ) {
-    if (row.title.isNotBlank()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
         Text(
             text = row.title,
             style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            modifier = Modifier.padding(16.dp),
         )
     }
-
-    when (val content = row.content) {
-        is HomeRowContent.Content -> {
-            if (content.items.isEmpty()) {
-                SectionMessage("No matching titles")
-            } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(
-                        items = content.items,
-                        key = { "${row.listId}:${it.provider}:${it.providerId}" },
-                    ) { item ->
-                        CatalogHomeCard(
-                            item = item,
-                            onClick = { onCatalogItem(item) },
-                        )
-                    }
-                }
-            }
-        }
-        is HomeRowContent.Unavailable -> {
-            SectionMessage(content.reason)
-        }
-    }
 }
 
-@Composable
-private fun CatalogHomeCard(
-    item: CatalogItem,
-    onClick: () -> Unit,
-) {
-    CatalogCompactCard(
-        item = item,
-        onClick = onClick,
-        modifier = Modifier.width(140.dp),
-    )
-}
