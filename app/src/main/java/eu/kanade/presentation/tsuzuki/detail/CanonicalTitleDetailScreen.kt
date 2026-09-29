@@ -186,10 +186,10 @@ private fun TitleHeader(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 val editorialFacts = buildList {
-                    state.editorialFormat?.toEditorialFormatLabel()?.let(::add)
-                    state.editorialStatus?.toEditorialStatusLabel()?.let(::add)
+                    state.editorialFormat?.toEditorialFormatLabel()?.let { add(it) }
+                    state.editorialStatus?.toEditorialStatusLabel()?.let { add(it) }
                     state.editorialVolumeCount?.let { add("${it} volumes") }
-                    state.metadataDateLabel()?.let(::add)
+                    state.metadataDateLabel()?.let { add(it) }
                 }
                 if (editorialFacts.isNotEmpty()) {
                     Text(
