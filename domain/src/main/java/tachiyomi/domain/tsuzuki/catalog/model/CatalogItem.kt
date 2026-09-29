@@ -11,6 +11,8 @@ data class CatalogItem(
     val status: CatalogItemStatus = CatalogItemStatus.UNKNOWN,
     val format: CatalogItemFormat = CatalogItemFormat.UNKNOWN,
     val score: CatalogScore? = null,
+    val authors: List<String> = emptyList(),
+    val artists: List<String> = emptyList(),
     val genres: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
     val startDate: String? = null,

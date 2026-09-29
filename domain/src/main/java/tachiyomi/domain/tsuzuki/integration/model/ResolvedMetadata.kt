@@ -25,6 +25,10 @@ data class ResolvedMetadata(
     val editorialChapterCount: ProvenancedMetadata<Int>? = null,
     val rating: ProvenancedMetadata<Double>? = null,
     val authors: ProvenancedMetadata<List<String>>? = null,
+    val artists: ProvenancedMetadata<List<String>>? = null,
     val genres: ProvenancedMetadata<List<String>>? = null,
+    val startDate: ProvenancedMetadata<String>? = null,
+    val endDate: ProvenancedMetadata<String>? = null,
+    val editorialVolumeCount: ProvenancedMetadata<Int>? = null,
     val externalIds: Map<IntegrationId, String> = emptyMap(),
 )

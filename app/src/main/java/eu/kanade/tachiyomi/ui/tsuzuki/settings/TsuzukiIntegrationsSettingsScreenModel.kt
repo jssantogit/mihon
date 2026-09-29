@@ -194,6 +194,7 @@ class TsuzukiIntegrationsSettingsScreenModel(
             IntegrationCapability.METADATA_BASIC,
             IntegrationCapability.METADATA_ARTWORK,
             IntegrationCapability.METADATA_EDITORIAL,
+            IntegrationCapability.METADATA_STAFF,
             IntegrationCapability.RATINGS,
         )
     }

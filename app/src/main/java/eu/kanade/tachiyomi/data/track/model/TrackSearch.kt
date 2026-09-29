@@ -38,6 +38,8 @@ class TrackSearch : Track {
 
     var artists: List<String> = emptyList()
 
+    var total_volumes: Long = 0
+
     var cover_url: String = ""
 
     var summary: String = ""
@@ -47,6 +49,8 @@ class TrackSearch : Track {
     var publishing_type: String = ""
 
     var start_date: String = ""
+
+    var end_date: String = ""
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

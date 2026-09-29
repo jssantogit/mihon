@@ -22,8 +22,13 @@ class MalIntegrationProviderTest {
                     title = "Monster",
                     score = 8.72,
                     chapters = 162,
+                    volumes = 18,
+                    startDate = "1994-12-05",
+                    endDate = "2001-12-20",
                     publishingStatus = "finished",
                     publishingType = "manga",
+                    authors = listOf("Naoki Urasawa"),
+                    artists = listOf("Naoki Urasawa"),
                 ),
             ),
         )
@@ -38,8 +43,13 @@ class MalIntegrationProviderTest {
         item.score?.value shouldBe 8.72
         item.score?.maxValue shouldBe 10.0
         item.chapterCount shouldBe 162
+        item.volumeCount shouldBe 18
+        item.startDate shouldBe "1994-12-05"
+        item.endDate shouldBe "2001-12-20"
         item.status shouldBe CatalogItemStatus.COMPLETED
         item.format shouldBe CatalogItemFormat.MANGA
+        item.authors shouldContainExactly listOf("Naoki Urasawa")
+        item.artists shouldContainExactly listOf("Naoki Urasawa")
         ChapterEvidenceProvider::class.java.isAssignableFrom(provider.javaClass) shouldBe false
     }
 
@@ -121,19 +131,29 @@ class MalIntegrationProviderTest {
         title: String,
         score: Double = -1.0,
         chapters: Long = 0,
+        volumes: Long = 0,
+        startDate: String = "",
+        endDate: String = "",
         synopsis: String = "",
         coverUrl: String = "",
         publishingStatus: String = "",
         publishingType: String = "",
+        authors: List<String> = emptyList(),
+        artists: List<String> = emptyList(),
     ): TrackSearch = TrackSearch.create(1L).apply {
         remote_id = id
         this.title = title
         this.score = score
         total_chapters = chapters
+        total_volumes = volumes
+        start_date = startDate
+        end_date = endDate
         summary = synopsis
         cover_url = coverUrl
         publishing_status = publishingStatus
         publishing_type = publishingType
+        this.authors = authors
+        this.artists = artists
         tracking_url = "https://myanimelist.net/manga/$id"
     }
 }

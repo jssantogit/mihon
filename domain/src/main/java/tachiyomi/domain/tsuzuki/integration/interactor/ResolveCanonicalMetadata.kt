@@ -99,11 +99,36 @@ class ResolveCanonicalMetadata(
                         capability = IntegrationCapability.RATINGS,
                         precedence = RATINGS_PRECEDENCE,
                     ) { it.score?.value },
+                    authors = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_STAFF,
+                        precedence = STAFF_PRECEDENCE,
+                    ) { it.authors.takeIf { authors -> authors.isNotEmpty() } },
+                    artists = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_STAFF,
+                        precedence = STAFF_PRECEDENCE,
+                    ) { it.artists.takeIf { artists -> artists.isNotEmpty() } },
                     genres = select(
                         candidates = candidates,
                         capability = IntegrationCapability.METADATA_BASIC,
                         precedence = BASIC_PRECEDENCE,
                     ) { it.genres.takeIf { genres -> genres.isNotEmpty() } },
+                    startDate = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_EDITORIAL,
+                        precedence = EDITORIAL_PRECEDENCE,
+                    ) { it.startDate?.takeIf(String::isNotBlank) },
+                    endDate = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_EDITORIAL,
+                        precedence = EDITORIAL_PRECEDENCE,
+                    ) { it.endDate?.takeIf(String::isNotBlank) },
+                    editorialVolumeCount = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_EDITORIAL,
+                        precedence = EDITORIAL_PRECEDENCE,
+                    ) { it.volumeCount?.takeIf { count -> count > 0 } },
                     externalIds = identities.associate { identity ->
                         IntegrationId(identity.provider) to identity.externalId
                     },
@@ -173,6 +198,7 @@ class ResolveCanonicalMetadata(
             IntegrationCapability.METADATA_BASIC,
             IntegrationCapability.METADATA_ARTWORK,
             IntegrationCapability.METADATA_EDITORIAL,
+            IntegrationCapability.METADATA_STAFF,
             IntegrationCapability.RATINGS,
         )
 
@@ -180,6 +206,7 @@ class ResolveCanonicalMetadata(
         val SYNOPSIS_PRECEDENCE = listOf("mangaupdates", "kitsu", "mal", "bangumi")
         val ARTWORK_PRECEDENCE = listOf("kitsu", "mal", "mangaupdates", "bangumi")
         val EDITORIAL_PRECEDENCE = listOf("mangaupdates", "mal", "kitsu", "bangumi")
+        val STAFF_PRECEDENCE = listOf("mangaupdates", "mal", "kitsu", "bangumi")
         val RATINGS_PRECEDENCE = listOf("mal", "kitsu", "mangaupdates", "bangumi")
     }
 }

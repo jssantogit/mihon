@@ -88,8 +88,14 @@ class MalIntegrationProvider private constructor(
                         maxValue = MAL_SCORE_MAX,
                     )
                 },
+            authors = authors.filter(String::isNotBlank).distinct(),
+            artists = artists.filter(String::isNotBlank).distinct(),
             startDate = start_date.ifBlank { null },
+            endDate = end_date.ifBlank { null },
             chapterCount = total_chapters
+                .takeIf { it > 0 && it <= Int.MAX_VALUE }
+                ?.toInt(),
+            volumeCount = total_volumes
                 .takeIf { it > 0 && it <= Int.MAX_VALUE }
                 ?.toInt(),
         )

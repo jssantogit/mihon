@@ -73,6 +73,54 @@ class ResolveCanonicalMetadataTest {
     }
 
     @Test
+    fun `staff and editorial fields keep deterministic provenance`() = runTest {
+        val repository = FakeCanonicalTitleRepository(
+            identities = listOf(
+                identity("mangaupdates", "mu1"),
+                identity("mal", "m1"),
+            ),
+        )
+        val mangaUpdates = FakeMetadataProvider(
+            "mangaupdates",
+            CatalogItem(
+                provider = "mangaupdates",
+                providerId = "mu1",
+                title = "MU title",
+                authors = listOf("Author MU"),
+                artists = listOf("Artist MU"),
+                startDate = "1994",
+                endDate = "2001",
+                volumeCount = 18,
+            ),
+        )
+        val mal = FakeMetadataProvider(
+            "mal",
+            CatalogItem(
+                provider = "mal",
+                providerId = "m1",
+                title = "MAL title",
+                authors = listOf("Author MAL"),
+                artists = listOf("Artist MAL"),
+                startDate = "1995-01-01",
+                volumeCount = 17,
+            ),
+        )
+        val registry = FakeRegistry(listOf(mangaUpdates, mal))
+
+        val resolved = ResolveCanonicalMetadata(repository, registry)
+            .execute(TITLE_ID)
+            .getOrThrow()
+
+        resolved.authors?.value shouldBe listOf("Author MU")
+        resolved.authors?.providerId?.value shouldBe "mangaupdates"
+        resolved.artists?.value shouldBe listOf("Artist MU")
+        resolved.startDate?.value shouldBe "1994"
+        resolved.endDate?.value shouldBe "2001"
+        resolved.editorialVolumeCount?.value shouldBe 18
+        resolved.editorialVolumeCount?.providerId?.value shouldBe "mangaupdates"
+    }
+
+    @Test
     fun `granular capability gate falls back without disabling other fields`() = runTest {
         val repository = FakeCanonicalTitleRepository(
             identities = listOf(
@@ -232,6 +280,7 @@ class ResolveCanonicalMetadataTest {
             IntegrationCapability.METADATA_BASIC,
             IntegrationCapability.METADATA_ARTWORK,
             IntegrationCapability.METADATA_EDITORIAL,
+            IntegrationCapability.METADATA_STAFF,
             IntegrationCapability.RATINGS,
         )
     }
