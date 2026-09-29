@@ -163,12 +163,32 @@ class CanonicalTitleScreenModelTest {
                 ),
                 ratingDetails = ProvenancedMetadata(
                     value = ResolvedRating(
-                        value = 9.12,
+                        value = 8.72,
                         maxValue = 10.0,
-                        voteCount = 12345,
+                        voteCount = 143215,
                     ),
-                    providerId = IntegrationId("mangaupdates"),
-                    attribution = "MangaUpdates",
+                    providerId = IntegrationId("mal"),
+                    attribution = "MyAnimeList",
+                ),
+                ratings = listOf(
+                    ProvenancedMetadata(
+                        value = ResolvedRating(
+                            value = 8.72,
+                            maxValue = 10.0,
+                            voteCount = 143215,
+                        ),
+                        providerId = IntegrationId("mal"),
+                        attribution = "MyAnimeList",
+                    ),
+                    ProvenancedMetadata(
+                        value = ResolvedRating(
+                            value = 9.12,
+                            maxValue = 10.0,
+                            voteCount = 12345,
+                        ),
+                        providerId = IntegrationId("mangaupdates"),
+                        attribution = "MangaUpdates",
+                    ),
                 ),
                 startDate = ProvenancedMetadata(
                     value = "1994",
@@ -223,13 +243,16 @@ class CanonicalTitleScreenModelTest {
         state.tags shouldBe listOf("Psychological", "Crime")
         state.editorialStatus shouldBe "COMPLETED"
         state.editorialFormat shouldBe "MANGA"
-        state.ratingValue shouldBe 9.12
+        state.ratingValue shouldBe 8.72
         state.ratingMaxValue shouldBe 10.0
-        state.ratingVoteCount shouldBe 12345
+        state.ratingVoteCount shouldBe 143215
+        state.ratings.map { it.providerId } shouldBe listOf("mal", "mangaupdates")
+        state.ratings.map { it.value } shouldBe listOf(8.72, 9.12)
+        state.ratings.map { it.voteCount } shouldBe listOf(143215, 12345)
         state.startDate shouldBe "1994"
         state.endDate shouldBe "2001"
         state.editorialVolumeCount shouldBe 18
-        state.metadataSources shouldBe listOf("MangaUpdates")
+        state.metadataSources shouldBe listOf("MangaUpdates", "MyAnimeList")
     }
 
     @Test
