@@ -29,6 +29,7 @@ class IntegrationSettingsSyncAdapterTest {
                         {
                           "region":"br",
                           "accessToken":"secret",
+                          "clientId":"local-client",
                           "nested":{"safe":1,"apiKey":"secret-key"}
                         }
                     """.trimIndent(),
@@ -51,6 +52,7 @@ class IntegrationSettingsSyncAdapterTest {
         val config = fields.getValue("config").jsonObject
         config["region"]?.toString() shouldBe "\"br\""
         config.containsKey("accessToken") shouldBe false
+        config.containsKey("clientId") shouldBe false
         config.getValue("nested").jsonObject.containsKey("apiKey") shouldBe false
         config.getValue("nested").jsonObject["safe"]?.toString() shouldBe "1"
     }
