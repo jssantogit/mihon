@@ -202,7 +202,7 @@ Only after those decisions:
 
 - implement a Tsuzuki release workflow;
 - remove dead Mihon release automation;
-- coordinate repository rename.
+- finalize distribution-owned links/workflows against the current repository.
 
 ### Task I10 — Repository rename — complete
 
