@@ -84,9 +84,12 @@ class DefaultIntegrationRegistry(
         capability = IntegrationCapability.DISCOVERY,
     )
 
-    override fun metadataProviders(): List<MetadataProvider> = allowedProviders(
+    override fun metadataProviders(): List<MetadataProvider> =
+        metadataProviders(IntegrationCapability.METADATA_BASIC)
+
+    override fun metadataProviders(capability: IntegrationCapability): List<MetadataProvider> = allowedProviders(
         providers = metadataProviders,
-        capability = IntegrationCapability.METADATA_BASIC,
+        capability = capability,
     )
 
     override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> {
