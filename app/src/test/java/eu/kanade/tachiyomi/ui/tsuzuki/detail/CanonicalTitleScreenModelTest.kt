@@ -50,13 +50,13 @@ import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.SearchProvider
+import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
-import tachiyomi.domain.tsuzuki.integration.RatingsProvider
-import tachiyomi.domain.tsuzuki.integration.SearchProvider
-import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
