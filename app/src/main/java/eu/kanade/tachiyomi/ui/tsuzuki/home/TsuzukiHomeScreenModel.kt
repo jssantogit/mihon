@@ -64,14 +64,18 @@ class TsuzukiHomeScreenModel(
     ) { continueReading, sections, library ->
         val libraryById = library.associateBy { it.title.id }
         val enriched = continueReading.map { item ->
-            val source = libraryById[item.canonicalTitleId]?.sources?.firstOrNull()
-            val cover = source?.let {
-                runCatching {
-                    it.mihonMangaId
-                        ?.let { mangaId -> mangaRepository.getMangaById(mangaId) }
-                        ?: mangaRepository.getMangaByUrlAndSourceId(it.sourceUrl, it.sourceId)
-                }.getOrNull()?.thumbnailUrl
-            }
+            val cover = libraryById[item.canonicalTitleId]
+                ?.sources
+                .orEmpty()
+                .asSequence()
+                .mapNotNull { source ->
+                    runCatching {
+                        source.mihonMangaId
+                            ?.let { mangaId -> mangaRepository.getMangaById(mangaId) }
+                            ?: mangaRepository.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
+                    }.getOrNull()?.thumbnailUrl
+                }
+                .firstOrNull { it.isNotBlank() }
             item.copy(coverUrl = cover)
         }
         TsuzukiHomeScreenState(
