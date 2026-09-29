@@ -57,6 +57,7 @@ internal object DefaultIntegrationManifests {
             capabilities = policies(
                 IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION,
                 IntegrationCapability.SEARCH,
+                IntegrationCapability.DISCOVERY,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,
@@ -75,6 +76,7 @@ internal object DefaultIntegrationManifests {
             capabilities = policies(
                 IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION,
                 IntegrationCapability.SEARCH,
+                IntegrationCapability.DISCOVERY,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,
