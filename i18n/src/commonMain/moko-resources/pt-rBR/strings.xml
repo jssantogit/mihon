@@ -1023,6 +1023,18 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
     <string name="tsuzuki_metadata_sources">Metadados: %s</string>
     <string name="tsuzuki_tracking_login_failed">Não foi possível conectar</string>
 
+    <string name="tsuzuki_oauth_client_id_title">Client ID</string>
+    <string name="tsuzuki_oauth_client_secret_title">Client Secret</string>
+    <string name="tsuzuki_shikimori_credentials_summary">O monitoramento de conta do Shikimori exige um aplicativo OAuth criado por você. Essas credenciais permanecem neste aparelho.</string>
+    <string name="tsuzuki_shikimori_credentials_required">Adicione o Client ID e o Client Secret do Shikimori antes de conectar a conta.</string>
+    <string name="tsuzuki_shikimori_credentials_setup">Crie um aplicativo OAuth em shikimori.io/oauth/applications e use tsuzuki://shikimori-auth como URL de redirecionamento.</string>
+    <string name="tsuzuki_hikka_reference_title">Reference do aplicativo</string>
+    <string name="tsuzuki_hikka_client_secret_title">Chave do aplicativo / Client Secret</string>
+    <string name="tsuzuki_hikka_credentials_summary">O monitoramento de conta do Hikka exige um aplicativo criado por você. O Reference e a chave permanecem neste aparelho.</string>
+    <string name="tsuzuki_hikka_credentials_required">Adicione o Reference e o Client Secret do seu aplicativo Hikka antes de conectar a conta.</string>
+    <string name="tsuzuki_hikka_credentials_setup">Crie um aplicativo nas configurações do Hikka e use tsuzuki://hikka-auth como URL de redirecionamento.</string>
+    <string name="tsuzuki_bangumi_access_token">Token de acesso pessoal</string>
+    <string name="tsuzuki_bangumi_access_token_summary">Use um token de acesso pessoal do Bangumi em vez de um aplicativo OAuth compartilhado. O token permanece neste aparelho.</string>
     <string name="tsuzuki_mal_client_id_title">Client ID do MyAnimeList</string>
     <string name="tsuzuki_mal_client_id_summary">O MyAnimeList exige seu próprio Client ID da API. O Tsuzuki não inclui uma credencial MAL compartilhada.</string>
     <string name="tsuzuki_mal_client_id_required">Adicione seu Client ID do MyAnimeList antes de ativar esta integração.</string>
@@ -1030,9 +1042,9 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
     <string name="tsuzuki_integration_provider_kitsu">Catálogo público e metadados com monitoramento de conta opcional. Usa a configuração de cliente Kitsu existente no aplicativo.</string>
     <string name="tsuzuki_integration_provider_mal">Metadados de catálogo e avaliações usando seu próprio Client ID da API do MyAnimeList, com monitoramento de conta OAuth2/PKCE opcional.</string>
     <string name="tsuzuki_integration_provider_mangaupdates">Metadados públicos focados em mangá, com listas e avaliações da conta. A atribuição é preservada quando os dados são usados.</string>
-    <string name="tsuzuki_integration_provider_bangumi">Busca/metadados e monitoramento de conta estão disponíveis com atribuição ao provedor.</string>
-    <string name="tsuzuki_integration_provider_shikimori">O monitoramento de conta existente permanece disponível. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
-    <string name="tsuzuki_integration_provider_hikka">O monitoramento de conta existente permanece disponível. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
+    <string name="tsuzuki_integration_provider_bangumi">Busca/metadados públicos e monitoramento de conta com seu token de acesso pessoal do Bangumi. A atribuição ao provedor é preservada.</string>
+    <string name="tsuzuki_integration_provider_shikimori">O monitoramento de conta usa seu próprio aplicativo OAuth do Shikimori. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
+    <string name="tsuzuki_integration_provider_hikka">O monitoramento de conta usa seu próprio aplicativo Hikka. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
     <string name="tsuzuki_integration_provider_komga">Integração de servidor pessoal. Endereço e credenciais são reutilizados da configuração da fonte Komga instalada.</string>
     <string name="tsuzuki_integration_provider_kavita">Integração de servidor pessoal. Endereço e chave de API são reutilizados da configuração da fonte Kavita instalada.</string>
     <string name="tsuzuki_integration_provider_suwayomi">Integração de servidor pessoal de leitura. Conexão e configurações de fontes são reutilizadas da fonte Suwayomi/Tachidesk instalada.</string>
