@@ -21,6 +21,9 @@ internal fun TrackSearch.toIntegrationCatalogItem(providerId: String): CatalogIt
     chapterCount = total_chapters
         .takeIf { it > 0 && it <= Int.MAX_VALUE }
         ?.toInt(),
+    volumeCount = total_volumes
+        .takeIf { it > 0 && it <= Int.MAX_VALUE }
+        ?.toInt(),
 )
 
 
