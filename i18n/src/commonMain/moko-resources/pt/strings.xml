@@ -898,6 +898,9 @@
     <string name="tsuzuki_personalizations_title">Personalizações</string>
     <string name="tsuzuki_reading_settings_title">Leitura</string>
 
+    <string name="tsuzuki_integrations_title">Integrações</string>
+    <string name="tsuzuki_navigation_back">Voltar</string>
+    <string name="tsuzuki_integration_fallback_title">Integração</string>
     <string name="tsuzuki_integrations_tracking_behavior_title">Comportamento do acompanhamento</string>
     <string name="tsuzuki_integrations_tracking_behavior_summary">Atualizações automáticas e sincronização ao marcar capítulos como lidos</string>
     <string name="tsuzuki_integrations_category_metadata">Metadados e serviços</string>
