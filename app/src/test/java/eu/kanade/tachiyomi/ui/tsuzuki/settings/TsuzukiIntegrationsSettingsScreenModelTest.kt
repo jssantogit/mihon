@@ -121,10 +121,8 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             .items
             .single { it.id.value == "anilist" }
 
-        item.capabilities shouldContainExactly listOf(
-            IntegrationCapability.TRACKING,
-            IntegrationCapability.USER_LISTS,
-        )
+        item.capabilities shouldBe emptyList()
+        item.supportsTracking shouldBe true
         item.restrictedCapabilities shouldContainKey IntegrationCapability.SEARCH
         item.restrictedCapabilities shouldContainKey IntegrationCapability.METADATA_BASIC
     }
@@ -141,6 +139,8 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
 
         IntegrationCapability.METADATA_BASIC in item.capabilities shouldBe true
         IntegrationCapability.REMOTE_LIBRARY in item.capabilities shouldBe true
+        IntegrationCapability.METADATA_BASIC in item.configurableCapabilities shouldBe false
+        item.supportsTracking shouldBe true
     }
 
     private class FakeIntegrationSettingsRepository : IntegrationSettingsRepository {
