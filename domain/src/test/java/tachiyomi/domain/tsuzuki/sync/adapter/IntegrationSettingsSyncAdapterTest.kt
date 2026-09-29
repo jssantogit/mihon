@@ -30,6 +30,7 @@ class IntegrationSettingsSyncAdapterTest {
                           "region":"br",
                           "accessToken":"secret",
                           "clientId":"local-client",
+                          "clientReference":"local-reference",
                           "nested":{"safe":1,"apiKey":"secret-key"}
                         }
                     """.trimIndent(),
@@ -53,6 +54,7 @@ class IntegrationSettingsSyncAdapterTest {
         config["region"]?.toString() shouldBe "\"br\""
         config.containsKey("accessToken") shouldBe false
         config.containsKey("clientId") shouldBe false
+        config.containsKey("clientReference") shouldBe false
         config.getValue("nested").jsonObject.containsKey("apiKey") shouldBe false
         config.getValue("nested").jsonObject["safe"]?.toString() shouldBe "1"
     }
