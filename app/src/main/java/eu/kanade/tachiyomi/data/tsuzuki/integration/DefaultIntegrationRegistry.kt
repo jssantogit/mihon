@@ -118,7 +118,9 @@ class DefaultIntegrationRegistry(
         }
     }
 
-    private fun enabledIntegrationIds(capability: IntegrationCapability): Set<String> = enabledIntegrationIds(capability.configKey)
+    private fun enabledIntegrationIds(capability: IntegrationCapability): Set<String> = enabledIntegrationIds(
+        capability.configKey,
+    )
 
     private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
         .groupBy { it.integrationId.value }
