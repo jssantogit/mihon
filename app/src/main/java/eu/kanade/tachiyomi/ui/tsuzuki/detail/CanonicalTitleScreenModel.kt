@@ -41,6 +41,7 @@ import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
 import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
@@ -51,6 +52,7 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import kotlin.time.Clock
 import kotlin.time.TimeSource
 
@@ -64,6 +66,10 @@ sealed interface CanonicalTitleScreenState {
         val chapters: List<CanonicalChapterDetailItem>,
         val reportedChapterCounts: List<ReportedChapterCount> = emptyList(),
         val addonCoverage: List<ObservedAddonCoverage> = emptyList(),
+        val coverUrl: String? = null,
+        val author: String? = null,
+        val description: String? = null,
+        val genres: List<String> = emptyList(),
         val isRefreshing: Boolean = false,
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
@@ -109,6 +115,8 @@ class CanonicalTitleScreenModel(
     private val addonRepository: AddonRepository,
     private val refreshReportedChapterCounts: RefreshReportedChapterCounts,
     private val refreshChapterEvidence: RefreshChapterEvidence,
+    private val sourceTitleMappingRepository: SourceTitleMappingRepository,
+    private val mangaRepository: MangaRepository,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -512,6 +520,22 @@ class CanonicalTitleScreenModel(
             .map { it.canonicalChapterId }
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
+        val metadata = sourceTitleMappingRepository
+            .getByCanonicalTitleId(canonicalTitleId)
+            .asSequence()
+            .sortedByDescending { it.preferredOverride }
+            .mapNotNull { source ->
+                runCatching {
+                    source.mihonMangaId
+                        ?.let { mangaRepository.getMangaById(it) }
+                        ?: mangaRepository.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
+                }.getOrNull()
+            }
+            .firstOrNull { manga ->
+                !manga.thumbnailUrl.isNullOrBlank() ||
+                    !manga.description.isNullOrBlank() ||
+                    !manga.author.isNullOrBlank()
+            }
 
         val details = if (!includeLegacyDownloadChecks) {
             chapters.mapNotNull { chapter ->
@@ -573,6 +597,10 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
+            coverUrl = metadata?.thumbnailUrl,
+            author = metadata?.author,
+            description = metadata?.description,
+            genres = metadata?.genre.orEmpty(),
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )
