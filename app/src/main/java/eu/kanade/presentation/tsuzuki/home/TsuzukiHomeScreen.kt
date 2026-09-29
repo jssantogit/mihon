@@ -53,6 +53,15 @@ fun TsuzukiHomeScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            state.continueReading.firstOrNull()?.let { hero ->
+                item(key = "hero") {
+                    HeroCard(
+                        item = hero,
+                        onClick = { onContinueReading(hero) },
+                    )
+                }
+            }
+
             if (state.continueReading.isNotEmpty()) {
                 item(key = "continue_header") {
                     SectionHeader("Continue Reading")
@@ -92,6 +101,48 @@ fun TsuzukiHomeScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroCard(
+    item: HomeContinueReadingItem,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            MangaCover.Book(
+                data = item.coverUrl,
+                contentDescription = item.title,
+                modifier = Modifier.width(96.dp),
+            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "Continue lendo",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "Capítulo ${item.chapterDisplayNumber}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
