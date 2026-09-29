@@ -111,6 +111,32 @@ class BangumiApi(
         }
     }
 
+    suspend fun browse(
+        sort: String,
+        offset: Int,
+        limit: Int,
+    ): List<TrackSearch> {
+        if (limit <= 0) return emptyList()
+
+        return withIOContext {
+            val url = "$API_URL/v0/subjects".toUri().buildUpon()
+                .appendQueryParameter("type", "1")
+                .appendQueryParameter("sort", sort)
+                .appendQueryParameter("offset", offset.coerceAtLeast(0).toString())
+                .appendQueryParameter("limit", limit.toString())
+                .build()
+
+            with(json) {
+                authClient.newCall(GET(url.toString(), headers = headersOf("Content-Type", APP_JSON)))
+                    .awaitSuccess()
+                    .parseAs<BGMSearchResult>()
+                    .data
+                    .filter { it.platform == null || it.platform == "漫画" }
+                    .map { it.toTrackSearch(trackerId) }
+            }
+        }
+    }
+
     suspend fun getMangaDetails(id: Int): TrackSearch? {
         return withIOContext {
             val url = "$API_URL/v0/subjects/$id"
