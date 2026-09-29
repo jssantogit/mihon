@@ -86,6 +86,34 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
+    fun `personal server metadata stays server scoped`() = runTest {
+        val komga = FakeMetadataProvider("komga")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("komga" to true)),
+            metadataProviders = setOf(komga),
+        )
+
+        registry.metadataProviders() shouldBe emptyList()
+        registry.isGlobalCapabilityActive(
+            IntegrationId("komga"),
+            IntegrationCapability.METADATA_BASIC,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `commercially restricted metadata cannot enter global search`() = runTest {
+        val mangaBaka = FakeSearchProvider("mangabaka")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("mangabaka" to true)),
+            searchProviders = setOf(mangaBaka),
+        )
+
+        registry.searchProviders() shouldBe emptyList()
+    }
+
+    @Test
     fun `registry exposes unified integration manifests`() = runTest {
         val registry = registry(
             scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
