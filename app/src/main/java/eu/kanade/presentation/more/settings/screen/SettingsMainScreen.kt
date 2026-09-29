@@ -37,7 +37,6 @@ import eu.kanade.presentation.util.Screen
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.automirroredrounded.ChromeReaderMode
 import mihon.icons.materialsymbols.rounded.Code
-import mihon.icons.materialsymbols.rounded.CollectionsBookmark
 import mihon.icons.materialsymbols.rounded.Download
 import mihon.icons.materialsymbols.rounded.Explore
 import mihon.icons.materialsymbols.rounded.Info
