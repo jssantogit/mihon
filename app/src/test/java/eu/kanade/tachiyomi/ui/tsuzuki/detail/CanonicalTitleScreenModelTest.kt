@@ -47,8 +47,13 @@ import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.download.service.CanonicalDownloadGateway
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
@@ -134,6 +139,97 @@ class CanonicalTitleScreenModelTest {
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters.single().chapter.id shouldBe "chapter-after-binding"
         coVerify(exactly = 1) { refresh.execute("title") }
+    }
+
+    @Test
+    fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
+        val resolver = mockk<ResolveCanonicalMetadata>()
+        coEvery { resolver.execute("title") } returns Result.success(
+            ResolvedMetadata(
+                tags = ProvenancedMetadata(
+                    value = listOf("Psychological", "Crime"),
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+                status = ProvenancedMetadata(
+                    value = "COMPLETED",
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+                format = ProvenancedMetadata(
+                    value = "MANGA",
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+                ratingDetails = ProvenancedMetadata(
+                    value = ResolvedRating(
+                        value = 9.12,
+                        maxValue = 10.0,
+                        voteCount = 12345,
+                    ),
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+                startDate = ProvenancedMetadata(
+                    value = "1994",
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+                endDate = ProvenancedMetadata(
+                    value = "2001",
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+                editorialVolumeCount = ProvenancedMetadata(
+                    value = 18,
+                    providerId = IntegrationId("mangaupdates"),
+                    attribution = "MangaUpdates",
+                ),
+            ),
+        )
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = FakeChapterRepository(emptyList()),
+            materializeInferredChapter = mockk(relaxed = true),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = FakeChapterRepository(emptyList()),
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = mockk(relaxed = true),
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = FakeChapterRepository(emptyList()),
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+            resolveCanonicalMetadata = resolver,
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+
+        val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+        state.tags shouldBe listOf("Psychological", "Crime")
+        state.editorialStatus shouldBe "COMPLETED"
+        state.editorialFormat shouldBe "MANGA"
+        state.ratingValue shouldBe 9.12
+        state.ratingMaxValue shouldBe 10.0
+        state.ratingVoteCount shouldBe 12345
+        state.startDate shouldBe "1994"
+        state.endDate shouldBe "2001"
+        state.editorialVolumeCount shouldBe 18
+        state.metadataSources shouldBe listOf("MangaUpdates")
     }
 
     @Test
