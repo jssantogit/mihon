@@ -109,6 +109,25 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
+    fun `staff metadata is configurable only for providers that expose it`() = runTest(dispatcher) {
+        val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
+        advanceUntilIdle()
+
+        val items = model.state.value
+            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
+            .items
+
+        val mal = items.single { it.id.value == "mal" }
+        val mangaUpdates = items.single { it.id.value == "mangaupdates" }
+        val kitsu = items.single { it.id.value == "kitsu" }
+
+        (IntegrationCapability.METADATA_STAFF in mal.capabilities) shouldBe true
+        (IntegrationCapability.METADATA_STAFF in mal.configurableCapabilities) shouldBe true
+        (IntegrationCapability.METADATA_STAFF in mangaUpdates.configurableCapabilities) shouldBe true
+        (IntegrationCapability.METADATA_STAFF in kitsu.capabilities) shouldBe false
+    }
+
+    @Test
     fun `personal server capabilities stay configurable within server scope`() = runTest(dispatcher) {
         val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
         advanceUntilIdle()
