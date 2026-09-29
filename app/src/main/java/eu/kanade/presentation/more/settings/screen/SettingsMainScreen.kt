@@ -215,16 +215,9 @@ object SettingsMainScreen : Screen() {
                     screen = SettingsTsuzukiPersonalizationsScreen,
                 ),
                 Item(
-                    titleRes = MR.strings.pref_category_reader,
-                    subtitleRes = MR.strings.pref_reader_summary,
+                    titleRes = MR.strings.tsuzuki_reading_settings_title,
                     icon = MaterialSymbols.AutoMirroredRounded.ChromeReaderMode,
-                    screen = SettingsReaderScreen,
-                ),
-                Item(
-                    titleRes = MR.strings.pref_category_library,
-                    subtitleRes = MR.strings.pref_library_summary,
-                    icon = MaterialSymbols.Rounded.CollectionsBookmark,
-                    screen = SettingsLibraryScreen,
+                    screen = SettingsTsuzukiReadingHubScreen,
                 ),
             ),
         ),
