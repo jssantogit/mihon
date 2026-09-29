@@ -74,6 +74,18 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                             .fillMaxSize()
                             .padding(contentPadding),
                     ) {
+                        item(key = "tracking_behavior") {
+                            ListItem(
+                                headlineContent = { Text("Comportamento de monitoramento") },
+                                supportingContent = {
+                                    Text("Atualizações automáticas e sincronização ao marcar capítulos como lidos")
+                                },
+                                modifier = Modifier.clickable {
+                                    navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
+                                },
+                            )
+                            HorizontalDivider()
+                        }
                         IntegrationCategory.entries.forEach { category ->
                             val categoryItems = current.items.filter { it.category == category }
                             if (categoryItems.isEmpty()) return@forEach
@@ -225,15 +237,20 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             )
                         }
                     }
-                    if (IntegrationCapability.TRACKING in item.capabilities) {
+                    if (
+                        IntegrationCapability.TRACKING in item.capabilities &&
+                        item.legacyTrackerId != null
+                    ) {
                         item {
                             ListItem(
                                 headlineContent = { Text("Conta e monitoramento") },
                                 supportingContent = {
-                                    Text("Conectar conta e gerenciar o monitoramento existente")
+                                    Text("Conectar ou desconectar apenas a conta de ${item.label}")
                                 },
                                 modifier = Modifier.clickable {
-                                    navigator.push(SettingsTrackingScreen)
+                                    navigator.push(
+                                        SettingsTsuzukiTrackingServiceScreen(item.legacyTrackerId),
+                                    )
                                 },
                             )
                         }
