@@ -40,9 +40,7 @@ VALID_MANIFEST = """
         <activity>
             <intent-filter>
                 <data android:scheme="mihon" />
-                <data android:host="anilist-auth" />
                 <data android:host="bangumi-auth" />
-                <data android:host="mangabaka-auth" />
                 <data android:host="myanimelist-auth" />
                 <data android:host="shikimori-auth" />
                 <data android:host="hikka-auth" />
@@ -207,6 +205,14 @@ class IdentityContractTest(unittest.TestCase):
     def test_tracker_oauth_hosts_remain_on_mihon_scheme(self):
         root = self.make_repo(manifest=VALID_MANIFEST.replace('android:host="hikka-auth"', 'android:host="other-auth"'))
         self.assertIn("tracker OAuth host hikka-auth is missing", check_contract(root))
+
+    def test_retired_tracker_oauth_hosts_stay_absent(self):
+        retired_manifest = VALID_MANIFEST.replace(
+            '<data android:host="bangumi-auth" />',
+            '<data android:host="bangumi-auth" />\n                <data android:host="anilist-auth" />',
+        )
+        root = self.make_repo(manifest=retired_manifest)
+        self.assertIn("retired tracker OAuth host anilist-auth must remain absent", check_contract(root))
 
     def test_provider_authorities_continue_to_follow_application_id(self):
         root = self.make_repo(manifest=VALID_MANIFEST.replace('${applicationId}.provider', 'app.tsuzuki.provider'))
