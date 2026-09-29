@@ -157,7 +157,13 @@ object SettingsMainScreen : Screen() {
                                     .padding(horizontal = 8.dp)
                                     .clip(RoundedCornerShape(24.dp))
                                     .then(
-                                        if (selected) Modifier.background(MaterialTheme.colorScheme.surfaceVariant) else Modifier,
+                                        if (selected) {
+                                            Modifier.background(
+                                                MaterialTheme.colorScheme.surfaceVariant,
+                                            )
+                                        } else {
+                                            Modifier
+                                        },
                                     )
                                 if (selected) contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             }
