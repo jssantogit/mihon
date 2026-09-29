@@ -97,7 +97,6 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
     }
 }
 
-
 class SettingsTsuzukiIntegrationDetailScreen(
     private val integrationId: String,
 ) : Screen() {
@@ -155,7 +154,12 @@ class SettingsTsuzukiIntegrationDetailScreen(
                         ListItem(
                             headlineContent = { Text("Capabilities") },
                             supportingContent = {
-                                Text(item.capabilities.joinToString(" • ", transform = TsuzukiIntegrationCapability::label))
+                                Text(
+                                    item.capabilities.joinToString(
+                                        " • ",
+                                        transform = TsuzukiIntegrationCapability::label,
+                                    ),
+                                )
                             },
                         )
                     }
