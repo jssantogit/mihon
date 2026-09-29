@@ -1023,8 +1023,12 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
     <string name="tsuzuki_metadata_sources">Metadados: %s</string>
     <string name="tsuzuki_tracking_login_failed">Não foi possível conectar</string>
 
+    <string name="tsuzuki_mal_client_id_title">Client ID do MyAnimeList</string>
+    <string name="tsuzuki_mal_client_id_summary">O MyAnimeList exige seu próprio Client ID da API. O Tsuzuki não inclui uma credencial MAL compartilhada.</string>
+    <string name="tsuzuki_mal_client_id_required">Adicione seu Client ID do MyAnimeList antes de ativar esta integração.</string>
+    <string name="tsuzuki_mal_client_id_setup">Crie um cliente em myanimelist.net/apiconfig e registre tsuzuki://myanimelist-auth como URL de redirecionamento. Deixe este campo vazio e salve para remover a credencial.</string>
     <string name="tsuzuki_integration_provider_kitsu">Catálogo público e metadados com monitoramento de conta opcional. Usa a configuração de cliente Kitsu existente no aplicativo.</string>
-    <string name="tsuzuki_integration_provider_mal">Conexão de conta OAuth2/PKCE e metadados de catálogo. O Tsuzuki usa o Client ID do aplicativo; um Client ID pessoal não é necessário no uso normal.</string>
+    <string name="tsuzuki_integration_provider_mal">Metadados de catálogo e avaliações usando seu próprio Client ID da API do MyAnimeList, com monitoramento de conta OAuth2/PKCE opcional.</string>
     <string name="tsuzuki_integration_provider_mangaupdates">Metadados públicos focados em mangá, com listas e avaliações da conta. A atribuição é preservada quando os dados são usados.</string>
     <string name="tsuzuki_integration_provider_bangumi">Busca/metadados e monitoramento de conta estão disponíveis com atribuição ao provedor.</string>
     <string name="tsuzuki_integration_provider_shikimori">O monitoramento de conta existente permanece disponível. A expansão do catálogo fica desativada até os termos atuais da API serem verificados.</string>
