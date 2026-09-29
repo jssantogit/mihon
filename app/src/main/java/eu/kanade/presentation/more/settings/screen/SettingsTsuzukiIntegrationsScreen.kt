@@ -232,8 +232,8 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             key = { it.key.name },
                         ) { (capability, policy) ->
                             ListItem(
-                                headlineContent = { Text(capability.label()) },
-                                supportingContent = { Text(policy.policy.label()) },
+                                headlineContent = { Text(stringResource(capability.labelRes())) },
+                                supportingContent = { Text(stringResource(policy.policy.labelRes())) },
                             )
                         }
                     }
