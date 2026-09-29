@@ -110,6 +110,20 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
+    fun `staff metadata is exposed only by manifests that declare it`() = runTest {
+        val kitsu = FakeMetadataProvider("kitsu")
+        val mal = FakeMetadataProvider("mal")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("kitsu" to true, "mal" to true)),
+            metadataProviders = setOf(kitsu, mal),
+        )
+
+        registry.metadataProviders(IntegrationCapability.METADATA_STAFF)
+            .map { it.integrationId.value } shouldContainExactly listOf("mal")
+    }
+
+    @Test
     fun `metadata capability switches are independent`() = runTest {
         val kitsu = FakeMetadataProvider("kitsu")
         val registry = registry(
