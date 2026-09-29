@@ -9,6 +9,12 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -45,6 +51,7 @@ data class TsuzukiIntegrationSettingsItem(
     val capabilities: List<TsuzukiIntegrationCapability>,
     val configState: TsuzukiIntegrationConfigState,
     val authState: TsuzukiIntegrationAuthState,
+    val capabilityEnabled: Map<TsuzukiIntegrationCapability, Boolean>,
 )
 
 @Immutable
@@ -83,6 +90,9 @@ class TsuzukiIntegrationsSettingsScreenModel(
                             ?.configJson
                             .toConfigState(),
                         authState = definition.authState,
+                        capabilityEnabled = definition.capabilities.associateWith { capability ->
+                            persisted?.configJson.capabilityEnabled(capability)
+                        },
                     )
                 },
             )
@@ -92,6 +102,31 @@ class TsuzukiIntegrationsSettingsScreenModel(
             started = SharingStarted.Eagerly,
             initialValue = TsuzukiIntegrationsSettingsState.Loading,
         )
+
+    fun setCapabilityEnabled(
+        id: IntegrationId,
+        capability: TsuzukiIntegrationCapability,
+        enabled: Boolean,
+    ) {
+        viewModelScope.launch {
+            val current = repository.get(id)
+            val values = runCatching {
+                Json.parseToJsonElement(current?.configJson ?: "{}") as? JsonObject
+            }.getOrNull()
+            val updated = buildJsonObject {
+                values?.forEach { (key, value) -> put(key, value) }
+                put(capability.configKey(), enabled)
+            }
+            repository.upsert(
+                IntegrationSettings(
+                    integrationId = id,
+                    enabled = current?.enabled ?: false,
+                    configJson = updated.toString(),
+                    updatedAt = Clock.System.now().toEpochMilliseconds(),
+                ),
+            )
+        }
+    }
 
     fun setEnabled(
         id: IntegrationId,
@@ -110,6 +145,17 @@ class TsuzukiIntegrationsSettingsScreenModel(
         }
     }
 
+    private fun String?.capabilityEnabled(capability: TsuzukiIntegrationCapability): Boolean {
+        val config = runCatching {
+            Json.parseToJsonElement(this ?: "{}") as? JsonObject
+        }.getOrNull()
+        return config
+            ?.get(capability.configKey())
+            ?.jsonPrimitive
+            ?.booleanOrNull
+            ?: true
+    }
+
     private fun String?.toConfigState(): TsuzukiIntegrationConfigState {
         val normalized = this?.trim().orEmpty()
         return if (normalized.isEmpty() || normalized == "{}") {
@@ -118,6 +164,8 @@ class TsuzukiIntegrationsSettingsScreenModel(
             TsuzukiIntegrationConfigState.CUSTOM
         }
     }
+
+    private fun TsuzukiIntegrationCapability.configKey(): String = name.lowercase()
 
     private data class Definition(
         val id: IntegrationId,
