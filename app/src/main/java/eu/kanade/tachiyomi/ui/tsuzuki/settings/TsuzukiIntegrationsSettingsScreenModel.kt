@@ -41,7 +41,9 @@ data class TsuzukiIntegrationSettingsItem(
     val category: IntegrationCategory,
     val enabled: Boolean,
     val legacyTrackerId: Long?,
+    val supportsTracking: Boolean,
     val capabilities: List<IntegrationCapability>,
+    val configurableCapabilities: Set<IntegrationCapability>,
     val restrictedCapabilities: Map<IntegrationCapability, CapabilityPolicy>,
     val policies: Map<IntegrationCapability, CapabilityPolicy>,
     val configState: TsuzukiIntegrationConfigState,
@@ -85,7 +87,10 @@ class TsuzukiIntegrationsSettingsScreenModel(
                         category = manifest.category,
                         enabled = persisted?.enabled ?: false,
                         legacyTrackerId = manifest.legacyTrackerId,
+                        supportsTracking = IntegrationCapability.TRACKING in manifest.capabilities,
                         capabilities = visibleCapabilities,
+                        configurableCapabilities = visibleCapabilities
+                            .filterTo(mutableSetOf()) { it in CONFIGURABLE_CAPABILITIES },
                         restrictedCapabilities = manifest.restrictedCapabilities(),
                         policies = manifest.capabilities,
                         configState = if (config.isDefault()) {
@@ -94,7 +99,9 @@ class TsuzukiIntegrationsSettingsScreenModel(
                             TsuzukiIntegrationConfigState.CUSTOM
                         },
                         authState = manifest.authState(),
-                        capabilityEnabled = visibleCapabilities.associateWith(config::capabilityEnabled),
+                        capabilityEnabled = visibleCapabilities
+                            .filter { it in CONFIGURABLE_CAPABILITIES }
+                            .associateWith(config::capabilityEnabled),
                     )
                 },
             )
@@ -144,9 +151,11 @@ class TsuzukiIntegrationsSettingsScreenModel(
 
     private fun IntegrationManifest.visibleCapabilities(): List<IntegrationCapability> =
         capabilities.keys.filter { capability ->
-            category == IntegrationCategory.PERSONAL_SERVER ||
-                capability in ACCOUNT_SCOPED_CAPABILITIES ||
-                allowsGlobalResolution(capability)
+            capability !in ACCOUNT_ONLY_CAPABILITIES &&
+                (
+                    category == IntegrationCategory.PERSONAL_SERVER ||
+                        allowsGlobalResolution(capability)
+                    )
         }
 
     private fun IntegrationManifest.restrictedCapabilities(): Map<IntegrationCapability, CapabilityPolicy> =
@@ -167,12 +176,18 @@ class TsuzukiIntegrationsSettingsScreenModel(
         }
 
     private companion object {
-        val ACCOUNT_SCOPED_CAPABILITIES = setOf(
+        val ACCOUNT_ONLY_CAPABILITIES = setOf(
             IntegrationCapability.TRACKING,
             IntegrationCapability.USER_LISTS,
-            IntegrationCapability.REMOTE_LIBRARY,
-            IntegrationCapability.READING_CONTENT,
-            IntegrationCapability.DOWNLOADS,
+        )
+
+        val CONFIGURABLE_CAPABILITIES = setOf(
+            IntegrationCapability.SEARCH,
+            IntegrationCapability.DISCOVERY,
+            IntegrationCapability.METADATA_BASIC,
+            IntegrationCapability.METADATA_ARTWORK,
+            IntegrationCapability.METADATA_EDITORIAL,
+            IntegrationCapability.RATINGS,
         )
     }
 }
