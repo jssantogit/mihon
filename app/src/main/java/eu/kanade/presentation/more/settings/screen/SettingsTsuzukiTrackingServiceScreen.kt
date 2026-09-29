@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.presentation.more.settings.Preference
@@ -44,6 +45,7 @@ import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.extension.details.SourcePreferencesScreen
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
@@ -88,6 +90,7 @@ class SettingsTsuzukiTrackingServiceScreen(
     override fun Content() {
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
+        val tabNavigator = LocalTabNavigator.current
         val tracker = remember(trackerId) { context.appGraph.trackerManager.get(trackerId) }
         val sourceManager = remember { context.appGraph.sourceManager }
         val acceptedSources by produceState(
@@ -135,6 +138,10 @@ class SettingsTsuzukiTrackingServiceScreen(
                 onConfigureSource = { source ->
                     navigator.push(SourcePreferencesScreen(source.id))
                 },
+                onOpenExtensions = {
+                    BrowseTab.showExtension()
+                    tabNavigator.current = BrowseTab
+                },
                 modifier = Modifier.padding(contentPadding),
             )
         }
@@ -146,6 +153,7 @@ private fun TrackingServiceContent(
     tracker: Tracker,
     acceptedSources: List<Source>,
     onConfigureSource: (Source) -> Unit,
+    onOpenExtensions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -270,14 +278,6 @@ private fun TrackingServiceContent(
             }
         }
         if (tracker is EnhancedTracker) {
-            item {
-                ListItem(
-                    headlineContent = { Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration)) },
-                    supportingContent = {
-                        Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration_summary))
-                    },
-                )
-            }
             if (acceptedSources.isEmpty()) {
                 item(key = "accepted_source_missing") {
                     ListItem(
@@ -285,11 +285,31 @@ private fun TrackingServiceContent(
                             Text(stringResource(MR.strings.tsuzuki_tracking_source_missing))
                         },
                         supportingContent = {
-                            Text(stringResource(MR.strings.tsuzuki_tracking_source_missing_summary))
+                            Text(
+                                stringResource(
+                                    MR.strings.tsuzuki_tracking_source_missing_summary,
+                                    tracker.name,
+                                ),
+                            )
+                        },
+                        trailingContent = {
+                            TextButton(onClick = onOpenExtensions) {
+                                Text(stringResource(MR.strings.label_extensions))
+                            }
                         },
                     )
                 }
             } else {
+                item {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration))
+                        },
+                        supportingContent = {
+                            Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration_summary))
+                        },
+                    )
+                }
                 acceptedSources.forEach { source ->
                     item(key = "accepted_source_${source.id}") {
                         ListItem(
