@@ -29,6 +29,8 @@ class MalIntegrationProviderTest {
                     publishingType = "manga",
                     authors = listOf("Naoki Urasawa"),
                     artists = listOf("Naoki Urasawa"),
+                    genres = listOf("Drama", "Mystery"),
+                    scoreVotes = 143_215,
                 ),
             ),
         )
@@ -42,6 +44,7 @@ class MalIntegrationProviderTest {
         item.score?.provider shouldBe "mal"
         item.score?.value shouldBe 8.72
         item.score?.maxValue shouldBe 10.0
+        item.score?.voteCount shouldBe 143_215
         item.chapterCount shouldBe 162
         item.volumeCount shouldBe 18
         item.startDate shouldBe "1994-12-05"
@@ -50,6 +53,7 @@ class MalIntegrationProviderTest {
         item.format shouldBe CatalogItemFormat.MANGA
         item.authors shouldContainExactly listOf("Naoki Urasawa")
         item.artists shouldContainExactly listOf("Naoki Urasawa")
+        item.genres shouldContainExactly listOf("Drama", "Mystery")
         ChapterEvidenceProvider::class.java.isAssignableFrom(provider.javaClass) shouldBe false
     }
 
@@ -140,6 +144,8 @@ class MalIntegrationProviderTest {
         publishingType: String = "",
         authors: List<String> = emptyList(),
         artists: List<String> = emptyList(),
+        genres: List<String> = emptyList(),
+        scoreVotes: Int? = null,
     ): TrackSearch = TrackSearch.create(1L).apply {
         remote_id = id
         this.title = title
@@ -154,6 +160,8 @@ class MalIntegrationProviderTest {
         publishing_type = publishingType
         this.authors = authors
         this.artists = artists
+        this.genres = genres
+        score_votes = scoreVotes
         tracking_url = "https://myanimelist.net/manga/$id"
     }
 }
