@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -19,7 +20,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -33,6 +36,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.track.components.TrackLogoIcon
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.track.Tracker
+import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeList
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationSettingsItem
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsState
@@ -162,6 +166,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
         val tracker = remember(item?.legacyTrackerId) {
             item?.legacyTrackerId?.let { context.appGraph.trackerManager.get(it) }
         }
+        var malClientIdConfigured by remember(tracker) {
+            mutableStateOf((tracker as? MyAnimeList)?.hasClientId() ?: true)
+        }
 
         Scaffold(
             topBar = {
@@ -200,6 +207,20 @@ class SettingsTsuzukiIntegrationDetailScreen(
                         }
                     }
 
+                    if (item.id.value == "mal") {
+                        item(key = "mal_client_id") {
+                            MalClientIdConfiguration(
+                                tracker = tracker as? MyAnimeList,
+                                onConfiguredChanged = { configured ->
+                                    malClientIdConfigured = configured
+                                    if (!configured && item.enabled) {
+                                        screenModel.setEnabled(item.id, false)
+                                    }
+                                },
+                            )
+                        }
+                    }
+
                     if (item.configurableCapabilities.isNotEmpty()) {
                         item(key = "integration_enabled") {
                             ListItem(
@@ -217,6 +238,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
                                         onCheckedChange = {
                                             screenModel.setEnabled(item.id, it)
                                         },
+                                        enabled = item.id.value != "mal" ||
+                                            malClientIdConfigured ||
+                                            item.enabled,
                                     )
                                 },
                             )
@@ -301,6 +325,46 @@ class SettingsTsuzukiIntegrationDetailScreen(
 }
 
 @Composable
+private fun MalClientIdConfiguration(
+    tracker: MyAnimeList?,
+    onConfiguredChanged: (Boolean) -> Unit,
+) {
+    var savedClientId by remember(tracker) { mutableStateOf(tracker?.getClientId().orEmpty()) }
+    var clientId by remember(tracker) { mutableStateOf(savedClientId) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(stringResource(MR.strings.tsuzuki_mal_client_id_title))
+        Text(stringResource(MR.strings.tsuzuki_mal_client_id_summary))
+        OutlinedTextField(
+            value = clientId,
+            onValueChange = { clientId = it },
+            label = { Text(stringResource(MR.strings.tsuzuki_mal_client_id_title)) },
+            supportingText = {
+                Text(stringResource(MR.strings.tsuzuki_mal_client_id_setup))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        TextButton(
+            enabled = tracker != null && clientId.trim() != savedClientId,
+            onClick = {
+                tracker?.setClientId(clientId)
+                savedClientId = tracker?.getClientId().orEmpty()
+                clientId = savedClientId
+                onConfiguredChanged(savedClientId.isNotBlank())
+            },
+        ) {
+            Text(stringResource(MR.strings.action_save))
+        }
+    }
+}
+
+@Composable
 private fun ProviderSummary(
     tracker: Tracker?,
     description: String,
@@ -331,8 +395,17 @@ private fun IntegrationSettingRow(
         item.legacyTrackerId?.let { context.appGraph.trackerManager.get(it) }
     }
 
+    val malClientIdConfigured = (tracker as? MyAnimeList)?.hasClientId() ?: true
+
     ListItem(
         headlineContent = { Text(item.label) },
+        supportingContent = if (item.id.value == "mal" && !malClientIdConfigured) {
+            {
+                Text(stringResource(MR.strings.tsuzuki_mal_client_id_required))
+            }
+        } else {
+            null
+        },
         leadingContent = tracker?.let {
             {
                 TrackLogoIcon(it)
@@ -343,6 +416,7 @@ private fun IntegrationSettingRow(
                 Switch(
                     checked = item.enabled,
                     onCheckedChange = onEnabledChange,
+                    enabled = item.enabled || malClientIdConfigured,
                 )
             }
         },
