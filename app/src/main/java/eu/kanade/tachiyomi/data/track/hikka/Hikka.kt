@@ -40,6 +40,12 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
 
     private val api by lazy { HikkaApi(id, client, interceptor, ::requireClientSecret) }
 
+    init {
+        if (isLoggedIn && !hasApplicationCredentials()) {
+            logout()
+        }
+    }
+
     fun getClientReference(): String =
         trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_REFERENCE_KEY).get().trim()
 
