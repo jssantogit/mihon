@@ -252,4 +252,3 @@ private fun ConfiguredHomeRow(
         )
     }
 }
-
