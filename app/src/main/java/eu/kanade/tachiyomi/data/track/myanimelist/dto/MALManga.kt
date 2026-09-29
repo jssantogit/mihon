@@ -51,32 +51,30 @@ data class MALMangaCovers(
     val large: String = "",
 )
 
-
 internal fun MALManga.toTrackSearch(trackerId: Long): TrackSearch {
     return TrackSearch.create(trackerId).apply {
-        remote_id = id
+        remote_id = this@toTrackSearch.id
         title = this@toTrackSearch.title
-        summary = synopsis
-        total_chapters = numChapters
-        total_volumes = numVolumes
-        score = mean
-        score_votes = numScoringUsers
-        cover_url = covers?.large.orEmpty()
+        summary = this@toTrackSearch.synopsis
+        total_chapters = this@toTrackSearch.numChapters
+        total_volumes = this@toTrackSearch.numVolumes
+        score = this@toTrackSearch.mean
+        score_votes = this@toTrackSearch.numScoringUsers
+        cover_url = this@toTrackSearch.covers?.large.orEmpty()
         tracking_url = "https://myanimelist.net/manga/$remote_id"
-        publishing_status = status.replace("_", " ")
-        publishing_type = mediaType.replace("_", " ")
-        start_date = startDate ?: ""
-        end_date = endDate ?: ""
-        artists = authors
+        publishing_status = this@toTrackSearch.status.replace("_", " ")
+        publishing_type = this@toTrackSearch.mediaType.replace("_", " ")
+        start_date = this@toTrackSearch.startDate ?: ""
+        end_date = this@toTrackSearch.endDate ?: ""
+        artists = this@toTrackSearch.authors
             .filter { authorNode -> authorNode.role.contains("Art") }
             .mapNotNull { authorNode -> authorNode.node.getFullName() }
-        this.authors = this@toTrackSearch.authors
+        authors = this@toTrackSearch.authors
             .filter { authorNode -> authorNode.role.contains("Story") }
             .mapNotNull { authorNode -> authorNode.node.getFullName() }
-        this.genres = this@toTrackSearch.genres.map { it.name }
+        genres = this@toTrackSearch.genres.map { it.name }
     }
 }
-
 @Serializable
 data class MALGenre(
     val id: Int,
