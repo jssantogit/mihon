@@ -74,7 +74,7 @@ env:
 """
 
 VALID_ABOUT_SCREEN = """
-val projectSource = "https://github.com/jssantogit/mihon"
+val projectSource = "https://github.com/jssantogit/tsuzuki"
 val upstream = "https://github.com/mihonapp/mihon"
 """
 
@@ -184,6 +184,14 @@ class IdentityContractTest(unittest.TestCase):
     def test_persistent_tsuzuki_signing_secret_names_are_required(self):
         root = self.make_repo(apk_workflow=VALID_APK_WORKFLOW.replace("TSUZUKI_KEY_ALIAS", "NEW_KEY_ALIAS"))
         self.assertIn("APK workflow no longer references TSUZUKI_KEY_ALIAS", check_contract(root))
+
+    def test_about_screen_requires_current_tsuzuki_repository(self):
+        root = self.make_repo(
+            about_screen=VALID_ABOUT_SCREEN.replace("jssantogit/tsuzuki", "jssantogit/mihon"),
+        )
+        errors = check_contract(root)
+        self.assertIn("About screen must link to the Tsuzuki repository", errors)
+        self.assertIn("About screen still links to the pre-rename repository", errors)
 
     def test_about_screen_rejects_mihon_public_identity_links(self):
         inherited = VALID_ABOUT_SCREEN + '\nval site = "https://mihon.app"\n'

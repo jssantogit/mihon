@@ -3,7 +3,9 @@
 Date: 2026-09-28
 Branch: `tsuzuki/bootstrap`
 Baseline: `73565985efaa2002a779e7c65be3168785d64258`
-Status: auditoria inicial; nenhuma renomeação de código autorizada por este documento
+Status: auditoria inicial concluída; identidade pública implementada
+
+> Atualização pós-rename — 2026-09-28: o repositório foi renomeado para `jssantogit/tsuzuki`, `main` passou a ser a branch padrão/autoritativa e a identidade visual Tsuzuki foi integrada. As seções de "estado encontrado" abaixo registram o estado histórico observado durante a auditoria.
 
 ## Objetivo
 
@@ -33,7 +35,7 @@ A atribuição e a licença do upstream devem permanecer preservadas.
 
 ## Estado encontrado
 
-### Repositório
+### Repositório (estado encontrado na auditoria inicial)
 
 - repositório atual: `jssantogit/mihon`;
 - branch autoritativa: `tsuzuki/bootstrap`;
@@ -205,7 +207,7 @@ Quando houver documentação Tsuzuki definitiva, ela deve distinguir claramente:
 
 | Item | Atual | Desejado | Categoria | Risco | Estratégia |
 | --- | --- | --- | --- | --- | --- |
-| Nome do repositório | `jssantogit/mihon` | Tsuzuki | A — renomear | médio | coordenar rename no GitHub depois de atualizar referências próprias |
+| Nome do repositório | `jssantogit/tsuzuki` | Tsuzuki | A — concluído | baixo | rename concluído em 2026-09-28; novos links usam o slug atual |
 | README público | Mihon | Tsuzuki + créditos upstream | A | baixo | reescrever; não copiar apresentação do upstream como identidade atual |
 | App label base | Mihon | Tsuzuki | A | baixo | troca direta do resource base |
 | Dev app labels | Tsuzuki Dev A/B/C/Generic | manter | A | baixo | já correto |
@@ -315,7 +317,7 @@ Ela não deve alterar:
 ## Próximas decisões antes da spec de implementação
 
 1. Definir logo/ícone/wordmark Tsuzuki básicos.
-2. Decidir o nome final do repositório no GitHub (`Tsuzuki` vs `tsuzuki`, respeitando convenção desejada).
+2. Nome final do repositório resolvido: `jssantogit/tsuzuki`.
 3. Decidir se a primeira release pública deve continuar com `applicationId = app.mihon` para preservar o upgrade path atual.
 4. Mapear os callbacks OAuth registrados externamente antes de qualquer proposta de URI Tsuzuki adicional.
 5. Definir a seção About/Credits que explicará a relação com Mihon.

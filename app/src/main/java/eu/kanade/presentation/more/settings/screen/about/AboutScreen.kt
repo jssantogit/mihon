@@ -71,7 +71,7 @@ object AboutScreen : Screen() {
                     TextPreferenceWidget(
                         title = stringResource(MR.strings.tsuzuki_project_source),
                         onPreferenceClick = {
-                            uriHandler.openUri("https://github.com/jssantogit/mihon")
+                            uriHandler.openUri("https://github.com/jssantogit/tsuzuki")
                         },
                     )
                 }

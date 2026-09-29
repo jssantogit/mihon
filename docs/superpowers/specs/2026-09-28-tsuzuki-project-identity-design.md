@@ -1,7 +1,7 @@
 # Tsuzuki — Project Identity Design
 
 Date: 2026-09-28
-Branch: `tsuzuki/bootstrap`
+Branch: `main`
 Audit baseline: `docs/superpowers/plans/2026-09-28-tsuzuki-identity-audit.md`
 Status: authoritative design for Front 1 — Project Identity
 
@@ -78,11 +78,11 @@ The name Mihon may still appear in public UI when it explicitly describes upstre
 
 ## Repository identity
 
-The repository should eventually be renamed from `jssantogit/mihon` to a Tsuzuki name.
+The repository is `jssantogit/tsuzuki`.
 
-Repository rename is coordinated after in-repo links and workflows are safe.
+The rename from `jssantogit/mihon` was completed on 2026-09-28 after the public identity and workflow surfaces were made safe. `main` is now the default and authoritative branch.
 
-The implementation must not assume that GitHub redirect behavior is sufficient for every script or external integration.
+GitHub redirects from the old slug are transitional compatibility only. New Tsuzuki-owned links, scripts, and integrations must use the current repository URL directly.
 
 ## Android identity contract
 
@@ -277,7 +277,7 @@ After distribution decisions:
 - Tsuzuki release artifacts;
 - update channel/endpoints;
 - website/release integration if any;
-- repository rename coordination.
+- post-rename repository/reference cleanup.
 
 ### Wave 3 — Optional technical cleanup
 

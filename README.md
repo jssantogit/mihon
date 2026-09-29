@@ -24,7 +24,7 @@ The architecture intentionally keeps metadata providers, reading/content provide
 
 ## Project status
 
-The current development baseline is `tsuzuki/bootstrap`.
+The current development baseline is `main`.
 
 Major completed work includes the canonical title/chapter model, Reader integration, automatic source discovery, and chapter-content integrity protections. Current roadmap work is focused on establishing Tsuzuki's own project identity, reorganizing the application UI, improving Collections/catalogs, and later expanding the content runtime.
 

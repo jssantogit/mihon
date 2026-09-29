@@ -1,7 +1,7 @@
 # Tsuzuki — Project Identity Implementation Plan
 
 Date: 2026-09-28
-Branch: `tsuzuki/bootstrap`
+Branch: `main`
 Spec: `docs/superpowers/specs/2026-09-28-tsuzuki-project-identity-design.md`
 Audit: `docs/superpowers/plans/2026-09-28-tsuzuki-identity-audit.md`
 Status: authoritative implementation plan for Front 1
@@ -9,6 +9,15 @@ Status: authoritative implementation plan for Front 1
 ## Goal
 
 Implement Tsuzuki branding in controlled waves while preserving Android/package/data/extension compatibility.
+
+## Current status
+
+- I1-I8 are implemented.
+- I10 was completed on 2026-09-28: the repository is now `jssantogit/tsuzuki`.
+- `main` is the default and authoritative branch.
+- The legacy `tsuzuki/bootstrap` branch may remain as historical development context, but new baseline references should use `main`.
+- I9 remains a separate distribution/release-channel design task.
+- A signed branding APK smoke remains the final human validation for Front 1.
 
 ## Constraints
 
@@ -180,7 +189,7 @@ Prefer static/unit checks that do not require Android instrumentation where poss
 
 Before public release automation is enabled, decide:
 
-- repository final name;
+- repository URL (fixed at `jssantogit/tsuzuki`);
 - release channel;
 - updater behavior;
 - artifact naming;
@@ -195,23 +204,17 @@ Only after those decisions:
 - remove dead Mihon release automation;
 - coordinate repository rename.
 
-### Task I10 — Repository rename
+### Task I10 — Repository rename — complete
 
-Final coordinated operation after in-repo references are safe.
+Completed on 2026-09-28.
 
-Expected target: a Tsuzuki-named repository under the current owner, exact casing/name to be chosen deliberately.
+Result:
 
-Before rename:
-
-- inspect hard-coded `jssantogit/mihon` URLs;
-- inspect external CI/webhooks/integrations;
-- inspect local git remotes documentation;
-- ensure release/update logic does not depend on the old slug.
-
-After rename:
-
-- update local/CI references that do not follow GitHub redirects;
-- verify bootstrap/default branch strategy.
+- repository: `jssantogit/tsuzuki`;
+- default/authoritative branch: `main`;
+- `main` was fast-forwarded to the accepted Tsuzuki baseline before rename;
+- project-owned URLs are updated to the new slug;
+- the old GitHub slug is treated only as a redirect/compatibility path, not as the canonical project URL.
 
 ## Recommended execution order
 

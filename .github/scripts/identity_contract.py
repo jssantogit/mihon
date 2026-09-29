@@ -113,6 +113,12 @@ def check_contract(root: Path) -> list[str]:
                 errors.append(f"APK workflow no longer references {name}")
 
     if about_screen:
+        project_source = "https://github.com/jssantogit/tsuzuki"
+        if project_source not in about_screen:
+            errors.append("About screen must link to the Tsuzuki repository")
+        if "https://github.com/jssantogit/mihon" in about_screen:
+            errors.append("About screen still links to the pre-rename repository")
+
         inherited_public_markers = (
             "https://mihon.app",
             "Constants.URL_DISCORD",
