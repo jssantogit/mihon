@@ -18,7 +18,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import eu.kanade.presentation.tsuzuki.collections.CollectionsScreen as CollectionsScreenContent
 
-class CollectionsScreen : Screen() {
+class CollectionsScreen(
+    private val initialCollectionId: String? = null,
+    private val initialFolderId: String? = null,
+) : Screen() {
 
     @Composable
     override fun Content() {
@@ -107,6 +110,8 @@ class CollectionsScreen : Screen() {
             },
             onExportRequest = screenModel::prepareExport,
             onDismissTransferState = screenModel::clearTransferState,
+            initialCollectionId = initialCollectionId,
+            initialFolderId = initialFolderId,
         )
     }
 
