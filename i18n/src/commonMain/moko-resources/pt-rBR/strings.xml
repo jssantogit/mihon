@@ -963,8 +963,8 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
 
     <string name="tsuzuki_integrations_tracking_behavior_title">Comportamento de monitoramento</string>
     <string name="tsuzuki_integrations_tracking_behavior_summary">Atualizações automáticas e sincronização ao marcar capítulos como lidos</string>
-    <string name="tsuzuki_integrations_category_metadata">Metadados e serviços</string>
-    <string name="tsuzuki_integrations_category_servers">Servidores pessoais</string>
+    <string name="tsuzuki_integrations_category_metadata">Metadados e catálogo</string>
+    <string name="tsuzuki_integrations_category_servers">Servidores</string>
     <string name="tsuzuki_integrations_category_compatibility">Compatibilidade</string>
     <string name="tsuzuki_integration_enabled">Ativada</string>
     <string name="tsuzuki_integration_use_provider">Usar %s no Tsuzuki</string>
@@ -972,7 +972,7 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
     <string name="tsuzuki_integration_features">Recursos</string>
     <string name="tsuzuki_integration_features_summary">Escolha quais recursos permitidos deste provedor o Tsuzuki pode usar.</string>
     <string name="tsuzuki_integration_blocked_features">Recursos não habilitados</string>
-    <string name="tsuzuki_integration_blocked_features_summary">Estes recursos existem tecnicamente, mas não entram no catálogo global enquanto as permissões ou termos aplicáveis não estiverem resolvidos.</string>
+    <string name="tsuzuki_integration_blocked_features_summary">Estes recursos existem tecnicamente, mas não entram no catálogo global enquanto as permissões ou termos aplicáveis não estiverem resolvidos.</string>\n    <string name="tsuzuki_integration_catalog_unavailable">Catálogo indisponível</string>\n    <string name="tsuzuki_integration_catalog_unavailable_summary">Os recursos de catálogo permanecem desativados até que as permissões ou os termos atuais da API do provedor sejam verificados.</string>
     <string name="tsuzuki_integration_account_tracking">Conta e monitoramento</string>
     <string name="tsuzuki_integration_account_tracking_summary">Conectar ou desconectar apenas a conta de %s</string>
     <string name="tsuzuki_integration_configuration">Configuração</string>
