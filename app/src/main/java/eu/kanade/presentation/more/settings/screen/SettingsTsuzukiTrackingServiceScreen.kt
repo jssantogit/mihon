@@ -192,7 +192,9 @@ private fun TrackingServiceContent(
                 supportingContent = {
                     Text(
                         if (isLoggedIn) {
-                            tracker.getDisplayUsername().ifBlank { stringResource(MR.strings.tsuzuki_tracking_connected) }
+                            tracker.getDisplayUsername().ifBlank {
+                                stringResource(MR.strings.tsuzuki_tracking_connected)
+                            }
                         } else {
                             stringResource(MR.strings.tsuzuki_tracking_not_connected)
                         },
@@ -264,7 +266,15 @@ private fun TrackingServiceContent(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
             ) {
-                Text(stringResource(if (isLoggedIn) MR.strings.tsuzuki_tracking_disconnect else MR.strings.tsuzuki_tracking_connect))
+                Text(
+                    stringResource(
+                        if (isLoggedIn) {
+                            MR.strings.tsuzuki_tracking_disconnect
+                        } else {
+                            MR.strings.tsuzuki_tracking_connect
+                        },
+                    ),
+                )
             }
         }
         if (tracker is EnhancedTracker) {
