@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarTitle
+import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeRow
@@ -135,6 +136,11 @@ private fun ContinueReadingCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
+        MangaCover.Book(
+            data = item.coverUrl,
+            contentDescription = item.title,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
