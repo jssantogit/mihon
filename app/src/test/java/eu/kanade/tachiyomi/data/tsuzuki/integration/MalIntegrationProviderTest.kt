@@ -60,9 +60,19 @@ class MalIntegrationProviderTest {
 
     @Test
     fun `mal participates in catalog discovery`() = runTest {
-        val provider = MalIntegrationProvider.forTest(FakeMalIntegrationApi())
+        val api = FakeMalIntegrationApi(
+            rankingResults = listOf(
+                malTrack(id = 42, title = "Monster", score = 8.72),
+            ),
+        )
+        val provider = MalIntegrationProvider.forTest(api)
 
         (provider as Any is DiscoveryProvider) shouldBe true
+        val page = (provider as DiscoveryProvider).popular(offset = 0, limit = 20).getOrThrow()
+
+        page.items.single().provider shouldBe "mal"
+        page.items.single().title shouldBe "Monster"
+        api.rankingRequests shouldContainExactly listOf(Triple("bypopularity", 0, 20))
     }
 
     @Test
@@ -125,12 +135,23 @@ class MalIntegrationProviderTest {
 
     private class FakeMalIntegrationApi(
         private val searchResults: List<TrackSearch> = emptyList(),
+        private val rankingResults: List<TrackSearch> = emptyList(),
         private val detailsById: Map<Int, TrackSearch> = emptyMap(),
     ) : MalIntegrationApi {
 
         val detailRequests = mutableListOf<Int>()
+        val rankingRequests = mutableListOf<Triple<String, Int, Int>>()
 
         override suspend fun search(query: String): List<TrackSearch> = searchResults
+
+        override suspend fun getRanking(
+            rankingType: String,
+            offset: Int,
+            limit: Int,
+        ): List<TrackSearch> {
+            rankingRequests += Triple(rankingType, offset, limit)
+            return rankingResults
+        }
 
         override suspend fun getMangaDetails(id: Int): TrackSearch {
             detailRequests += id
