@@ -23,7 +23,7 @@ The former Jade/Midnight palette is no longer the public brand signature. Legacy
 - Preserve the canonical B1 geometry.
 - Do not add text, shadows, gradients, glow, or outlines to the launcher mark.
 - The `T` is negative space; it is not a separately colored object.
-- Launcher/adaptive foreground target after the first branding smoke refinement: 56%.
+- Launcher/adaptive foreground target after the second branding smoke refinement: 46%.
 - Android monochrome uses the same B1 geometry and scale as the adaptive foreground.
 - The Android splash uses the B1 mark in Paper on Ink and follows native SplashScreen sizing rules.
 - In-app identity surfaces may scale the same master geometry independently when they need different optical weight; the About header uses a larger presentation than the launcher.
