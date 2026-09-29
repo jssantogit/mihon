@@ -572,8 +572,13 @@ class CanonicalTitleScreenModel(
             integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
             integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
             integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.authors?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.artists?.let { it.attribution ?: it.providerId.value },
             integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
             integrationMetadata?.rating?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.startDate?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.endDate?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.editorialVolumeCount?.let { it.attribution ?: it.providerId.value },
         ).distinct()
 
         val details = if (!includeLegacyDownloadChecks) {
@@ -637,7 +642,17 @@ class CanonicalTitleScreenModel(
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
             coverUrl = integrationMetadata?.artworkUrl?.value ?: metadata?.thumbnailUrl,
-            author = metadata?.author,
+            author = integrationMetadata
+                ?.authors
+                ?.value
+                ?.takeIf(List<String>::isNotEmpty)
+                ?.joinToString()
+                ?: integrationMetadata
+                    ?.artists
+                    ?.value
+                    ?.takeIf(List<String>::isNotEmpty)
+                    ?.joinToString()
+                ?: metadata?.author,
             description = integrationMetadata?.synopsis?.value ?: metadata?.description,
             genres = integrationMetadata?.genres?.value ?: metadata?.genre.orEmpty(),
             metadataSources = integrationMetadataSources,
