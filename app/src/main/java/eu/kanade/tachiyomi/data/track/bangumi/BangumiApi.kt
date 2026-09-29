@@ -1,10 +1,8 @@
 package eu.kanade.tachiyomi.data.track.bangumi
 
-import android.net.Uri
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMCollectionResponse
-import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMOAuth
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMSearchResult
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMSubject
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMUser
@@ -21,7 +19,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.CacheControl
-import okhttp3.FormBody
 import okhttp3.Headers.Companion.headersOf
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -177,23 +174,6 @@ class BangumiApi(
         }
     }
 
-    suspend fun accessToken(code: String): BGMOAuth {
-        return withIOContext {
-            val body = FormBody.Builder()
-                .add("grant_type", "authorization_code")
-                .add("client_id", CLIENT_ID)
-                .add("client_secret", CLIENT_SECRET)
-                .add("code", code)
-                .add("redirect_uri", REDIRECT_URL)
-                .build()
-            with(json) {
-                client.newCall(POST(OAUTH_URL, body = body))
-                    .awaitSuccess()
-                    .parseAs<BGMOAuth>()
-            }
-        }
-    }
-
     suspend fun getCurrentUser(): BGMUser {
         return withIOContext {
             with(json) {
@@ -205,33 +185,21 @@ class BangumiApi(
     }
 
     companion object {
-        private const val CLIENT_ID = "bgm291665acbd06a4c28"
-        private const val CLIENT_SECRET = "43e5ce36b207de16e5d3cfd3e79118db"
-
         private const val API_URL = "https://api.bgm.tv"
-        private const val OAUTH_URL = "https://bgm.tv/oauth/access_token"
-        private const val LOGIN_URL = "https://bgm.tv/oauth/authorize"
-
-        private const val REDIRECT_URL = "mihon://bangumi-auth"
-
         private const val APP_JSON = "application/json"
 
-        fun authUrl(): Uri =
-            LOGIN_URL.toUri().buildUpon()
-                .appendQueryParameter("client_id", CLIENT_ID)
-                .appendQueryParameter("response_type", "code")
-                .appendQueryParameter("redirect_uri", REDIRECT_URL)
+        internal fun authorizeRequest(
+            request: Request,
+            accessToken: String,
+        ): Request {
+            val token = accessToken.trim().ifBlank { throw BangumiAccessTokenMissing() }
+            return request.newBuilder()
+                .header("Authorization", "Bearer $token")
                 .build()
-
-        fun refreshTokenRequest(token: String) = POST(
-            OAUTH_URL,
-            body = FormBody.Builder()
-                .add("grant_type", "refresh_token")
-                .add("client_id", CLIENT_ID)
-                .add("client_secret", CLIENT_SECRET)
-                .add("refresh_token", token)
-                .add("redirect_uri", REDIRECT_URL)
-                .build(),
-        )
+        }
     }
 }
+
+class BangumiAccessTokenMissing : IllegalStateException(
+    "Bangumi: enter a personal access token before connecting your account.",
+)
