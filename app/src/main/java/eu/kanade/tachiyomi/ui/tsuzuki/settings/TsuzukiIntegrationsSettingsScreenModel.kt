@@ -31,6 +31,11 @@ enum class TsuzukiIntegrationCapability {
     RATINGS,
     CHAPTER_EVIDENCE,
     TRACKING,
+    USER_LISTS,
+    CROSSWALK,
+    REMOTE_LIBRARY,
+    READING_CONTENT,
+    DOWNLOADS,
 }
 
 enum class TsuzukiIntegrationConfigState {
@@ -175,26 +180,72 @@ class TsuzukiIntegrationsSettingsScreenModel(
     )
 
     private companion object {
+        val SEARCH = TsuzukiIntegrationCapability.SEARCH
+        val DISCOVERY = TsuzukiIntegrationCapability.DISCOVERY
+        val METADATA = TsuzukiIntegrationCapability.METADATA
+        val RATINGS = TsuzukiIntegrationCapability.RATINGS
+        val TRACKING = TsuzukiIntegrationCapability.TRACKING
+        val USER_LISTS = TsuzukiIntegrationCapability.USER_LISTS
+        val CROSSWALK = TsuzukiIntegrationCapability.CROSSWALK
+        val REMOTE_LIBRARY = TsuzukiIntegrationCapability.REMOTE_LIBRARY
+        val READING_CONTENT = TsuzukiIntegrationCapability.READING_CONTENT
+        val DOWNLOADS = TsuzukiIntegrationCapability.DOWNLOADS
+
         val DEFINITIONS = listOf(
             Definition(
-                id = IntegrationId("kitsu"),
-                label = "Kitsu",
-                capabilities = listOf(
-                    TsuzukiIntegrationCapability.SEARCH,
-                    TsuzukiIntegrationCapability.DISCOVERY,
-                    TsuzukiIntegrationCapability.METADATA,
-                ),
-                authState = TsuzukiIntegrationAuthState.NOT_REQUIRED,
+                IntegrationId("kitsu"), "Kitsu",
+                listOf(SEARCH, DISCOVERY, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
             Definition(
-                id = IntegrationId("mal"),
-                label = "MyAnimeList",
-                capabilities = listOf(
-                    TsuzukiIntegrationCapability.SEARCH,
-                    TsuzukiIntegrationCapability.METADATA,
-                    TsuzukiIntegrationCapability.RATINGS,
-                ),
-                authState = TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+                IntegrationId("mal"), "MyAnimeList",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("mangaupdates"), "MangaUpdates",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("mangabaka"), "MangaBaka",
+                listOf(SEARCH, METADATA, CROSSWALK, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("bangumi"), "Bangumi",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("shikimori"), "Shikimori",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("hikka"), "Hikka",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("anilist"), "AniList",
+                listOf(TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("komga"), "Komga",
+                listOf(METADATA, REMOTE_LIBRARY, TRACKING),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("kavita"), "Kavita",
+                listOf(METADATA, REMOTE_LIBRARY, TRACKING),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("suwayomi"), "Suwayomi",
+                listOf(METADATA, REMOTE_LIBRARY, READING_CONTENT, DOWNLOADS, TRACKING),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
         )
     }
