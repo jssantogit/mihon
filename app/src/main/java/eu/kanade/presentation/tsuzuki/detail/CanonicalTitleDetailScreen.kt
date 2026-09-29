@@ -30,6 +30,8 @@ import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun CanonicalTitleDetailScreen(
@@ -208,7 +210,7 @@ private fun TitleHeader(
         }
         if (state.metadataSources.isNotEmpty()) {
             Text(
-                text = "Metadados: " + state.metadataSources.joinToString(),
+                text = stringResource(MR.strings.tsuzuki_metadata_sources, state.metadataSources.joinToString()),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
