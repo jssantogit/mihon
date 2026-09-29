@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListRuntimeState
@@ -722,11 +725,18 @@ private fun ListRow(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        runtimeState.items.forEach { item ->
-                            Text(
-                                text = "• ${item.title}",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(
+                                items = runtimeState.items,
+                                key = { "${it.provider}:${it.providerId}" },
+                            ) { item ->
+                                CatalogCompactCard(
+                                    item = item,
+                                    onClick = {},
+                                )
+                            }
                         }
                     }
 
