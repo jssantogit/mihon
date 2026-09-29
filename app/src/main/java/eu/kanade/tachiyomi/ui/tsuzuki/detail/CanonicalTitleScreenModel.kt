@@ -500,7 +500,7 @@ class CanonicalTitleScreenModel(
         canonicalTitleId: String,
         includeLegacyDownloadChecks: Boolean,
         includeIntegrationMetadata: Boolean,
-        isRefreshing: Boolean:
+        isRefreshing: Boolean,
         refreshError: Throwable? = null,
     ): CanonicalTitleScreenState.Loaded {
         val title = canonicalTitleRepository.getById(canonicalTitleId)
