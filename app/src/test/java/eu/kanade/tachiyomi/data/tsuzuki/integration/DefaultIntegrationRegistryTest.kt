@@ -91,6 +91,30 @@ class DefaultIntegrationRegistryTest {
         registry.searchProviders() shouldBe emptyList()
     }
 
+    @Test
+    fun `registry honors disabled capability without disabling provider entirely`() = runTest {
+        val kitsuSearch = FakeSearchProvider("kitsu")
+        val kitsuDiscovery = FakeDiscoveryProvider("kitsu")
+        val settings = MutableStateFlow(
+            listOf(
+                IntegrationSettings(
+                    integrationId = IntegrationId("kitsu"),
+                    enabled = true,
+                    configJson = """{"search":true,"discovery":false}""",
+                ),
+            ),
+        )
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = settings,
+            searchProviders = setOf(kitsuSearch),
+            discoveryProviders = setOf(kitsuDiscovery),
+        )
+
+        registry.searchProviders() shouldContainExactly listOf(kitsuSearch)
+        registry.discoveryProviders() shouldBe emptyList()
+    }
+
     private fun registry(
         scope: CoroutineScope,
         settings: MutableStateFlow<List<IntegrationSettings>>,
