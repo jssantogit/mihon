@@ -1,6 +1,7 @@
 package eu.kanade.presentation.tsuzuki.detail
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,11 +24,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberScrollState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
+import eu.kanade.presentation.tsuzuki.integration.ratingPercentageLabel
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalProviderRating
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.i18n.MR
@@ -198,12 +203,16 @@ private fun TitleHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                state.ratingLabel()?.let { rating ->
-                    Text(
-                        text = rating,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                if (state.ratings.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        state.ratings.forEach { rating ->
+                            ProviderRatingBadge(rating)
+                        }
+                    }
                 }
                 Button(
                     enabled = !state.libraryMutationInProgress,
@@ -346,6 +355,29 @@ private fun CanonicalChapterRow(
     )
 }
 
+@Composable
+private fun ProviderRatingBadge(
+    rating: CanonicalProviderRating,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IntegrationBrandIcon(
+            providerId = rating.providerId,
+            size = 20.dp,
+        )
+        Text(
+            text = ratingPercentageLabel(
+                value = rating.value,
+                maxValue = rating.maxValue,
+            ),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
 private fun String.toEditorialStatusLabel(): String? = when (this) {
     "ONGOING" -> "Em publicação"
     "COMPLETED" -> "Concluído"
@@ -371,12 +403,3 @@ private fun CanonicalTitleScreenState.Loaded.metadataDateLabel(): String? = when
     else -> null
 }
 
-private fun CanonicalTitleScreenState.Loaded.ratingLabel(): String? {
-    val value = ratingValue ?: return null
-    val max = ratingMaxValue ?: return null
-    val score = "${value.toCompactNumber()}/${max.toCompactNumber()}"
-    return ratingVoteCount?.takeIf { it > 0 }?.let { "$score · $it avaliações" } ?: score
-}
-
-private fun Double.toCompactNumber(): String =
-    if (this % 1.0 == 0.0) toInt().toString() else toString()
