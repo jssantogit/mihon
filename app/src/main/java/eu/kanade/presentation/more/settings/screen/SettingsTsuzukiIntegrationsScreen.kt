@@ -186,6 +186,14 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             supportingContent = { Text(stringResource(item.category.labelRes())) },
                         )
                     }
+                    providerDescriptionRes(item.id.value)?.let { description ->
+                        item {
+                            ListItem(
+                                headlineContent = { Text(item.label) },
+                                supportingContent = { Text(stringResource(description)) },
+                            )
+                        }
+                    }
                     if (item.capabilities.isNotEmpty()) {
                         item {
                             ListItem(
@@ -345,4 +353,19 @@ private fun TsuzukiIntegrationConfigState.labelRes(): StringResource = when (thi
 private fun TsuzukiIntegrationAuthState.labelRes(): StringResource = when (this) {
     TsuzukiIntegrationAuthState.NOT_REQUIRED -> MR.strings.tsuzuki_integration_auth_not_required
     TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY -> MR.strings.tsuzuki_integration_auth_existing_session
+}
+
+private fun providerDescriptionRes(integrationId: String): StringResource? = when (integrationId) {
+    "kitsu" -> MR.strings.tsuzuki_integration_provider_kitsu
+    "mal" -> MR.strings.tsuzuki_integration_provider_mal
+    "mangaupdates" -> MR.strings.tsuzuki_integration_provider_mangaupdates
+    "mangabaka" -> MR.strings.tsuzuki_integration_provider_mangabaka
+    "bangumi" -> MR.strings.tsuzuki_integration_provider_bangumi
+    "shikimori" -> MR.strings.tsuzuki_integration_provider_shikimori
+    "hikka" -> MR.strings.tsuzuki_integration_provider_hikka
+    "anilist" -> MR.strings.tsuzuki_integration_provider_anilist
+    "komga" -> MR.strings.tsuzuki_integration_provider_komga
+    "kavita" -> MR.strings.tsuzuki_integration_provider_kavita
+    "suwayomi" -> MR.strings.tsuzuki_integration_provider_suwayomi
+    else -> null
 }
