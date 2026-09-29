@@ -35,7 +35,7 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
-    fun `all unified integrations are disabled by default when no settings rows exist` = runTest(dispatcher) {
+    fun `all unified integrations are disabled by default when no settings rows exist`() = runTest(dispatcher) {
         val repository = FakeIntegrationSettingsRepository()
         val model = TsuzukiIntegrationsSettingsScreenModel(repository)
 
