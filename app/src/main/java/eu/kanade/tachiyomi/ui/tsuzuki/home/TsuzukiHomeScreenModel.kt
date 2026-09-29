@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.history.repository.HistoryRepository
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -50,6 +51,7 @@ class TsuzukiHomeScreenModel(
     private val historyRepository: HistoryRepository,
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
+    private val mangaRepository: MangaRepository,
 ) : ViewModel() {
 
     private val eventChannel = Channel<TsuzukiHomeEvent>(Channel.BUFFERED)
@@ -58,9 +60,22 @@ class TsuzukiHomeScreenModel(
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
-    ) { continueReading, sections ->
+        observeCanonicalLibrary.subscribe(),
+    ) { continueReading, sections, library ->
+        val libraryById = library.associateBy { it.title.id }
+        val enriched = continueReading.map { item ->
+            val source = libraryById[item.canonicalTitleId]?.sources?.firstOrNull()
+            val cover = source?.let {
+                runCatching {
+                    it.mihonMangaId
+                        ?.let { mangaId -> mangaRepository.getMangaById(mangaId) }
+                        ?: mangaRepository.getMangaByUrlAndSourceId(it.sourceUrl, it.sourceId)
+                }.getOrNull()?.thumbnailUrl
+            }
+            item.copy(coverUrl = cover)
+        }
         TsuzukiHomeScreenState(
-            continueReading = continueReading,
+            continueReading = enriched,
             sections = sections,
         )
     }.stateIn(
