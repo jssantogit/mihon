@@ -185,7 +185,6 @@ class MangaUpdatesApi(
         val requested = offset.coerceAtLeast(0) + limit
         val body = buildJsonObject {
             put("orderby", orderBy)
-            put("page", 1)
             put("perpage", requested)
             put("include_rank_metadata", true)
             put(
