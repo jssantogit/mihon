@@ -16,6 +16,12 @@ data class ProvenancedMetadata<T>(
     val attribution: String? = null,
 )
 
+data class ResolvedRating(
+    val value: Double,
+    val maxValue: Double,
+    val voteCount: Int? = null,
+)
+
 data class ResolvedMetadata(
     val title: ProvenancedMetadata<String>? = null,
     val synopsis: ProvenancedMetadata<String>? = null,
@@ -24,6 +30,7 @@ data class ResolvedMetadata(
     val format: ProvenancedMetadata<String>? = null,
     val editorialChapterCount: ProvenancedMetadata<Int>? = null,
     val rating: ProvenancedMetadata<Double>? = null,
+    val ratingDetails: ProvenancedMetadata<ResolvedRating>? = null,
     val authors: ProvenancedMetadata<List<String>>? = null,
     val artists: ProvenancedMetadata<List<String>>? = null,
     val genres: ProvenancedMetadata<List<String>>? = null,
