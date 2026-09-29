@@ -18,6 +18,7 @@ internal fun TrackSearch.toIntegrationCatalogItem(providerId: String): CatalogIt
     artists = artists.filter(String::isNotBlank).distinct(),
     format = publishing_type.toCatalogFormat(),
     startDate = start_date.ifBlank { null },
+    endDate = end_date.ifBlank { null },
     chapterCount = total_chapters
         .takeIf { it > 0 && it <= Int.MAX_VALUE }
         ?.toInt(),
