@@ -203,14 +203,24 @@ private fun TrackingServiceContent(
         item {
             ListItem(
                 headlineContent = {
-                    Text(stringResource(if (isLoggedIn) MR.strings.tsuzuki_tracking_disconnect else MR.strings.tsuzuki_tracking_connect))
+                    Text(
+                        stringResource(
+                            if (isLoggedIn) {
+                                MR.strings.tsuzuki_tracking_disconnect
+                            } else {
+                                MR.strings.tsuzuki_tracking_connect
+                            },
+                        ),
+                    )
                 },
                 supportingContent = {
                     Text(stringResource(loginDescriptionRes(tracker)))
                 },
             )
             Button(
-                enabled = isLoggedIn || tracker !is EnhancedTracker || acceptedSources.isNotEmpty(),
+                enabled = isLoggedIn ||
+                    tracker !is EnhancedTracker ||
+                    acceptedSources.isNotEmpty(),
                 onClick = {
                     if (isLoggedIn) {
                         logoutDialog = true
