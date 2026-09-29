@@ -10,6 +10,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
+import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 
 class MalIntegrationProviderTest {
 
@@ -55,6 +56,13 @@ class MalIntegrationProviderTest {
         item.artists shouldContainExactly listOf("Naoki Urasawa")
         item.genres shouldContainExactly listOf("Drama", "Mystery")
         ChapterEvidenceProvider::class.java.isAssignableFrom(provider.javaClass) shouldBe false
+    }
+
+    @Test
+    fun `mal participates in catalog discovery`() = runTest {
+        val provider = MalIntegrationProvider.forTest(FakeMalIntegrationApi())
+
+        (provider as Any is DiscoveryProvider) shouldBe true
     }
 
     @Test
