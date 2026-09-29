@@ -77,6 +77,7 @@ sealed interface CanonicalTitleScreenState {
         val ratingValue: Double? = null,
         val ratingMaxValue: Double? = null,
         val ratingVoteCount: Int? = null,
+        val ratings: List<CanonicalProviderRating> = emptyList(),
         val startDate: String? = null,
         val endDate: String? = null,
         val editorialVolumeCount: Int? = null,
@@ -97,6 +98,14 @@ sealed interface CanonicalTitleScreenState {
         val error: Throwable,
     ) : CanonicalTitleScreenState
 }
+
+@Immutable
+data class CanonicalProviderRating(
+    val providerId: String,
+    val value: Double,
+    val maxValue: Double,
+    val voteCount: Int? = null,
+)
 
 @Immutable
 data class CanonicalChapterDetailItem(
@@ -577,21 +586,41 @@ class CanonicalTitleScreenModel(
         } else {
             null
         }
-        val integrationMetadataSources = listOfNotNull(
-            integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.authors?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.artists?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.tags?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.status?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.format?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.ratingDetails?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.startDate?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.endDate?.let { it.attribution ?: it.providerId.value },
-            integrationMetadata?.editorialVolumeCount?.let { it.attribution ?: it.providerId.value },
-        ).distinct()
+        val resolvedRatings = integrationMetadata
+            ?.ratings
+            .orEmpty()
+            .ifEmpty { listOfNotNull(integrationMetadata?.ratingDetails) }
+        val integrationRatings = resolvedRatings.map { rating ->
+            CanonicalProviderRating(
+                providerId = rating.providerId.value,
+                value = rating.value.value,
+                maxValue = rating.value.maxValue,
+                voteCount = rating.value.voteCount,
+            )
+        }
+        val integrationMetadataSources = buildList {
+            addAll(
+                listOfNotNull(
+                    integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.authors?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.artists?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.tags?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.status?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.format?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.startDate?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.endDate?.let { it.attribution ?: it.providerId.value },
+                    integrationMetadata?.editorialVolumeCount?.let {
+                        it.attribution ?: it.providerId.value
+                    },
+                ),
+            )
+            resolvedRatings.forEach { rating ->
+                add(rating.attribution ?: rating.providerId.value)
+            }
+        }.distinct()
 
         val details = if (!includeLegacyDownloadChecks) {
             chapters.mapNotNull { chapter ->
@@ -670,9 +699,10 @@ class CanonicalTitleScreenModel(
             tags = integrationMetadata?.tags?.value.orEmpty(),
             editorialStatus = integrationMetadata?.status?.value,
             editorialFormat = integrationMetadata?.format?.value,
-            ratingValue = integrationMetadata?.ratingDetails?.value?.value,
-            ratingMaxValue = integrationMetadata?.ratingDetails?.value?.maxValue,
-            ratingVoteCount = integrationMetadata?.ratingDetails?.value?.voteCount,
+            ratingValue = integrationRatings.firstOrNull()?.value,
+            ratingMaxValue = integrationRatings.firstOrNull()?.maxValue,
+            ratingVoteCount = integrationRatings.firstOrNull()?.voteCount,
+            ratings = integrationRatings,
             startDate = integrationMetadata?.startDate?.value,
             endDate = integrationMetadata?.endDate?.value,
             editorialVolumeCount = integrationMetadata?.editorialVolumeCount?.value,
