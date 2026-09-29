@@ -35,6 +35,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.presentation.track.components.TrackLogoIcon
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
@@ -187,6 +188,7 @@ private fun TrackingServiceContent(
         item {
             ListItem(
                 headlineContent = { Text(stringResource(MR.strings.tsuzuki_tracking_account)) },
+                leadingContent = { TrackLogoIcon(tracker) },
                 supportingContent = {
                     Text(
                         if (isLoggedIn) {
