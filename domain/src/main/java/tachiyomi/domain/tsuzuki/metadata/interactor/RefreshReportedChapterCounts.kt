@@ -24,7 +24,9 @@ class RefreshReportedChapterCounts(
             registry.awaitReady()
             val providers = registry.metadataProviders(IntegrationCapability.METADATA_EDITORIAL)
                 .associateBy { it.integrationId.value }
-            val identities = canonicalTitleRepository.getExternalIdentities(canonicalTitleId)
+            val identities = canonicalTitleRepository
+                .getExternalIdentities(canonicalTitleId)
+                .filter { it.verified }
 
             coroutineScope {
                 identities.mapNotNull { identity ->
