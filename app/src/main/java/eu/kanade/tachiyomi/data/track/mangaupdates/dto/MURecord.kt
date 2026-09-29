@@ -30,10 +30,10 @@ data class MURecord(
     fun toTrackSearch(id: Long): TrackSearch {
         return TrackSearch.create(id).apply {
             remote_id = this@MURecord.seriesId ?: 0L
-            title = this@MURecord.title?.htmlDecode() ?: ""
+            title = this@MURecord.title?.decodeHtmlIfNeeded() ?: ""
             total_chapters = 0
             cover_url = this@MURecord.image?.url?.original ?: ""
-            summary = this@MURecord.description?.htmlDecode() ?: ""
+            summary = this@MURecord.description?.decodeHtmlIfNeeded() ?: ""
             tracking_url = this@MURecord.url ?: ""
             publishing_status = when {
                 this@MURecord.completed == true -> "Finished"
@@ -49,6 +49,10 @@ data class MURecord(
             tags = this@MURecord.categories.map { it.category }
         }
     }
+}
+
+private fun String.decodeHtmlIfNeeded(): String {
+    return if (contains('<') || contains('&')) htmlDecode() else this
 }
 
 @Serializable
