@@ -41,11 +41,10 @@ class DefaultIntegrationRegistry(
     private val chapterEvidenceProviders: Set<ChapterEvidenceProvider> = emptySet(),
     private val ratingsProviders: Set<RatingsProvider> = emptySet(),
     private val trackingProviders: Set<TrackingProvider> = emptySet(),
-    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet(),
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
-    private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
+    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet()\n    private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
     private val ready = CompletableDeferred<Unit>()
 
     init {
