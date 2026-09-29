@@ -42,7 +42,7 @@ import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
 import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
-import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
+import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeList
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
@@ -227,17 +227,19 @@ private fun TrackingServiceContent(
                     Text(stringResource(loginDescriptionRes(tracker)))
                 },
             )
+            val canStartLogin = when (tracker) {
+                is MyAnimeList -> tracker.hasClientId()
+                else -> tracker !is EnhancedTracker || acceptedSources.isNotEmpty()
+            }
             Button(
-                enabled = isLoggedIn ||
-                    tracker !is EnhancedTracker ||
-                    acceptedSources.isNotEmpty(),
+                enabled = isLoggedIn || canStartLogin,
                 onClick = {
                     if (isLoggedIn) {
                         logoutDialog = true
                     } else {
                         when (tracker.id) {
                             MAL_TRACKER_ID -> context.openInBrowser(
-                                MyAnimeListApi.authUrl(),
+                                (tracker as MyAnimeList).authUrl(),
                                 forceDefaultBrowser = true,
                             )
                             SHIKIMORI_TRACKER_ID -> context.openInBrowser(
@@ -412,15 +414,15 @@ private fun TrackerCredentialLoginDialog(
     )
 }
 
-private fun loginDescriptionRes(tracker: Tracker): StringResource = when (tracker.id) {
-    MAL_TRACKER_ID,
-    SHIKIMORI_TRACKER_ID,
-    BANGUMI_TRACKER_ID,
-    HIKKA_TRACKER_ID,
-    -> MR.strings.tsuzuki_tracking_login_browser
+private fun loginDescriptionRes(tracker: Tracker): StringResource = when {
+    tracker is MyAnimeList && !tracker.hasClientId() -> MR.strings.tsuzuki_mal_client_id_required
+    tracker.id == MAL_TRACKER_ID ||
+        tracker.id == SHIKIMORI_TRACKER_ID ||
+        tracker.id == BANGUMI_TRACKER_ID ||
+        tracker.id == HIKKA_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_browser
 
-    KITSU_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_kitsu
-    MANGAUPDATES_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_mangaupdates
+    tracker.id == KITSU_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_kitsu
+    tracker.id == MANGAUPDATES_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_mangaupdates
     else -> MR.strings.tsuzuki_tracking_login_local
 }
 
