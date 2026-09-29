@@ -65,6 +65,15 @@ class DefaultIntegrationRegistry(
 
     override fun manifests(): List<IntegrationManifest> = integrationManifests
 
+    override fun isGlobalCapabilityActive(
+        integrationId: tachiyomi.domain.tsuzuki.integration.IntegrationId,
+        capability: IntegrationCapability,
+    ): Boolean {
+        val manifest = integrationManifests.firstOrNull { it.integrationId == integrationId } ?: return false
+        return manifest.allowsGlobalResolution(capability) &&
+            integrationId.value in enabledIntegrationIds(capability)
+    }
+
     override fun searchProviders(): List<SearchProvider> = allowedProviders(
         providers = searchProviders,
         capability = IntegrationCapability.SEARCH,
@@ -109,8 +118,7 @@ class DefaultIntegrationRegistry(
                 else -> return@filter false
             }
             if (id.value !in enabledIds) return@filter false
-            val manifest = integrationManifests.firstOrNull { it.integrationId == id }
-            manifest == null || manifest.allowsGlobalResolution(capability)
+            isGlobalCapabilityActive(id, capability)
         }
     }
 
