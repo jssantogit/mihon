@@ -137,9 +137,9 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             .items
             .single { it.id.value == "komga" }
 
-        IntegrationCapability.METADATA_BASIC in item.capabilities shouldBe true
-        IntegrationCapability.REMOTE_LIBRARY in item.capabilities shouldBe true
-        IntegrationCapability.METADATA_BASIC in item.configurableCapabilities shouldBe false
+        (IntegrationCapability.METADATA_BASIC in item.capabilities) shouldBe true
+        (IntegrationCapability.REMOTE_LIBRARY in item.capabilities) shouldBe true
+        (IntegrationCapability.METADATA_BASIC in item.configurableCapabilities) shouldBe false
         item.supportsTracking shouldBe true
     }
 
