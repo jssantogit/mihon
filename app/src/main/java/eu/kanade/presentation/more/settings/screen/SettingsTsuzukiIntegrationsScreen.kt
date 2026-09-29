@@ -166,19 +166,28 @@ class SettingsTsuzukiIntegrationDetailScreen(
                         .fillMaxSize()
                         .padding(contentPadding),
                 ) {
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_enabled)) },
-                            supportingContent = { Text(stringResource(MR.strings.tsuzuki_integration_use_provider, item.label)) },
-                            trailingContent = {
-                                Switch(
-                                    checked = item.enabled,
-                                    onCheckedChange = {
-                                        screenModel.setEnabled(item.id, it)
-                                    },
-                                )
-                            },
-                        )
+                    if (item.configurableCapabilities.isNotEmpty()) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_enabled)) },
+                                supportingContent = {
+                                    Text(
+                                        stringResource(
+                                            MR.strings.tsuzuki_integration_use_provider,
+                                            item.label,
+                                        ),
+                                    )
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = item.enabled,
+                                        onCheckedChange = {
+                                            screenModel.setEnabled(item.id, it)
+                                        },
+                                    )
+                                },
+                            )
+                        }
                     }
                     item {
                         ListItem(
@@ -265,11 +274,17 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             )
                         }
                     }
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_configuration)) },
-                            supportingContent = { Text(stringResource(item.configState.labelRes())) },
-                        )
+                    if (item.configurableCapabilities.isNotEmpty()) {
+                        item {
+                            ListItem(
+                                headlineContent = {
+                                    Text(stringResource(MR.strings.tsuzuki_integration_configuration))
+                                },
+                                supportingContent = {
+                                    Text(stringResource(item.configState.labelRes()))
+                                },
+                            )
+                        }
                     }
                     item {
                         ListItem(
@@ -299,15 +314,27 @@ private fun IntegrationSettingRow(
                 if (item.restrictedCapabilities.isNotEmpty()) {
                     Text(stringResource(MR.strings.tsuzuki_integration_blocked_count, item.restrictedCapabilities.size))
                 }
-                Text(stringResource(MR.strings.tsuzuki_integration_configuration) + ": " + stringResource(item.configState.labelRes()))
-                Text(stringResource(MR.strings.tsuzuki_integration_authentication) + ": " + stringResource(item.authState.labelRes()))
+                if (item.configurableCapabilities.isNotEmpty()) {
+                    Text(
+                        stringResource(MR.strings.tsuzuki_integration_configuration) +
+                            ": " +
+                            stringResource(item.configState.labelRes()),
+                    )
+                }
+                Text(
+                    stringResource(MR.strings.tsuzuki_integration_authentication) +
+                        ": " +
+                        stringResource(item.authState.labelRes()),
+                )
             }
         },
         trailingContent = {
-            Switch(
-                checked = item.enabled,
-                onCheckedChange = onEnabledChange,
-            )
+            if (item.configurableCapabilities.isNotEmpty()) {
+                Switch(
+                    checked = item.enabled,
+                    onCheckedChange = onEnabledChange,
+                )
+            }
         },
         modifier = Modifier.clickable(onClick = onOpen),
     )
