@@ -16,7 +16,9 @@ internal object DefaultIntegrationManifests {
 
     val all = listOf(
         IntegrationManifest(
-            IntegrationId("kitsu"),\n            "Kitsu",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("kitsu"),
+            "Kitsu",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.ALLOWED,
                 IntegrationCapability.SEARCH,
@@ -31,7 +33,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("mal"),\n            "MyAnimeList",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("mal"),
+            "MyAnimeList",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.ALLOWED,
                 IntegrationCapability.SEARCH,
@@ -45,7 +49,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("mangaupdates"),\n            "MangaUpdates",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("mangaupdates"),
+            "MangaUpdates",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION,
                 IntegrationCapability.SEARCH,
@@ -61,7 +67,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("mangabaka"),\n            "MangaBaka",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("mangabaka"),
+            "MangaBaka",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.COMMERCIAL_RESTRICTION,
                 IntegrationCapability.SEARCH,
@@ -74,7 +82,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("bangumi"),\n            "Bangumi",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("bangumi"),
+            "Bangumi",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION,
                 IntegrationCapability.SEARCH,
@@ -87,7 +97,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("shikimori"),\n            "Shikimori",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("shikimori"),
+            "Shikimori",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.UNVERIFIED,
                 IntegrationCapability.SEARCH,
@@ -99,7 +111,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("hikka"),\n            "Hikka",\n            IntegrationCategory.METADATA_SERVICE,
+            IntegrationId("hikka"),
+            "Hikka",
+            IntegrationCategory.METADATA_SERVICE,
             policies(
                 IntegrationPolicy.UNVERIFIED,
                 IntegrationCapability.SEARCH,
@@ -111,7 +125,9 @@ internal object DefaultIntegrationManifests {
             ),
         ),
         IntegrationManifest(
-            IntegrationId("anilist"),\n            "AniList",\n            IntegrationCategory.COMPATIBILITY,
+            IntegrationId("anilist"),
+            "AniList",
+            IntegrationCategory.COMPATIBILITY,
             policies(
                 IntegrationPolicy.PERMISSION_REQUIRED,
                 IntegrationCapability.SEARCH,
