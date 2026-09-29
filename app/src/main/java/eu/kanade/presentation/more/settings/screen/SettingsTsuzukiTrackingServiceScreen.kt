@@ -45,6 +45,7 @@ import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,7 +91,7 @@ class SettingsTsuzukiTrackingServiceScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(tracker?.name ?: "Conta") },
+                    title = { Text(tracker?.name ?: stringResource(MR.strings.tsuzuki_tracking_account)) },
                     navigationIcon = {
                         TextButton(onClick = navigator::pop) {
                             Text("Voltar")
@@ -229,7 +230,7 @@ private fun TrackingServiceContent(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
             ) {
-                Text(if (isLoggedIn) "Desconectar" else "Conectar")
+                Text(stringResource(if (isLoggedIn) MR.strings.tsuzuki_tracking_disconnect else MR.strings.tsuzuki_tracking_connect))
             }
         }
         if (tracker is EnhancedTracker) {
@@ -253,6 +254,7 @@ private fun TrackerCredentialLoginDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val loginFailedMessage = stringResource(MR.strings.tsuzuki_tracking_login_failed)
     var username by remember { mutableStateOf(tracker.getUsername()) }
     var password by remember { mutableStateOf(tracker.getPassword()) }
     var processing by remember { mutableStateOf(false) }
@@ -291,18 +293,23 @@ private fun TrackerCredentialLoginDialog(
                     scope.launch {
                         processing = true
                         errorMessage = null
-                        val result = runCatching {
+                        val error = try {
                             withContext(Dispatchers.IO) {
                                 tracker.login(username, password)
                             }
+                            null
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Throwable) {
+                            error
                         }
                         processing = false
-                        if (result.isSuccess) {
+                        if (error == null) {
                             context.toast(MR.strings.login_success)
                             onDismiss()
                         } else {
                             tracker.logout()
-                            errorMessage = result.exceptionOrNull()?.message ?: context.getString(MR.strings.tsuzuki_tracking_login_failed.resourceId)
+                            errorMessage = error.message ?: loginFailedMessage
                         }
                     }
                 },
@@ -315,7 +322,7 @@ private fun TrackerCredentialLoginDialog(
                 enabled = !processing,
                 onClick = onDismiss,
             ) {
-                Text("Cancelar")
+                Text(stringResource(MR.strings.action_cancel))
             }
         },
     )
