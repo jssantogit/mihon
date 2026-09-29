@@ -235,6 +235,11 @@ private fun TsuzukiIntegrationCapability.label(): String = when (this) {
     TsuzukiIntegrationCapability.RATINGS -> "Avaliações"
     TsuzukiIntegrationCapability.CHAPTER_EVIDENCE -> "Evidência de capítulos"
     TsuzukiIntegrationCapability.TRACKING -> "Monitoramento"
+    TsuzukiIntegrationCapability.USER_LISTS -> "Listas da conta"
+    TsuzukiIntegrationCapability.CROSSWALK -> "Identidade entre catálogos"
+    TsuzukiIntegrationCapability.REMOTE_LIBRARY -> "Biblioteca remota"
+    TsuzukiIntegrationCapability.READING_CONTENT -> "Conteúdo de leitura"
+    TsuzukiIntegrationCapability.DOWNLOADS -> "Downloads"
 }
 
 private fun TsuzukiIntegrationConfigState.label(): String = when (this) {
