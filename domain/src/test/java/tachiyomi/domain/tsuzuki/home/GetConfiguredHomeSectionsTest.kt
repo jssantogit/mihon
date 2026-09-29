@@ -53,7 +53,7 @@ class GetConfiguredHomeSectionsTest {
     }
 
     @Test
-    fun `user collection creates configured Home section and executes enabled lists only`() = runTest {
+    fun `user collection exposes folders without executing lists on Home`() = runTest {
         val store = FakeCollectionStore().apply {
             addGraph(origin = CollectionOrigin.USER)
             lists["folder-1"] = listOf(
@@ -78,16 +78,16 @@ class GetConfiguredHomeSectionsTest {
                 title = "My Home",
                 rows = listOf(
                     tachiyomi.domain.tsuzuki.home.model.HomeRow(
-                        listId = "enabled",
-                        title = "enabled",
-                        providerId = "kitsu",
+                        listId = "folder-1",
+                        title = "Rows",
+                        providerId = "",
                         layoutType = null,
                         content = HomeRowContent.Content(emptyList()),
                     ),
                 ),
             ),
         )
-        calls shouldBe listOf("enabled")
+        calls shouldBe emptyList()
     }
 
     private class FakeCollectionStore : CollectionStore {
