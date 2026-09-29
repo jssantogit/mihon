@@ -234,12 +234,14 @@ class MyAnimeListApi(
             title = searchItem.title
             summary = searchItem.synopsis
             total_chapters = searchItem.numChapters
+            total_volumes = searchItem.numVolumes
             score = searchItem.mean
             cover_url = searchItem.covers?.large.orEmpty()
             tracking_url = "https://myanimelist.net/manga/$remote_id"
             publishing_status = searchItem.status.replace("_", " ")
             publishing_type = searchItem.mediaType.replace("_", " ")
             start_date = searchItem.startDate ?: ""
+            end_date = searchItem.endDate ?: ""
             artists = searchItem.authors
                 .filter { authorNode -> authorNode.role == "Art" }
                 .mapNotNull { authorNode -> authorNode.node.getFullName() }
@@ -279,7 +281,7 @@ class MyAnimeListApi(
         private const val BASE_API_URL = "https://api.myanimelist.net/v2"
 
         private const val SEARCH_FIELDS =
-            "id,title,synopsis,num_chapters,mean,main_picture,status,media_type,start_date,authors{first_name,last_name}"
+            "id,title,synopsis,num_chapters,num_volumes,mean,main_picture,status,media_type,start_date,end_date,authors{first_name,last_name}"
 
         private const val LIST_PAGINATION_AMOUNT = 250
 
