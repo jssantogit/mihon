@@ -64,6 +64,29 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             .enabled shouldBe true
     }
 
+    @Test
+    fun `capability configuration is persisted and reflected in state`() = runTest(dispatcher) {
+        val repository = FakeIntegrationSettingsRepository()
+        val model = TsuzukiIntegrationsSettingsScreenModel(repository)
+        advanceUntilIdle()
+
+        model.setEnabled(IntegrationId("kitsu"), true)
+        model.setCapabilityEnabled(
+            IntegrationId("kitsu"),
+            TsuzukiIntegrationCapability.DISCOVERY,
+            false,
+        )
+        advanceUntilIdle()
+
+        val item = model.state.value
+            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
+            .items
+            .single { it.id.value == "kitsu" }
+        item.enabled shouldBe true
+        item.capabilityEnabled[TsuzukiIntegrationCapability.DISCOVERY] shouldBe false
+        item.capabilityEnabled[TsuzukiIntegrationCapability.SEARCH] shouldBe true
+    }
+
     private class FakeIntegrationSettingsRepository : IntegrationSettingsRepository {
         private val state = MutableStateFlow<List<IntegrationSettings>>(emptyList())
 
