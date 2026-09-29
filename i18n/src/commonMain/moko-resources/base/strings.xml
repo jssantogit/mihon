@@ -1214,8 +1214,12 @@
     <string name="tsuzuki_metadata_sources">Metadata: %s</string>
     <string name="tsuzuki_tracking_login_failed">Could not connect</string>
 
+    <string name="tsuzuki_mal_client_id_title">MyAnimeList Client ID</string>
+    <string name="tsuzuki_mal_client_id_summary">MyAnimeList requires your own API Client ID. Tsuzuki does not include a shared MAL credential.</string>
+    <string name="tsuzuki_mal_client_id_required">Add your MyAnimeList Client ID before enabling this integration.</string>
+    <string name="tsuzuki_mal_client_id_setup">Create a client at myanimelist.net/apiconfig and register tsuzuki://myanimelist-auth as its redirect URL. Leave this field empty and save to remove the credential.</string>
     <string name="tsuzuki_integration_provider_kitsu">Public catalog and metadata with optional account tracking. Uses the app's existing Kitsu client configuration.</string>
-    <string name="tsuzuki_integration_provider_mal">OAuth2/PKCE account connection plus catalog metadata. Tsuzuki uses the app client ID; a personal client ID is not required for normal use.</string>
+    <string name="tsuzuki_integration_provider_mal">Catalog metadata and ratings using your own MyAnimeList API Client ID, with optional OAuth2/PKCE account tracking.</string>
     <string name="tsuzuki_integration_provider_mangaupdates">Manga-focused public metadata with account lists and ratings. Attribution is preserved when its data is used.</string>
     <string name="tsuzuki_integration_provider_bangumi">Metadata/search and account tracking are available with provider attribution.</string>
     <string name="tsuzuki_integration_provider_shikimori">Existing account tracking remains available. Catalog expansion stays disabled until current API terms are verified.</string>
