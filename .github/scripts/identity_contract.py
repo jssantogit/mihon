@@ -64,6 +64,20 @@ def check_contract(root: Path) -> list[str]:
     )
     settings = _read(root, "settings.gradle.kts", errors)
     readme = _read(root, "README.md", errors)
+    brand_colors = _read(root, "app/src/main/res/values/colors.xml", errors)
+    launcher_background = _read(
+        root,
+        "app/src/main/res/drawable/ic_launcher_background.xml",
+        errors,
+    )
+    launcher_foreground = _read(
+        root,
+        "app/src/main/res/drawable/ic_launcher_foreground.xml",
+        errors,
+    )
+    brand_mark = _read(root, "app/src/main/res/drawable/ic_mihon.xml", errors)
+    brand_doc = _read(root, "docs/brand/README.md", errors)
+    repo_logo = _read(root, "docs/brand/tsuzuki-repo-logo.svg", errors)
 
     if build:
         application_id = re.search(r'\bapplicationId\s*=\s*"([^"]+)"', build)
@@ -163,6 +177,46 @@ def check_contract(root: Path) -> list[str]:
 
     if readme and not readme.lstrip().startswith("# Tsuzuki"):
         errors.append("README must identify Tsuzuki as the project")
+
+    if brand_colors:
+        required_colors = {
+            "tsuzuki_ink": "#0B0C0D",
+            "tsuzuki_paper": "#F5F3EC",
+            "tsuzuki_graphite": "#242628",
+            "tsuzuki_ash": "#7D8185",
+            "tsuzuki_mist": "#C9CCCE",
+        }
+        for name, value in required_colors.items():
+            marker = f'<color name="{name}">{value}</color>'
+            if marker not in brand_colors:
+                errors.append(f"brand color {name} must be {value}")
+        if '<color name="splash">@color/tsuzuki_ink</color>' not in brand_colors:
+            errors.append("splash brand background must use Tsuzuki Ink")
+
+    if launcher_background and "@color/tsuzuki_ink" not in launcher_background:
+        errors.append("launcher background must use Tsuzuki Ink")
+
+    if launcher_foreground:
+        if "@color/tsuzuki_paper" not in launcher_foreground:
+            errors.append("launcher foreground must use Tsuzuki Paper")
+        if "@color/tsuzuki_jade" in launcher_foreground:
+            errors.append("launcher foreground still uses legacy Tsuzuki Jade")
+
+    if brand_mark:
+        if "@color/tsuzuki_paper" not in brand_mark:
+            errors.append("primary in-app brand mark must use Tsuzuki Paper")
+        if "@color/tsuzuki_jade" in brand_mark:
+            errors.append("primary in-app brand mark still uses legacy Tsuzuki Jade")
+
+    if brand_doc:
+        if "Tsuzuki Ink: `#0B0C0D`" not in brand_doc or "Tsuzuki Paper: `#F5F3EC`" not in brand_doc:
+            errors.append("brand documentation must define the monochrome Brand v2 signature")
+
+    if repo_logo:
+        if '#0B0C0D' not in repo_logo or '#F5F3EC' not in repo_logo:
+            errors.append("repository logo must use Paper on Ink")
+        if '#17C7A3' in repo_logo or '#132235' in repo_logo:
+            errors.append("repository logo still uses the legacy Jade/Midnight signature")
 
     legacy_release = root / ".github/workflows/release.yml"
     if legacy_release.is_file():

@@ -100,6 +100,39 @@ VALID_README = """
 Independent Android manga reader derived from Mihon.
 """
 
+VALID_BRAND_COLORS = """
+<resources>
+    <color name="splash">@color/tsuzuki_ink</color>
+    <color name="tsuzuki_ink">#0B0C0D</color>
+    <color name="tsuzuki_paper">#F5F3EC</color>
+    <color name="tsuzuki_graphite">#242628</color>
+    <color name="tsuzuki_ash">#7D8185</color>
+    <color name="tsuzuki_mist">#C9CCCE</color>
+</resources>
+"""
+
+VALID_LAUNCHER_BACKGROUND = """
+<path android:fillColor="@color/tsuzuki_ink" />
+"""
+
+VALID_LAUNCHER_FOREGROUND = """
+<path android:fillColor="@color/tsuzuki_paper" />
+"""
+
+VALID_BRAND_MARK = """
+<path android:fillColor="@color/tsuzuki_paper" />
+"""
+
+VALID_BRAND_DOC = """
+- Tsuzuki Ink: `#0B0C0D`
+- Tsuzuki Paper: `#F5F3EC`
+"""
+
+VALID_REPO_LOGO = """
+<rect fill="#0B0C0D" />
+<g fill="#F5F3EC" />
+"""
+
 
 class IdentityContractTest(unittest.TestCase):
     def make_repo(
@@ -115,6 +148,12 @@ class IdentityContractTest(unittest.TestCase):
         base_strings=VALID_BASE_STRINGS,
         settings=VALID_SETTINGS,
         readme=VALID_README,
+        brand_colors=VALID_BRAND_COLORS,
+        launcher_background=VALID_LAUNCHER_BACKGROUND,
+        launcher_foreground=VALID_LAUNCHER_FOREGROUND,
+        brand_mark=VALID_BRAND_MARK,
+        brand_doc=VALID_BRAND_DOC,
+        repo_logo=VALID_REPO_LOGO,
     ):
         temp_dir = tempfile.TemporaryDirectory()
         root = Path(temp_dir.name)
@@ -129,6 +168,12 @@ class IdentityContractTest(unittest.TestCase):
             "i18n/src/commonMain/moko-resources/base/strings.xml": base_strings,
             "settings.gradle.kts": settings,
             "README.md": readme,
+            "app/src/main/res/values/colors.xml": brand_colors,
+            "app/src/main/res/drawable/ic_launcher_background.xml": launcher_background,
+            "app/src/main/res/drawable/ic_launcher_foreground.xml": launcher_foreground,
+            "app/src/main/res/drawable/ic_mihon.xml": brand_mark,
+            "docs/brand/README.md": brand_doc,
+            "docs/brand/tsuzuki-repo-logo.svg": repo_logo,
         }
         for relative, content in files.items():
             path = root / relative
@@ -219,6 +264,26 @@ class IdentityContractTest(unittest.TestCase):
     def test_readme_must_identify_tsuzuki(self):
         root = self.make_repo(readme=VALID_README.replace("# Tsuzuki", "# Mihon"))
         self.assertIn("README must identify Tsuzuki as the project", check_contract(root))
+
+    def test_brand_v2_palette_is_required(self):
+        root = self.make_repo(
+            brand_colors=VALID_BRAND_COLORS.replace("#0B0C0D", "#132235", 1),
+        )
+        self.assertIn("brand color tsuzuki_ink must be #0B0C0D", check_contract(root))
+
+    def test_primary_brand_assets_reject_legacy_jade_midnight_signature(self):
+        root = self.make_repo(
+            launcher_foreground=VALID_LAUNCHER_FOREGROUND.replace("tsuzuki_paper", "tsuzuki_jade"),
+            brand_mark=VALID_BRAND_MARK.replace("tsuzuki_paper", "tsuzuki_jade"),
+            repo_logo=VALID_REPO_LOGO.replace("#0B0C0D", "#132235").replace("#F5F3EC", "#17C7A3"),
+        )
+        errors = check_contract(root)
+        self.assertIn("launcher foreground must use Tsuzuki Paper", errors)
+        self.assertIn("launcher foreground still uses legacy Tsuzuki Jade", errors)
+        self.assertIn("primary in-app brand mark must use Tsuzuki Paper", errors)
+        self.assertIn("primary in-app brand mark still uses legacy Tsuzuki Jade", errors)
+        self.assertIn("repository logo must use Paper on Ink", errors)
+        self.assertIn("repository logo still uses the legacy Jade/Midnight signature", errors)
 
     def test_inherited_mihon_release_workflows_are_rejected(self):
         root = self.make_repo()

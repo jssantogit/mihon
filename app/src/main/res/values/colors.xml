@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="splash">@color/tsuzuki_midnight</color>
+    <color name="splash">@color/tsuzuki_ink</color>
 
+    <!-- Tsuzuki Brand v2 -->
+    <color name="tsuzuki_ink">#0B0C0D</color>
+    <color name="tsuzuki_paper">#F5F3EC</color>
+    <color name="tsuzuki_graphite">#242628</color>
+    <color name="tsuzuki_ash">#7D8185</color>
+    <color name="tsuzuki_mist">#C9CCCE</color>
+
+    <!-- Legacy pre-v2 brand tokens retained temporarily for compatibility. -->
     <color name="tsuzuki_jade">#17C7A3</color>
     <color name="tsuzuki_midnight">#132235</color>
-    <color name="tsuzuki_paper">#F3F0E9</color>
     <color name="tsuzuki_jade_light">#6EE7C8</color>
     <color name="tsuzuki_jade_deep">#0C7A67</color>
-    <color name="tsuzuki_mist">#9CAFC2</color>
 
     <color name="accent_blue">#0058A0</color>
     <color name="icon_background">#FAFAFA</color>
