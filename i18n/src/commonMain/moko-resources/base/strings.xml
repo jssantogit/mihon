@@ -1154,8 +1154,8 @@
 
     <string name="tsuzuki_integrations_tracking_behavior_title">Tracking behavior</string>
     <string name="tsuzuki_integrations_tracking_behavior_summary">Automatic updates and synchronization when chapters are marked as read</string>
-    <string name="tsuzuki_integrations_category_metadata">Metadata and services</string>
-    <string name="tsuzuki_integrations_category_servers">Personal servers</string>
+    <string name="tsuzuki_integrations_category_metadata">Metadata and catalog</string>
+    <string name="tsuzuki_integrations_category_servers">Servers</string>
     <string name="tsuzuki_integrations_category_compatibility">Compatibility</string>
     <string name="tsuzuki_integration_enabled">Enabled</string>
     <string name="tsuzuki_integration_use_provider">Use %s in Tsuzuki</string>
@@ -1163,7 +1163,7 @@
     <string name="tsuzuki_integration_features">Features</string>
     <string name="tsuzuki_integration_features_summary">Choose which permitted features from this provider Tsuzuki may use.</string>
     <string name="tsuzuki_integration_blocked_features">Unavailable features</string>
-    <string name="tsuzuki_integration_blocked_features_summary">These features exist technically, but are excluded from the global catalog while the applicable permissions or terms remain unresolved.</string>
+    <string name="tsuzuki_integration_blocked_features_summary">These features exist technically, but are excluded from the global catalog while the applicable permissions or terms remain unresolved.</string>\n    <string name="tsuzuki_integration_catalog_unavailable">Catalog unavailable</string>\n    <string name="tsuzuki_integration_catalog_unavailable_summary">Catalog features remain disabled until the provider permissions or current API terms are verified.</string>
     <string name="tsuzuki_integration_account_tracking">Account and tracking</string>
     <string name="tsuzuki_integration_account_tracking_summary">Connect or disconnect only the %s account</string>
     <string name="tsuzuki_integration_configuration">Configuration</string>

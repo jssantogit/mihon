@@ -3,7 +3,9 @@ package eu.kanade.presentation.more.settings.screen
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,23 +19,26 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import eu.kanade.presentation.track.components.TrackLogoIcon
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationAuthState
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationConfigState
+import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationSettingsItem
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsState
+import mihon.app.di.appGraph
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
-import tachiyomi.domain.tsuzuki.integration.model.IntegrationPolicy
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
@@ -85,15 +90,26 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                                 supportingContent = {
                                     Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_summary))
                                 },
+                                trailingContent = {
+                                    TextButton(
+                                        onClick = {
+                                            navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
+                                        },
+                                    ) {
+                                        Text(stringResource(MR.strings.action_settings))
+                                    }
+                                },
                                 modifier = Modifier.clickable {
                                     navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
                                 },
                             )
                             HorizontalDivider()
                         }
+
                         IntegrationCategory.entries.forEach { category ->
                             val categoryItems = current.items.filter { it.category == category }
                             if (categoryItems.isEmpty()) return@forEach
+
                             item(key = "header_${category.name}") {
                                 Text(
                                     text = stringResource(category.labelRes()),
@@ -103,6 +119,7 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                                     ),
                                 )
                             }
+
                             items(
                                 items = categoryItems,
                                 key = { it.id.value },
@@ -135,12 +152,16 @@ class SettingsTsuzukiIntegrationDetailScreen(
 
     @Composable
     override fun Content() {
+        val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
         val screenModel = metroViewModel<TsuzukiIntegrationsSettingsScreenModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
         val item = (state as? TsuzukiIntegrationsSettingsState.Loaded)
             ?.items
             ?.firstOrNull { it.id.value == integrationId }
+        val tracker = remember(item?.legacyTrackerId) {
+            item?.legacyTrackerId?.let { context.appGraph.trackerManager.get(it) }
+        }
 
         Scaffold(
             topBar = {
@@ -170,11 +191,19 @@ class SettingsTsuzukiIntegrationDetailScreen(
                         .fillMaxSize()
                         .padding(contentPadding),
                 ) {
+                    providerDescriptionRes(item.id.value)?.let { description ->
+                        item(key = "provider_summary") {
+                            ProviderSummary(
+                                tracker = tracker,
+                                description = stringResource(description),
+                            )
+                        }
+                    }
+
                     if (item.configurableCapabilities.isNotEmpty()) {
-                        item {
+                        item(key = "integration_enabled") {
                             ListItem(
-                                headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_enabled)) },
-                                supportingContent = {
+                                headlineContent = {
                                     Text(
                                         stringResource(
                                             MR.strings.tsuzuki_integration_use_provider,
@@ -192,81 +221,48 @@ class SettingsTsuzukiIntegrationDetailScreen(
                                 },
                             )
                         }
-                    }
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_type)) },
-                            supportingContent = { Text(stringResource(item.category.labelRes())) },
-                        )
-                    }
-                    providerDescriptionRes(item.id.value)?.let { description ->
-                        item {
-                            ListItem(
-                                headlineContent = { Text(item.label) },
-                                supportingContent = { Text(stringResource(description)) },
-                            )
-                        }
-                    }
-                    if (item.capabilities.isNotEmpty()) {
-                        item {
-                            ListItem(
-                                headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_features)) },
-                                supportingContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integration_features_summary))
-                                },
-                            )
+
+                        val configurable = item.capabilities.filter {
+                            it in item.configurableCapabilities
                         }
                         items(
-                            items = item.capabilities,
+                            items = configurable,
                             key = { it.name },
                         ) { capability ->
-                            val policy = item.policies[capability]?.policy
                             ListItem(
                                 headlineContent = { Text(stringResource(capability.labelRes())) },
-                                supportingContent = {
-                                    if (policy != null && policy != IntegrationPolicy.ALLOWED) {
-                                        Text(stringResource(policy.labelRes()))
-                                    }
-                                },
                                 trailingContent = {
-                                    if (capability in item.configurableCapabilities) {
-                                        Switch(
-                                            checked = item.capabilityEnabled[capability] ?: true,
-                                            onCheckedChange = {
-                                                screenModel.setCapabilityEnabled(item.id, capability, it)
-                                            },
-                                        )
-                                    }
+                                    Switch(
+                                        checked = item.capabilityEnabled[capability] ?: true,
+                                        onCheckedChange = {
+                                            screenModel.setCapabilityEnabled(item.id, capability, it)
+                                        },
+                                        enabled = item.enabled,
+                                    )
                                 },
+                                modifier = Modifier.alpha(if (item.enabled) 1f else 0.45f),
                             )
                         }
                     }
+
                     if (item.restrictedCapabilities.isNotEmpty()) {
-                        item {
+                        item(key = "restricted_summary") {
                             ListItem(
                                 headlineContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integration_blocked_features))
+                                    Text(stringResource(MR.strings.tsuzuki_integration_catalog_unavailable))
                                 },
                                 supportingContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integration_blocked_features_summary))
+                                    Text(stringResource(MR.strings.tsuzuki_integration_catalog_unavailable_summary))
                                 },
-                            )
-                        }
-                        items(
-                            items = item.restrictedCapabilities.entries.toList(),
-                            key = { it.key.name },
-                        ) { (capability, policy) ->
-                            ListItem(
-                                headlineContent = { Text(stringResource(capability.labelRes())) },
-                                supportingContent = { Text(stringResource(policy.policy.labelRes())) },
                             )
                         }
                     }
+
                     if (
                         item.supportsTracking &&
                         item.legacyTrackerId != null
                     ) {
-                        item {
+                        item(key = "account_tracking") {
                             ListItem(
                                 headlineContent = {
                                     Text(stringResource(MR.strings.tsuzuki_integration_account_tracking))
@@ -279,6 +275,17 @@ class SettingsTsuzukiIntegrationDetailScreen(
                                         ),
                                     )
                                 },
+                                trailingContent = {
+                                    TextButton(
+                                        onClick = {
+                                            navigator.push(
+                                                SettingsTsuzukiTrackingServiceScreen(item.legacyTrackerId),
+                                            )
+                                        },
+                                    ) {
+                                        Text(stringResource(MR.strings.action_settings))
+                                    }
+                                },
                                 modifier = Modifier.clickable {
                                     navigator.push(
                                         SettingsTsuzukiTrackingServiceScreen(item.legacyTrackerId),
@@ -287,27 +294,29 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             )
                         }
                     }
-                    if (item.configurableCapabilities.isNotEmpty()) {
-                        item {
-                            ListItem(
-                                headlineContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integration_configuration))
-                                },
-                                supportingContent = {
-                                    Text(stringResource(item.configState.labelRes()))
-                                },
-                            )
-                        }
-                    }
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(MR.strings.tsuzuki_integration_authentication)) },
-                            supportingContent = { Text(stringResource(item.authState.labelRes())) },
-                        )
-                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ProviderSummary(
+    tracker: Tracker?,
+    description: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tracker?.let { TrackLogoIcon(it) }
+        Text(
+            text = description,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -317,28 +326,16 @@ private fun IntegrationSettingRow(
     onEnabledChange: (Boolean) -> Unit,
     onOpen: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val tracker = remember(item.legacyTrackerId) {
+        item.legacyTrackerId?.let { context.appGraph.trackerManager.get(it) }
+    }
+
     ListItem(
         headlineContent = { Text(item.label) },
-        supportingContent = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(stringResource(item.category.labelRes()))
-                if (item.restrictedCapabilities.isNotEmpty()) {
-                    Text(stringResource(MR.strings.tsuzuki_integration_blocked_count, item.restrictedCapabilities.size))
-                }
-                if (item.configurableCapabilities.isNotEmpty()) {
-                    Text(
-                        stringResource(MR.strings.tsuzuki_integration_configuration) +
-                            ": " +
-                            stringResource(item.configState.labelRes()),
-                    )
-                }
-                Text(
-                    stringResource(MR.strings.tsuzuki_integration_authentication) +
-                        ": " +
-                        stringResource(item.authState.labelRes()),
-                )
+        leadingContent = tracker?.let {
+            {
+                TrackLogoIcon(it)
             }
         },
         trailingContent = {
@@ -374,25 +371,6 @@ private fun IntegrationCapability.labelRes(): StringResource = when (this) {
     IntegrationCapability.REMOTE_LIBRARY -> MR.strings.tsuzuki_integration_capability_remote_library
     IntegrationCapability.READING_CONTENT -> MR.strings.tsuzuki_integration_capability_reading_content
     IntegrationCapability.DOWNLOADS -> MR.strings.tsuzuki_integration_capability_downloads
-}
-
-private fun IntegrationPolicy.labelRes(): StringResource = when (this) {
-    IntegrationPolicy.ALLOWED -> MR.strings.tsuzuki_integration_policy_allowed
-    IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION -> MR.strings.tsuzuki_integration_policy_attribution
-    IntegrationPolicy.USER_OWNED_DATA -> MR.strings.tsuzuki_integration_policy_user_owned
-    IntegrationPolicy.COMMERCIAL_RESTRICTION -> MR.strings.tsuzuki_integration_policy_commercial
-    IntegrationPolicy.PERMISSION_REQUIRED -> MR.strings.tsuzuki_integration_policy_permission
-    IntegrationPolicy.UNVERIFIED -> MR.strings.tsuzuki_integration_policy_unverified
-}
-
-private fun TsuzukiIntegrationConfigState.labelRes(): StringResource = when (this) {
-    TsuzukiIntegrationConfigState.DEFAULT -> MR.strings.tsuzuki_integration_config_default
-    TsuzukiIntegrationConfigState.CUSTOM -> MR.strings.tsuzuki_integration_config_custom
-}
-
-private fun TsuzukiIntegrationAuthState.labelRes(): StringResource = when (this) {
-    TsuzukiIntegrationAuthState.NOT_REQUIRED -> MR.strings.tsuzuki_integration_auth_not_required
-    TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY -> MR.strings.tsuzuki_integration_auth_existing_session
 }
 
 private fun providerDescriptionRes(integrationId: String): StringResource? = when (integrationId) {
