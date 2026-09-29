@@ -44,7 +44,6 @@ import mihon.icons.materialsymbols.rounded.Info
 import mihon.icons.materialsymbols.rounded.Palette
 import mihon.icons.materialsymbols.rounded.Search
 import mihon.icons.materialsymbols.rounded.Security
-import mihon.icons.materialsymbols.rounded.Storage
 import mihon.icons.materialsymbols.rounded.Sync
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -260,22 +259,10 @@ object SettingsMainScreen : Screen() {
                     screen = SettingsDownloadScreen,
                 ),
                 Item(
-                    titleRes = MR.strings.label_data_storage,
-                    subtitleRes = MR.strings.pref_backup_summary,
-                    icon = MaterialSymbols.Rounded.Storage,
-                    screen = SettingsDataScreen,
-                ),
-                Item(
-                    titleRes = MR.strings.pref_category_security,
-                    subtitleRes = MR.strings.pref_security_summary,
-                    icon = MaterialSymbols.Rounded.Security,
-                    screen = SettingsSecurityScreen,
-                ),
-                Item(
                     titleRes = MR.strings.pref_category_advanced,
                     subtitleRes = MR.strings.pref_advanced_summary,
                     icon = MaterialSymbols.Rounded.Code,
-                    screen = SettingsAdvancedScreen,
+                    screen = SettingsTsuzukiAdvancedHubScreen,
                 ),
             ),
         ),
