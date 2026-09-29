@@ -41,7 +41,7 @@ class ResolveCanonicalMetadata(
             }
 
             val providers = METADATA_CAPABILITIES
-                .flatMap(registry::metadataProviders)
+                .flatMap { capability -> registry.metadataProviders(capability) }
                 .distinctBy { it.integrationId }
                 .associateBy { it.integrationId.value }
 
@@ -103,7 +103,7 @@ class ResolveCanonicalMetadata(
                         candidates = candidates,
                         capability = IntegrationCapability.METADATA_BASIC,
                         precedence = BASIC_PRECEDENCE,
-                    ) { it.genres.takeIf(List<String>::isNotEmpty) },
+                    ) { it.genres.takeIf { genres -> genres.isNotEmpty() } },
                     externalIds = identities.associate { identity ->
                         IntegrationId(identity.provider) to identity.externalId
                     },
