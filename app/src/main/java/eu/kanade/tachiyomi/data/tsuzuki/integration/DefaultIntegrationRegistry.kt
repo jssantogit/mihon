@@ -14,10 +14,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -44,7 +40,7 @@ class DefaultIntegrationRegistry(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
-    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet()
+    private val integrationManifests: List<IntegrationManifest> = DefaultIntegrationManifests.all
     private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
     private val ready = CompletableDeferred<Unit>()
 
@@ -67,7 +63,7 @@ class DefaultIntegrationRegistry(
         .drop(1)
         .map { Unit }
 
-    override fun manifests(): List<IntegrationManifest> = integrationManifests.sortedBy { it.displayName }
+    override fun manifests(): List<IntegrationManifest> = integrationManifests
 
     override fun searchProviders(): List<SearchProvider> = allowedProviders(
         providers = searchProviders,
@@ -133,13 +129,8 @@ class DefaultIntegrationRegistry(
         .toSet()
 
     private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean {
-        val config = runCatching {
-            Json.parseToJsonElement(configJson) as? JsonObject
-        }.getOrNull()
-        return config
-            ?.get(capability)
-            ?.jsonPrimitive
-            ?.booleanOrNull
+        val typed = IntegrationCapability.entries.firstOrNull { it.configKey == capability }
+        return typed?.let { IntegrationSettingsConfig.decode(configJson).capabilityEnabled(it) }
             ?: true
     }
 }
