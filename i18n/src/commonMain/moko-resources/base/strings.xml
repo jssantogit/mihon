@@ -1224,4 +1224,3 @@
     <string name="tsuzuki_integration_provider_kavita">Personal-server integration. Server address and API key are reused from the installed Kavita source configuration.</string>
     <string name="tsuzuki_integration_provider_suwayomi">Personal reading-server integration. Connection and source settings are reused from the installed Suwayomi/Tachidesk source.</string>
 </resources>
-
