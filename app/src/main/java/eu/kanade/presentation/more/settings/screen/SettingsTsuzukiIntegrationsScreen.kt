@@ -52,7 +52,7 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                     title = { Text(stringResource(MR.strings.tsuzuki_integrations_title)) },
                     navigationIcon = {
                         TextButton(onClick = navigator::pop) {
-                            Text("Voltar")
+                            Text(stringResource(MR.strings.tsuzuki_navigation_back))
                         }
                     },
                 )
@@ -145,9 +145,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(item?.label ?: "Integração") },
+                    title = { Text(item?.label ?: stringResource(MR.strings.tsuzuki_integration_fallback_title)) },
                     navigationIcon = {
-                        TextButton(onClick = navigator::pop) { Text("Voltar") }
+                        TextButton(onClick = navigator::pop) { Text(stringResource(MR.strings.tsuzuki_navigation_back)) }
                     },
                 )
             },
