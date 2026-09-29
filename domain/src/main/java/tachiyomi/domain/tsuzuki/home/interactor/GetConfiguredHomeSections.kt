@@ -4,6 +4,9 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.mapLatest
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
