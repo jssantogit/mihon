@@ -17,6 +17,8 @@ class TrackerCatalogMappingTest {
             artists = listOf("Naoki Urasawa")
             publishing_type = "Manga"
             total_volumes = 18
+            start_date = "1994"
+            end_date = "2001"
             tracking_url = "https://example.invalid/42"
         }
 
@@ -26,5 +28,7 @@ class TrackerCatalogMappingTest {
         item.artists shouldContainExactly listOf("Naoki Urasawa")
         item.format shouldBe CatalogItemFormat.MANGA
         item.volumeCount shouldBe 18
+        item.startDate shouldBe "1994"
+        item.endDate shouldBe "2001"
     }
 }
