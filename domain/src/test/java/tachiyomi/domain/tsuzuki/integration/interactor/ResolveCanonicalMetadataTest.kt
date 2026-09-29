@@ -72,6 +72,9 @@ class ResolveCanonicalMetadataTest {
         resolved.artworkUrl?.providerId?.value shouldBe "kitsu"
         resolved.rating?.providerId?.value shouldBe "mal"
         resolved.rating?.value shouldBe 9.0
+        resolved.ratingDetails?.providerId?.value shouldBe "mal"
+        resolved.ratingDetails?.value?.value shouldBe 9.0
+        resolved.ratingDetails?.value?.maxValue shouldBe 10.0
         resolved.tags?.providerId?.value shouldBe "kitsu"
         resolved.tags?.value shouldBe listOf("supernatural", "drama")
     }
