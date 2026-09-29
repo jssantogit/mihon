@@ -25,20 +25,20 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoAuthState
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoCapability
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoConfigState
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçãoSettingsItem
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçõesSettingsScreenModel
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegraçõesSettingsState
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationAuthState
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationCapability
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationConfigState
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationSettingsItem
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsState
 
-class SettingsTsuzukiIntegraçõesScreen : Screen() {
+class SettingsTsuzukiIntegrationsScreen : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val screenModel =
-            metroViewModel<TsuzukiIntegraçõesSettingsScreenModel>()
+            metroViewModel<TsuzukiIntegrationsSettingsScreenModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
 
         Scaffold(
@@ -54,7 +54,7 @@ class SettingsTsuzukiIntegraçõesScreen : Screen() {
             },
         ) { contentPadding ->
             when (val current = state) {
-                TsuzukiIntegraçõesSettingsState.Loading -> {
+                TsuzukiIntegrationsSettingsState.Loading -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -66,7 +66,7 @@ class SettingsTsuzukiIntegraçõesScreen : Screen() {
                     }
                 }
 
-                is TsuzukiIntegraçõesSettingsState.Loaded -> {
+                is TsuzukiIntegrationsSettingsState.Loaded -> {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -76,16 +76,16 @@ class SettingsTsuzukiIntegraçõesScreen : Screen() {
                             items = current.items,
                             key = { it.id.value },
                         ) { item ->
-                            IntegraçãoSettingRow(
+                            IntegrationSettingRow(
                                 item = item,
-                                onAtivadaChange = {
-                                    screenModel.setAtivada(
+                                onEnabledChange = {
+                                    screenModel.setEnabled(
                                         id = item.id,
                                         enabled = it,
                                     )
                                 },
                                 onOpen = {
-                                    navigator.push(SettingsTsuzukiIntegraçãoDetailScreen(item.id.value))
+                                    navigator.push(SettingsTsuzukiIntegrationDetailScreen(item.id.value))
                                 },
                             )
                             HorizontalDivider()
@@ -97,16 +97,16 @@ class SettingsTsuzukiIntegraçõesScreen : Screen() {
     }
 }
 
-class SettingsTsuzukiIntegraçãoDetailScreen(
+class SettingsTsuzukiIntegrationDetailScreen(
     private val integrationId: String,
 ) : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
-        val screenModel = metroViewModel<TsuzukiIntegraçõesSettingsScreenModel>()
+        val screenModel = metroViewModel<TsuzukiIntegrationsSettingsScreenModel>()
         val state by screenModel.state.collectAsStateWithLifecycle()
-        val item = (state as? TsuzukiIntegraçõesSettingsState.Loaded)
+        val item = (state as? TsuzukiIntegrationsSettingsState.Loaded)
             ?.items
             ?.firstOrNull { it.id.value == integrationId }
 
@@ -144,7 +144,7 @@ class SettingsTsuzukiIntegraçãoDetailScreen(
                                 Switch(
                                     checked = item.enabled,
                                     onCheckedChange = {
-                                        screenModel.setAtivada(item.id, it)
+                                        screenModel.setEnabled(item.id, it)
                                     },
                                 )
                             },
@@ -193,9 +193,9 @@ class SettingsTsuzukiIntegraçãoDetailScreen(
 }
 
 @Composable
-private fun IntegraçãoSettingRow(
-    item: TsuzukiIntegraçãoSettingsItem,
-    onAtivadaChange: (Boolean) -> Unit,
+private fun IntegrationSettingRow(
+    item: TsuzukiIntegrationSettingsItem,
+    onEnabledChange: (Boolean) -> Unit,
     onOpen: () -> Unit,
 ) {
     ListItem(
@@ -207,7 +207,7 @@ private fun IntegraçãoSettingRow(
                 Text(
                     item.capabilities.joinToString(
                         separator = " • ",
-                        transform = TsuzukiIntegraçãoCapability::label,
+                        transform = TsuzukiIntegrationCapability::label,
                     ),
                 )
                 Text(
@@ -221,28 +221,28 @@ private fun IntegraçãoSettingRow(
         trailingContent = {
             Switch(
                 checked = item.enabled,
-                onCheckedChange = onAtivadaChange,
+                onCheckedChange = onEnabledChange,
             )
         },
         modifier = Modifier.clickable(onClick = onOpen),
     )
 }
 
-private fun TsuzukiIntegraçãoCapability.label(): String = when (this) {
-    TsuzukiIntegraçãoCapability.SEARCH -> "Busca"
-    TsuzukiIntegraçãoCapability.DISCOVERY -> "Descobrir"
-    TsuzukiIntegraçãoCapability.METADATA -> "Metadados"
-    TsuzukiIntegraçãoCapability.RATINGS -> "Avaliações"
-    TsuzukiIntegraçãoCapability.CHAPTER_EVIDENCE -> "Evidência de capítulos"
-    TsuzukiIntegraçãoCapability.TRACKING -> "Monitoramento"
+private fun TsuzukiIntegrationCapability.label(): String = when (this) {
+    TsuzukiIntegrationCapability.SEARCH -> "Busca"
+    TsuzukiIntegrationCapability.DISCOVERY -> "Descobrir"
+    TsuzukiIntegrationCapability.METADATA -> "Metadados"
+    TsuzukiIntegrationCapability.RATINGS -> "Avaliações"
+    TsuzukiIntegrationCapability.CHAPTER_EVIDENCE -> "Evidência de capítulos"
+    TsuzukiIntegrationCapability.TRACKING -> "Monitoramento"
 }
 
-private fun TsuzukiIntegraçãoConfigState.label(): String = when (this) {
-    TsuzukiIntegraçãoConfigState.DEFAULT -> "Padrão"
-    TsuzukiIntegraçãoConfigState.CUSTOM -> "Personalizada"
+private fun TsuzukiIntegrationConfigState.label(): String = when (this) {
+    TsuzukiIntegrationConfigState.DEFAULT -> "Padrão"
+    TsuzukiIntegrationConfigState.CUSTOM -> "Personalizada"
 }
 
-private fun TsuzukiIntegraçãoAuthState.label(): String = when (this) {
-    TsuzukiIntegraçãoAuthState.NOT_REQUIRED -> "Não necessária"
-    TsuzukiIntegraçãoAuthState.MANAGED_EXTERNALLY -> "Gerenciada pela sessão existente do serviço"
+private fun TsuzukiIntegrationAuthState.label(): String = when (this) {
+    TsuzukiIntegrationAuthState.NOT_REQUIRED -> "Não necessária"
+    TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY -> "Gerenciada pela sessão existente do serviço"
 }
