@@ -188,7 +188,7 @@ private fun TitleHeader(
                 val editorialFacts = buildList {
                     state.editorialFormat?.toEditorialFormatLabel()?.let { add(it) }
                     state.editorialStatus?.toEditorialStatusLabel()?.let { add(it) }
-                    state.editorialVolumeCount?.let { add("${it} volumes") }
+                    state.editorialVolumeCount?.let { add("$it volumes") }
                     state.metadataDateLabel()?.let { add(it) }
                 }
                 if (editorialFacts.isNotEmpty()) {
@@ -346,7 +346,6 @@ private fun CanonicalChapterRow(
     )
 }
 
-
 private fun String.toEditorialStatusLabel(): String? = when (this) {
     "ONGOING" -> "Em publicação"
     "COMPLETED" -> "Concluído"
@@ -366,7 +365,7 @@ private fun String.toEditorialFormatLabel(): String? = when (this) {
 }
 
 private fun CanonicalTitleScreenState.Loaded.metadataDateLabel(): String? = when {
-    !startDate.isNullOrBlank() && !endDate.isNullOrBlank() -> "${startDate} – ${endDate}"
+    !startDate.isNullOrBlank() && !endDate.isNullOrBlank() -> "$startDate – $endDate"
     !startDate.isNullOrBlank() -> startDate
     !endDate.isNullOrBlank() -> endDate
     else -> null
@@ -376,7 +375,7 @@ private fun CanonicalTitleScreenState.Loaded.ratingLabel(): String? {
     val value = ratingValue ?: return null
     val max = ratingMaxValue ?: return null
     val score = "${value.toCompactNumber()}/${max.toCompactNumber()}"
-    return ratingVoteCount?.takeIf { it > 0 }?.let { "${score} · ${it} avaliações" } ?: score
+    return ratingVoteCount?.takeIf { it > 0 }?.let { "$score · $it avaliações" } ?: score
 }
 
 private fun Double.toCompactNumber(): String =
