@@ -14,6 +14,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
+import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
@@ -23,11 +24,12 @@ import kotlin.coroutines.cancellation.CancellationException
 
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
+@ContributesIntoSet(AppScope::class, binding = binding<DiscoveryProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<MetadataProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<RatingsProvider>())
 class MalIntegrationProvider private constructor(
     private val api: MalIntegrationApi,
-) : SearchProvider, MetadataProvider, RatingsProvider {
+) : SearchProvider, DiscoveryProvider, MetadataProvider, RatingsProvider {
 
     @Inject
     constructor(trackerManager: TrackerManager) : this(trackerManager.myAnimeList.integrationApi)
@@ -56,6 +58,27 @@ class MalIntegrationProvider private constructor(
             )
         }
     }
+
+    override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
+
+    override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> {
+        return captureResult {
+            val items = api.getRanking(
+                rankingType = MAL_RANKING_BY_POPULARITY,
+                offset = offset,
+                limit = limit,
+            ).map { it.toCatalogItem() }
+
+            CatalogPage(
+                items = items,
+                hasNextPage = limit > 0 && items.size == limit,
+            )
+        }
+    }
+
+    override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
 
     override suspend fun getDetails(externalId: String): Result<CatalogItem> {
         return captureResult {
@@ -149,6 +172,7 @@ class MalIntegrationProvider private constructor(
 
     companion object {
         private const val MAL_SCORE_MAX = 10.0
+        private const val MAL_RANKING_BY_POPULARITY = "bypopularity"
         private val WHITESPACE_REGEX = Regex("""\s+""")
 
         internal fun forTest(api: MalIntegrationApi): MalIntegrationProvider =
