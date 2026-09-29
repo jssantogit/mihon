@@ -54,11 +54,12 @@ class DefaultIntegrationRegistryTest {
     fun `registry does not infer enabled state from provider presence`() = runTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val malSearch = FakeSearchProvider("mal")
+        val malDiscovery = FakeDiscoveryProvider("mal")
         val registry = registry(
             scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
             settings = MutableStateFlow(fakeSettings("kitsu" to false, "mal" to true)),
             searchProviders = setOf(kitsuSearch, malSearch),
-            discoveryProviders = setOf(FakeDiscoveryProvider("kitsu"), FakeDiscoveryProvider("mal")),
+            discoveryProviders = setOf(FakeDiscoveryProvider("kitsu"), malDiscovery),
             metadataProviders = setOf(FakeMetadataProvider("kitsu"), FakeMetadataProvider("mal")),
             chapterEvidenceProviders = setOf(FakeChapterEvidenceProvider("kitsu"), FakeChapterEvidenceProvider("mal")),
             ratingsProviders = setOf(FakeRatingsProvider("kitsu"), FakeRatingsProvider("mal")),
@@ -66,7 +67,7 @@ class DefaultIntegrationRegistryTest {
         )
 
         registry.searchProviders() shouldContainExactly listOf(malSearch)
-        registry.discoveryProviders() shouldBe emptyList()
+        registry.discoveryProviders() shouldContainExactly listOf(malDiscovery)
         registry.metadataProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
         registry.chapterEvidenceProviders().map { it.producerId } shouldContainExactly listOf("mal")
         registry.ratingsProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
