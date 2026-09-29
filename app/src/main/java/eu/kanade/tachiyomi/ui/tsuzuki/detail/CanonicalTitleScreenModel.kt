@@ -115,8 +115,8 @@ class CanonicalTitleScreenModel(
     private val addonRepository: AddonRepository,
     private val refreshReportedChapterCounts: RefreshReportedChapterCounts,
     private val refreshChapterEvidence: RefreshChapterEvidence,
-    private val sourceTitleMappingRepository: SourceTitleMappingRepository,
-    private val mangaRepository: MangaRepository,
+    private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
+    private val mangaRepository: MangaRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -521,14 +521,15 @@ class CanonicalTitleScreenModel(
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
         val metadata = sourceTitleMappingRepository
-            .getByCanonicalTitleId(canonicalTitleId)
+            ?.getByCanonicalTitleId(canonicalTitleId)
+            .orEmpty()
             .asSequence()
             .sortedByDescending { it.preferredOverride }
             .mapNotNull { source ->
                 runCatching {
                     source.mihonMangaId
-                        ?.let { mangaRepository.getMangaById(it) }
-                        ?: mangaRepository.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
+                        ?.let { mangaRepository?.getMangaById(it) }
+                        ?: mangaRepository?.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
                 }.getOrNull()
             }
             .firstOrNull { manga ->
