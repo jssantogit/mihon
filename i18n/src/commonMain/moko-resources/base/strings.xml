@@ -1148,4 +1148,5 @@
     <string name="drive_sync_failed_to_start">Could not run Drive sync.</string>
 
     <string name="tsuzuki_personalizations_title">Personalizations</string>
+    <string name="tsuzuki_reading_settings_title">Reading</string>
 </resources>
