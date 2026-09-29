@@ -175,6 +175,44 @@ class MangaUpdatesApi(
         }
     }
 
+    suspend fun discover(
+        orderBy: String,
+        offset: Int,
+        limit: Int,
+    ): List<MURecord> {
+        if (limit <= 0) return emptyList()
+
+        val requested = offset.coerceAtLeast(0) + limit
+        val body = buildJsonObject {
+            put("orderby", orderBy)
+            put("page", 1)
+            put("perpage", requested)
+            put("include_rank_metadata", true)
+            put(
+                "filter_types",
+                buildJsonArray {
+                    add("drama cd")
+                    add("novel")
+                },
+            )
+        }
+
+        return with(json) {
+            client.newCall(
+                POST(
+                    url = "$BASE_URL/v1/series/search",
+                    body = body.toString().toRequestBody(CONTENT_TYPE),
+                ),
+            )
+                .awaitSuccess()
+                .parseAs<MUSearchResult>()
+                .results
+                .map { it.record }
+                .drop(offset.coerceAtLeast(0))
+                .take(limit)
+        }
+    }
+
     suspend fun getSeriesDetails(id: Long): MURecord? {
         return withIOContext {
             val url = "$BASE_URL/v1/series/$id"
