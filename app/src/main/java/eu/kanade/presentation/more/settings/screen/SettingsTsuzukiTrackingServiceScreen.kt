@@ -21,6 +21,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -43,6 +44,8 @@ import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
 import eu.kanade.tachiyomi.data.track.mangabaka.MangaBakaApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
+import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.ui.browse.extension.details.SourcePreferencesScreen
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
@@ -87,6 +90,20 @@ class SettingsTsuzukiTrackingServiceScreen(
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
         val tracker = remember(trackerId) { context.appGraph.trackerManager.get(trackerId) }
+        val sourceManager = remember { context.appGraph.sourceManager }
+        val acceptedSources by produceState(
+            initialValue = emptyList<Source>(),
+            key1 = tracker,
+        ) {
+            value = if (tracker is EnhancedTracker) {
+                val acceptedClasses = tracker.getAcceptedSources().toSet()
+                sourceManager.getAll()
+                    .filter { source -> source::class.qualifiedName in acceptedClasses }
+                    .sortedWith(compareBy(Source::name, Source::lang, Source::id))
+            } else {
+                emptyList()
+            }
+        }
 
         Scaffold(
             topBar = {
@@ -115,6 +132,10 @@ class SettingsTsuzukiTrackingServiceScreen(
 
             TrackingServiceContent(
                 tracker = tracker,
+                acceptedSources = acceptedSources,
+                onConfigureSource = { source ->
+                    navigator.push(SourcePreferencesScreen(source.id))
+                },
                 modifier = Modifier.padding(contentPadding),
             )
         }
@@ -124,6 +145,8 @@ class SettingsTsuzukiTrackingServiceScreen(
 @Composable
 private fun TrackingServiceContent(
     tracker: Tracker,
+    acceptedSources: List<Source>,
+    onConfigureSource: (Source) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -187,6 +210,7 @@ private fun TrackingServiceContent(
                 },
             )
             Button(
+                enabled = isLoggedIn || tracker !is EnhancedTracker || acceptedSources.isNotEmpty(),
                 onClick = {
                     if (isLoggedIn) {
                         logoutDialog = true
@@ -241,6 +265,34 @@ private fun TrackingServiceContent(
                         Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration_summary))
                     },
                 )
+            }
+            if (acceptedSources.isEmpty()) {
+                item(key = "accepted_source_missing") {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(MR.strings.tsuzuki_tracking_source_missing))
+                        },
+                        supportingContent = {
+                            Text(stringResource(MR.strings.tsuzuki_tracking_source_missing_summary))
+                        },
+                    )
+                }
+            } else {
+                acceptedSources.forEach { source ->
+                    item(key = "accepted_source_${source.id}") {
+                        ListItem(
+                            headlineContent = { Text(source.name) },
+                            supportingContent = {
+                                Text(stringResource(MR.strings.tsuzuki_tracking_source_configuration_summary))
+                            },
+                            trailingContent = {
+                                TextButton(onClick = { onConfigureSource(source) }) {
+                                    Text(stringResource(MR.strings.tsuzuki_tracking_configure_source))
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
     }
