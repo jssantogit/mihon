@@ -38,6 +38,8 @@ class TrackSearch : Track {
 
     var artists: List<String> = emptyList()
 
+    var total_volumes: Long = 0
+
     var cover_url: String = ""
 
     var summary: String = ""
