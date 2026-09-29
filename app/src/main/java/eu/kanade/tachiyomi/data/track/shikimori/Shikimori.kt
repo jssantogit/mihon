@@ -26,13 +26,51 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
             .map(Int::toString)
 
         private const val SEARCH_ID_PREFIX = "id:"
+        private const val INTEGRATION_ID = "shikimori"
+        private const val CLIENT_ID_KEY = "client_id"
+        private const val CLIENT_SECRET_KEY = "client_secret"
     }
 
     private val json: Json by injectLazy()
 
     private val interceptor by lazy { ShikimoriInterceptor(this) }
 
-    private val api by lazy { ShikimoriApi(id, client, interceptor) }
+    private val api by lazy {
+        ShikimoriApi(
+            id,
+            client,
+            interceptor,
+            ::requireClientId,
+            ::requireClientSecret,
+        )
+    }
+
+    fun getClientId(): String =
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_ID_KEY).get().trim()
+
+    fun getClientSecret(): String =
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_SECRET_KEY).get().trim()
+
+    fun hasApplicationCredentials(): Boolean =
+        getClientId().isNotBlank() && getClientSecret().isNotBlank()
+
+    fun setApplicationCredentials(clientId: String, clientSecret: String) {
+        val normalizedClientId = clientId.trim()
+        val normalizedClientSecret = clientSecret.trim()
+        if (normalizedClientId == getClientId() && normalizedClientSecret == getClientSecret()) return
+
+        logout()
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_ID_KEY).set(normalizedClientId)
+        trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_SECRET_KEY).set(normalizedClientSecret)
+    }
+
+    fun authUrl() = ShikimoriApi.authUrl(requireClientId())
+
+    internal fun requireClientId(): String =
+        getClientId().ifBlank { throw ShikimoriCredentialsMissing() }
+
+    internal fun requireClientSecret(): String =
+        getClientSecret().ifBlank { throw ShikimoriCredentialsMissing() }
 
     override fun getScoreList(): List<String> = SCORE_LIST
 
