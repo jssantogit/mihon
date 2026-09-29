@@ -34,6 +34,12 @@ import tachiyomi.domain.track.model.Track as DomainTrack
 interface MalIntegrationApi {
     suspend fun search(query: String): List<TrackSearch>
 
+    suspend fun getRanking(
+        rankingType: String,
+        offset: Int,
+        limit: Int,
+    ): List<TrackSearch>
+
     suspend fun getMangaDetails(id: Int): TrackSearch
 }
 
@@ -83,6 +89,30 @@ class MyAnimeListApi(
             val url = "$BASE_API_URL/manga".toUri().buildUpon()
                 // MAL API throws a 400 when the query is over 64 characters...
                 .appendQueryParameter("q", query.take(64))
+                .appendQueryParameter("nsfw", "true")
+                .appendQueryParameter("fields", SEARCH_FIELDS)
+                .build()
+            with(json) {
+                authClient.newCall(GET(url.toString()))
+                    .awaitSuccess()
+                    .parseAs<MALSearchResult>()
+                    .data
+                    .filter { !(it.node.mediaType.contains("novel")) }
+                    .map { it.node.toTrackSearch(trackerId) }
+            }
+        }
+    }
+
+    override suspend fun getRanking(
+        rankingType: String,
+        offset: Int,
+        limit: Int,
+    ): List<TrackSearch> {
+        return withIOContext {
+            val url = "$BASE_API_URL/manga/ranking".toUri().buildUpon()
+                .appendQueryParameter("ranking_type", rankingType)
+                .appendQueryParameter("offset", offset.coerceAtLeast(0).toString())
+                .appendQueryParameter("limit", limit.coerceAtLeast(0).toString())
                 .appendQueryParameter("nsfw", "true")
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()

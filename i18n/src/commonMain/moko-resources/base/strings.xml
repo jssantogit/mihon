@@ -1203,8 +1203,8 @@
     <string name="tsuzuki_tracking_disconnect_summary">The existing session will be ended, but local data will be preserved.</string>
     <string name="tsuzuki_tracking_server_configuration">Server configuration</string>
     <string name="tsuzuki_tracking_server_configuration_summary">This service reuses the configuration from the corresponding source/add-on. Tsuzuki does not duplicate the server URL or key on this screen.</string>
-    <string name="tsuzuki_tracking_source_missing">Compatible source not installed</string>
-    <string name="tsuzuki_tracking_source_missing_summary">Install the corresponding Komga, Kavita, or Suwayomi/Tachidesk source before activating this server integration.</string>
+    <string name="tsuzuki_tracking_source_missing">Install the compatible extension</string>
+    <string name="tsuzuki_tracking_source_missing_summary">Install a compatible %s source/extension before activating this server integration.</string>
     <string name="tsuzuki_tracking_source_configuration_summary">The server address and credentials are managed by this source.</string>
     <string name="tsuzuki_tracking_configure_source">Configure source</string>
     <string name="tsuzuki_tracking_login_browser">Authentication is completed in the browser.</string>

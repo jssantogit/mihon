@@ -227,6 +227,7 @@ class TsuzukiSearchScreenModel(
                         }
                     },
                 ).awaitAll()
+                    .filter { block -> block.items.isNotEmpty() }
             }
             _state.value = SearchState.Discover(
                 recentSearches = recentSearches,

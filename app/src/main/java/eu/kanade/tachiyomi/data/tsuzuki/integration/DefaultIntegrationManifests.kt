@@ -39,6 +39,7 @@ internal object DefaultIntegrationManifests {
             capabilities = policies(
                 IntegrationPolicy.ALLOWED,
                 IntegrationCapability.SEARCH,
+                IntegrationCapability.DISCOVERY,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,

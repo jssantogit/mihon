@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -76,6 +77,57 @@ class TsuzukiSearchScreenModelTest {
     }
 
     @Test
+    fun `discover omits empty blocks when another provider only supports popular catalog`() = runTest(dispatcher) {
+        val registry = object : IntegrationRegistry {
+            private val discovery = object : DiscoveryProvider {
+                override val integrationId = IntegrationId("mal")
+
+                override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                    Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+                override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                    Result.success(
+                        CatalogPage(
+                            items = listOf(
+                                CatalogItem(
+                                    provider = "mal",
+                                    providerId = "42",
+                                    title = "Monster",
+                                ),
+                            ),
+                            hasNextPage = false,
+                        ),
+                    )
+
+                override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                    Result.success(CatalogPage(emptyList(), hasNextPage = false))
+            }
+
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(discovery)
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+
+        advanceUntilIdle()
+
+        val discover = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        discover.blocks.map(DiscoverBlock::kind) shouldBe listOf(DiscoverKind.POPULAR)
+        discover.blocks.single().items.single().provider shouldBe "mal"
+    }
+
+    @Test
     fun `search requests integration setup when no search provider is enabled`() = runTest(dispatcher) {
         val registry = emptyRegistry()
         val model = TsuzukiSearchScreenModel(
@@ -123,13 +175,24 @@ class TsuzukiSearchScreenModelTest {
             override val integrationId = IntegrationId("kitsu")
 
             override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+                Result.success(page("Trending"))
 
             override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+                Result.success(page("Popular"))
 
             override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+                Result.success(page("Recent"))
+
+            private fun page(title: String) = CatalogPage(
+                items = listOf(
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = title,
+                        title = title,
+                    ),
+                ),
+                hasNextPage = false,
+            )
         }
 
         fun release() {
