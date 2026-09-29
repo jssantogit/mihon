@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,7 +43,7 @@ fun TsuzukiHomeScreen(
         modifier = modifier,
         topBar = {
             AppBar(
-                titleContent = { AppBarTitle("Home") },
+                titleContent = { AppBarTitle("Início") },
             )
         },
     ) { paddingValues ->
@@ -64,7 +65,7 @@ fun TsuzukiHomeScreen(
 
             if (state.continueReading.isNotEmpty()) {
                 item(key = "continue_header") {
-                    SectionHeader("Continue Reading")
+                    SectionHeader("Continuar lendo")
                 }
                 item(key = "continue_content") {
                     LazyRow(
@@ -130,7 +131,7 @@ private fun HeroCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = "Continue lendo",
+                    text = "Continuar lendo",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -181,7 +182,7 @@ private fun ContinueReadingCard(
 ) {
     Card(
         modifier = Modifier
-            .width(220.dp)
+            .width(164.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -190,7 +191,9 @@ private fun ContinueReadingCard(
         MangaCover.Book(
             data = item.coverUrl,
             contentDescription = item.title,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp),
         )
         Column(
             modifier = Modifier.padding(14.dp),
@@ -216,16 +219,16 @@ private fun ContinueReadingCard(
                 }
             }
             Text(
-                text = "Chapter ${item.chapterDisplayNumber}",
+                text = "Capítulo ${item.chapterDisplayNumber}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "Page ${item.lastPageRead + 1}",
+                text = "Página ${item.lastPageRead + 1}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(onClick = onRemove) {
-                Text("Remove from Continue Reading")
+                Text("Remover")
             }
         }
     }

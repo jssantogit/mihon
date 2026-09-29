@@ -65,11 +65,45 @@ class DefaultIntegrationRegistryTest {
         )
 
         registry.searchProviders() shouldContainExactly listOf(malSearch)
-        registry.discoveryProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
+        registry.discoveryProviders() shouldBe emptyList()
         registry.metadataProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
         registry.chapterEvidenceProviders().map { it.producerId } shouldContainExactly listOf("mal")
         registry.ratingsProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
         registry.trackingProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
+    }
+
+    @Test
+    fun `policy restricted provider cannot enter global search resolution`() = runTest {
+        val anilist = FakeSearchProvider("anilist")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("anilist" to true)),
+            searchProviders = setOf(anilist),
+        )
+
+        registry.searchProviders() shouldBe emptyList()
+    }
+
+    @Test
+    fun `registry exposes unified integration manifests`() = runTest {
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(emptyList()),
+        )
+
+        registry.manifests().map { it.integrationId.value }.toSet() shouldBe setOf(
+            "kitsu",
+            "mal",
+            "mangaupdates",
+            "mangabaka",
+            "bangumi",
+            "shikimori",
+            "hikka",
+            "anilist",
+            "komga",
+            "kavita",
+            "suwayomi",
+        )
     }
 
     @Test
@@ -89,6 +123,30 @@ class DefaultIntegrationRegistryTest {
 
         settings.value = fakeSettings("kitsu" to false)
         registry.searchProviders() shouldBe emptyList()
+    }
+
+    @Test
+    fun `registry honors disabled capability without disabling provider entirely`() = runTest {
+        val kitsuSearch = FakeSearchProvider("kitsu")
+        val kitsuDiscovery = FakeDiscoveryProvider("kitsu")
+        val settings = MutableStateFlow(
+            listOf(
+                IntegrationSettings(
+                    integrationId = IntegrationId("kitsu"),
+                    enabled = true,
+                    configJson = """{"search":true,"discovery":false}""",
+                ),
+            ),
+        )
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = settings,
+            searchProviders = setOf(kitsuSearch),
+            discoveryProviders = setOf(kitsuDiscovery),
+        )
+
+        registry.searchProviders() shouldContainExactly listOf(kitsuSearch)
+        registry.discoveryProviders() shouldBe emptyList()
     }
 
     private fun registry(

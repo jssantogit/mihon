@@ -14,6 +14,10 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -21,6 +25,8 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
 
@@ -38,6 +44,7 @@ class DefaultIntegrationRegistry(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
+    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet()
     private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
     private val ready = CompletableDeferred<Unit>()
 
@@ -60,42 +67,79 @@ class DefaultIntegrationRegistry(
         .drop(1)
         .map { Unit }
 
-    override fun searchProviders(): List<SearchProvider> {
-        val enabledIds = enabledIntegrationIds()
-        return searchProviders.filter { it.integrationId.value in enabledIds }
-    }
+    override fun manifests(): List<IntegrationManifest> = integrationManifests.sortedBy { it.displayName }
 
-    override fun discoveryProviders(): List<DiscoveryProvider> {
-        val enabledIds = enabledIntegrationIds()
-        return discoveryProviders.filter { it.integrationId.value in enabledIds }
-    }
+    override fun searchProviders(): List<SearchProvider> = allowedProviders(
+        providers = searchProviders,
+        capability = IntegrationCapability.SEARCH,
+    )
 
-    override fun metadataProviders(): List<MetadataProvider> {
-        val enabledIds = enabledIntegrationIds()
-        return metadataProviders.filter { it.integrationId.value in enabledIds }
-    }
+    override fun discoveryProviders(): List<DiscoveryProvider> = allowedProviders(
+        providers = discoveryProviders,
+        capability = IntegrationCapability.DISCOVERY,
+    )
+
+    override fun metadataProviders(): List<MetadataProvider> = allowedProviders(
+        providers = metadataProviders,
+        capability = IntegrationCapability.METADATA_BASIC,
+    )
 
     override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds("chapter_evidence")
         return chapterEvidenceProviders.filter { it.producerId in enabledIds }
     }
 
-    override fun ratingsProviders(): List<RatingsProvider> {
-        val enabledIds = enabledIntegrationIds()
-        return ratingsProviders.filter { it.integrationId.value in enabledIds }
-    }
+    override fun ratingsProviders(): List<RatingsProvider> = allowedProviders(
+        providers = ratingsProviders,
+        capability = IntegrationCapability.RATINGS,
+    )
 
     override fun trackingProviders(): List<TrackingProvider> {
-        val enabledIds = enabledIntegrationIds()
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.TRACKING)
         return trackingProviders.filter { it.integrationId.value in enabledIds }
     }
 
-    private fun enabledIntegrationIds(): Set<String> = settings.value
+    private fun <T> allowedProviders(
+        providers: Set<T>,
+        capability: IntegrationCapability,
+    ): List<T> where T : Any {
+        val enabledIds = enabledIntegrationIds(capability)
+        return providers.filter { provider ->
+            val id = when (provider) {
+                is SearchProvider -> provider.integrationId
+                is DiscoveryProvider -> provider.integrationId
+                is MetadataProvider -> provider.integrationId
+                is RatingsProvider -> provider.integrationId
+                else -> return@filter false
+            }
+            if (id.value !in enabledIds) return@filter false
+            val manifest = integrationManifests.firstOrNull { it.integrationId == id }
+            manifest == null || manifest.allowsGlobalResolution(capability)
+        }
+    }
+
+    private fun enabledIntegrationIds(capability: IntegrationCapability): Set<String> = enabledIntegrationIds(
+        capability.configKey,
+    )
+
+    private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
         .groupBy { it.integrationId.value }
         .mapNotNull { (integrationId, values) ->
             values.maxByOrNull(IntegrationSettings::updatedAt)
                 ?.takeIf(IntegrationSettings::enabled)
+                ?.takeIf { it.capabilityEnabled(capability) }
                 ?.let { integrationId }
         }
         .toSet()
+
+    private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean {
+        val config = runCatching {
+            Json.parseToJsonElement(configJson) as? JsonObject
+        }.getOrNull()
+        return config
+            ?.get(capability)
+            ?.jsonPrimitive
+            ?.booleanOrNull
+            ?: true
+    }
 }

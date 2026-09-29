@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
@@ -51,6 +52,7 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import kotlin.time.Clock
 import kotlin.time.TimeSource
 
@@ -64,6 +66,10 @@ sealed interface CanonicalTitleScreenState {
         val chapters: List<CanonicalChapterDetailItem>,
         val reportedChapterCounts: List<ReportedChapterCount> = emptyList(),
         val addonCoverage: List<ObservedAddonCoverage> = emptyList(),
+        val coverUrl: String? = null,
+        val author: String? = null,
+        val description: String? = null,
+        val genres: List<String> = emptyList(),
         val isRefreshing: Boolean = false,
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
@@ -109,6 +115,8 @@ class CanonicalTitleScreenModel(
     private val addonRepository: AddonRepository,
     private val refreshReportedChapterCounts: RefreshReportedChapterCounts,
     private val refreshChapterEvidence: RefreshChapterEvidence,
+    private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
+    private val mangaRepository: MangaRepository? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -512,6 +520,33 @@ class CanonicalTitleScreenModel(
             .map { it.canonicalChapterId }
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
+        var metadata: tachiyomi.domain.manga.model.Manga? = null
+        val metadataSources = sourceTitleMappingRepository
+            ?.getByCanonicalTitleId(canonicalTitleId)
+            .orEmpty()
+            .sortedByDescending { it.preferredOverride }
+        for (source in metadataSources) {
+            val manga = try {
+                source.mihonMangaId
+                    ?.let { mangaRepository?.getMangaById(it) }
+                    ?: mangaRepository?.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+            if (
+                manga != null &&
+                (
+                    !manga.thumbnailUrl.isNullOrBlank() ||
+                        !manga.description.isNullOrBlank() ||
+                        !manga.author.isNullOrBlank()
+                    )
+            ) {
+                metadata = manga
+                break
+            }
+        }
 
         val details = if (!includeLegacyDownloadChecks) {
             chapters.mapNotNull { chapter ->
@@ -573,6 +608,10 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
+            coverUrl = metadata?.thumbnailUrl,
+            author = metadata?.author,
+            description = metadata?.description,
+            genres = metadata?.genre.orEmpty(),
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )

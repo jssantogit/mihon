@@ -44,10 +44,10 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Integrations") },
+                    title = { Text("Integrações") },
                     navigationIcon = {
                         TextButton(onClick = navigator::pop) {
-                            Text("Back")
+                            Text("Voltar")
                         }
                     },
                 )
@@ -113,9 +113,9 @@ class SettingsTsuzukiIntegrationDetailScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(item?.label ?: "Integration") },
+                    title = { Text(item?.label ?: "Integração") },
                     navigationIcon = {
-                        TextButton(onClick = navigator::pop) { Text("Back") }
+                        TextButton(onClick = navigator::pop) { Text("Voltar") }
                     },
                 )
             },
@@ -138,8 +138,8 @@ class SettingsTsuzukiIntegrationDetailScreen(
                 ) {
                     item {
                         ListItem(
-                            headlineContent = { Text("Enabled") },
-                            supportingContent = { Text("Use ${item.label} as a Tsuzuki metadata provider") },
+                            headlineContent = { Text("Ativada") },
+                            supportingContent = { Text("Usar ${item.label} como provedor no Tsuzuki") },
                             trailingContent = {
                                 Switch(
                                     checked = item.enabled,
@@ -152,26 +152,50 @@ class SettingsTsuzukiIntegrationDetailScreen(
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Capabilities") },
+                            headlineContent = { Text("Recursos") },
                             supportingContent = {
-                                Text(
-                                    item.capabilities.joinToString(
-                                        " • ",
-                                        transform = TsuzukiIntegrationCapability::label,
-                                    ),
+                                Text("Escolha quais recursos deste provedor o Tsuzuki pode usar.")
+                            },
+                        )
+                    }
+                    items(
+                        items = item.capabilities,
+                        key = { it.name },
+                    ) { capability ->
+                        ListItem(
+                            headlineContent = { Text(capability.label()) },
+                            trailingContent = {
+                                Switch(
+                                    checked = item.capabilityEnabled[capability] ?: true,
+                                    onCheckedChange = {
+                                        screenModel.setCapabilityEnabled(item.id, capability, it)
+                                    },
                                 )
                             },
                         )
                     }
+                    if (TsuzukiIntegrationCapability.TRACKING in item.capabilities) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text("Conta e monitoramento") },
+                                supportingContent = {
+                                    Text("Conectar conta e gerenciar preferências de monitoramento")
+                                },
+                                modifier = Modifier.clickable {
+                                    navigator.push(SettingsTrackingScreen)
+                                },
+                            )
+                        }
+                    }
                     item {
                         ListItem(
-                            headlineContent = { Text("Configuration") },
+                            headlineContent = { Text("Configuração") },
                             supportingContent = { Text(item.configState.label()) },
                         )
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Authentication") },
+                            headlineContent = { Text("Autenticação") },
                             supportingContent = { Text(item.authState.label()) },
                         )
                     }
@@ -200,10 +224,10 @@ private fun IntegrationSettingRow(
                     ),
                 )
                 Text(
-                    text = "Config: ${item.configState.label()}",
+                    text = "Configuração: ${item.configState.label()}",
                 )
                 Text(
-                    text = "Auth: ${item.authState.label()}",
+                    text = "Autenticação: ${item.authState.label()}",
                 )
             }
         },
@@ -218,20 +242,25 @@ private fun IntegrationSettingRow(
 }
 
 private fun TsuzukiIntegrationCapability.label(): String = when (this) {
-    TsuzukiIntegrationCapability.SEARCH -> "Search"
-    TsuzukiIntegrationCapability.DISCOVERY -> "Discover"
-    TsuzukiIntegrationCapability.METADATA -> "Metadata"
-    TsuzukiIntegrationCapability.RATINGS -> "Ratings"
-    TsuzukiIntegrationCapability.CHAPTER_EVIDENCE -> "Chapter evidence"
-    TsuzukiIntegrationCapability.TRACKING -> "Tracking"
+    TsuzukiIntegrationCapability.SEARCH -> "Busca"
+    TsuzukiIntegrationCapability.DISCOVERY -> "Descobrir"
+    TsuzukiIntegrationCapability.METADATA -> "Metadados"
+    TsuzukiIntegrationCapability.RATINGS -> "Avaliações"
+    TsuzukiIntegrationCapability.CHAPTER_EVIDENCE -> "Evidência de capítulos"
+    TsuzukiIntegrationCapability.TRACKING -> "Monitoramento"
+    TsuzukiIntegrationCapability.USER_LISTS -> "Listas da conta"
+    TsuzukiIntegrationCapability.CROSSWALK -> "Identidade entre catálogos"
+    TsuzukiIntegrationCapability.REMOTE_LIBRARY -> "Biblioteca remota"
+    TsuzukiIntegrationCapability.READING_CONTENT -> "Conteúdo de leitura"
+    TsuzukiIntegrationCapability.DOWNLOADS -> "Downloads"
 }
 
 private fun TsuzukiIntegrationConfigState.label(): String = when (this) {
-    TsuzukiIntegrationConfigState.DEFAULT -> "Default"
-    TsuzukiIntegrationConfigState.CUSTOM -> "Custom"
+    TsuzukiIntegrationConfigState.DEFAULT -> "Padrão"
+    TsuzukiIntegrationConfigState.CUSTOM -> "Personalizada"
 }
 
 private fun TsuzukiIntegrationAuthState.label(): String = when (this) {
-    TsuzukiIntegrationAuthState.NOT_REQUIRED -> "Not required"
-    TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY -> "Managed by existing service session"
+    TsuzukiIntegrationAuthState.NOT_REQUIRED -> "Não necessária"
+    TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY -> "Gerenciada pela sessão existente do serviço"
 }

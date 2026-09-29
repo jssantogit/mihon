@@ -13,6 +13,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
@@ -25,6 +31,11 @@ enum class TsuzukiIntegrationCapability {
     RATINGS,
     CHAPTER_EVIDENCE,
     TRACKING,
+    USER_LISTS,
+    CROSSWALK,
+    REMOTE_LIBRARY,
+    READING_CONTENT,
+    DOWNLOADS,
 }
 
 enum class TsuzukiIntegrationConfigState {
@@ -45,6 +56,7 @@ data class TsuzukiIntegrationSettingsItem(
     val capabilities: List<TsuzukiIntegrationCapability>,
     val configState: TsuzukiIntegrationConfigState,
     val authState: TsuzukiIntegrationAuthState,
+    val capabilityEnabled: Map<TsuzukiIntegrationCapability, Boolean>,
 )
 
 @Immutable
@@ -83,6 +95,9 @@ class TsuzukiIntegrationsSettingsScreenModel(
                             ?.configJson
                             .toConfigState(),
                         authState = definition.authState,
+                        capabilityEnabled = definition.capabilities.associateWith { capability ->
+                            persisted?.configJson.capabilityEnabled(capability)
+                        },
                     )
                 },
             )
@@ -92,6 +107,31 @@ class TsuzukiIntegrationsSettingsScreenModel(
             started = SharingStarted.Eagerly,
             initialValue = TsuzukiIntegrationsSettingsState.Loading,
         )
+
+    fun setCapabilityEnabled(
+        id: IntegrationId,
+        capability: TsuzukiIntegrationCapability,
+        enabled: Boolean,
+    ) {
+        viewModelScope.launch {
+            val current = repository.get(id)
+            val values = runCatching {
+                Json.parseToJsonElement(current?.configJson ?: "{}") as? JsonObject
+            }.getOrNull()
+            val updated = buildJsonObject {
+                values?.forEach { (key, value) -> put(key, value) }
+                put(capability.configKey(), enabled)
+            }
+            repository.upsert(
+                IntegrationSettings(
+                    integrationId = id,
+                    enabled = current?.enabled ?: false,
+                    configJson = updated.toString(),
+                    updatedAt = Clock.System.now().toEpochMilliseconds(),
+                ),
+            )
+        }
+    }
 
     fun setEnabled(
         id: IntegrationId,
@@ -110,6 +150,17 @@ class TsuzukiIntegrationsSettingsScreenModel(
         }
     }
 
+    private fun String?.capabilityEnabled(capability: TsuzukiIntegrationCapability): Boolean {
+        val config = runCatching {
+            Json.parseToJsonElement(this ?: "{}") as? JsonObject
+        }.getOrNull()
+        return config
+            ?.get(capability.configKey())
+            ?.jsonPrimitive
+            ?.booleanOrNull
+            ?: true
+    }
+
     private fun String?.toConfigState(): TsuzukiIntegrationConfigState {
         val normalized = this?.trim().orEmpty()
         return if (normalized.isEmpty() || normalized == "{}") {
@@ -119,6 +170,8 @@ class TsuzukiIntegrationsSettingsScreenModel(
         }
     }
 
+    private fun TsuzukiIntegrationCapability.configKey(): String = name.lowercase()
+
     private data class Definition(
         val id: IntegrationId,
         val label: String,
@@ -127,26 +180,83 @@ class TsuzukiIntegrationsSettingsScreenModel(
     )
 
     private companion object {
+        val SEARCH = TsuzukiIntegrationCapability.SEARCH
+        val DISCOVERY = TsuzukiIntegrationCapability.DISCOVERY
+        val METADATA = TsuzukiIntegrationCapability.METADATA
+        val RATINGS = TsuzukiIntegrationCapability.RATINGS
+        val TRACKING = TsuzukiIntegrationCapability.TRACKING
+        val USER_LISTS = TsuzukiIntegrationCapability.USER_LISTS
+        val CROSSWALK = TsuzukiIntegrationCapability.CROSSWALK
+        val REMOTE_LIBRARY = TsuzukiIntegrationCapability.REMOTE_LIBRARY
+        val READING_CONTENT = TsuzukiIntegrationCapability.READING_CONTENT
+        val DOWNLOADS = TsuzukiIntegrationCapability.DOWNLOADS
+
         val DEFINITIONS = listOf(
             Definition(
-                id = IntegrationId("kitsu"),
-                label = "Kitsu",
-                capabilities = listOf(
-                    TsuzukiIntegrationCapability.SEARCH,
-                    TsuzukiIntegrationCapability.DISCOVERY,
-                    TsuzukiIntegrationCapability.METADATA,
-                ),
-                authState = TsuzukiIntegrationAuthState.NOT_REQUIRED,
+                IntegrationId("kitsu"),
+                "Kitsu",
+                listOf(SEARCH, DISCOVERY, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
             Definition(
-                id = IntegrationId("mal"),
-                label = "MyAnimeList",
-                capabilities = listOf(
-                    TsuzukiIntegrationCapability.SEARCH,
-                    TsuzukiIntegrationCapability.METADATA,
-                    TsuzukiIntegrationCapability.RATINGS,
-                ),
-                authState = TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+                IntegrationId("mal"),
+                "MyAnimeList",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("mangaupdates"),
+                "MangaUpdates",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("mangabaka"),
+                "MangaBaka",
+                listOf(SEARCH, METADATA, CROSSWALK, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("bangumi"),
+                "Bangumi",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("shikimori"),
+                "Shikimori",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("hikka"),
+                "Hikka",
+                listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("anilist"),
+                "AniList",
+                listOf(TRACKING, USER_LISTS),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("komga"),
+                "Komga",
+                listOf(METADATA, REMOTE_LIBRARY, TRACKING),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("kavita"),
+                "Kavita",
+                listOf(METADATA, REMOTE_LIBRARY, TRACKING),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
+            ),
+            Definition(
+                IntegrationId("suwayomi"),
+                "Suwayomi",
+                listOf(METADATA, REMOTE_LIBRARY, READING_CONTENT, DOWNLOADS, TRACKING),
+                TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
         )
     }

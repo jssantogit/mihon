@@ -8,14 +8,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -23,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
@@ -31,11 +35,11 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 fun CanonicalTitleDetailScreen(
     state: CanonicalTitleScreenState,
     navigateUp: () -> Unit,
-    onRefresh: () -> Unit,
+    onAtualizar: () -> Unit,
     onAddToLibrary: () -> Unit,
     onRemoveFromLibrary: () -> Unit,
     onOpenChapter: (String) -> Unit,
-    onDownloadChapter: (String) -> Unit,
+    onBaixarChapter: (String) -> Unit,
     onOpenAddonsSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -43,15 +47,15 @@ fun CanonicalTitleDetailScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Title details") },
+                title = { Text("Detalhes") },
                 navigationIcon = {
                     TextButton(onClick = navigateUp) {
-                        Text("Back")
+                        Text("Voltar")
                     }
                 },
                 actions = {
-                    TextButton(onClick = onRefresh) {
-                        Text("Refresh")
+                    TextButton(onClick = onAtualizar) {
+                        Text("Atualizar")
                     }
                 },
             )
@@ -80,10 +84,10 @@ fun CanonicalTitleDetailScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = state.error.message ?: "Unable to load title.",
+                        text = state.error.message ?: "Não foi possível carregar o título.",
                     )
-                    TextButton(onClick = onRefresh) {
-                        Text("Retry")
+                    TextButton(onClick = onAtualizar) {
+                        Text("Tentar novamente")
                     }
                 }
             }
@@ -105,12 +109,16 @@ fun CanonicalTitleDetailScreen(
                     if (state.chapters.isEmpty()) {
                         item {
                             Text(
-                                text = if (state.isRefreshing) "Loading chapters…" else "No chapters found.",
+                                text = if (state.isRefreshing) {
+                                    "Carregando capítulos…"
+                                } else {
+                                    "Nenhum capítulo encontrado."
+                                },
                                 modifier = Modifier.padding(16.dp),
                             )
                             if (!state.isRefreshing) {
                                 TextButton(onClick = onOpenAddonsSettings) {
-                                    Text("Manage reading Add-ons")
+                                    Text("Gerenciar Add-ons de leitura")
                                 }
                             }
                         }
@@ -123,7 +131,7 @@ fun CanonicalTitleDetailScreen(
                                 item = item,
                                 downloading = state.downloadInProgressChapterId == item.chapter.id,
                                 onOpenChapter = onOpenChapter,
-                                onDownloadChapter = onDownloadChapter,
+                                onBaixarChapter = onBaixarChapter,
                             )
                             HorizontalDivider()
                         }
@@ -144,70 +152,95 @@ private fun TitleHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            text = state.title.displayTitle,
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        if (state.isRefreshing) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            MangaCover.Book(
+                data = state.coverUrl,
+                contentDescription = state.title.displayTitle,
+                modifier = Modifier.width(112.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = state.title.displayTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                state.author?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = state.libraryEntry?.status?.name?.replace('_', ' ') ?: "Fora da Biblioteca",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(
+                    enabled = !state.libraryMutationInProgress,
+                    onClick = if (state.libraryEntry == null) onAddToLibrary else onRemoveFromLibrary,
+                ) {
+                    Text(if (state.libraryEntry == null) "Adicionar à Biblioteca" else "Remover da Biblioteca")
+                }
+            }
+        }
+        if (state.genres.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                state.genres.take(3).forEach { genre ->
+                    SuggestionChip(onClick = {}, label = { Text(genre) })
+                }
+            }
+        }
+        state.description?.takeIf { it.isNotBlank() }?.let {
             Text(
-                text = "Refreshing chapter data…",
-                style = MaterialTheme.typography.bodySmall,
+                text = it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 5,
             )
         }
-        Text(
-            text = state.libraryEntry
-                ?.status
-                ?.name
-                ?.replace('_', ' ')
-                ?: "Not in Library",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        TextButton(
-            enabled = !state.libraryMutationInProgress,
-            onClick = if (state.libraryEntry == null) {
-                onAddToLibrary
-            } else {
-                onRemoveFromLibrary
-            },
-        ) {
-            Text(
-                if (state.libraryEntry == null) {
-                    "Add to Library"
-                } else {
-                    "Remove from Library"
-                },
-            )
+        if (state.isRefreshing) {
+            Text("Atualizando capítulos…", style = MaterialTheme.typography.bodySmall)
         }
         state.libraryMutationError?.let {
             Text(
-                text = it.message ?: "Unable to update Library.",
+                text = it.message ?: "Não foi possível atualizar a Biblioteca.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
         state.refreshError?.let {
             Text(
-                text = "Chapter refresh is temporarily unavailable.",
+                text = "A atualização de capítulos está temporariamente indisponível.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
         state.downloadError?.let {
             Text(
-                text = it.message ?: "Unable to download chapter.",
+                text = it.message ?: "Não foi possível baixar o capítulo.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
         state.chapterActionError?.let {
             Text(
-                text = it.message ?: "Unable to open chapter.",
+                text = it.message ?: "Não foi possível abrir o capítulo.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
+        Text(
+            text = "Capítulos",
+            style = MaterialTheme.typography.titleLarge,
+        )
     }
 }
 
@@ -216,12 +249,12 @@ private fun CanonicalChapterRow(
     item: CanonicalChapterDetailItem,
     downloading: Boolean,
     onOpenChapter: (String) -> Unit,
-    onDownloadChapter: (String) -> Unit,
+    onBaixarChapter: (String) -> Unit,
 ) {
     ListItem(
         headlineContent = {
             Text(
-                text = "Chapter ${item.chapter.displayNumber}",
+                text = "Capítulo ${item.chapter.displayNumber}",
             )
         },
         supportingContent = {
@@ -231,13 +264,13 @@ private fun CanonicalChapterRow(
             ) {
                 Text(
                     text = if (item.progress?.read == true) {
-                        "Read"
+                        "Lido"
                     } else {
-                        "Unread"
+                        "Não lido"
                     },
                 )
                 if (item.downloaded) {
-                    Text("Downloaded")
+                    Text("Baixado")
                 }
             }
         },
@@ -251,7 +284,7 @@ private fun CanonicalChapterRow(
                     CanonicalChapterConfirmation.CONFLICTED -> {
                         AssistChip(
                             onClick = {},
-                            label = { Text("Conflicted") },
+                            label = { Text("Conflito") },
                         )
                     }
 
@@ -259,13 +292,13 @@ private fun CanonicalChapterRow(
                 }
                 TextButton(
                     enabled = !item.downloaded && !downloading,
-                    onClick = { onDownloadChapter(item.chapter.id) },
+                    onClick = { onBaixarChapter(item.chapter.id) },
                 ) {
                     Text(
                         when {
-                            item.downloaded -> "Downloaded"
-                            downloading -> "Downloading…"
-                            else -> "Download"
+                            item.downloaded -> "Baixado"
+                            downloading -> "Baixando…"
+                            else -> "Baixar"
                         },
                     )
                 }

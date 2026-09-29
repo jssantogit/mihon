@@ -50,7 +50,7 @@ fun TsuzukiSearchScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Search") },
+                title = { Text("Buscar") },
             )
         },
     ) { contentPadding ->
@@ -66,7 +66,7 @@ fun TsuzukiSearchScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 singleLine = true,
-                label = { Text("Search manga") },
+                label = { Text("Buscar mangá") },
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Search,
                 ),
@@ -112,14 +112,14 @@ fun TsuzukiSearchScreen(
 
                 is SearchState.Empty -> {
                     MessageContent(
-                        message = "No results for “${state.query}”.",
+                        message = "Nenhum resultado para “${state.query}”.",
                     )
                 }
 
                 is SearchState.Error -> {
                     MessageContent(
-                        message = state.error.message ?: "Search failed.",
-                        action = "Retry",
+                        message = state.error.message ?: "A busca falhou.",
+                        action = "Tentar novamente",
                         onAction = {
                             val retryQuery = state.query
                             if (retryQuery == null) {
@@ -157,13 +157,13 @@ private fun NeedsIntegrationContent(
         }
         item {
             Text(
-                text = "Enable Kitsu or MyAnimeList to search the catalog.",
+                text = "Ative Kitsu ou MyAnimeList para buscar no catálogo.",
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
         item {
             Button(onClick = onOpenIntegrations) {
-                Text("Configure integrations")
+                Text("Configurar integrações")
             }
         }
     }
@@ -216,12 +216,12 @@ private fun RecentSearches(
                 .padding(horizontal = 16.dp),
         ) {
             Text(
-                text = "Recent searches",
+                text = "Buscas recentes",
                 style = MaterialTheme.typography.titleMedium,
             )
             if (onClear != null) {
                 TextButton(onClick = onClear) {
-                    Text("Clear")
+                    Text("Limpar")
                 }
             }
         }
@@ -252,16 +252,16 @@ private fun DiscoverSection(
     ) {
         Text(
             text = when (block.kind) {
-                DiscoverKind.TRENDING -> "Trending"
-                DiscoverKind.POPULAR -> "Popular"
-                DiscoverKind.RECENTLY_UPDATED -> "Recently updated"
+                DiscoverKind.TRENDING -> "Em alta"
+                DiscoverKind.POPULAR -> "Populares"
+                DiscoverKind.RECENTLY_UPDATED -> "Atualizados recentemente"
             },
             modifier = Modifier.padding(horizontal = 16.dp),
             style = MaterialTheme.typography.titleMedium,
         )
         if (block.items.isEmpty()) {
             Text(
-                text = "No items available.",
+                text = "Nenhum item disponível.",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.bodyMedium,
             )

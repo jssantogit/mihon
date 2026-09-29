@@ -35,7 +35,7 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
-    fun `kitsu and mal are disabled by default when no settings rows exist`() = runTest(dispatcher) {
+    fun `all unified integrations are disabled by default when no settings rows exist`() = runTest(dispatcher) {
         val repository = FakeIntegrationSettingsRepository()
         val model = TsuzukiIntegrationsSettingsScreenModel(repository)
 
@@ -43,8 +43,20 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
 
         val state = model.state.value
             .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
-        state.items.map { it.id.value } shouldContainExactly listOf("kitsu", "mal")
-        state.items.map { it.enabled } shouldContainExactly listOf(false, false)
+        state.items.map { it.id.value } shouldContainExactly listOf(
+            "kitsu",
+            "mal",
+            "mangaupdates",
+            "mangabaka",
+            "bangumi",
+            "shikimori",
+            "hikka",
+            "anilist",
+            "komga",
+            "kavita",
+            "suwayomi",
+        )
+        state.items.all { !it.enabled } shouldBe true
     }
 
     @Test
@@ -62,6 +74,29 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             .items
             .single { it.id.value == "mal" }
             .enabled shouldBe true
+    }
+
+    @Test
+    fun `capability configuration is persisted and reflected in state`() = runTest(dispatcher) {
+        val repository = FakeIntegrationSettingsRepository()
+        val model = TsuzukiIntegrationsSettingsScreenModel(repository)
+        advanceUntilIdle()
+
+        model.setEnabled(IntegrationId("kitsu"), true)
+        model.setCapabilityEnabled(
+            IntegrationId("kitsu"),
+            TsuzukiIntegrationCapability.DISCOVERY,
+            false,
+        )
+        advanceUntilIdle()
+
+        val item = model.state.value
+            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
+            .items
+            .single { it.id.value == "kitsu" }
+        item.enabled shouldBe true
+        item.capabilityEnabled[TsuzukiIntegrationCapability.DISCOVERY] shouldBe false
+        item.capabilityEnabled[TsuzukiIntegrationCapability.SEARCH] shouldBe true
     }
 
     private class FakeIntegrationSettingsRepository : IntegrationSettingsRepository {

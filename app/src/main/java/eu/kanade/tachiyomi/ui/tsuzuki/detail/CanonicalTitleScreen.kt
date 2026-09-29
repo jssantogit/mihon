@@ -63,7 +63,7 @@ data class CanonicalTitleScreen(
         CanonicalTitleDetailScreen(
             state = state,
             navigateUp = navigator::pop,
-            onRefresh = { screenModel.refresh() },
+            onAtualizar = { screenModel.refresh() },
             onAddToLibrary = { screenModel.addToLibrary() },
             onRemoveFromLibrary = { screenModel.removeFromLibrary() },
             onOpenAddonsSettings = {
@@ -76,7 +76,7 @@ data class CanonicalTitleScreen(
                         ),
                 )
             },
-            onDownloadChapter = { canonicalChapterId ->
+            onBaixarChapter = { canonicalChapterId ->
                 screenModel.requestDownload(canonicalChapterId)
             },
             onOpenChapter = { canonicalChapterId ->
