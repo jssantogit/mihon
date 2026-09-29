@@ -27,7 +27,6 @@ internal fun TrackSearch.toIntegrationCatalogItem(providerId: String): CatalogIt
         ?.toInt(),
 )
 
-
 private fun String.toCatalogFormat(): CatalogItemFormat = when (
     lowercase().replace('_', ' ').trim()
 ) {
