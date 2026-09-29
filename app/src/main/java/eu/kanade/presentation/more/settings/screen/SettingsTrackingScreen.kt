@@ -44,9 +44,8 @@ import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
-import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
-import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
-import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
+import eu.kanade.tachiyomi.data.track.hikka.Hikka
+import eu.kanade.tachiyomi.data.track.shikimori.Shikimori
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
 import mihon.app.di.appGraph
@@ -92,6 +91,7 @@ object SettingsTrackingScreen : SearchableSettings {
                     TrackingLoginDialog(
                         tracker = tracker,
                         uNameStringRes = uNameStringRes,
+                        tokenOnly = tokenOnly,
                         onDismissRequest = { dialog = null },
                     )
                 }
@@ -158,17 +158,37 @@ object SettingsTrackingScreen : SearchableSettings {
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.shikimori,
-                        login = { context.openInBrowser(ShikimoriApi.authUrl(), forceDefaultBrowser = true) },
+                        login = {
+                            val tracker = trackerManager.shikimori
+                            if (tracker.hasApplicationCredentials()) {
+                                context.openInBrowser(tracker.authUrl(), forceDefaultBrowser = true)
+                            } else {
+                                context.toast(MR.strings.tsuzuki_shikimori_credentials_required)
+                            }
+                        },
                         logout = { dialog = LogoutDialog(trackerManager.shikimori) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.bangumi,
-                        login = { context.openInBrowser(BangumiApi.authUrl(), forceDefaultBrowser = true) },
+                        login = {
+                            dialog = LoginDialog(
+                                trackerManager.bangumi,
+                                MR.strings.username,
+                                tokenOnly = true,
+                            )
+                        },
                         logout = { dialog = LogoutDialog(trackerManager.bangumi) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.hikka,
-                        login = { context.openInBrowser(HikkaApi.authUrl(), forceDefaultBrowser = true) },
+                        login = {
+                            val tracker = trackerManager.hikka
+                            if (tracker.hasApplicationCredentials()) {
+                                context.openInBrowser(tracker.authUrl(), forceDefaultBrowser = true)
+                            } else {
+                                context.toast(MR.strings.tsuzuki_hikka_credentials_required)
+                            }
+                        },
                         logout = { dialog = LogoutDialog(trackerManager.hikka) },
                     ),
                     Preference.PreferenceItem.InfoPreference(stringResource(MR.strings.tracking_info)),
@@ -194,13 +214,14 @@ object SettingsTrackingScreen : SearchableSettings {
     private fun TrackingLoginDialog(
         tracker: Tracker,
         uNameStringRes: StringResource,
+        tokenOnly: Boolean = false,
         onDismissRequest: () -> Unit,
     ) {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
 
-        val username = rememberTextFieldState(tracker.getUsername())
-        val password = rememberTextFieldState(tracker.getPassword())
+        val username = rememberTextFieldState(if (tokenOnly) "" else tracker.getUsername())
+        val password = rememberTextFieldState(if (tokenOnly) "" else tracker.getPassword())
         var processing by remember { mutableStateOf(false) }
         var inputError by remember { mutableStateOf(false) }
 
@@ -222,16 +243,18 @@ object SettingsTrackingScreen : SearchableSettings {
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics { contentType = ContentType.Username + ContentType.EmailAddress },
-                        state = username,
-                        label = { Text(text = stringResource(uNameStringRes)) },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        lineLimits = TextFieldLineLimits.SingleLine,
-                        isError = inputError && !processing,
-                    )
+                    if (!tokenOnly) {
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { contentType = ContentType.Username + ContentType.EmailAddress },
+                            state = username,
+                            label = { Text(text = stringResource(uNameStringRes)) },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            lineLimits = TextFieldLineLimits.SingleLine,
+                            isError = inputError && !processing,
+                        )
+                    }
 
                     var hidePassword by remember { mutableStateOf(true) }
                     OutlinedSecureTextField(
@@ -239,7 +262,17 @@ object SettingsTrackingScreen : SearchableSettings {
                             .fillMaxWidth()
                             .semantics { contentType = ContentType.Password },
                         state = password,
-                        label = { Text(text = stringResource(MR.strings.password)) },
+                        label = {
+                            Text(
+                                text = stringResource(
+                                    if (tokenOnly) {
+                                        MR.strings.tsuzuki_bangumi_access_token
+                                    } else {
+                                        MR.strings.password
+                                    },
+                                ),
+                            )
+                        },
                         trailingIcon = {
                             IconButton(onClick = { hidePassword = !hidePassword }) {
                                 Icon(
@@ -268,14 +301,16 @@ object SettingsTrackingScreen : SearchableSettings {
             confirmButton = {
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !processing && username.text.isNotBlank() && password.text.isNotBlank(),
+                    enabled = !processing &&
+                        password.text.isNotBlank() &&
+                        (tokenOnly || username.text.isNotBlank()),
                     onClick = {
                         scope.launchIO {
                             processing = true
                             val result = checkLogin(
                                 context = context,
                                 tracker = tracker,
-                                username = username.text.toString(),
+                                username = if (tokenOnly) "" else username.text.toString(),
                                 password = password.text.toString(),
                             )
                             inputError = !result
@@ -354,6 +389,7 @@ object SettingsTrackingScreen : SearchableSettings {
 private data class LoginDialog(
     val tracker: Tracker,
     val uNameStringRes: StringResource,
+    val tokenOnly: Boolean = false,
 )
 
 private data class LogoutDialog(
