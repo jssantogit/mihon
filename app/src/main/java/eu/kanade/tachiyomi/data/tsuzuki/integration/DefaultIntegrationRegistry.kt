@@ -44,7 +44,8 @@ class DefaultIntegrationRegistry(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
-    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet()\n    private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
+    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet()
+    private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
     private val ready = CompletableDeferred<Unit>()
 
     init {
@@ -68,22 +69,58 @@ class DefaultIntegrationRegistry(
 
     override fun manifests(): List<IntegrationManifest> = integrationManifests.sortedBy { it.displayName }
 
-    override fun searchProviders(): List<SearchProvider> = allowedProviders(\n        providers = searchProviders,\n        capability = IntegrationCapability.SEARCH,\n    )
+    override fun searchProviders(): List<SearchProvider> = allowedProviders(
+        providers = searchProviders,
+        capability = IntegrationCapability.SEARCH,
+    )
 
-    override fun discoveryProviders(): List<DiscoveryProvider> = allowedProviders(\n        providers = discoveryProviders,\n        capability = IntegrationCapability.DISCOVERY,\n    )
+    override fun discoveryProviders(): List<DiscoveryProvider> = allowedProviders(
+        providers = discoveryProviders,
+        capability = IntegrationCapability.DISCOVERY,
+    )
 
-    override fun metadataProviders(): List<MetadataProvider> = allowedProviders(\n        providers = metadataProviders,\n        capability = IntegrationCapability.METADATA_BASIC,\n    )
+    override fun metadataProviders(): List<MetadataProvider> = allowedProviders(
+        providers = metadataProviders,
+        capability = IntegrationCapability.METADATA_BASIC,
+    )
 
     override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> {
         val enabledIds = enabledIntegrationIds("chapter_evidence")
         return chapterEvidenceProviders.filter { it.producerId in enabledIds }
     }
 
-    override fun ratingsProviders(): List<RatingsProvider> = allowedProviders(\n        providers = ratingsProviders,\n        capability = IntegrationCapability.RATINGS,\n    )
+    override fun ratingsProviders(): List<RatingsProvider> = allowedProviders(
+        providers = ratingsProviders,
+        capability = IntegrationCapability.RATINGS,
+    )
 
-    override fun trackingProviders(): List<TrackingProvider> {\n        val enabledIds = enabledIntegrationIds(IntegrationCapability.TRACKING)\n        return trackingProviders.filter { it.integrationId.value in enabledIds }\n    }\n\n    private fun <T> allowedProviders(\n        providers: Set<T>,\n        capability: IntegrationCapability,\n    ): List<T> where T : Any {\n        val enabledIds = enabledIntegrationIds(capability)\n        return providers.filter { provider ->\n            val id = when (provider) {\n                is SearchProvider -> provider.integrationId\n                is DiscoveryProvider -> provider.integrationId\n                is MetadataProvider -> provider.integrationId\n                is RatingsProvider -> provider.integrationId\n                else -> return@filter false\n            }\n            if (id.value !in enabledIds) return@filter false\n            val manifest = integrationManifests.firstOrNull { it.integrationId == id }\n            manifest == null || manifest.allowsGlobalResolution(capability)\n        }\n    }
+    override fun trackingProviders(): List<TrackingProvider> {
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.TRACKING)
+        return trackingProviders.filter { it.integrationId.value in enabledIds }
+    }
 
-    private fun enabledIntegrationIds(capability: IntegrationCapability): Set<String> = enabledIntegrationIds(capability.configKey)\n\n    private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
+    private fun <T> allowedProviders(
+        providers: Set<T>,
+        capability: IntegrationCapability,
+    ): List<T> where T : Any {
+        val enabledIds = enabledIntegrationIds(capability)
+        return providers.filter { provider ->
+            val id = when (provider) {
+                is SearchProvider -> provider.integrationId
+                is DiscoveryProvider -> provider.integrationId
+                is MetadataProvider -> provider.integrationId
+                is RatingsProvider -> provider.integrationId
+                else -> return@filter false
+            }
+            if (id.value !in enabledIds) return@filter false
+            val manifest = integrationManifests.firstOrNull { it.integrationId == id }
+            manifest == null || manifest.allowsGlobalResolution(capability)
+        }
+    }
+
+    private fun enabledIntegrationIds(capability: IntegrationCapability): Set<String> = enabledIntegrationIds(capability.configKey)
+
+    private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
         .groupBy { it.integrationId.value }
         .mapNotNull { (integrationId, values) ->
             values.maxByOrNull(IntegrationSettings::updatedAt)
