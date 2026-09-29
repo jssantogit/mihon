@@ -45,7 +45,7 @@ class TrackPreferences(
     fun trackToken(tracker: Tracker) = preferenceStore.getString(Preference.privateKey("track_token_${tracker.id}"), "")
 
     fun integrationCredential(integrationId: String, key: String) = preferenceStore.getString(
-        Preference.privateKey("tsuzuki_integration_${integrationId}_${key}"),
+        Preference.privateKey("tsuzuki_integration_${integrationId}_$key"),
         "",
     )
 
