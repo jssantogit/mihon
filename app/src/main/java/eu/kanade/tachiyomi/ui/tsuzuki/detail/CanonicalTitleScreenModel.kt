@@ -42,6 +42,7 @@ import tachiyomi.domain.tsuzuki.download.interactor.DownloadCanonicalChapter
 import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadState
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
+import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
 import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
@@ -70,6 +71,7 @@ sealed interface CanonicalTitleScreenState {
         val author: String? = null,
         val description: String? = null,
         val genres: List<String> = emptyList(),
+        val metadataSources: List<String> = emptyList(),
         val isRefreshing: Boolean = false,
         val refreshError: Throwable? = null,
         val libraryMutationInProgress: Boolean = false,
@@ -117,6 +119,7 @@ class CanonicalTitleScreenModel(
     private val refreshChapterEvidence: RefreshChapterEvidence,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
     private val mangaRepository: MangaRepository? = null,
+    private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -169,6 +172,7 @@ class CanonicalTitleScreenModel(
                 val refreshed = loadLocalState(
                     canonicalTitleId = id,
                     includeLegacyDownloadChecks = false,
+                    includeIntegrationMetadata = false,
                     isRefreshing = false,
                 )
                 if (canonicalTitleId != id) return@launch
@@ -399,6 +403,7 @@ class CanonicalTitleScreenModel(
             _state.value = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
                 includeLegacyDownloadChecks = false,
+                includeIntegrationMetadata = false,
                 isRefreshing = true,
             )
             logcat {
@@ -458,6 +463,7 @@ class CanonicalTitleScreenModel(
             val refreshed = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
                 includeLegacyDownloadChecks = true,
+                includeIntegrationMetadata = true,
                 isRefreshing = false,
                 refreshError = errors.firstOrNull(),
             )
@@ -493,6 +499,7 @@ class CanonicalTitleScreenModel(
     private suspend fun loadLocalState(
         canonicalTitleId: String,
         includeLegacyDownloadChecks: Boolean,
+        includeIntegrationMetadata: Boolean,
         isRefreshing: Boolean,
         refreshError: Throwable? = null,
     ): CanonicalTitleScreenState.Loaded {
@@ -547,6 +554,27 @@ class CanonicalTitleScreenModel(
                 break
             }
         }
+
+        val integrationMetadata = if (includeIntegrationMetadata) {
+            try {
+                resolveCanonicalMetadata
+                    ?.execute(canonicalTitleId)
+                    ?.getOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+        } else {
+            null
+        }
+        val integrationMetadataSources = listOfNotNull(
+            integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.rating?.let { it.attribution ?: it.providerId.value },
+        ).distinct()
 
         val details = if (!includeLegacyDownloadChecks) {
             chapters.mapNotNull { chapter ->
@@ -608,10 +636,11 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
-            coverUrl = metadata?.thumbnailUrl,
+            coverUrl = integrationMetadata?.artworkUrl?.value ?: metadata?.thumbnailUrl,
             author = metadata?.author,
-            description = metadata?.description,
-            genres = metadata?.genre.orEmpty(),
+            description = integrationMetadata?.synopsis?.value ?: metadata?.description,
+            genres = integrationMetadata?.genres?.value ?: metadata?.genre.orEmpty(),
+            metadataSources = integrationMetadataSources,
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )

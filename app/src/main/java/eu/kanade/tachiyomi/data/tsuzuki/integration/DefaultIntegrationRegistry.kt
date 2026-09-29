@@ -14,10 +14,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -44,7 +40,7 @@ class DefaultIntegrationRegistry(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
-    private val integrationManifests: Set<IntegrationManifest> = DefaultIntegrationManifests.all.toSet()
+    private val integrationManifests: List<IntegrationManifest> = DefaultIntegrationManifests.all
     private val settings = MutableStateFlow<List<IntegrationSettings>>(emptyList())
     private val ready = CompletableDeferred<Unit>()
 
@@ -67,7 +63,16 @@ class DefaultIntegrationRegistry(
         .drop(1)
         .map { Unit }
 
-    override fun manifests(): List<IntegrationManifest> = integrationManifests.sortedBy { it.displayName }
+    override fun manifests(): List<IntegrationManifest> = integrationManifests
+
+    override fun isGlobalCapabilityActive(
+        integrationId: tachiyomi.domain.tsuzuki.integration.IntegrationId,
+        capability: IntegrationCapability,
+    ): Boolean {
+        val manifest = integrationManifests.firstOrNull { it.integrationId == integrationId } ?: return false
+        return manifest.allowsGlobalResolution(capability) &&
+            integrationId.value in enabledIntegrationIds(capability)
+    }
 
     override fun searchProviders(): List<SearchProvider> = allowedProviders(
         providers = searchProviders,
@@ -79,9 +84,12 @@ class DefaultIntegrationRegistry(
         capability = IntegrationCapability.DISCOVERY,
     )
 
-    override fun metadataProviders(): List<MetadataProvider> = allowedProviders(
+    override fun metadataProviders(): List<MetadataProvider> =
+        metadataProviders(IntegrationCapability.METADATA_BASIC)
+
+    override fun metadataProviders(capability: IntegrationCapability): List<MetadataProvider> = allowedProviders(
         providers = metadataProviders,
-        capability = IntegrationCapability.METADATA_BASIC,
+        capability = capability,
     )
 
     override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> {
@@ -113,8 +121,7 @@ class DefaultIntegrationRegistry(
                 else -> return@filter false
             }
             if (id.value !in enabledIds) return@filter false
-            val manifest = integrationManifests.firstOrNull { it.integrationId == id }
-            manifest == null || manifest.allowsGlobalResolution(capability)
+            isGlobalCapabilityActive(id, capability)
         }
     }
 
@@ -132,14 +139,6 @@ class DefaultIntegrationRegistry(
         }
         .toSet()
 
-    private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean {
-        val config = runCatching {
-            Json.parseToJsonElement(configJson) as? JsonObject
-        }.getOrNull()
-        return config
-            ?.get(capability)
-            ?.jsonPrimitive
-            ?.booleanOrNull
-            ?: true
-    }
+    private fun IntegrationSettings.capabilityEnabled(capability: String): Boolean =
+        IntegrationSettingsConfig.decode(configJson).capabilityEnabled(capability)
 }

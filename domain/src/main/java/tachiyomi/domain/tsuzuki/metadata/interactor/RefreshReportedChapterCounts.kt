@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -21,8 +22,11 @@ class RefreshReportedChapterCounts(
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
         return try {
             registry.awaitReady()
-            val providers = registry.metadataProviders().associateBy { it.integrationId.value }
-            val identities = canonicalTitleRepository.getExternalIdentities(canonicalTitleId)
+            val providers = registry.metadataProviders(IntegrationCapability.METADATA_EDITORIAL)
+                .associateBy { it.integrationId.value }
+            val identities = canonicalTitleRepository
+                .getExternalIdentities(canonicalTitleId)
+                .filter { it.verified }
 
             coroutineScope {
                 identities.mapNotNull { identity ->

@@ -16,61 +16,60 @@ internal object DefaultIntegrationManifests {
 
     val all = listOf(
         IntegrationManifest(
-            IntegrationId("kitsu"),
-            "Kitsu",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("kitsu"),
+            displayName = "Kitsu",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.ALLOWED,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.DISCOVERY,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,
-                IntegrationCapability.METADATA_STAFF,
                 IntegrationCapability.RATINGS,
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
             ),
+            legacyTrackerId = 3L,
         ),
         IntegrationManifest(
-            IntegrationId("mal"),
-            "MyAnimeList",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("mal"),
+            displayName = "MyAnimeList",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.ALLOWED,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,
-                IntegrationCapability.METADATA_STAFF,
                 IntegrationCapability.RATINGS,
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
             ),
+            legacyTrackerId = 1L,
         ),
         IntegrationManifest(
-            IntegrationId("mangaupdates"),
-            "MangaUpdates",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("mangaupdates"),
+            displayName = "MangaUpdates",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,
-                IntegrationCapability.METADATA_STAFF,
                 IntegrationCapability.RATINGS,
-                IntegrationCapability.RELATIONS,
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
                 attribution = "MangaUpdates",
             ),
+            legacyTrackerId = 7L,
         ),
         IntegrationManifest(
-            IntegrationId("mangabaka"),
-            "MangaBaka",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("mangabaka"),
+            displayName = "MangaBaka",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.COMMERCIAL_RESTRICTION,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
@@ -80,12 +79,13 @@ internal object DefaultIntegrationManifests {
                 IntegrationCapability.USER_LISTS,
                 attribution = "MangaBaka",
             ),
+            legacyTrackerId = 11L,
         ),
         IntegrationManifest(
-            IntegrationId("bangumi"),
-            "Bangumi",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("bangumi"),
+            displayName = "Bangumi",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
@@ -95,12 +95,13 @@ internal object DefaultIntegrationManifests {
                 IntegrationCapability.USER_LISTS,
                 attribution = "Bangumi",
             ),
+            legacyTrackerId = 5L,
         ),
         IntegrationManifest(
-            IntegrationId("shikimori"),
-            "Shikimori",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("shikimori"),
+            displayName = "Shikimori",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.UNVERIFIED,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
@@ -109,12 +110,13 @@ internal object DefaultIntegrationManifests {
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
             ),
+            legacyTrackerId = 4L,
         ),
         IntegrationManifest(
-            IntegrationId("hikka"),
-            "Hikka",
-            IntegrationCategory.METADATA_SERVICE,
-            policies(
+            integrationId = IntegrationId("hikka"),
+            displayName = "Hikka",
+            category = IntegrationCategory.METADATA_SERVICE,
+            capabilities = policies(
                 IntegrationPolicy.UNVERIFIED,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
@@ -123,29 +125,31 @@ internal object DefaultIntegrationManifests {
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
             ),
+            legacyTrackerId = 10L,
         ),
         IntegrationManifest(
-            IntegrationId("anilist"),
-            "AniList",
-            IntegrationCategory.COMPATIBILITY,
-            policies(
+            integrationId = IntegrationId("anilist"),
+            displayName = "AniList",
+            category = IntegrationCategory.COMPATIBILITY,
+            capabilities = policies(
                 IntegrationPolicy.PERMISSION_REQUIRED,
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.DISCOVERY,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
                 IntegrationCapability.METADATA_EDITORIAL,
-                IntegrationCapability.METADATA_STAFF,
                 IntegrationCapability.RATINGS,
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
             ),
+            legacyTrackerId = 2L,
         ),
-        personalServer("komga", "Komga"),
-        personalServer("kavita", "Kavita"),
+        personalServer("komga", "Komga", 6L),
+        personalServer("kavita", "Kavita", 8L),
         personalServer(
             "suwayomi",
             "Suwayomi",
+            9L,
             IntegrationCapability.READING_CONTENT,
             IntegrationCapability.DOWNLOADS,
         ),
@@ -154,12 +158,13 @@ internal object DefaultIntegrationManifests {
     private fun personalServer(
         id: String,
         name: String,
+        legacyTrackerId: Long,
         vararg extra: IntegrationCapability,
     ) = IntegrationManifest(
-        IntegrationId(id),
-        name,
-        IntegrationCategory.PERSONAL_SERVER,
-        policies(
+        integrationId = IntegrationId(id),
+        displayName = name,
+        category = IntegrationCategory.PERSONAL_SERVER,
+        capabilities = policies(
             IntegrationPolicy.USER_OWNED_DATA,
             IntegrationCapability.METADATA_BASIC,
             IntegrationCapability.METADATA_ARTWORK,
@@ -167,5 +172,6 @@ internal object DefaultIntegrationManifests {
             IntegrationCapability.TRACKING,
             *extra,
         ),
+        legacyTrackerId = legacyTrackerId,
     )
 }
