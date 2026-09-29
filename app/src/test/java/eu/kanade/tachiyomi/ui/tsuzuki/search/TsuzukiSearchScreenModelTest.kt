@@ -175,13 +175,24 @@ class TsuzukiSearchScreenModelTest {
             override val integrationId = IntegrationId("kitsu")
 
             override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+                Result.success(page("Trending"))
 
             override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+                Result.success(page("Popular"))
 
             override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+                Result.success(page("Recent"))
+
+            private fun page(title: String) = CatalogPage(
+                items = listOf(
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = title,
+                        title = title,
+                    ),
+                ),
+                hasNextPage = false,
+            )
         }
 
         fun release() {
