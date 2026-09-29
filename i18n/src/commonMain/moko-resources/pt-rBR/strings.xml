@@ -944,4 +944,5 @@
     <string name="drive_sync_failed_to_start">Não foi possível executar a sincronização do Drive.</string>
 
     <string name="tsuzuki_personalizations_title">Personalizações</string>
+    <string name="tsuzuki_reading_settings_title">Leitura</string>
 </resources>
