@@ -216,14 +216,8 @@ object SettingsMainScreen : Screen() {
             title = "Geral",
             items = listOf(
                 Item(
-                    titleRes = MR.strings.pref_category_appearance,
-                    subtitleRes = MR.strings.pref_appearance_summary,
+                    titleRes = MR.strings.tsuzuki_personalizations_title,
                     icon = MaterialSymbols.Rounded.Palette,
-                    screen = SettingsAppearanceScreen,
-                ),
-                Item(
-                    titleRes = MR.strings.tsuzuki_home_collections_title,
-                    icon = MaterialSymbols.Rounded.CollectionsBookmark,
                     screen = SettingsTsuzukiPersonalizationsScreen,
                 ),
                 Item(
