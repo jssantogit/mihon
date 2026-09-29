@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import dev.icerock.moko.resources.StringResource
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.util.Screen
@@ -106,7 +107,7 @@ class SettingsTsuzukiTrackingServiceScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text("Serviço de monitoramento indisponível")
+                    Text(stringResource(MR.strings.tsuzuki_tracking_service_unavailable))
                 }
                 return@Scaffold
             }
@@ -132,15 +133,15 @@ private fun TrackingServiceContent(
     if (loginDialog) {
         TrackerCredentialLoginDialog(
             tracker = tracker,
-            usernameLabel = if (tracker.id == KITSU_TRACKER_ID) "E-mail" else "Usuário",
+            usernameLabel = if (tracker.id == KITSU_TRACKER_ID) MR.strings.email else MR.strings.username,
             onDismiss = { loginDialog = false },
         )
     }
     if (logoutDialog) {
         AlertDialog(
             onDismissRequest = { logoutDialog = false },
-            title = { Text("Desconectar ${tracker.name}?") },
-            text = { Text("A sessão existente será encerrada, mas seus dados locais serão preservados.") },
+            title = { Text(stringResource(MR.strings.tsuzuki_tracking_disconnect_confirm, tracker.name)) },
+            text = { Text(stringResource(MR.strings.tsuzuki_tracking_disconnect_summary)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -149,12 +150,12 @@ private fun TrackingServiceContent(
                         context.toast(MR.strings.logout_success)
                     },
                 ) {
-                    Text("Desconectar")
+                    Text(stringResource(MR.strings.tsuzuki_tracking_disconnect))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { logoutDialog = false }) {
-                    Text("Cancelar")
+                    Text(stringResource(MR.strings.action_cancel))
                 }
             },
         )
@@ -163,13 +164,13 @@ private fun TrackingServiceContent(
     LazyColumn(modifier = modifier.fillMaxSize()) {
         item {
             ListItem(
-                headlineContent = { Text("Conta") },
+                headlineContent = { Text(stringResource(MR.strings.tsuzuki_tracking_account)) },
                 supportingContent = {
                     Text(
                         if (isLoggedIn) {
-                            tracker.getDisplayUsername().ifBlank { "Conectada" }
+                            tracker.getDisplayUsername().ifBlank { stringResource(MR.strings.tsuzuki_tracking_connected) }
                         } else {
-                            "Não conectada"
+                            stringResource(MR.strings.tsuzuki_tracking_not_connected)
                         },
                     )
                 },
@@ -178,10 +179,10 @@ private fun TrackingServiceContent(
         item {
             ListItem(
                 headlineContent = {
-                    Text(if (isLoggedIn) "Desconectar" else "Conectar")
+                    Text(stringResource(if (isLoggedIn) MR.strings.tsuzuki_tracking_disconnect else MR.strings.tsuzuki_tracking_connect))
                 },
                 supportingContent = {
-                    Text(loginDescription(tracker))
+                    Text(stringResource(loginDescriptionRes(tracker)))
                 },
             )
             Button(
@@ -234,12 +235,9 @@ private fun TrackingServiceContent(
         if (tracker is EnhancedTracker) {
             item {
                 ListItem(
-                    headlineContent = { Text("Configuração do servidor") },
+                    headlineContent = { Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration)) },
                     supportingContent = {
-                        Text(
-                            "Este serviço reutiliza a configuração da fonte/add-on correspondente. " +
-                                "O Tsuzuki não duplica a URL ou a chave do servidor nesta tela.",
-                        )
+                        Text(stringResource(MR.strings.tsuzuki_tracking_server_configuration_summary))
                     },
                 )
             }
@@ -250,7 +248,7 @@ private fun TrackingServiceContent(
 @Composable
 private fun TrackerCredentialLoginDialog(
     tracker: Tracker,
-    usernameLabel: String,
+    usernameLabel: StringResource,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -262,20 +260,20 @@ private fun TrackerCredentialLoginDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Conectar ${tracker.name}") },
+        title = { Text(stringResource(MR.strings.tsuzuki_tracking_connect) + " " + tracker.name) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text(usernameLabel) },
+                    label = { Text(stringResource(usernameLabel)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Senha") },
+                    label = { Text(stringResource(MR.strings.password)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
@@ -304,12 +302,12 @@ private fun TrackerCredentialLoginDialog(
                             onDismiss()
                         } else {
                             tracker.logout()
-                            errorMessage = result.exceptionOrNull()?.message ?: "Falha ao conectar"
+                            errorMessage = result.exceptionOrNull()?.message ?: context.getString(MR.strings.tsuzuki_tracking_login_failed.resourceId)
                         }
                     }
                 },
             ) {
-                Text("Conectar")
+                Text(stringResource(MR.strings.tsuzuki_tracking_connect))
             }
         },
         dismissButton = {
@@ -323,18 +321,18 @@ private fun TrackerCredentialLoginDialog(
     )
 }
 
-private fun loginDescription(tracker: Tracker): String = when (tracker.id) {
+private fun loginDescriptionRes(tracker: Tracker): StringResource = when (tracker.id) {
     MAL_TRACKER_ID,
     ANILIST_TRACKER_ID,
     SHIKIMORI_TRACKER_ID,
     BANGUMI_TRACKER_ID,
     HIKKA_TRACKER_ID,
     MANGABAKA_TRACKER_ID,
-    -> "A autenticação é concluída no navegador."
+    -> MR.strings.tsuzuki_tracking_login_browser
 
-    KITSU_TRACKER_ID -> "Entre com o e-mail e a senha usados no Kitsu."
-    MANGAUPDATES_TRACKER_ID -> "Entre com o usuário e a senha usados no MangaUpdates."
-    else -> "Ativa a integração usando a configuração local do serviço."
+    KITSU_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_kitsu
+    MANGAUPDATES_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_mangaupdates
+    else -> MR.strings.tsuzuki_tracking_login_local
 }
 
 private const val MAL_TRACKER_ID = 1L
