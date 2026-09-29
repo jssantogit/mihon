@@ -897,6 +897,8 @@
     <string name="tsuzuki_project_source">Tsuzuki source code</string>
     <string name="tsuzuki_upstream_mihon">Upstream: Mihon</string>
     <string name="tsuzuki_integrations_title">Integrations</string>
+    <string name="tsuzuki_navigation_back">Back</string>
+    <string name="tsuzuki_integration_fallback_title">Integration</string>
     <string name="tsuzuki_home_collections_title">Home &amp; Collections</string>
     <string name="tsuzuki_sync_title">Sync</string>
     <string name="tsuzuki_addons_title">Add-ons</string>
