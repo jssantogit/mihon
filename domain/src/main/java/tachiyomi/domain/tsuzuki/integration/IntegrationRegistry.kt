@@ -2,11 +2,14 @@ package tachiyomi.domain.tsuzuki.integration
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 
 interface IntegrationRegistry {
     suspend fun awaitReady() = Unit
 
     fun observeChanges(): Flow<Unit> = emptyFlow()
+
+    fun manifests(): List<IntegrationManifest> = emptyList()
 
     fun searchProviders(): List<SearchProvider>
 
