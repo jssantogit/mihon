@@ -90,7 +90,10 @@ class TsuzukiIntegrationsSettingsScreenModel(
                         supportsTracking = IntegrationCapability.TRACKING in manifest.capabilities,
                         capabilities = visibleCapabilities,
                         configurableCapabilities = visibleCapabilities
-                            .filterTo(mutableSetOf()) { it in CONFIGURABLE_CAPABILITIES },
+                            .filterTo(mutableSetOf()) {
+                                it in CONFIGURABLE_CAPABILITIES &&
+                                    manifest.allowsGlobalResolution(it)
+                            },
                         restrictedCapabilities = manifest.restrictedCapabilities(),
                         policies = manifest.capabilities,
                         configState = if (config.isDefault()) {
@@ -100,7 +103,10 @@ class TsuzukiIntegrationsSettingsScreenModel(
                         },
                         authState = manifest.authState(),
                         capabilityEnabled = visibleCapabilities
-                            .filter { it in CONFIGURABLE_CAPABILITIES }
+                            .filter {
+                                it in CONFIGURABLE_CAPABILITIES &&
+                                    manifest.allowsGlobalResolution(it)
+                            }
                             .associateWith(config::capabilityEnabled),
                     )
                 },
