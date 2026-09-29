@@ -432,7 +432,7 @@ private fun CollectionsReadyContent(
                 val childFolders = selectedCollection.folders.filter {
                     it.folder.parentFolderId == selectedFolder.folder.id
                 }
-                childFolders.forEach { folder ->
+                if (selectedList == null) childFolders.forEach { folder ->
                     item(key = "subfolder:${folder.folder.id}") {
                         FolderRow(
                             collectionId = selectedCollection.collection.id,
