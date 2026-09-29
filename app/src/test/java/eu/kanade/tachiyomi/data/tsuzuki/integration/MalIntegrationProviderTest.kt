@@ -22,6 +22,9 @@ class MalIntegrationProviderTest {
                     title = "Monster",
                     score = 8.72,
                     chapters = 162,
+                    volumes = 18,
+                    startDate = "1994-12-05",
+                    endDate = "2001-12-20",
                     publishingStatus = "finished",
                     publishingType = "manga",
                     authors = listOf("Naoki Urasawa"),
@@ -40,6 +43,9 @@ class MalIntegrationProviderTest {
         item.score?.value shouldBe 8.72
         item.score?.maxValue shouldBe 10.0
         item.chapterCount shouldBe 162
+        item.volumeCount shouldBe 18
+        item.startDate shouldBe "1994-12-05"
+        item.endDate shouldBe "2001-12-20"
         item.status shouldBe CatalogItemStatus.COMPLETED
         item.format shouldBe CatalogItemFormat.MANGA
         item.authors shouldContainExactly listOf("Naoki Urasawa")
@@ -125,6 +131,9 @@ class MalIntegrationProviderTest {
         title: String,
         score: Double = -1.0,
         chapters: Long = 0,
+        volumes: Long = 0,
+        startDate: String = "",
+        endDate: String = "",
         synopsis: String = "",
         coverUrl: String = "",
         publishingStatus: String = "",
@@ -136,6 +145,9 @@ class MalIntegrationProviderTest {
         this.title = title
         this.score = score
         total_chapters = chapters
+        total_volumes = volumes
+        start_date = startDate
+        end_date = endDate
         summary = synopsis
         cover_url = coverUrl
         publishing_status = publishingStatus
