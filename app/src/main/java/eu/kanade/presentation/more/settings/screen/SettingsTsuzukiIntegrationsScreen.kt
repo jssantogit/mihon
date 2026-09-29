@@ -1,5 +1,6 @@
 package eu.kanade.presentation.more.settings.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,9 +84,92 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                                         enabled = it,
                                     )
                                 },
+                                onOpen = {
+                                    navigator.push(SettingsTsuzukiIntegrationDetailScreen(item.id.value))
+                                },
                             )
                             HorizontalDivider()
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+class SettingsTsuzukiIntegrationDetailScreen(
+    private val integrationId: String,
+) : Screen() {
+
+    @Composable
+    override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
+        val screenModel = metroViewModel<TsuzukiIntegrationsSettingsScreenModel>()
+        val state by screenModel.state.collectAsStateWithLifecycle()
+        val item = (state as? TsuzukiIntegrationsSettingsState.Loaded)
+            ?.items
+            ?.firstOrNull { it.id.value == integrationId }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(item?.label ?: "Integration") },
+                    navigationIcon = {
+                        TextButton(onClick = navigator::pop) { Text("Back") }
+                    },
+                )
+            },
+        ) { contentPadding ->
+            if (item == null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding),
+                ) {
+                    item {
+                        ListItem(
+                            headlineContent = { Text("Enabled") },
+                            supportingContent = { Text("Use ${item.label} as a Tsuzuki metadata provider") },
+                            trailingContent = {
+                                Switch(
+                                    checked = item.enabled,
+                                    onCheckedChange = {
+                                        screenModel.setEnabled(item.id, it)
+                                    },
+                                )
+                            },
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text("Capabilities") },
+                            supportingContent = {
+                                Text(item.capabilities.joinToString(" • ", transform = TsuzukiIntegrationCapability::label))
+                            },
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text("Configuration") },
+                            supportingContent = { Text(item.configState.label()) },
+                        )
+                    }
+                    item {
+                        ListItem(
+                            headlineContent = { Text("Authentication") },
+                            supportingContent = { Text(item.authState.label()) },
+                        )
                     }
                 }
             }
@@ -97,6 +181,7 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
 private fun IntegrationSettingRow(
     item: TsuzukiIntegrationSettingsItem,
     onEnabledChange: (Boolean) -> Unit,
+    onOpen: () -> Unit,
 ) {
     ListItem(
         headlineContent = { Text(item.label) },
@@ -124,6 +209,7 @@ private fun IntegrationSettingRow(
                 onCheckedChange = onEnabledChange,
             )
         },
+        modifier = Modifier.clickable(onClick = onOpen),
     )
 }
 
