@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.data.track.myanimelist.dto
 
+import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -13,6 +14,8 @@ data class MALManga(
     @SerialName("num_volumes")
     val numVolumes: Long = 0,
     val mean: Double = -1.0,
+    @SerialName("num_scoring_users")
+    val numScoringUsers: Int? = null,
     @SerialName("main_picture")
     val covers: MALMangaCovers?,
     val status: String,
@@ -23,6 +26,7 @@ data class MALManga(
     @SerialName("end_date")
     val endDate: String? = null,
     val authors: List<MALAuthorNode> = emptyList(),
+    val genres: List<MALGenre> = emptyList(),
 )
 
 @Serializable
@@ -45,4 +49,36 @@ data class MALAuthor(
 @Serializable
 data class MALMangaCovers(
     val large: String = "",
+)
+
+
+internal fun MALManga.toTrackSearch(trackerId: Long): TrackSearch {
+    return TrackSearch.create(trackerId).apply {
+        remote_id = id
+        title = this@toTrackSearch.title
+        summary = synopsis
+        total_chapters = numChapters
+        total_volumes = numVolumes
+        score = mean
+        score_votes = numScoringUsers
+        cover_url = covers?.large.orEmpty()
+        tracking_url = "https://myanimelist.net/manga/$remote_id"
+        publishing_status = status.replace("_", " ")
+        publishing_type = mediaType.replace("_", " ")
+        start_date = startDate ?: ""
+        end_date = endDate ?: ""
+        artists = authors
+            .filter { authorNode -> authorNode.role.contains("Art") }
+            .mapNotNull { authorNode -> authorNode.node.getFullName() }
+        this.authors = this@toTrackSearch.authors
+            .filter { authorNode -> authorNode.role.contains("Story") }
+            .mapNotNull { authorNode -> authorNode.node.getFullName() }
+        this.genres = this@toTrackSearch.genres.map { it.name }
+    }
+}
+
+@Serializable
+data class MALGenre(
+    val id: Int,
+    val name: String,
 )
