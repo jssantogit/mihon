@@ -206,6 +206,13 @@ private fun TitleHeader(
                 maxLines = 5,
             )
         }
+        if (state.metadataSources.isNotEmpty()) {
+            Text(
+                text = "Metadados: " + state.metadataSources.joinToString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (state.isRefreshing) {
             Text("Atualizando capítulos…", style = MaterialTheme.typography.bodySmall)
         }
