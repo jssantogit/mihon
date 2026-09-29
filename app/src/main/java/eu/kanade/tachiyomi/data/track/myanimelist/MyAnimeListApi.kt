@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALManga
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALSearchResult
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALUser
+import eu.kanade.tachiyomi.data.track.myanimelist.dto.toTrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.HttpException
@@ -91,7 +92,7 @@ class MyAnimeListApi(
                     .parseAs<MALSearchResult>()
                     .data
                     .filter { !(it.node.mediaType.contains("novel")) }
-                    .map { parseSearchItem(it.node) }
+                    .map { it.node.toTrackSearch(trackerId) }
             }
         }
     }
@@ -106,7 +107,7 @@ class MyAnimeListApi(
                 authClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALManga>()
-                    .let { parseSearchItem(it) }
+                    .let { it.toTrackSearch(trackerId) }
             }
         }
     }
@@ -185,7 +186,7 @@ class MyAnimeListApi(
 
             val matches = myListSearchResult.data
                 .filter { it.node.title.contains(query, ignoreCase = true) }
-                .map { parseSearchItem(it.node) }
+                .map { it.node.toTrackSearch(trackerId) }
 
             // Check next page if there's more
             if (!myListSearchResult.paging.next.isNullOrBlank()) {
@@ -228,30 +229,6 @@ class MyAnimeListApi(
         }
     }
 
-    private fun parseSearchItem(searchItem: MALManga): TrackSearch {
-        return TrackSearch.create(trackerId).apply {
-            remote_id = searchItem.id
-            title = searchItem.title
-            summary = searchItem.synopsis
-            total_chapters = searchItem.numChapters
-            total_volumes = searchItem.numVolumes
-            score = searchItem.mean
-            cover_url = searchItem.covers?.large.orEmpty()
-            tracking_url = "https://myanimelist.net/manga/$remote_id"
-            publishing_status = searchItem.status.replace("_", " ")
-            publishing_type = searchItem.mediaType.replace("_", " ")
-            start_date = searchItem.startDate ?: ""
-            end_date = searchItem.endDate ?: ""
-            artists = searchItem.authors
-                .filter { authorNode -> authorNode.role == "Art" }
-                .mapNotNull { authorNode -> authorNode.node.getFullName() }
-            authors = searchItem.authors
-                // count all with "Story" or "Story & Art" as authors, like is done for library entries
-                .filter { authorNode -> authorNode.role.contains("Story") }
-                .mapNotNull { authorNode -> authorNode.node.getFullName() }
-        }
-    }
-
     private fun parseDate(isoDate: String): Long {
         val pattern = when (isoDate.length) {
             10 -> "yyyy-MM-dd"
@@ -281,7 +258,7 @@ class MyAnimeListApi(
         private const val BASE_API_URL = "https://api.myanimelist.net/v2"
 
         private const val SEARCH_FIELDS =
-            "id,title,synopsis,num_chapters,num_volumes,mean,main_picture,status,media_type,start_date,end_date,authors{first_name,last_name}"
+            "id,title,synopsis,num_chapters,num_volumes,mean,num_scoring_users,main_picture,status,media_type,start_date,end_date,authors{first_name,last_name},genres"
 
         private const val LIST_PAGINATION_AMOUNT = 250
 
