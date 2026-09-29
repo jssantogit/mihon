@@ -12,7 +12,9 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 
 /**
  * Exposes Kitsu's catalog capabilities without making it a chapter authority.
@@ -25,9 +27,10 @@ import tachiyomi.domain.tsuzuki.integration.SearchProvider
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<DiscoveryProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<MetadataProvider>())
+@ContributesIntoSet(AppScope::class, binding = binding<RatingsProvider>())
 class KitsuIntegrationProvider(
     private val delegate: KitsuCatalogProvider,
-) : SearchProvider, DiscoveryProvider, MetadataProvider {
+) : SearchProvider, DiscoveryProvider, MetadataProvider, RatingsProvider {
 
     override val integrationId: IntegrationId = IntegrationId("kitsu")
 
@@ -49,4 +52,18 @@ class KitsuIntegrationProvider(
         )
 
     override suspend fun getDetails(externalId: String) = delegate.getDetails(externalId)
+
+    override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+        delegate.getDetails(externalId).map { item ->
+            listOfNotNull(
+                item.score?.let { score ->
+                    ExternalRating(
+                        providerId = integrationId.value,
+                        label = "Kitsu",
+                        value = score.value,
+                        scaleMax = score.maxValue,
+                    )
+                },
+            )
+        }
 }
