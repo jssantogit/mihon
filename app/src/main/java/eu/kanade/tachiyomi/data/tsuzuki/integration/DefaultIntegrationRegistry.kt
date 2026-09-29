@@ -25,6 +25,8 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
 
@@ -39,6 +41,7 @@ class DefaultIntegrationRegistry(
     private val chapterEvidenceProviders: Set<ChapterEvidenceProvider> = emptySet(),
     private val ratingsProviders: Set<RatingsProvider> = emptySet(),
     private val trackingProviders: Set<TrackingProvider> = emptySet(),
+    private val integrationManifests: Set<IntegrationManifest> = emptySet(),
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
@@ -64,18 +67,20 @@ class DefaultIntegrationRegistry(
         .drop(1)
         .map { Unit }
 
+    override fun manifests(): List<IntegrationManifest> = integrationManifests.sortedBy { it.displayName }
+
     override fun searchProviders(): List<SearchProvider> {
-        val enabledIds = enabledIntegrationIds("search")
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.SEARCH)
         return searchProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun discoveryProviders(): List<DiscoveryProvider> {
-        val enabledIds = enabledIntegrationIds("discovery")
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.DISCOVERY)
         return discoveryProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun metadataProviders(): List<MetadataProvider> {
-        val enabledIds = enabledIntegrationIds("metadata")
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.METADATA_BASIC)
         return metadataProviders.filter { it.integrationId.value in enabledIds }
     }
 
@@ -85,16 +90,16 @@ class DefaultIntegrationRegistry(
     }
 
     override fun ratingsProviders(): List<RatingsProvider> {
-        val enabledIds = enabledIntegrationIds("ratings")
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.RATINGS)
         return ratingsProviders.filter { it.integrationId.value in enabledIds }
     }
 
     override fun trackingProviders(): List<TrackingProvider> {
-        val enabledIds = enabledIntegrationIds("tracking")
+        val enabledIds = enabledIntegrationIds(IntegrationCapability.TRACKING)
         return trackingProviders.filter { it.integrationId.value in enabledIds }
     }
 
-    private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
+    private fun enabledIntegrationIds(capability: IntegrationCapability): Set<String> = enabledIntegrationIds(capability.configKey)\n\n    private fun enabledIntegrationIds(capability: String): Set<String> = settings.value
         .groupBy { it.integrationId.value }
         .mapNotNull { (integrationId, values) ->
             values.maxByOrNull(IntegrationSettings::updatedAt)
