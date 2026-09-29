@@ -954,4 +954,5 @@
     <string name="tsuzuki_tracking_login_mangaupdates">Entre com o utilizador e a palavra-passe usados no MangaUpdates.</string>
     <string name="tsuzuki_tracking_login_local">Ativa a integração usando a configuração local do serviço.</string>
     <string name="tsuzuki_metadata_sources">Metadados: %s</string>
+    <string name="tsuzuki_tracking_login_failed">Não foi possível ligar</string>
 </resources>
