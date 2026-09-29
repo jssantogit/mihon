@@ -402,4 +402,3 @@ private fun CanonicalTitleScreenState.Loaded.metadataDateLabel(): String? = when
     !endDate.isNullOrBlank() -> endDate
     else -> null
 }
-
