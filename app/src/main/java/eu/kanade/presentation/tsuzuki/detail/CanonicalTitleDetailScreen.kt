@@ -30,7 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
-import eu.kanade.presentation.tsuzuki.integration.ratingPercentageLabel
+import eu.kanade.presentation.tsuzuki.integration.ratingScaleLabel
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalProviderRating
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
@@ -368,7 +368,8 @@ private fun ProviderRatingBadge(
             size = 20.dp,
         )
         Text(
-            text = ratingPercentageLabel(
+            text = ratingScaleLabel(
+                providerId = rating.providerId,
                 value = rating.value,
                 maxValue = rating.maxValue,
             ),

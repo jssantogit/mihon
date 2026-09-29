@@ -18,7 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
-import eu.kanade.presentation.tsuzuki.integration.ratingPercentageLabel
+import eu.kanade.presentation.tsuzuki.integration.ratingScaleLabel
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
@@ -151,7 +151,8 @@ private fun CatalogRatingBadge(
 }
 
 internal fun catalogRatingLabel(score: CatalogScore): String =
-    ratingPercentageLabel(
+    ratingScaleLabel(
+        providerId = score.provider,
         value = score.value,
         maxValue = score.maxValue,
     )

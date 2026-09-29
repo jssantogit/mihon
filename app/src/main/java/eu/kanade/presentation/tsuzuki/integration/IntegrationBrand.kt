@@ -11,7 +11,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import eu.kanade.tachiyomi.R
-import kotlin.math.roundToInt
 
 @Composable
 fun IntegrationBrandIcon(
@@ -50,16 +49,26 @@ internal fun integrationDisplayName(providerId: String): String = when (provider
     else -> providerId
 }
 
-internal fun ratingPercentageLabel(
+internal fun ratingScaleLabel(
+    providerId: String,
     value: Double,
     maxValue: Double,
 ): String {
-    val percentage = if (maxValue > 0.0) {
-        (value / maxValue * 100.0)
-            .coerceIn(0.0, 100.0)
-            .roundToInt()
-    } else {
-        value.roundToInt()
+    val displayedValue = value.toCompactRatingNumber()
+    if (providerId.lowercase() in PERCENT_RATING_PROVIDERS && maxValue == 100.0) {
+        return "$displayedValue%"
     }
-    return "$percentage%"
+    if (maxValue <= 0.0) {
+        return displayedValue
+    }
+    return "$displayedValue/${maxValue.toCompactRatingNumber()}"
 }
+
+private fun Double.toCompactRatingNumber(): String =
+    if (isFinite() && this % 1.0 == 0.0) {
+        toLong().toString()
+    } else {
+        toString()
+    }
+
+private val PERCENT_RATING_PROVIDERS = setOf("kitsu")
