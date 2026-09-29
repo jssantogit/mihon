@@ -185,6 +185,26 @@ private fun TitleHeader(
                     text = state.libraryEntry?.status?.name?.replace('_', ' ') ?: "Fora da Biblioteca",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                val editorialFacts = buildList {
+                    state.editorialFormat?.toEditorialFormatLabel()?.let(::add)
+                    state.editorialStatus?.toEditorialStatusLabel()?.let(::add)
+                    state.editorialVolumeCount?.let { add("${it} volumes") }
+                    state.metadataDateLabel()?.let(::add)
+                }
+                if (editorialFacts.isNotEmpty()) {
+                    Text(
+                        text = editorialFacts.joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                state.ratingLabel()?.let { rating ->
+                    Text(
+                        text = rating,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Button(
                     enabled = !state.libraryMutationInProgress,
                     onClick = if (state.libraryEntry == null) onAddToLibrary else onRemoveFromLibrary,
@@ -197,6 +217,13 @@ private fun TitleHeader(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.genres.take(3).forEach { genre ->
                     SuggestionChip(onClick = {}, label = { Text(genre) })
+                }
+            }
+        }
+        if (state.tags.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                state.tags.take(3).forEach { tag ->
+                    AssistChip(onClick = {}, label = { Text(tag) })
                 }
             }
         }
@@ -318,3 +345,39 @@ private fun CanonicalChapterRow(
         },
     )
 }
+
+
+private fun String.toEditorialStatusLabel(): String? = when (this) {
+    "ONGOING" -> "Em publicação"
+    "COMPLETED" -> "Concluído"
+    "ON_HIATUS" -> "Em hiato"
+    "CANCELLED" -> "Cancelado"
+    else -> null
+}
+
+private fun String.toEditorialFormatLabel(): String? = when (this) {
+    "MANGA" -> "Mangá"
+    "ONE_SHOT" -> "One-shot"
+    "MANHWA" -> "Manhwa"
+    "MANHUA" -> "Manhua"
+    "DOUJIN" -> "Doujin"
+    "NOVEL" -> "Novel"
+    else -> null
+}
+
+private fun CanonicalTitleScreenState.Loaded.metadataDateLabel(): String? = when {
+    !startDate.isNullOrBlank() && !endDate.isNullOrBlank() -> "${startDate} – ${endDate}"
+    !startDate.isNullOrBlank() -> startDate
+    !endDate.isNullOrBlank() -> endDate
+    else -> null
+}
+
+private fun CanonicalTitleScreenState.Loaded.ratingLabel(): String? {
+    val value = ratingValue ?: return null
+    val max = ratingMaxValue ?: return null
+    val score = "${value.toCompactNumber()}/${max.toCompactNumber()}"
+    return ratingVoteCount?.takeIf { it > 0 }?.let { "${score} · ${it} avaliações" } ?: score
+}
+
+private fun Double.toCompactNumber(): String =
+    if (this % 1.0 == 0.0) toInt().toString() else toString()
