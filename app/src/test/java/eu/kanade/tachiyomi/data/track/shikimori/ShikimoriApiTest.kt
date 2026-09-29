@@ -28,5 +28,5 @@ class ShikimoriApiTest {
     }
 
     private fun FormBody.formValue(name: String): String =
-        (0 until size).first { this.name(it) == name }.let(::value)
+        (0 until size).first { this.name(it) == name }.let { value(it) }
 }
