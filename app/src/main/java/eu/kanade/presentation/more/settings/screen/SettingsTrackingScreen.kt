@@ -44,10 +44,8 @@ import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
-import eu.kanade.tachiyomi.data.track.anilist.AnilistApi
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
 import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
-import eu.kanade.tachiyomi.data.track.mangabaka.MangaBakaApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.util.system.openInBrowser
@@ -138,19 +136,9 @@ object SettingsTrackingScreen : SearchableSettings {
                 title = stringResource(MR.strings.services),
                 preferenceItems = listOf(
                     Preference.PreferenceItem.TrackerPreference(
-                        tracker = trackerManager.mangaBaka,
-                        login = { context.openInBrowser(MangaBakaApi.authUrl(), forceDefaultBrowser = true) },
-                        logout = { dialog = LogoutDialog(trackerManager.mangaBaka) },
-                    ),
-                    Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.myAnimeList,
                         login = { context.openInBrowser(MyAnimeListApi.authUrl(), forceDefaultBrowser = true) },
                         logout = { dialog = LogoutDialog(trackerManager.myAnimeList) },
-                    ),
-                    Preference.PreferenceItem.TrackerPreference(
-                        tracker = trackerManager.aniList,
-                        login = { context.openInBrowser(AnilistApi.authUrl(), forceDefaultBrowser = true) },
-                        logout = { dialog = LogoutDialog(trackerManager.aniList) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.kitsu,

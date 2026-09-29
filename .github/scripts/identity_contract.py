@@ -3,12 +3,15 @@ import re
 import sys
 
 TRACKER_OAUTH_HOSTS = (
-    "anilist-auth",
     "bangumi-auth",
-    "mangabaka-auth",
     "myanimelist-auth",
     "shikimori-auth",
     "hikka-auth",
+)
+
+RETIRED_TRACKER_OAUTH_HOSTS = (
+    "anilist-auth",
+    "mangabaka-auth",
 )
 
 SIGNING_SECRET_NAMES = (
@@ -101,6 +104,10 @@ def check_contract(root: Path) -> list[str]:
         for host in TRACKER_OAUTH_HOSTS:
             if not _intent_filter_has(manifest, scheme="mihon", host=host):
                 errors.append(f"tracker OAuth host {host} is missing")
+
+        for host in RETIRED_TRACKER_OAUTH_HOSTS:
+            if _intent_filter_has(manifest, scheme="mihon", host=host):
+                errors.append(f"retired tracker OAuth host {host} must remain absent")
 
         if 'android:authorities="${applicationId}.provider"' not in manifest:
             errors.append("FileProvider authority must remain ${applicationId}.provider")

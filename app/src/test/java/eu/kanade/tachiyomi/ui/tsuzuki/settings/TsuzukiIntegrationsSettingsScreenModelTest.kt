@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.ui.tsuzuki.settings
 
 import eu.kanade.tachiyomi.data.tsuzuki.integration.DefaultIntegrationManifests
 import io.kotest.matchers.collections.shouldContainExactly
-import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.Dispatchers
@@ -59,11 +58,9 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             "kitsu",
             "mal",
             "mangaupdates",
-            "mangabaka",
             "bangumi",
             "shikimori",
             "hikka",
-            "anilist",
             "komga",
             "kavita",
             "suwayomi",
@@ -109,22 +106,6 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
         item.enabled shouldBe true
         item.capabilityEnabled[IntegrationCapability.DISCOVERY] shouldBe false
         item.capabilityEnabled[IntegrationCapability.SEARCH] shouldBe true
-    }
-
-    @Test
-    fun `restricted AniList catalog capabilities are not user configurable`() = runTest(dispatcher) {
-        val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
-        advanceUntilIdle()
-
-        val item = model.state.value
-            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
-            .items
-            .single { it.id.value == "anilist" }
-
-        item.capabilities shouldBe emptyList()
-        item.supportsTracking shouldBe true
-        item.restrictedCapabilities shouldContainKey IntegrationCapability.SEARCH
-        item.restrictedCapabilities shouldContainKey IntegrationCapability.METADATA_BASIC
     }
 
     @Test

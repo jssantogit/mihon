@@ -3,8 +3,6 @@ package eu.kanade.tachiyomi.ui.setting.track
 import android.net.Uri
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
-import logcat.LogPriority
-import tachiyomi.core.common.util.system.logcat
 
 class TrackLoginActivity : BaseOAuthLoginActivity() {
 
@@ -24,9 +22,7 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
 
         lifecycleScope.launch {
             when (uri.host) {
-                "anilist-auth" -> handleAniList(data["access_token"])
                 "bangumi-auth" -> handleBangumi(data["code"])
-                "mangabaka-auth" -> handleMangaBaka(data["code"], data["state"])
                 "myanimelist-auth" -> handleMyAnimeList(data["code"])
                 "shikimori-auth" -> handleShikimori(data["code"])
                 "hikka-auth" -> handleHikka(data["reference"])
@@ -35,35 +31,11 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
         }
     }
 
-    private suspend fun handleAniList(accessToken: String?) {
-        if (accessToken != null) {
-            trackerManager.aniList.login(accessToken)
-        } else {
-            trackerManager.aniList.logout()
-        }
-    }
-
     private suspend fun handleBangumi(code: String?) {
         if (code != null) {
             trackerManager.bangumi.login(code)
         } else {
             trackerManager.bangumi.logout()
-        }
-    }
-
-    private suspend fun handleMangaBaka(code: String?, state: String?) {
-        if (state == null) {
-            logcat(LogPriority.WARN) { "Did not receive state parameter from MangaBaka OAuth" }
-            return
-        }
-        if (code != null) {
-            if (!trackerManager.mangaBaka.verifyOAuthState(state)) {
-                logcat(LogPriority.WARN) { "Received wrong OAuth state back from MangaBaka" }
-                return
-            }
-            trackerManager.mangaBaka.login(code)
-        } else {
-            trackerManager.mangaBaka.logout()
         }
     }
 

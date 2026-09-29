@@ -399,11 +399,9 @@ private fun providerDescriptionRes(integrationId: String): StringResource? = whe
     "kitsu" -> MR.strings.tsuzuki_integration_provider_kitsu
     "mal" -> MR.strings.tsuzuki_integration_provider_mal
     "mangaupdates" -> MR.strings.tsuzuki_integration_provider_mangaupdates
-    "mangabaka" -> MR.strings.tsuzuki_integration_provider_mangabaka
     "bangumi" -> MR.strings.tsuzuki_integration_provider_bangumi
     "shikimori" -> MR.strings.tsuzuki_integration_provider_shikimori
     "hikka" -> MR.strings.tsuzuki_integration_provider_hikka
-    "anilist" -> MR.strings.tsuzuki_integration_provider_anilist
     "komga" -> MR.strings.tsuzuki_integration_provider_komga
     "kavita" -> MR.strings.tsuzuki_integration_provider_kavita
     "suwayomi" -> MR.strings.tsuzuki_integration_provider_suwayomi
