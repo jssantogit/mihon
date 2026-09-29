@@ -114,6 +114,11 @@ class ResolveCanonicalMetadata(
                         capability = IntegrationCapability.METADATA_BASIC,
                         precedence = BASIC_PRECEDENCE,
                     ) { it.genres.takeIf { genres -> genres.isNotEmpty() } },
+                    tags = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_BASIC,
+                        precedence = BASIC_PRECEDENCE,
+                    ) { it.tags.takeIf { tags -> tags.isNotEmpty() } },
                     startDate = select(
                         candidates = candidates,
                         capability = IntegrationCapability.METADATA_EDITORIAL,
