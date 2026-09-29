@@ -109,7 +109,11 @@ fun CanonicalTitleDetailScreen(
                     if (state.chapters.isEmpty()) {
                         item {
                             Text(
-                                text = if (state.isRefreshing) {\n                                    "Carregando capítulos…"\n                                } else {\n                                    "Nenhum capítulo encontrado."\n                                },
+                                text = if (state.isRefreshing) {
+                                    "Carregando capítulos…"
+                                } else {
+                                    "Nenhum capítulo encontrado."
+                                },
                                 modifier = Modifier.padding(16.dp),
                             )
                             if (!state.isRefreshing) {
