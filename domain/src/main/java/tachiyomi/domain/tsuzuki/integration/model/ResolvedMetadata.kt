@@ -31,6 +31,7 @@ data class ResolvedMetadata(
     val editorialChapterCount: ProvenancedMetadata<Int>? = null,
     val rating: ProvenancedMetadata<Double>? = null,
     val ratingDetails: ProvenancedMetadata<ResolvedRating>? = null,
+    val ratings: List<ProvenancedMetadata<ResolvedRating>> = emptyList(),
     val authors: ProvenancedMetadata<List<String>>? = null,
     val artists: ProvenancedMetadata<List<String>>? = null,
     val genres: ProvenancedMetadata<List<String>>? = null,

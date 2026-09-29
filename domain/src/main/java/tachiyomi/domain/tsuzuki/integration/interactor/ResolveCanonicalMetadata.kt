@@ -55,6 +55,8 @@ class ResolveCanonicalMetadata(
                 }.awaitAll().filterNotNull()
             }
 
+            val ratings = selectRatings(candidates)
+
             Result.success(
                 ResolvedMetadata(
                     title = select(
@@ -95,24 +97,16 @@ class ResolveCanonicalMetadata(
                         capability = IntegrationCapability.METADATA_EDITORIAL,
                         precedence = EDITORIAL_PRECEDENCE,
                     ) { it.chapterCount?.takeIf { count -> count > 0 } },
-                    rating = select(
-                        candidates = candidates,
-                        capability = IntegrationCapability.RATINGS,
-                        precedence = RATINGS_PRECEDENCE,
-                    ) { it.score?.value },
-                    ratingDetails = select(
-                        candidates = candidates,
-                        capability = IntegrationCapability.RATINGS,
-                        precedence = RATINGS_PRECEDENCE,
-                    ) { scoreOwner ->
-                        scoreOwner.score?.let { score ->
-                            ResolvedRating(
-                                value = score.value,
-                                maxValue = score.maxValue,
-                                voteCount = score.voteCount,
-                            )
-                        }
+                    rating = ratings.firstOrNull()?.let { rating ->
+                        ProvenancedMetadata(
+                            value = rating.value.value,
+                            providerId = rating.providerId,
+                            externalId = rating.externalId,
+                            attribution = rating.attribution,
+                        )
                     },
+                    ratingDetails = ratings.firstOrNull(),
+                    ratings = ratings,
                     authors = select(
                         candidates = candidates,
                         capability = IntegrationCapability.METADATA_STAFF,
@@ -204,6 +198,50 @@ class ResolveCanonicalMetadata(
             )
         }
         return null
+    }
+
+    private fun selectRatings(
+        candidates: List<Candidate>,
+    ): List<ProvenancedMetadata<ResolvedRating>> {
+        val ordered = candidates.sortedWith(
+            compareBy<Candidate>(
+                { candidate ->
+                    RATINGS_PRECEDENCE.indexOf(candidate.providerId.value)
+                        .takeIf { index -> index >= 0 }
+                        ?: Int.MAX_VALUE
+                },
+                { candidate -> candidate.providerId.value },
+                Candidate::externalId,
+            ),
+        )
+
+        return ordered
+            .asSequence()
+            .filter { candidate ->
+                registry.isGlobalCapabilityActive(
+                    candidate.providerId,
+                    IntegrationCapability.RATINGS,
+                )
+            }
+            .mapNotNull { candidate ->
+                val score = candidate.item.score ?: return@mapNotNull null
+                val attribution = registry.manifests()
+                    .firstOrNull { it.integrationId == candidate.providerId }
+                    ?.policyFor(IntegrationCapability.RATINGS)
+                    ?.attribution
+                ProvenancedMetadata(
+                    value = ResolvedRating(
+                        value = score.value,
+                        maxValue = score.maxValue,
+                        voteCount = score.voteCount,
+                    ),
+                    providerId = candidate.providerId,
+                    externalId = candidate.externalId,
+                    attribution = attribution,
+                )
+            }
+            .distinctBy { it.providerId }
+            .toList()
     }
 
     private data class Candidate(

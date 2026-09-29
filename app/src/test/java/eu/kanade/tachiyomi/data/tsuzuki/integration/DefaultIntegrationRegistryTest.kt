@@ -111,6 +111,20 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
+    fun `catalog providers with ranked feeds declare discovery capability`() = runTest {
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(emptyList()),
+        )
+
+        listOf("mangaupdates", "bangumi").forEach { integrationId ->
+            val manifest = registry.manifests().single { it.integrationId.value == integrationId }
+
+            (IntegrationCapability.DISCOVERY in manifest.capabilities) shouldBe true
+        }
+    }
+
+    @Test
     fun `staff metadata is exposed only by manifests that declare it`() = runTest {
         val kitsu = FakeMetadataProvider("kitsu")
         val mal = FakeMetadataProvider("mal")

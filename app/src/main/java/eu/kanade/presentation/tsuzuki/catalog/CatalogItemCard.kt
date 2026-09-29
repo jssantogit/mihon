@@ -17,10 +17,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
+import eu.kanade.presentation.tsuzuki.integration.ratingPercentageLabel
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
-import kotlin.math.roundToInt
 
 @Composable
 fun CatalogItemCard(
@@ -72,11 +73,8 @@ fun CatalogItemCard(
                 }
 
                 item.score?.let { score ->
-                    Text(
-                        text = catalogRatingLabel(score),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
+                    CatalogRatingBadge(
+                        score = score,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
@@ -121,31 +119,39 @@ fun CatalogCompactCard(
             modifier = Modifier.padding(top = 4.dp),
         )
         item.score?.let { score ->
-            Text(
-                text = catalogRatingLabel(score),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
+            CatalogRatingBadge(
+                score = score,
+                modifier = Modifier.padding(top = 2.dp),
             )
         }
     }
 }
 
-internal fun catalogRatingLabel(score: CatalogScore): String {
-    val percentage = if (score.maxValue > 0.0) {
-        (score.value / score.maxValue * 100.0)
-            .coerceIn(0.0, 100.0)
-            .roundToInt()
-    } else {
-        score.value.roundToInt()
+@Composable
+private fun CatalogRatingBadge(
+    score: CatalogScore,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IntegrationBrandIcon(
+            providerId = score.provider,
+            size = 16.dp,
+        )
+        Text(
+            text = catalogRatingLabel(score),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+        )
     }
-    val provider = when (score.provider.lowercase()) {
-        "mal" -> "MAL"
-        "kitsu" -> "Kitsu"
-        "mangaupdates" -> "MangaUpdates"
-        "bangumi" -> "Bangumi"
-        "shikimori" -> "Shikimori"
-        "hikka" -> "Hikka"
-        else -> score.provider
-    }
-    return "★ $percentage% · $provider"
 }
+
+internal fun catalogRatingLabel(score: CatalogScore): String =
+    ratingPercentageLabel(
+        value = score.value,
+        maxValue = score.maxValue,
+    )

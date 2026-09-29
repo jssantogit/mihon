@@ -11,6 +11,18 @@ import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
 import tachiyomi.domain.track.model.Track as DomainTrack
 
+interface BangumiIntegrationApi {
+    suspend fun search(query: String): List<TrackSearch>
+
+    suspend fun browse(
+        sort: String,
+        offset: Int,
+        limit: Int,
+    ): List<TrackSearch>
+
+    suspend fun getMangaDetails(id: Int): TrackSearch
+}
+
 class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
 
     private val json: Json by injectLazy()
@@ -18,6 +30,21 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
     private val interceptor by lazy { BangumiInterceptor(this) }
 
     private val api by lazy { BangumiApi(id, client, interceptor) }
+
+    internal val integrationApi: BangumiIntegrationApi = object : BangumiIntegrationApi {
+        override suspend fun search(query: String): List<TrackSearch> =
+            this@Bangumi.search(query)
+
+        override suspend fun browse(
+            sort: String,
+            offset: Int,
+            limit: Int,
+        ): List<TrackSearch> =
+            api.browse(sort, offset, limit)
+
+        override suspend fun getMangaDetails(id: Int): TrackSearch =
+            api.getMangaDetails(id) ?: error("Bangumi title not found: $id")
+    }
 
     override val supportsPrivateTracking: Boolean = true
 

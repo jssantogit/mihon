@@ -80,6 +80,75 @@ class ResolveCanonicalMetadataTest {
     }
 
     @Test
+    fun `ratings preserve every verified provider score with provenance`() = runTest {
+        val repository = FakeCanonicalTitleRepository(
+            identities = listOf(
+                identity("kitsu", "k1"),
+                identity("mal", "m1"),
+                identity("mangaupdates", "mu1"),
+                identity("bangumi", "b1"),
+            ),
+        )
+        val registry = FakeRegistry(
+            listOf(
+                FakeMetadataProvider(
+                    "kitsu",
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = "k1",
+                        title = "Kitsu title",
+                        score = CatalogScore("kitsu", 81.0, 100.0, voteCount = 800),
+                    ),
+                ),
+                FakeMetadataProvider(
+                    "mal",
+                    CatalogItem(
+                        provider = "mal",
+                        providerId = "m1",
+                        title = "MAL title",
+                        score = CatalogScore("mal", 8.7, 10.0, voteCount = 1200),
+                    ),
+                ),
+                FakeMetadataProvider(
+                    "mangaupdates",
+                    CatalogItem(
+                        provider = "mangaupdates",
+                        providerId = "mu1",
+                        title = "MU title",
+                        score = CatalogScore("mangaupdates", 9.1, 10.0, voteCount = 600),
+                    ),
+                ),
+                FakeMetadataProvider(
+                    "bangumi",
+                    CatalogItem(
+                        provider = "bangumi",
+                        providerId = "b1",
+                        title = "Bangumi title",
+                        score = CatalogScore("bangumi", 8.4, 10.0, voteCount = 400),
+                    ),
+                ),
+            ),
+        )
+
+        val resolved = ResolveCanonicalMetadata(repository, registry)
+            .execute(TITLE_ID)
+            .getOrThrow()
+
+        resolved.ratings.map { it.providerId.value } shouldBe listOf(
+            "mal",
+            "kitsu",
+            "mangaupdates",
+            "bangumi",
+        )
+        resolved.ratings.map { it.value.value } shouldBe listOf(8.7, 81.0, 9.1, 8.4)
+        resolved.ratings.map { it.value.maxValue } shouldBe listOf(10.0, 100.0, 10.0, 10.0)
+        resolved.ratings.map { it.value.voteCount } shouldBe listOf(1200, 800, 600, 400)
+
+        resolved.ratingDetails?.providerId?.value shouldBe "mal"
+        resolved.ratingDetails?.value?.value shouldBe 8.7
+    }
+
+    @Test
     fun `staff and editorial fields keep deterministic provenance`() = runTest {
         val repository = FakeCanonicalTitleRepository(
             identities = listOf(
