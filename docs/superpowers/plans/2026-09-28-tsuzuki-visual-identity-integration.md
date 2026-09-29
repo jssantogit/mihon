@@ -28,7 +28,7 @@ Two optical refinements were identified from real Android surfaces:
 Refinement:
 
 - About header container: 144dp, producing roughly a low-90dp visible B1 mark;
-- adaptive/monochrome scale: 46% target after the second signed-APK smoke showed 56% remained optically overfilled on Android system surfaces;
+- adaptive/monochrome scale: 40% final target after the 46% signed-APK smoke still appeared optically overfilled on Android system surfaces;
 - no geometry change to B1.
 
 ## Integration
