@@ -278,5 +278,4 @@ object SettingsMainScreen : Screen() {
             ),
         ),
     )
-
 }
