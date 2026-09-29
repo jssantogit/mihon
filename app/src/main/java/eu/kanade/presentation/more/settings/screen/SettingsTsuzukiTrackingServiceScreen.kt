@@ -225,10 +225,12 @@ private fun TrackingServiceContent(
                     if (isLoggedIn) {
                         logoutDialog = true
                     } else {
-                        when (tracker.id) {                            MAL_TRACKER_ID -> context.openInBrowser(
+                        when (tracker.id) {
+                            MAL_TRACKER_ID -> context.openInBrowser(
                                 MyAnimeListApi.authUrl(),
                                 forceDefaultBrowser = true,
-                            )                            SHIKIMORI_TRACKER_ID -> context.openInBrowser(
+                            )
+                            SHIKIMORI_TRACKER_ID -> context.openInBrowser(
                                 ShikimoriApi.authUrl(),
                                 forceDefaultBrowser = true,
                             )
