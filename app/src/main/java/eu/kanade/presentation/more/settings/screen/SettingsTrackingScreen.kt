@@ -134,11 +134,13 @@ object SettingsTrackingScreen : SearchableSettings {
             ),
             Preference.PreferenceGroup(
                 title = stringResource(MR.strings.services),
-                preferenceItems = listOf(                    Preference.PreferenceItem.TrackerPreference(
+                preferenceItems = listOf(
+                    Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.myAnimeList,
                         login = { context.openInBrowser(MyAnimeListApi.authUrl(), forceDefaultBrowser = true) },
                         logout = { dialog = LogoutDialog(trackerManager.myAnimeList) },
-                    ),                    Preference.PreferenceItem.TrackerPreference(
+                    ),
+                    Preference.PreferenceItem.TrackerPreference(
                         tracker = trackerManager.kitsu,
                         login = { dialog = LoginDialog(trackerManager.kitsu, MR.strings.email) },
                         logout = { dialog = LogoutDialog(trackerManager.kitsu) },
