@@ -1147,4 +1147,5 @@
     <string name="drive_sync_info">Private sync currently includes Library, Collections, and logical source mappings/preferences. Downloads, page caches, and tracker credentials are never synchronized.</string>
     <string name="drive_sync_failed_to_start">Could not run Drive sync.</string>
 
+    <string name="tsuzuki_personalizations_title">Personalizations</string>
 </resources>
