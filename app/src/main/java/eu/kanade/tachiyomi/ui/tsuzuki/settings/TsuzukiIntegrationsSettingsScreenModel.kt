@@ -192,58 +192,47 @@ class TsuzukiIntegrationsSettingsScreenModel(
         val DOWNLOADS = TsuzukiIntegrationCapability.DOWNLOADS
 
         val DEFINITIONS = listOf(
-            Definition(
-                IntegrationId("kitsu"), "Kitsu",
+            Definition(\n                IntegrationId("kitsu"),\n                "Kitsu",
                 listOf(SEARCH, DISCOVERY, METADATA, RATINGS, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("mal"), "MyAnimeList",
+            Definition(\n                IntegrationId("mal"),\n                "MyAnimeList",
                 listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("mangaupdates"), "MangaUpdates",
+            Definition(\n                IntegrationId("mangaupdates"),\n                "MangaUpdates",
                 listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("mangabaka"), "MangaBaka",
+            Definition(\n                IntegrationId("mangabaka"),\n                "MangaBaka",
                 listOf(SEARCH, METADATA, CROSSWALK, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("bangumi"), "Bangumi",
+            Definition(\n                IntegrationId("bangumi"),\n                "Bangumi",
                 listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("shikimori"), "Shikimori",
+            Definition(\n                IntegrationId("shikimori"),\n                "Shikimori",
                 listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("hikka"), "Hikka",
+            Definition(\n                IntegrationId("hikka"),\n                "Hikka",
                 listOf(SEARCH, METADATA, RATINGS, TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("anilist"), "AniList",
+            Definition(\n                IntegrationId("anilist"),\n                "AniList",
                 listOf(TRACKING, USER_LISTS),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("komga"), "Komga",
+            Definition(\n                IntegrationId("komga"),\n                "Komga",
                 listOf(METADATA, REMOTE_LIBRARY, TRACKING),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("kavita"), "Kavita",
+            Definition(\n                IntegrationId("kavita"),\n                "Kavita",
                 listOf(METADATA, REMOTE_LIBRARY, TRACKING),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
-            Definition(
-                IntegrationId("suwayomi"), "Suwayomi",
+            Definition(\n                IntegrationId("suwayomi"),\n                "Suwayomi",
                 listOf(METADATA, REMOTE_LIBRARY, READING_CONTENT, DOWNLOADS, TRACKING),
                 TsuzukiIntegrationAuthState.MANAGED_EXTERNALLY,
             ),
