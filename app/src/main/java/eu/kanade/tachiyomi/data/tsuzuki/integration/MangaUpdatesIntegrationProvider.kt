@@ -15,7 +15,6 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import kotlin.coroutines.cancellation.CancellationException
 
-@Inject
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<DiscoveryProvider>())
@@ -26,26 +25,24 @@ class MangaUpdatesIntegrationProvider private constructor(
 
     @Inject
     constructor(trackerManager: TrackerManager) : this(trackerManager.mangaUpdates.integrationApi)
+
     override val integrationId = IntegrationId("mangaupdates")
 
     override suspend fun search(query: CatalogQuery): Result<CatalogPage> = capture {
         val text = query.query?.trim().orEmpty()
         if (text.isEmpty()) return@capture CatalogPage(emptyList(), false)
+
         val all = api.search(text)
-        val page = all.drop(query.offset.coerceAtLeast(0)).take(query.limit.coerceAtLeast(0))
+        val page = all
+            .drop(query.offset.coerceAtLeast(0))
+            .take(query.limit.coerceAtLeast(0))
+
         CatalogPage(
             items = page.map { it.toIntegrationCatalogItem(integrationId.value) },
             hasNextPage = query.offset + page.size < all.size,
             totalCount = all.size,
         )
-        companion object {
-        private const val MANGA_UPDATES_WEEKLY_RANK = "week_pos"
-        private const val MANGA_UPDATES_READING_RANK = "list_reading"
-
-        internal fun forTest(api: MangaUpdatesIntegrationApi): MangaUpdatesIntegrationProvider =
-            MangaUpdatesIntegrationProvider(api)
     }
-}
 
     override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> = capture {
         val items = api.discover(
@@ -53,7 +50,11 @@ class MangaUpdatesIntegrationProvider private constructor(
             offset = offset,
             limit = limit,
         ).map { it.toIntegrationCatalogItem(integrationId.value) }
-        CatalogPage(items = items, hasNextPage = limit > 0 && items.size == limit)
+
+        CatalogPage(
+            items = items,
+            hasNextPage = limit > 0 && items.size == limit,
+        )
     }
 
     override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> = capture {
@@ -62,7 +63,11 @@ class MangaUpdatesIntegrationProvider private constructor(
             offset = offset,
             limit = limit,
         ).map { it.toIntegrationCatalogItem(integrationId.value) }
-        CatalogPage(items = items, hasNextPage = limit > 0 && items.size == limit)
+
+        CatalogPage(
+            items = items,
+            hasNextPage = limit > 0 && items.size == limit,
+        )
     }
 
     override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
@@ -82,5 +87,13 @@ class MangaUpdatesIntegrationProvider private constructor(
         throw error
     } catch (error: Throwable) {
         Result.failure(error)
+    }
+
+    companion object {
+        private const val MANGA_UPDATES_WEEKLY_RANK = "week_pos"
+        private const val MANGA_UPDATES_READING_RANK = "list_reading"
+
+        internal fun forTest(api: MangaUpdatesIntegrationApi): MangaUpdatesIntegrationProvider =
+            MangaUpdatesIntegrationProvider(api)
     }
 }
