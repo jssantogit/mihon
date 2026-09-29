@@ -60,11 +60,13 @@ fun CollectionsScreen(
     onExportRequest: () -> Unit,
     onDismissTransferState: () -> Unit,
     modifier: Modifier = Modifier,
+    initialCollectionId: String? = null,
+    initialFolderId: String? = null,
 ) {
     var editor by remember { mutableStateOf<EditorDialog?>(null) }
     var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
-    var selectedCollectionId by remember { mutableStateOf<String?>(null) }
-    var selectedFolderId by remember { mutableStateOf<String?>(null) }
+    var selectedCollectionId by remember(initialCollectionId) { mutableStateOf(initialCollectionId) }
+    var selectedFolderId by remember(initialFolderId) { mutableStateOf(initialFolderId) }
 
     val readyState = state as? CollectionsScreenState.Ready
     val selectedCollection = readyState?.collections?.firstOrNull {
