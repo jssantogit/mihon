@@ -11,6 +11,18 @@ import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import tachiyomi.i18n.MR
 import tachiyomi.domain.track.model.Track as DomainTrack
 
+interface MangaUpdatesIntegrationApi {
+    suspend fun search(query: String): List<TrackSearch>
+
+    suspend fun discover(
+        orderBy: String,
+        offset: Int,
+        limit: Int,
+    ): List<TrackSearch>
+
+    suspend fun getMangaDetails(id: Long): TrackSearch
+}
+
 class MangaUpdates(id: Long) : BaseTracker(id, "MangaUpdates"), DeletableTracker {
 
     companion object {
@@ -37,6 +49,22 @@ class MangaUpdates(id: Long) : BaseTracker(id, "MangaUpdates"), DeletableTracker
     private val interceptor by lazy { MangaUpdatesInterceptor(this) }
 
     private val api by lazy { MangaUpdatesApi(client, interceptor) }
+
+    internal val integrationApi: MangaUpdatesIntegrationApi = object : MangaUpdatesIntegrationApi {
+        override suspend fun search(query: String): List<TrackSearch> =
+            this@MangaUpdates.search(query)
+
+        override suspend fun discover(
+            orderBy: String,
+            offset: Int,
+            limit: Int,
+        ): List<TrackSearch> =
+            api.discover(orderBy, offset, limit).map { it.toTrackSearch(id) }
+
+        override suspend fun getMangaDetails(id: Long): TrackSearch =
+            api.getSeriesDetails(id)?.toTrackSearch(this@MangaUpdates.id)
+                ?: error("MangaUpdates title not found: $id")
+    }
 
     override fun getLogo(): Int = R.drawable.brand_mangaupdates
 
