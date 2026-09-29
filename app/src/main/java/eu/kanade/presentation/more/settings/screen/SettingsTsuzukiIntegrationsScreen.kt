@@ -208,12 +208,14 @@ class SettingsTsuzukiIntegrationDetailScreen(
                                     }
                                 },
                                 trailingContent = {
-                                    Switch(
-                                        checked = item.capabilityEnabled[capability] ?: true,
-                                        onCheckedChange = {
-                                            screenModel.setCapabilityEnabled(item.id, capability, it)
-                                        },
-                                    )
+                                    if (capability in item.configurableCapabilities) {
+                                        Switch(
+                                            checked = item.capabilityEnabled[capability] ?: true,
+                                            onCheckedChange = {
+                                                screenModel.setCapabilityEnabled(item.id, capability, it)
+                                            },
+                                        )
+                                    }
                                 },
                             )
                         }
@@ -238,7 +240,7 @@ class SettingsTsuzukiIntegrationDetailScreen(
                         }
                     }
                     if (
-                        IntegrationCapability.TRACKING in item.capabilities &&
+                        item.supportsTracking &&
                         item.legacyTrackerId != null
                     ) {
                         item {
