@@ -111,7 +111,7 @@ class SettingsTsuzukiTrackingServiceScreen(
                     title = { Text(tracker?.name ?: stringResource(MR.strings.tsuzuki_tracking_account)) },
                     navigationIcon = {
                         TextButton(onClick = navigator::pop) {
-                            Text("Voltar")
+                            Text(stringResource(MR.strings.tsuzuki_navigation_back))
                         }
                     },
                 )
