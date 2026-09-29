@@ -40,10 +40,10 @@ import eu.kanade.presentation.track.components.TrackLogoIcon
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
-import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
-import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
+import eu.kanade.tachiyomi.data.track.bangumi.Bangumi
+import eu.kanade.tachiyomi.data.track.hikka.Hikka
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeList
-import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
+import eu.kanade.tachiyomi.data.track.shikimori.Shikimori
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
 import eu.kanade.tachiyomi.ui.browse.extension.details.SourcePreferencesScreen
@@ -165,6 +165,7 @@ private fun TrackingServiceContent(
         TrackerCredentialLoginDialog(
             tracker = tracker,
             usernameLabel = if (tracker.id == KITSU_TRACKER_ID) MR.strings.email else MR.strings.username,
+            tokenOnly = tracker is Bangumi,
             onDismiss = { loginDialog = false },
         )
     }
@@ -229,6 +230,8 @@ private fun TrackingServiceContent(
             )
             val canStartLogin = when (tracker) {
                 is MyAnimeList -> tracker.hasClientId()
+                is Shikimori -> tracker.hasApplicationCredentials()
+                is Hikka -> tracker.hasApplicationCredentials()
                 else -> tracker !is EnhancedTracker || acceptedSources.isNotEmpty()
             }
             Button(
@@ -243,15 +246,12 @@ private fun TrackingServiceContent(
                                 forceDefaultBrowser = true,
                             )
                             SHIKIMORI_TRACKER_ID -> context.openInBrowser(
-                                ShikimoriApi.authUrl(),
+                                (tracker as Shikimori).authUrl(),
                                 forceDefaultBrowser = true,
                             )
-                            BANGUMI_TRACKER_ID -> context.openInBrowser(
-                                BangumiApi.authUrl(),
-                                forceDefaultBrowser = true,
-                            )
+                            BANGUMI_TRACKER_ID -> loginDialog = true
                             HIKKA_TRACKER_ID -> context.openInBrowser(
-                                HikkaApi.authUrl(),
+                                (tracker as Hikka).authUrl(),
                                 forceDefaultBrowser = true,
                             )
                             else -> {
@@ -336,13 +336,14 @@ private fun TrackingServiceContent(
 private fun TrackerCredentialLoginDialog(
     tracker: Tracker,
     usernameLabel: StringResource,
+    tokenOnly: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val loginFailedMessage = stringResource(MR.strings.tsuzuki_tracking_login_failed)
-    var username by remember { mutableStateOf(tracker.getUsername()) }
-    var password by remember { mutableStateOf(tracker.getPassword()) }
+    var username by remember { mutableStateOf(if (tokenOnly) "" else tracker.getUsername()) }
+    var password by remember { mutableStateOf(if (tokenOnly) "" else tracker.getPassword()) }
     var processing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -351,17 +352,29 @@ private fun TrackerCredentialLoginDialog(
         title = { Text(stringResource(MR.strings.tsuzuki_tracking_connect) + " " + tracker.name) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text(stringResource(usernameLabel)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
+                if (!tokenOnly) {
+                    OutlinedTextField(
+                        value = username,
+                        onValueChange = { username = it },
+                        label = { Text(stringResource(usernameLabel)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text(stringResource(MR.strings.password)) },
+                    label = {
+                        Text(
+                            stringResource(
+                                if (tokenOnly) {
+                                    MR.strings.tsuzuki_bangumi_access_token
+                                } else {
+                                    MR.strings.password
+                                },
+                            ),
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
@@ -374,14 +387,16 @@ private fun TrackerCredentialLoginDialog(
         },
         confirmButton = {
             Button(
-                enabled = !processing && username.isNotBlank() && password.isNotBlank(),
+                enabled = !processing &&
+                    password.isNotBlank() &&
+                    (tokenOnly || username.isNotBlank()),
                 onClick = {
                     scope.launch {
                         processing = true
                         errorMessage = null
                         val error = try {
                             withContext(Dispatchers.IO) {
-                                tracker.login(username, password)
+                                tracker.login(if (tokenOnly) "" else username, password)
                             }
                             null
                         } catch (error: CancellationException) {
@@ -416,9 +431,13 @@ private fun TrackerCredentialLoginDialog(
 
 private fun loginDescriptionRes(tracker: Tracker): StringResource = when {
     tracker is MyAnimeList && !tracker.hasClientId() -> MR.strings.tsuzuki_mal_client_id_required
+    tracker is Shikimori && !tracker.hasApplicationCredentials() ->
+        MR.strings.tsuzuki_shikimori_credentials_required
+    tracker is Hikka && !tracker.hasApplicationCredentials() ->
+        MR.strings.tsuzuki_hikka_credentials_required
+    tracker is Bangumi -> MR.strings.tsuzuki_bangumi_access_token_summary
     tracker.id == MAL_TRACKER_ID ||
         tracker.id == SHIKIMORI_TRACKER_ID ||
-        tracker.id == BANGUMI_TRACKER_ID ||
         tracker.id == HIKKA_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_browser
 
     tracker.id == KITSU_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_kitsu
