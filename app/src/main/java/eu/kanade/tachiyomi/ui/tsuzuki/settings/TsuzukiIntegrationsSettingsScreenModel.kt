@@ -166,7 +166,8 @@ class TsuzukiIntegrationsSettingsScreenModel(
 
     private fun IntegrationManifest.restrictedCapabilities(): Map<IntegrationCapability, CapabilityPolicy> =
         capabilities.filter { (capability, policy) ->
-            capability !in visibleCapabilities() &&
+            capability !in ACCOUNT_ONLY_CAPABILITIES &&
+                capability !in visibleCapabilities() &&
                 !policy.policy.allowsGlobalResolution
         }
 
