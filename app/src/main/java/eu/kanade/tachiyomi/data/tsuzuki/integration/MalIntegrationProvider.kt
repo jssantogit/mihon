@@ -86,10 +86,12 @@ class MalIntegrationProvider private constructor(
                         provider = integrationId.value,
                         value = value,
                         maxValue = MAL_SCORE_MAX,
+                        voteCount = score_votes,
                     )
                 },
             authors = authors.filter(String::isNotBlank).distinct(),
             artists = artists.filter(String::isNotBlank).distinct(),
+            genres = genres.filter(String::isNotBlank).distinct(),
             startDate = start_date.ifBlank { null },
             endDate = end_date.ifBlank { null },
             chapterCount = total_chapters
