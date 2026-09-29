@@ -38,6 +38,12 @@ class TrackSearch : Track {
 
     var artists: List<String> = emptyList()
 
+    var genres: List<String> = emptyList()
+
+    var tags: List<String> = emptyList()
+
+    var score_votes: Int? = null
+
     var total_volumes: Long = 0
 
     var cover_url: String = ""
