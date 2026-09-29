@@ -4,11 +4,8 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.BaseTracker
-import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMOAuth
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
-import kotlinx.serialization.json.Json
 import tachiyomi.i18n.MR
-import uy.kohesive.injekt.injectLazy
 import tachiyomi.domain.track.model.Track as DomainTrack
 
 interface BangumiIntegrationApi {
@@ -24,8 +21,6 @@ interface BangumiIntegrationApi {
 }
 
 class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
-
-    private val json: Json by injectLazy()
 
     private val interceptor by lazy { BangumiInterceptor(this) }
 
@@ -130,39 +125,34 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
 
     override fun getCompletionStatus(): Long = COMPLETED
 
-    override suspend fun login(username: String, password: String) = login(password)
+    override suspend fun login(username: String, password: String) {
+        loginWithPersonalAccessToken(password)
+    }
 
-    suspend fun login(code: String) {
+    suspend fun loginWithPersonalAccessToken(accessToken: String) {
+        val normalized = accessToken.trim().ifBlank { throw BangumiAccessTokenMissing() }
+        logout()
+        trackPreferences.integrationCredential(INTEGRATION_ID, ACCESS_TOKEN_KEY).set(normalized)
+
         try {
-            val oauth = api.accessToken(code)
-            interceptor.newAuth(oauth)
-            // Users can set a 'username' (not nickname) once which effectively
-            // replaces the stringified ID in certain queries.
-            // If no username is set, the API returns the user ID as a strings
             val currentUser = api.getCurrentUser()
             saveDisplayUsername(currentUser.nickname?.takeIf { it.isNotBlank() } ?: currentUser.username)
-            saveCredentials(currentUser.username, oauth.accessToken)
-        } catch (_: Throwable) {
+            saveCredentials(currentUser.username, PERSONAL_TOKEN_MARKER)
+        } catch (error: Throwable) {
             logout()
+            throw error
         }
     }
 
-    fun saveToken(oauth: BGMOAuth?) {
-        trackPreferences.trackToken(this).set(json.encodeToString(oauth))
-    }
+    fun getPersonalAccessToken(): String =
+        trackPreferences.integrationCredential(INTEGRATION_ID, ACCESS_TOKEN_KEY).get().trim()
 
-    fun restoreToken(): BGMOAuth? {
-        return try {
-            json.decodeFromString<BGMOAuth>(trackPreferences.trackToken(this).get())
-        } catch (_: Exception) {
-            null
-        }
-    }
+    fun hasPersonalAccessToken(): Boolean = getPersonalAccessToken().isNotBlank()
 
     override fun logout() {
         super.logout()
         trackPreferences.trackToken(this).delete()
-        interceptor.newAuth(null)
+        trackPreferences.integrationCredential(INTEGRATION_ID, ACCESS_TOKEN_KEY).delete()
     }
 
     companion object {
@@ -176,5 +166,8 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
             .map(Int::toString)
 
         private const val SEARCH_ID_PREFIX = "id:"
+        private const val INTEGRATION_ID = "bangumi"
+        private const val ACCESS_TOKEN_KEY = "access_token"
+        private const val PERSONAL_TOKEN_MARKER = "personal_access_token"
     }
 }
