@@ -1,5 +1,6 @@
 package eu.kanade.presentation.tsuzuki.collections
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,13 +63,31 @@ fun CollectionsScreen(
 ) {
     var editor by remember { mutableStateOf<EditorDialog?>(null) }
     var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
+    var selectedCollectionId by remember { mutableStateOf<String?>(null) }
+    var selectedFolderId by remember { mutableStateOf<String?>(null) }
+
+    val readyState = state as? CollectionsScreenState.Ready
+    val selectedCollection = readyState?.collections?.firstOrNull {
+        it.collection.id == selectedCollectionId
+    }
+    val selectedFolder = selectedCollection?.folders?.firstOrNull {
+        it.folder.id == selectedFolderId
+    }
 
     Scaffold(
         modifier = modifier,
         topBar = {
             AppBar(
-                title = "Collections",
-                navigateUp = navigateUp,
+                title = selectedFolder?.folder?.title
+                    ?: selectedCollection?.collection?.title
+                    ?: "Collections",
+                navigateUp = {
+                    when {
+                        selectedFolderId != null -> selectedFolderId = null
+                        selectedCollectionId != null -> selectedCollectionId = null
+                        else -> navigateUp()
+                    }
+                },
                 actions = {
                     TextButton(
                         onClick = { editor = EditorDialog.CreateCollection },
@@ -128,6 +147,13 @@ fun CollectionsScreen(
                     onAction = onAction,
                     onEdit = { editor = it },
                     onDelete = { deleteTarget = it },
+                    selectedCollectionId = selectedCollectionId,
+                    selectedFolderId = selectedFolderId,
+                    onOpenCollection = {
+                        selectedCollectionId = it
+                        selectedFolderId = null
+                    },
+                    onOpenFolder = { selectedFolderId = it },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
@@ -326,53 +352,95 @@ private fun CollectionsReadyContent(
     onAction: (CollectionsAction) -> Unit,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    selectedCollectionId: String?,
+    selectedFolderId: String?,
+    onOpenCollection: (String) -> Unit,
+    onOpenFolder: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val selectedCollection = collections.firstOrNull { it.collection.id == selectedCollectionId }
+    val selectedFolder = selectedCollection?.folders?.firstOrNull { it.folder.id == selectedFolderId }
+
     LazyColumn(
         modifier = modifier,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (collections.isEmpty()) {
-            item(key = "empty") {
-                Text(
-                    text = "No Collections yet. Create one to organize catalog queries.",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-        }
-
-        collections.forEach { graph ->
-            item(key = "collection:${graph.collection.id}") {
-                CollectionHeader(
-                    graph = graph,
-                    onAction = onAction,
-                    onEdit = onEdit,
-                    onDelete = onDelete,
-                )
-            }
-
-            graph.folders.forEach { folder ->
-                item(key = "folder:${folder.folder.id}") {
-                    FolderRow(
-                        collectionId = graph.collection.id,
-                        model = folder,
-                        onAction = onAction,
-                        onEdit = onEdit,
-                        onDelete = onDelete,
-                    )
+        when {
+            selectedCollection == null -> {
+                if (collections.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            text = "No Collections yet. Create one to organize catalog queries.",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
                 }
+                collections.forEach { graph ->
+                    item(key = "collection:${graph.collection.id}") {
+                        CollectionHeader(
+                            graph = graph,
+                            onAction = onAction,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                            onOpen = { onOpenCollection(graph.collection.id) },
+                        )
+                    }
+                }
+            }
 
-                folder.lists.forEach { list ->
+            selectedFolder == null -> {
+                val visibleFolders = selectedCollection.folders.filter { it.depth == 0 }
+                if (visibleFolders.isEmpty()) {
+                    item(key = "empty_folders") {
+                        Text("No folders in this Collection yet.")
+                    }
+                }
+                visibleFolders.forEach { folder ->
+                    item(key = "folder:${folder.folder.id}") {
+                        FolderRow(
+                            collectionId = selectedCollection.collection.id,
+                            model = folder,
+                            onAction = onAction,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                            onOpen = { onOpenFolder(folder.folder.id) },
+                        )
+                    }
+                }
+            }
+
+            else -> {
+                val childFolders = selectedCollection.folders.filter {
+                    it.folder.parentFolderId == selectedFolder.folder.id
+                }
+                childFolders.forEach { folder ->
+                    item(key = "subfolder:${folder.folder.id}") {
+                        FolderRow(
+                            collectionId = selectedCollection.collection.id,
+                            model = folder,
+                            onAction = onAction,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                            onOpen = { onOpenFolder(folder.folder.id) },
+                        )
+                    }
+                }
+                selectedFolder.lists.forEach { list ->
                     item(key = "list:${list.id}") {
                         ListRow(
-                            folderDepth = folder.depth,
+                            folderDepth = 0,
                             list = list,
                             runtimeState = listRuntimeStates[list.id] ?: CollectionListRuntimeState.Idle,
                             onAction = onAction,
                             onEdit = onEdit,
                             onDelete = onDelete,
                         )
+                    }
+                }
+                if (childFolders.isEmpty() && selectedFolder.lists.isEmpty()) {
+                    item(key = "empty_folder") {
+                        Text("This folder has no subfolders or Lists yet.")
                     }
                 }
             }
@@ -396,10 +464,13 @@ private fun CollectionHeader(
     onAction: (CollectionsAction) -> Unit,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    onOpen: () -> Unit,
 ) {
     val collection = graph.collection
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
@@ -481,6 +552,7 @@ private fun FolderRow(
     onAction: (CollectionsAction) -> Unit,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    onOpen: () -> Unit,
 ) {
     val folder = model.folder
 
@@ -490,11 +562,13 @@ private fun FolderRow(
             .padding(start = (model.depth * 20).dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpen),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (model.depth == 0) "Folder: ${folder.title}" else "↳ ${folder.title}",
+                text = folder.title,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
