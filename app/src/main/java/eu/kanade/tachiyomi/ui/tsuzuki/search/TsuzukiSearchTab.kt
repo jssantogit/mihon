@@ -26,7 +26,7 @@ data object TsuzukiSearchTab : Tab {
         get() = TabOptions(
             index = 1u,
             title = "Search",
-            icon = painterResource(R.drawable.ic_book_24dp),
+            icon = painterResource(R.drawable.ic_search_24dp),
         )
 
     override suspend fun onReselect(navigator: Navigator) = Unit

@@ -1,6 +1,5 @@
 package eu.kanade.presentation.tsuzuki.search
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,10 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -29,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
+import eu.kanade.presentation.tsuzuki.catalog.CatalogItemCard
 import eu.kanade.tachiyomi.ui.tsuzuki.search.DiscoverBlock
 import eu.kanade.tachiyomi.ui.tsuzuki.search.DiscoverKind
 import eu.kanade.tachiyomi.ui.tsuzuki.search.SearchState
@@ -53,11 +51,6 @@ fun TsuzukiSearchScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Search") },
-                actions = {
-                    TextButton(onClick = onOpenIntegrations) {
-                        Text("Integrations")
-                    }
-                },
             )
         },
     ) { contentPadding ->
@@ -281,25 +274,10 @@ private fun DiscoverSection(
                     items = block.items,
                     key = { "${it.provider}:${it.providerId}" },
                 ) { item ->
-                    Card(
-                        modifier = Modifier
-                            .fillParentMaxWidth(0.72f)
-                            .clickable { onResultClick(item) },
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = item.title,
-                                style = MaterialTheme.typography.titleSmall,
-                            )
-                            ProviderProvenance(
-                                item = item,
-                                peers = block.items,
-                            )
-                        }
-                    }
+                    CatalogCompactCard(
+                        item = item,
+                        onClick = { onResultClick(item) },
+                    )
                 }
             }
         }
@@ -318,19 +296,11 @@ private fun CatalogItems(
             items = items,
             key = { "${it.provider}:${it.providerId}" },
         ) { item ->
-            ListItem(
-                headlineContent = { Text(item.title) },
-                supportingContent = {
-                    ProviderProvenance(
-                        item = item,
-                        peers = items,
-                    )
-                },
-                modifier = Modifier.clickable {
-                    onResultClick(item)
-                },
+            CatalogItemCard(
+                item = item,
+                onClick = { onResultClick(item) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )
-            HorizontalDivider()
         }
     }
 }

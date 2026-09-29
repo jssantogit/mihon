@@ -14,7 +14,6 @@ import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionListRequest
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionListResult
 import tachiyomi.domain.tsuzuki.collections.execution.ResidualPageCursor
-import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.QuerySchedulePriority
@@ -37,26 +36,17 @@ class GetConfiguredHomeSections(
 
         val sections = mutableListOf<HomeSection>()
         for (collection in collections) {
-            val lists = mutableListOf<CollectionList>()
             val folders = store.getFolders(collection.id)
+                .filter { it.parentFolderId == null }
                 .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-            for (folder in folders) {
-                lists += store.getLists(folder.id)
-                    .filter(CollectionList::enabled)
-                    .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-            }
 
-            val rows = mutableListOf<HomeRow>()
-            for (list in lists) {
-                rows += HomeRow(
-                    listId = list.id,
-                    title = list.title,
-                    providerId = list.providerId,
-                    layoutType = list.layoutType,
-                    content = loader.load(
-                        listId = list.id,
-                        pageSize = pageSize,
-                    ),
+            val rows = folders.map { folder ->
+                HomeRow(
+                    listId = folder.id,
+                    title = folder.title,
+                    providerId = "",
+                    layoutType = null,
+                    content = HomeRowContent.Content(emptyList()),
                 )
             }
 
@@ -95,51 +85,24 @@ class GetConfiguredHomeSections(
         collection: tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection,
         pageSize: Int,
     ): Flow<HomeSection.CollectionSection> {
-        return store.observeFolders(collection.id).flatMapLatest { folders ->
-            val orderedFolders = folders.sortedWith(
-                compareBy({ it.sortOrder }, { it.id }),
-            )
-
-            if (orderedFolders.isEmpty()) {
-                flowOf(
-                    HomeSection.CollectionSection(
-                        collectionId = collection.id,
-                        title = collection.title,
-                        rows = emptyList(),
-                    ),
-                )
-            } else {
-                combine(
-                    orderedFolders.map { folder ->
-                        store.observeLists(folder.id).mapLatest { lists ->
-                            lists
-                                .filter(CollectionList::enabled)
-                                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-                        }
-                    },
-                ) { folderLists ->
-                    folderLists
-                        .flatMap { it }
-                        .map { list ->
-                            HomeRow(
-                                listId = list.id,
-                                title = list.title,
-                                providerId = list.providerId,
-                                layoutType = list.layoutType,
-                                content = loader.load(
-                                    listId = list.id,
-                                    pageSize = pageSize,
-                                ),
-                            )
-                        }
-                }.mapLatest { rows ->
-                    HomeSection.CollectionSection(
-                        collectionId = collection.id,
-                        title = collection.title,
-                        rows = rows,
+        return store.observeFolders(collection.id).mapLatest { folders ->
+            val rows = folders
+                .filter { it.parentFolderId == null }
+                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+                .map { folder ->
+                    HomeRow(
+                        listId = folder.id,
+                        title = folder.title,
+                        providerId = "",
+                        layoutType = null,
+                        content = HomeRowContent.Content(emptyList()),
                     )
                 }
-            }
+            HomeSection.CollectionSection(
+                collectionId = collection.id,
+                title = collection.title,
+                rows = rows,
+            )
         }
     }
 

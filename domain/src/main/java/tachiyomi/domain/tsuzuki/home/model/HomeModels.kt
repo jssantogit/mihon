@@ -10,6 +10,7 @@ data class HomeContinueReadingItem(
     val lastPageRead: Long,
     val updatedAt: Long,
     val newChapterCount: Int = 0,
+    val coverUrl: String? = null,
 ) {
     init {
         require(newChapterCount >= 0) { "New chapter count must not be negative" }

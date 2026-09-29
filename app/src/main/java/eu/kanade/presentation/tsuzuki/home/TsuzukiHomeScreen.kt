@@ -23,11 +23,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarTitle
+import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeRow
-import tachiyomi.domain.tsuzuki.home.model.HomeRowContent
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.presentation.core.components.material.Scaffold
 
@@ -36,7 +35,7 @@ fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
     onRemoveFromContinueReading: (HomeContinueReadingItem) -> Unit,
-    onCatalogItem: (CatalogItem) -> Unit,
+    onFolder: (collectionId: String, folderId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -54,6 +53,15 @@ fun TsuzukiHomeScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            state.continueReading.firstOrNull()?.let { hero ->
+                item(key = "hero") {
+                    HeroCard(
+                        item = hero,
+                        onClick = { onContinueReading(hero) },
+                    )
+                }
+            }
+
             if (state.continueReading.isNotEmpty()) {
                 item(key = "continue_header") {
                     SectionHeader("Continue Reading")
@@ -87,12 +95,54 @@ fun TsuzukiHomeScreen(
                             item(key = "collection_row_${section.collectionId}_${row.listId}") {
                                 ConfiguredHomeRow(
                                     row = row,
-                                    onCatalogItem = onCatalogItem,
+                                    onClick = { onFolder(section.collectionId, row.listId) },
                                 )
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroCard(
+    item: HomeContinueReadingItem,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            MangaCover.Book(
+                data = item.coverUrl,
+                contentDescription = item.title,
+                modifier = Modifier.width(96.dp),
+            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "Continue lendo",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "Capítulo ${item.chapterDisplayNumber}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -137,6 +187,11 @@ private fun ContinueReadingCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
+        MangaCover.Book(
+            data = item.coverUrl,
+            contentDescription = item.title,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -179,86 +234,21 @@ private fun ContinueReadingCard(
 @Composable
 private fun ConfiguredHomeRow(
     row: HomeRow,
-    onCatalogItem: (CatalogItem) -> Unit,
-) {
-    if (row.title.isNotBlank()) {
-        Text(
-            text = row.title,
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-    }
-
-    when (val content = row.content) {
-        is HomeRowContent.Content -> {
-            if (content.items.isEmpty()) {
-                SectionMessage("No matching titles")
-            } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(
-                        items = content.items,
-                        key = { "${row.listId}:${it.provider}:${it.providerId}" },
-                    ) { item ->
-                        CatalogHomeCard(
-                            item = item,
-                            onClick = { onCatalogItem(item) },
-                        )
-                    }
-                }
-            }
-        }
-        is HomeRowContent.Unavailable -> {
-            SectionMessage(content.reason)
-        }
-    }
-}
-
-@Composable
-private fun CatalogHomeCard(
-    item: CatalogItem,
     onClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier
-            .width(180.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 3,
-            )
-            item.score?.let { score ->
-                Text(
-                    text = "${score.value}/${score.maxValue}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = item.format.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                Text(
-                    text = item.status.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-        }
+        Text(
+            text = row.title,
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(16.dp),
+        )
     }
 }

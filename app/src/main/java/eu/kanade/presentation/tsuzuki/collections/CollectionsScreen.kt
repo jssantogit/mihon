@@ -1,5 +1,6 @@
 package eu.kanade.presentation.tsuzuki.collections
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
+import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListRuntimeState
@@ -59,16 +63,40 @@ fun CollectionsScreen(
     onExportRequest: () -> Unit,
     onDismissTransferState: () -> Unit,
     modifier: Modifier = Modifier,
+    initialCollectionId: String? = null,
+    initialFolderId: String? = null,
 ) {
     var editor by remember { mutableStateOf<EditorDialog?>(null) }
     var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
+    var selectedCollectionId by remember(initialCollectionId) { mutableStateOf(initialCollectionId) }
+    var selectedFolderId by remember(initialFolderId) { mutableStateOf(initialFolderId) }
+    var selectedListId by remember { mutableStateOf<String?>(null) }
+
+    val readyState = state as? CollectionsScreenState.Ready
+    val selectedCollection = readyState?.collections?.firstOrNull {
+        it.collection.id == selectedCollectionId
+    }
+    val selectedFolder = selectedCollection?.folders?.firstOrNull {
+        it.folder.id == selectedFolderId
+    }
+    val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
 
     Scaffold(
         modifier = modifier,
         topBar = {
             AppBar(
-                title = "Collections",
-                navigateUp = navigateUp,
+                title = selectedList?.title
+                    ?: selectedFolder?.folder?.title
+                    ?: selectedCollection?.collection?.title
+                    ?: "Collections",
+                navigateUp = {
+                    when {
+                        selectedListId != null -> selectedListId = null
+                        selectedFolderId != null -> selectedFolderId = null
+                        selectedCollectionId != null -> selectedCollectionId = null
+                        else -> navigateUp()
+                    }
+                },
                 actions = {
                     TextButton(
                         onClick = { editor = EditorDialog.CreateCollection },
@@ -128,6 +156,19 @@ fun CollectionsScreen(
                     onAction = onAction,
                     onEdit = { editor = it },
                     onDelete = { deleteTarget = it },
+                    selectedCollectionId = selectedCollectionId,
+                    selectedFolderId = selectedFolderId,
+                    selectedListId = selectedListId,
+                    onOpenCollection = {
+                        selectedCollectionId = it
+                        selectedFolderId = null
+                        selectedListId = null
+                    },
+                    onOpenFolder = {
+                        selectedFolderId = it
+                        selectedListId = null
+                    },
+                    onOpenList = { selectedListId = it },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
@@ -326,49 +367,104 @@ private fun CollectionsReadyContent(
     onAction: (CollectionsAction) -> Unit,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    selectedCollectionId: String?,
+    selectedFolderId: String?,
+    selectedListId: String?,
+    onOpenCollection: (String) -> Unit,
+    onOpenFolder: (String) -> Unit,
+    onOpenList: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val selectedCollection = collections.firstOrNull { it.collection.id == selectedCollectionId }
+    val selectedFolder = selectedCollection?.folders?.firstOrNull { it.folder.id == selectedFolderId }
+    val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
+
     LazyColumn(
         modifier = modifier,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (collections.isEmpty()) {
-            item(key = "empty") {
-                Text(
-                    text = "No Collections yet. Create one to organize catalog queries.",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-        }
-
-        collections.forEach { graph ->
-            item(key = "collection:${graph.collection.id}") {
-                CollectionHeader(
-                    graph = graph,
-                    onAction = onAction,
-                    onEdit = onEdit,
-                    onDelete = onDelete,
-                )
-            }
-
-            graph.folders.forEach { folder ->
-                item(key = "folder:${folder.folder.id}") {
-                    FolderRow(
-                        collectionId = graph.collection.id,
-                        model = folder,
-                        onAction = onAction,
-                        onEdit = onEdit,
-                        onDelete = onDelete,
-                    )
+        when {
+            selectedCollection == null -> {
+                if (collections.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            text = "No Collections yet. Create one to organize catalog queries.",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
                 }
+                collections.forEach { graph ->
+                    item(key = "collection:${graph.collection.id}") {
+                        CollectionHeader(
+                            graph = graph,
+                            onAction = onAction,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                            onOpen = { onOpenCollection(graph.collection.id) },
+                        )
+                    }
+                }
+            }
 
-                folder.lists.forEach { list ->
-                    item(key = "list:${list.id}") {
+            selectedFolder == null -> {
+                val visibleFolders = selectedCollection.folders.filter { it.depth == 0 }
+                if (visibleFolders.isEmpty()) {
+                    item(key = "empty_folders") {
+                        Text("No folders in this Collection yet.")
+                    }
+                }
+                visibleFolders.forEach { folder ->
+                    item(key = "folder:${folder.folder.id}") {
+                        FolderRow(
+                            collectionId = selectedCollection.collection.id,
+                            model = folder,
+                            onAction = onAction,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                            onOpen = { onOpenFolder(folder.folder.id) },
+                        )
+                    }
+                }
+            }
+
+            else -> {
+                val childFolders = selectedCollection.folders.filter {
+                    it.folder.parentFolderId == selectedFolder.folder.id
+                }
+                if (selectedList == null) {
+                    childFolders.forEach { folder ->
+                        item(key = "subfolder:${folder.folder.id}") {
+                            FolderRow(
+                                collectionId = selectedCollection.collection.id,
+                                model = folder,
+                                onAction = onAction,
+                                onEdit = onEdit,
+                                onDelete = onDelete,
+                                onOpen = { onOpenFolder(folder.folder.id) },
+                            )
+                        }
+                    }
+                    selectedFolder.lists.forEach { list ->
+                        item(key = "list:${list.id}") {
+                            ListSummaryRow(
+                                list = list,
+                                onOpen = { onOpenList(list.id) },
+                            )
+                        }
+                    }
+                    if (childFolders.isEmpty() && selectedFolder.lists.isEmpty()) {
+                        item(key = "empty_folder") {
+                            Text("This folder has no subfolders or Lists yet.")
+                        }
+                    }
+                } else {
+                    item(key = "list_detail:${selectedList.id}") {
                         ListRow(
-                            folderDepth = folder.depth,
-                            list = list,
-                            runtimeState = listRuntimeStates[list.id] ?: CollectionListRuntimeState.Idle,
+                            folderDepth = 0,
+                            list = selectedList,
+                            runtimeState = listRuntimeStates[selectedList.id]
+                                ?: CollectionListRuntimeState.Idle,
                             onAction = onAction,
                             onEdit = onEdit,
                             onDelete = onDelete,
@@ -396,10 +492,13 @@ private fun CollectionHeader(
     onAction: (CollectionsAction) -> Unit,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    onOpen: () -> Unit,
 ) {
     val collection = graph.collection
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
@@ -481,6 +580,7 @@ private fun FolderRow(
     onAction: (CollectionsAction) -> Unit,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    onOpen: () -> Unit,
 ) {
     val folder = model.folder
 
@@ -490,11 +590,13 @@ private fun FolderRow(
             .padding(start = (model.depth * 20).dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpen),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (model.depth == 0) "Folder: ${folder.title}" else "↳ ${folder.title}",
+                text = folder.title,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
@@ -555,6 +657,33 @@ private fun FolderRow(
         }
 
         HorizontalDivider()
+    }
+}
+
+@Composable
+private fun ListSummaryRow(
+    list: CollectionList,
+    onOpen: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = list.title,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = list.providerId,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -646,11 +775,18 @@ private fun ListRow(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        runtimeState.items.forEach { item ->
-                            Text(
-                                text = "• ${item.title}",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(
+                                items = runtimeState.items,
+                                key = { "${it.provider}:${it.providerId}" },
+                            ) { item ->
+                                CatalogCompactCard(
+                                    item = item,
+                                    onClick = {},
+                                )
+                            }
                         }
                     }
 
