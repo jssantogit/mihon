@@ -50,7 +50,6 @@ private fun String.toCatalogFormat(): CatalogItemFormat = when (
     else -> CatalogItemFormat.UNKNOWN
 }
 
-
 private fun String.toCatalogStatus(): CatalogItemStatus {
     val normalized = lowercase().replace('_', ' ').trim()
     return when {
