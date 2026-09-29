@@ -555,6 +555,27 @@ class CanonicalTitleScreenModel(
             }
         }
 
+        val integrationMetadata = if (includeIntegrationMetadata) {
+            try {
+                resolveCanonicalMetadata
+                    ?.execute(canonicalTitleId)
+                    ?.getOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+        } else {
+            null
+        }
+        val integrationMetadataSources = listOfNotNull(
+            integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
+            integrationMetadata?.rating?.let { it.attribution ?: it.providerId.value },
+        ).distinct()
+
         val details = if (!includeLegacyDownloadChecks) {
             chapters.mapNotNull { chapter ->
                 val progress = progressByChapter[chapter.id]
@@ -615,10 +636,11 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
-            coverUrl = metadata?.thumbnailUrl,
+            coverUrl = integrationMetadata?.artworkUrl?.value ?: metadata?.thumbnailUrl,
             author = metadata?.author,
-            description = metadata?.description,
-            genres = metadata?.genre.orEmpty(),
+            description = integrationMetadata?.synopsis?.value ?: metadata?.description,
+            genres = integrationMetadata?.genres?.value ?: metadata?.genre.orEmpty(),
+            metadataSources = integrationMetadataSources,
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         )
