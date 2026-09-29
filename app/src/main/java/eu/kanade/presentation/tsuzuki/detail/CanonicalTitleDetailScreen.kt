@@ -32,11 +32,6 @@ fun CanonicalTitleDetailScreen(
     state: CanonicalTitleScreenState,
     navigateUp: () -> Unit,
     onRefresh: () -> Unit,
-    onLinkReadingAddon: () -> Unit,
-    onStartChapterDiagnostics: () -> Unit,
-    onStopChapterDiagnostics: () -> Unit,
-    onCopyChapterDiagnostics: () -> Unit,
-    onClearChapterDiagnostics: () -> Unit,
     onAddToLibrary: () -> Unit,
     onRemoveFromLibrary: () -> Unit,
     onOpenChapter: (String) -> Unit,
@@ -103,12 +98,7 @@ fun CanonicalTitleDetailScreen(
                     item {
                         TitleHeader(
                             state = state,
-                            onStartChapterDiagnostics = onStartChapterDiagnostics,
-                            onStopChapterDiagnostics = onStopChapterDiagnostics,
-                            onCopyChapterDiagnostics = onCopyChapterDiagnostics,
-                            onClearChapterDiagnostics = onClearChapterDiagnostics,
                             onAddToLibrary = onAddToLibrary,
-                            onLinkReadingAddon = onLinkReadingAddon,
                             onRemoveFromLibrary = onRemoveFromLibrary,
                         )
                     }
@@ -147,13 +137,8 @@ fun CanonicalTitleDetailScreen(
 @Composable
 private fun TitleHeader(
     state: CanonicalTitleScreenState.Loaded,
-    onStartChapterDiagnostics: () -> Unit,
-    onStopChapterDiagnostics: () -> Unit,
-    onCopyChapterDiagnostics: () -> Unit,
-    onClearChapterDiagnostics: () -> Unit,
     onAddToLibrary: () -> Unit,
     onRemoveFromLibrary: () -> Unit,
-    onLinkReadingAddon: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -170,41 +155,6 @@ private fun TitleHeader(
                 text = "Refreshing chapter data…",
                 style = MaterialTheme.typography.bodySmall,
             )
-        }
-        Text(
-            text = "Temporary chapter diagnostics",
-            style = MaterialTheme.typography.titleSmall,
-        )
-        Text(
-            text = if (state.chapterDiagnosticsRecording) {
-                "Chapter diagnostics recording in memory. Refresh chapters, copy the report, then stop or clear it."
-            } else {
-                "Temporary chapter diagnostics are off. Starting records the current list; then tap Refresh."
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(
-                onClick = if (state.chapterDiagnosticsRecording) {
-                    onStopChapterDiagnostics
-                } else {
-                    onStartChapterDiagnostics
-                },
-            ) {
-                Text(if (state.chapterDiagnosticsRecording) "Stop diagnostic" else "Start diagnostic")
-            }
-            TextButton(
-                enabled = state.chapterDiagnosticReportAvailable,
-                onClick = onCopyChapterDiagnostics,
-            ) {
-                Text("Copy report")
-            }
-            TextButton(
-                enabled = state.chapterDiagnosticReportAvailable || state.chapterDiagnosticsRecording,
-                onClick = onClearChapterDiagnostics,
-            ) {
-                Text("Clear")
-            }
         }
         Text(
             text = state.libraryEntry
@@ -236,9 +186,6 @@ private fun TitleHeader(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
-        }
-        TextButton(onClick = onLinkReadingAddon) {
-            Text("Link alternative reading Add-on")
         }
         state.refreshError?.let {
             Text(
