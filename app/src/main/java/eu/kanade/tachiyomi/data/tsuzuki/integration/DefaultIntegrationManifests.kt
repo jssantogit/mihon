@@ -76,6 +76,7 @@ internal object DefaultIntegrationManifests {
                 IntegrationCapability.SEARCH,
                 IntegrationCapability.METADATA_BASIC,
                 IntegrationCapability.METADATA_ARTWORK,
+                IntegrationCapability.METADATA_EDITORIAL,
                 IntegrationCapability.RATINGS,
                 IntegrationCapability.TRACKING,
                 IntegrationCapability.USER_LISTS,
