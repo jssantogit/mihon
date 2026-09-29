@@ -31,5 +31,13 @@ class CatalogRatingLabelTest {
                 maxValue = 5.0,
             ),
         ) shouldBe "4.25/5"
+
+        catalogRatingLabel(
+            CatalogScore(
+                provider = "custom",
+                value = 81.4,
+                maxValue = 100.0,
+            ),
+        ) shouldBe "81.4/100"
     }
 }
