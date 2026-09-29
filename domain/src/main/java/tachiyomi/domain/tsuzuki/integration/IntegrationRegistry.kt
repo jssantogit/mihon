@@ -23,6 +23,8 @@ interface IntegrationRegistry {
 
     fun metadataProviders(): List<MetadataProvider>
 
+    fun metadataProviders(capability: IntegrationCapability): List<MetadataProvider> = metadataProviders()
+
     fun chapterEvidenceProviders(): List<ChapterEvidenceProvider>
 
     fun ratingsProviders(): List<RatingsProvider>
