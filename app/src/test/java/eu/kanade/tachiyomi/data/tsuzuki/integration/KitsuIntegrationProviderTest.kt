@@ -12,6 +12,7 @@ import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 
 class KitsuIntegrationProviderTest {
 
@@ -44,8 +45,40 @@ class KitsuIntegrationProviderTest {
         (provider as Any is ChapterEvidenceProvider) shouldBe false
     }
 
+    @Test
+    fun `kitsu exposes provider specific rating capability`() = runTest {
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(KitsuMangaResponse()),
+                    detailResult = Result.success(
+                        KitsuSingleMangaResponse(
+                            data = KitsuMangaResource(
+                                id = "1234",
+                                type = "manga",
+                                attributes = KitsuMangaAttributes(
+                                    canonicalTitle = "Berserk",
+                                    averageRating = "84.51",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        (provider as Any is RatingsProvider) shouldBe true
+        val rating = (provider as RatingsProvider).ratings("1234").getOrThrow().single()
+        rating.providerId shouldBe "kitsu"
+        rating.label shouldBe "Kitsu"
+        rating.value shouldBe 84.51
+        rating.scaleMax shouldBe 100.0
+    }
+
     private class FakeKitsuClient(
         private val searchResult: Result<KitsuMangaResponse>,
+        private val detailResult: Result<KitsuSingleMangaResponse> =
+            Result.failure(CatalogError.ItemNotFound("missing")),
     ) : KitsuClient {
 
         override suspend fun searchManga(
@@ -63,6 +96,6 @@ class KitsuIntegrationProviderTest {
             Result.success(KitsuMangaResponse())
 
         override suspend fun getMangaDetails(kitsuId: String): Result<KitsuSingleMangaResponse> =
-            Result.failure(CatalogError.ItemNotFound(kitsuId))
+            detailResult
     }
 }
