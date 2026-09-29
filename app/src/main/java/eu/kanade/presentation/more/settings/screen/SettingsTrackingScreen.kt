@@ -44,8 +44,6 @@ import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
-import eu.kanade.tachiyomi.data.track.hikka.Hikka
-import eu.kanade.tachiyomi.data.track.shikimori.Shikimori
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
 import mihon.app.di.appGraph
