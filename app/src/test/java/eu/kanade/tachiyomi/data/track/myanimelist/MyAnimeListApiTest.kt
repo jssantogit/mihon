@@ -28,7 +28,11 @@ class MyAnimeListApiTest {
         val request = MyAnimeListApi.refreshTokenRequest(oauth, "user-owned-client")
         val body = request.body as FormBody
 
-        body.value(body.names.indexOf("client_id")) shouldBe "user-owned-client"
+        val clientId = (0 until body.size)
+            .first { body.name(it) == "client_id" }
+            .let(body::value)
+
+        clientId shouldBe "user-owned-client"
     }
 
     @Test
