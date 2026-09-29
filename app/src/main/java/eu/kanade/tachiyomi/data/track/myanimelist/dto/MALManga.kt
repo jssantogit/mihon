@@ -10,6 +10,8 @@ data class MALManga(
     val synopsis: String = "",
     @SerialName("num_chapters")
     val numChapters: Long,
+    @SerialName("num_volumes")
+    val numVolumes: Long = 0,
     val mean: Double = -1.0,
     @SerialName("main_picture")
     val covers: MALMangaCovers?,
@@ -18,6 +20,8 @@ data class MALManga(
     val mediaType: String,
     @SerialName("start_date")
     val startDate: String?,
+    @SerialName("end_date")
+    val endDate: String? = null,
     val authors: List<MALAuthorNode> = emptyList(),
 )
 
