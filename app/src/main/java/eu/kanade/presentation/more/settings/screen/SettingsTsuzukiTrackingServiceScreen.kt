@@ -38,10 +38,8 @@ import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.Tracker
-import eu.kanade.tachiyomi.data.track.anilist.AnilistApi
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
 import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
-import eu.kanade.tachiyomi.data.track.mangabaka.MangaBakaApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.source.Source
@@ -227,20 +225,10 @@ private fun TrackingServiceContent(
                     if (isLoggedIn) {
                         logoutDialog = true
                     } else {
-                        when (tracker.id) {
-                            MANGABAKA_TRACKER_ID -> context.openInBrowser(
-                                MangaBakaApi.authUrl(),
-                                forceDefaultBrowser = true,
-                            )
-                            MAL_TRACKER_ID -> context.openInBrowser(
+                        when (tracker.id) {                            MAL_TRACKER_ID -> context.openInBrowser(
                                 MyAnimeListApi.authUrl(),
                                 forceDefaultBrowser = true,
-                            )
-                            ANILIST_TRACKER_ID -> context.openInBrowser(
-                                AnilistApi.authUrl(),
-                                forceDefaultBrowser = true,
-                            )
-                            SHIKIMORI_TRACKER_ID -> context.openInBrowser(
+                            )                            SHIKIMORI_TRACKER_ID -> context.openInBrowser(
                                 ShikimoriApi.authUrl(),
                                 forceDefaultBrowser = true,
                             )
@@ -402,11 +390,9 @@ private fun TrackerCredentialLoginDialog(
 
 private fun loginDescriptionRes(tracker: Tracker): StringResource = when (tracker.id) {
     MAL_TRACKER_ID,
-    ANILIST_TRACKER_ID,
     SHIKIMORI_TRACKER_ID,
     BANGUMI_TRACKER_ID,
     HIKKA_TRACKER_ID,
-    MANGABAKA_TRACKER_ID,
     -> MR.strings.tsuzuki_tracking_login_browser
 
     KITSU_TRACKER_ID -> MR.strings.tsuzuki_tracking_login_kitsu
@@ -415,10 +401,8 @@ private fun loginDescriptionRes(tracker: Tracker): StringResource = when (tracke
 }
 
 private const val MAL_TRACKER_ID = 1L
-private const val ANILIST_TRACKER_ID = 2L
 private const val KITSU_TRACKER_ID = 3L
 private const val SHIKIMORI_TRACKER_ID = 4L
 private const val BANGUMI_TRACKER_ID = 5L
 private const val MANGAUPDATES_TRACKER_ID = 7L
 private const val HIKKA_TRACKER_ID = 10L
-private const val MANGABAKA_TRACKER_ID = 11L
