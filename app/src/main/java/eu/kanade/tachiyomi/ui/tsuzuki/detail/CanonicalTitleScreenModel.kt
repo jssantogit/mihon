@@ -520,23 +520,33 @@ class CanonicalTitleScreenModel(
             .map { it.canonicalChapterId }
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
-        val metadata = sourceTitleMappingRepository
+        var metadata: tachiyomi.domain.manga.model.Manga? = null
+        val metadataSources = sourceTitleMappingRepository
             ?.getByCanonicalTitleId(canonicalTitleId)
             .orEmpty()
-            .asSequence()
             .sortedByDescending { it.preferredOverride }
-            .mapNotNull { source ->
-                runCatching {
-                    source.mihonMangaId
-                        ?.let { mangaRepository?.getMangaById(it) }
-                        ?: mangaRepository?.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
-                }.getOrNull()
+        for (source in metadataSources) {
+            val manga = try {
+                source.mihonMangaId
+                    ?.let { mangaRepository?.getMangaById(it) }
+                    ?: mangaRepository?.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
             }
-            .firstOrNull { manga ->
-                !manga.thumbnailUrl.isNullOrBlank() ||
-                    !manga.description.isNullOrBlank() ||
-                    !manga.author.isNullOrBlank()
+            if (
+                manga != null &&
+                (
+                    !manga.thumbnailUrl.isNullOrBlank() ||
+                        !manga.description.isNullOrBlank() ||
+                        !manga.author.isNullOrBlank()
+                    )
+            ) {
+                metadata = manga
+                break
             }
+        }
 
         val details = if (!includeLegacyDownloadChecks) {
             chapters.mapNotNull { chapter ->
