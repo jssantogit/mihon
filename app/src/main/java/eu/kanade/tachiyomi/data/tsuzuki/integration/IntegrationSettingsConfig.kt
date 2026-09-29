@@ -12,7 +12,10 @@ internal data class IntegrationSettingsConfig(
     private val values: JsonObject,
 ) {
     fun capabilityEnabled(capability: IntegrationCapability): Boolean =
-        values[capability.configKey]
+        capabilityEnabled(capability.configKey)
+
+    fun capabilityEnabled(configKey: String): Boolean =
+        values[configKey]
             ?.jsonPrimitive
             ?.booleanOrNull
             ?: true
