@@ -43,7 +43,7 @@ fun TsuzukiHomeScreen(
         modifier = modifier,
         topBar = {
             AppBar(
-                titleContent = { AppBarTitle("Home") },
+                titleContent = { AppBarTitle("Início") },
             )
         },
     ) { paddingValues ->
@@ -65,7 +65,7 @@ fun TsuzukiHomeScreen(
 
             if (state.continueReading.isNotEmpty()) {
                 item(key = "continue_header") {
-                    SectionHeader("Continue Reading")
+                    SectionHeader("Continuar lendo")
                 }
                 item(key = "continue_content") {
                     LazyRow(
