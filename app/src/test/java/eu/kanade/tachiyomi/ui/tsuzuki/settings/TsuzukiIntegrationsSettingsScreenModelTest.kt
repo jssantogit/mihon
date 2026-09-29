@@ -128,6 +128,24 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
+    fun `unverified catalog providers keep tracking without global capability toggles`() = runTest(dispatcher) {
+        val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
+        advanceUntilIdle()
+
+        val items = model.state.value
+            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
+            .items
+
+        listOf("shikimori", "hikka").forEach { integrationId ->
+            val item = items.single { it.id.value == integrationId }
+
+            item.supportsTracking shouldBe true
+            item.configurableCapabilities.isEmpty() shouldBe true
+            item.restrictedCapabilities.isNotEmpty() shouldBe true
+        }
+    }
+
+    @Test
     fun `personal server capabilities stay configurable within server scope`() = runTest(dispatcher) {
         val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
         advanceUntilIdle()
