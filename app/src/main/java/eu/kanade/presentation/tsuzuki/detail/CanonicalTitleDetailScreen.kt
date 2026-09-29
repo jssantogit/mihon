@@ -109,10 +109,10 @@ fun CanonicalTitleDetailScreen(
                     if (state.chapters.isEmpty()) {
                         item {
                             Text(
-                                text = if (state.isAtualizaring) "Carregando capítulos…" else "Nenhum capítulo encontrado.",
+                                text = if (state.isRefreshing) "Carregando capítulos…" else "Nenhum capítulo encontrado.",
                                 modifier = Modifier.padding(16.dp),
                             )
-                            if (!state.isAtualizaring) {
+                            if (!state.isRefreshing) {
                                 TextButton(onClick = onOpenAddonsSettings) {
                                     Text("Gerenciar Add-ons de leitura")
                                 }
