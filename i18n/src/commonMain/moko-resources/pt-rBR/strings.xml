@@ -955,6 +955,8 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
 
     <string name="tsuzuki_account_title">Conta</string>
     <string name="tsuzuki_integrations_title">Integrações</string>
+    <string name="tsuzuki_navigation_back">Voltar</string>
+    <string name="tsuzuki_integration_fallback_title">Integração</string>
     <string name="tsuzuki_addons_title">Add-ons</string>
     <string name="tsuzuki_personalizations_title">Personalizações</string>
     <string name="tsuzuki_reading_settings_title">Leitura</string>
