@@ -75,6 +75,7 @@ internal fun MALManga.toTrackSearch(trackerId: Long): TrackSearch {
         genres = this@toTrackSearch.genres.map { it.name }
     }
 }
+
 @Serializable
 data class MALGenre(
     val id: Int,
