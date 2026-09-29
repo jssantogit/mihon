@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
+import kotlin.math.roundToInt
 
 @Composable
 fun CatalogItemCard(
@@ -71,7 +73,7 @@ fun CatalogItemCard(
 
                 item.score?.let { score ->
                     Text(
-                        text = "★ ${score.value.toInt()}%",
+                        text = catalogRatingLabel(score),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
@@ -120,10 +122,31 @@ fun CatalogCompactCard(
         )
         item.score?.let { score ->
             Text(
-                text = "★ ${score.value.toInt()}%",
+                text = catalogRatingLabel(score),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
     }
+}
+
+
+internal fun catalogRatingLabel(score: CatalogScore): String {
+    val percentage = if (score.maxValue > 0.0) {
+        (score.value / score.maxValue * 100.0)
+            .coerceIn(0.0, 100.0)
+            .roundToInt()
+    } else {
+        score.value.roundToInt()
+    }
+    val provider = when (score.provider.lowercase()) {
+        "mal" -> "MAL"
+        "kitsu" -> "Kitsu"
+        "mangaupdates" -> "MangaUpdates"
+        "bangumi" -> "Bangumi"
+        "shikimori" -> "Shikimori"
+        "hikka" -> "Hikka"
+        else -> score.provider
+    }
+    return "★ $percentage% · $provider"
 }
