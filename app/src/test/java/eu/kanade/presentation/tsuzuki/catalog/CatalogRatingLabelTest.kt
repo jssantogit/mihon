@@ -26,6 +26,22 @@ class CatalogRatingLabelTest {
 
         catalogRatingLabel(
             CatalogScore(
+                provider = "mangaupdates",
+                value = 9.12,
+                maxValue = 10.0,
+            ),
+        ) shouldBe "9.12/10"
+
+        catalogRatingLabel(
+            CatalogScore(
+                provider = "bangumi",
+                value = 8.4,
+                maxValue = 10.0,
+            ),
+        ) shouldBe "8.4/10"
+
+        catalogRatingLabel(
+            CatalogScore(
                 provider = "custom",
                 value = 4.25,
                 maxValue = 5.0,
