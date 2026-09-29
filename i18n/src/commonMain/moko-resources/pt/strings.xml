@@ -973,4 +973,3 @@
     <string name="tsuzuki_integration_provider_kavita">Integração de servidor pessoal. Endereço e chave de API são reutilizados da configuração da fonte Kavita instalada.</string>
     <string name="tsuzuki_integration_provider_suwayomi">Integração de servidor pessoal de leitura. Ligação e definições de fontes são reutilizadas da fonte Suwayomi/Tachidesk instalada.</string>
 </resources>
-
