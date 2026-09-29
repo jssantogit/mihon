@@ -40,7 +40,7 @@ data class MURecord(
                 else -> this@MURecord.status.orEmpty()
             }
             publishing_type = this@MURecord.type.orEmpty()
-            start_date = this@MURecord.year.toString()
+            start_date = this@MURecord.year.orEmpty()
             score = this@MURecord.bayesianRating?.takeIf { it > 0 } ?: -1.0
             score_votes = this@MURecord.ratingVotes
             authors = this@MURecord.authors.filter { it.type == "Author" }.map { it.name }
@@ -50,7 +50,6 @@ data class MURecord(
         }
     }
 }
-
 
 @Serializable
 data class MUGenre(
