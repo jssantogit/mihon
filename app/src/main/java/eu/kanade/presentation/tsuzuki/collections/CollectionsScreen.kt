@@ -432,19 +432,19 @@ private fun CollectionsReadyContent(
                 val childFolders = selectedCollection.folders.filter {
                     it.folder.parentFolderId == selectedFolder.folder.id
                 }
-                if (selectedList == null) childFolders.forEach { folder ->
-                    item(key = "subfolder:${folder.folder.id}") {
-                        FolderRow(
-                            collectionId = selectedCollection.collection.id,
-                            model = folder,
-                            onAction = onAction,
-                            onEdit = onEdit,
-                            onDelete = onDelete,
-                            onOpen = { onOpenFolder(folder.folder.id) },
-                        )
-                    }
-                }
                 if (selectedList == null) {
+                    childFolders.forEach { folder ->
+                        item(key = "subfolder:${folder.folder.id}") {
+                            FolderRow(
+                                collectionId = selectedCollection.collection.id,
+                                model = folder,
+                                onAction = onAction,
+                                onEdit = onEdit,
+                                onDelete = onDelete,
+                                onOpen = { onOpenFolder(folder.folder.id) },
+                            )
+                        }
+                    }
                     selectedFolder.lists.forEach { list ->
                         item(key = "list:${list.id}") {
                             ListSummaryRow(
