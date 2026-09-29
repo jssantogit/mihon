@@ -46,6 +46,7 @@ class ResolveCanonicalMetadataTest {
                 synopsis = "Kitsu synopsis",
                 coverUrl = "kitsu-cover",
                 score = CatalogScore("kitsu", 8.0, 10.0),
+                tags = listOf("supernatural", "drama"),
             ),
         )
         val mal = FakeMetadataProvider(
@@ -57,6 +58,7 @@ class ResolveCanonicalMetadataTest {
                 synopsis = "MAL synopsis",
                 coverUrl = "mal-cover",
                 score = CatalogScore("mal", 9.0, 10.0),
+                tags = listOf("thriller"),
             ),
         )
         val registry = FakeRegistry(listOf(kitsu, mal))
@@ -70,6 +72,11 @@ class ResolveCanonicalMetadataTest {
         resolved.artworkUrl?.providerId?.value shouldBe "kitsu"
         resolved.rating?.providerId?.value shouldBe "mal"
         resolved.rating?.value shouldBe 9.0
+        resolved.ratingDetails?.providerId?.value shouldBe "mal"
+        resolved.ratingDetails?.value?.value shouldBe 9.0
+        resolved.ratingDetails?.value?.maxValue shouldBe 10.0
+        resolved.tags?.providerId?.value shouldBe "kitsu"
+        resolved.tags?.value shouldBe listOf("supernatural", "drama")
     }
 
     @Test

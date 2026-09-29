@@ -14,6 +14,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 
@@ -99,6 +100,19 @@ class ResolveCanonicalMetadata(
                         capability = IntegrationCapability.RATINGS,
                         precedence = RATINGS_PRECEDENCE,
                     ) { it.score?.value },
+                    ratingDetails = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.RATINGS,
+                        precedence = RATINGS_PRECEDENCE,
+                    ) { scoreOwner ->
+                        scoreOwner.score?.let { score ->
+                            ResolvedRating(
+                                value = score.value,
+                                maxValue = score.maxValue,
+                                voteCount = score.voteCount,
+                            )
+                        }
+                    },
                     authors = select(
                         candidates = candidates,
                         capability = IntegrationCapability.METADATA_STAFF,
@@ -114,6 +128,11 @@ class ResolveCanonicalMetadata(
                         capability = IntegrationCapability.METADATA_BASIC,
                         precedence = BASIC_PRECEDENCE,
                     ) { it.genres.takeIf { genres -> genres.isNotEmpty() } },
+                    tags = select(
+                        candidates = candidates,
+                        capability = IntegrationCapability.METADATA_BASIC,
+                        precedence = BASIC_PRECEDENCE,
+                    ) { it.tags.takeIf { tags -> tags.isNotEmpty() } },
                     startDate = select(
                         candidates = candidates,
                         capability = IntegrationCapability.METADATA_EDITORIAL,
