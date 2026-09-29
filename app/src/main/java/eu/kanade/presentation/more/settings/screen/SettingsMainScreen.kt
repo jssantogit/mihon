@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.graphics.ColorUtils
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
@@ -117,15 +119,12 @@ object SettingsMainScreen : Screen() {
             containerColor = containerColor,
             content = { contentPadding ->
                 val state = rememberLazyListState()
+                val flatItems = sections.flatMap { it.items }
                 val indexSelected = if (twoPane) {
-                    items.indexOfFirst { it.screen::class == navigator.items.first()::class }
+                    flatItems.indexOfFirst { it.screen::class == navigator.items.first()::class }
                         .also {
                             LaunchedEffect(Unit) {
-                                state.animateScrollToItem(it)
-                                if (it > 0) {
-                                    // Lift scroll
-                                    topBarState.contentOffset = topBarState.heightOffsetLimit
-                                }
+                                if (it >= 0) state.animateScrollToItem(it)
                             }
                         }
                 } else {
@@ -136,36 +135,43 @@ object SettingsMainScreen : Screen() {
                     state = state,
                     contentPadding = contentPadding,
                 ) {
-                    itemsIndexed(
-                        items = items,
-                        key = { _, item -> item.hashCode() },
-                    ) { index, item ->
-                        val selected = indexSelected == index
-                        var modifier: Modifier = Modifier
-                        var contentColor = LocalContentColor.current
-                        if (twoPane) {
-                            modifier = Modifier
-                                .padding(horizontal = 8.dp)
-                                .clip(RoundedCornerShape(24.dp))
-                                .then(
-                                    if (selected) {
-                                        Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                            if (selected) {
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        }
-                        CompositionLocalProvider(LocalContentColor provides contentColor) {
-                            TextPreferenceWidget(
-                                modifier = modifier,
-                                title = stringResource(item.titleRes),
-                                subtitle = item.formatSubtitle(),
-                                icon = item.icon,
-                                onPreferenceClick = { navigator.navigate(item.screen, twoPane) },
+                    var flatIndex = 0
+                    sections.forEach { section ->
+                        item(key = "section_${section.title}") {
+                            Text(
+                                text = section.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 4.dp),
                             )
+                        }
+                        itemsIndexed(
+                            items = section.items,
+                            key = { _, item -> item.hashCode() },
+                        ) { _, item ->
+                            val selected = indexSelected == flatIndex
+                            flatIndex += 1
+                            var modifier: Modifier = Modifier
+                            var contentColor = LocalContentColor.current
+                            if (twoPane) {
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .then(
+                                        if (selected) Modifier.background(MaterialTheme.colorScheme.surfaceVariant) else Modifier,
+                                    )
+                                if (selected) contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                                TextPreferenceWidget(
+                                    modifier = modifier,
+                                    title = stringResource(item.titleRes),
+                                    subtitle = item.formatSubtitle(),
+                                    icon = item.icon,
+                                    onPreferenceClick = { navigator.navigate(item.screen, twoPane) },
+                                )
+                            }
                         }
                     }
                 }
@@ -185,87 +191,118 @@ object SettingsMainScreen : Screen() {
         val screen: VoyagerScreen,
     )
 
-    private val items = listOf(
-        Item(
-            titleRes = MR.strings.tsuzuki_account_title,
-            icon = MaterialSymbols.Rounded.Security,
-            screen = SettingsTsuzukiAccountScreen,
+    private data class Section(
+        val title: String,
+        val items: List<Item>,
+    )
+
+    private val sections = listOf(
+        Section(
+            title = "Conta",
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.tsuzuki_account_title,
+                    icon = MaterialSymbols.Rounded.Security,
+                    screen = SettingsTsuzukiAccountScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.tsuzuki_sync_title,
+                    icon = MaterialSymbols.Rounded.Sync,
+                    screen = SettingsTsuzukiSyncScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.tsuzuki_integrations_title,
-            icon = MaterialSymbols.Rounded.Explore,
-            screen = SettingsTsuzukiIntegrationsScreen(),
+        Section(
+            title = "Geral",
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_appearance,
+                    subtitleRes = MR.strings.pref_appearance_summary,
+                    icon = MaterialSymbols.Rounded.Palette,
+                    screen = SettingsAppearanceScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.tsuzuki_home_collections_title,
+                    icon = MaterialSymbols.Rounded.CollectionsBookmark,
+                    screen = SettingsTsuzukiPersonalizationsScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_reader,
+                    subtitleRes = MR.strings.pref_reader_summary,
+                    icon = MaterialSymbols.AutoMirroredRounded.ChromeReaderMode,
+                    screen = SettingsReaderScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_library,
+                    subtitleRes = MR.strings.pref_library_summary,
+                    icon = MaterialSymbols.Rounded.CollectionsBookmark,
+                    screen = SettingsLibraryScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.tsuzuki_addons_title,
-            icon = MaterialSymbols.Rounded.Code,
-            screen = SettingsTsuzukiAddonsScreen,
+        Section(
+            title = "Conteúdo",
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.tsuzuki_integrations_title,
+                    icon = MaterialSymbols.Rounded.Explore,
+                    screen = SettingsTsuzukiIntegrationsScreen(),
+                ),
+                Item(
+                    titleRes = MR.strings.tsuzuki_addons_title,
+                    icon = MaterialSymbols.Rounded.Code,
+                    screen = SettingsTsuzukiAddonsScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_tracking,
+                    subtitleRes = MR.strings.pref_tracking_summary,
+                    icon = MaterialSymbols.Rounded.Sync,
+                    screen = SettingsTrackingScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.tsuzuki_home_collections_title,
-            icon = MaterialSymbols.Rounded.CollectionsBookmark,
-            screen = SettingsTsuzukiHomeScreen,
+        Section(
+            title = "Avançado",
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_downloads,
+                    subtitleRes = MR.strings.pref_downloads_summary,
+                    icon = MaterialSymbols.Rounded.Download,
+                    screen = SettingsDownloadScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.label_data_storage,
+                    subtitleRes = MR.strings.pref_backup_summary,
+                    icon = MaterialSymbols.Rounded.Storage,
+                    screen = SettingsDataScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_security,
+                    subtitleRes = MR.strings.pref_security_summary,
+                    icon = MaterialSymbols.Rounded.Security,
+                    screen = SettingsSecurityScreen,
+                ),
+                Item(
+                    titleRes = MR.strings.pref_category_advanced,
+                    subtitleRes = MR.strings.pref_advanced_summary,
+                    icon = MaterialSymbols.Rounded.Code,
+                    screen = SettingsAdvancedScreen,
+                ),
+            ),
         ),
-        Item(
-            titleRes = MR.strings.pref_category_reader,
-            subtitleRes = MR.strings.pref_reader_summary,
-            icon = MaterialSymbols.AutoMirroredRounded.ChromeReaderMode,
-            screen = SettingsReaderScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_downloads,
-            subtitleRes = MR.strings.pref_downloads_summary,
-            icon = MaterialSymbols.Rounded.Download,
-            screen = SettingsDownloadScreen,
-        ),
-        Item(
-            titleRes = MR.strings.tsuzuki_sync_title,
-            icon = MaterialSymbols.Rounded.Sync,
-            screen = SettingsTsuzukiSyncScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_appearance,
-            subtitleRes = MR.strings.pref_appearance_summary,
-            icon = MaterialSymbols.Rounded.Palette,
-            screen = SettingsAppearanceScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_library,
-            subtitleRes = MR.strings.pref_library_summary,
-            icon = MaterialSymbols.Rounded.CollectionsBookmark,
-            screen = SettingsLibraryScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_tracking,
-            subtitleRes = MR.strings.pref_tracking_summary,
-            icon = MaterialSymbols.Rounded.Sync,
-            screen = SettingsTrackingScreen,
-        ),
-        Item(
-            titleRes = MR.strings.label_data_storage,
-            subtitleRes = MR.strings.pref_backup_summary,
-            icon = MaterialSymbols.Rounded.Storage,
-            screen = SettingsDataScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_security,
-            subtitleRes = MR.strings.pref_security_summary,
-            icon = MaterialSymbols.Rounded.Security,
-            screen = SettingsSecurityScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_advanced,
-            subtitleRes = MR.strings.pref_advanced_summary,
-            icon = MaterialSymbols.Rounded.Code,
-            screen = SettingsAdvancedScreen,
-        ),
-        Item(
-            titleRes = MR.strings.pref_category_about,
-            formatSubtitle = {
-                "${stringResource(MR.strings.app_name)} ${AboutScreen.getVersionName(withBuildDate = false)}"
-            },
-            icon = MaterialSymbols.Rounded.Info,
-            screen = AboutScreen,
+        Section(
+            title = "Sobre",
+            items = listOf(
+                Item(
+                    titleRes = MR.strings.pref_category_about,
+                    formatSubtitle = {
+                        "${stringResource(MR.strings.app_name)} ${AboutScreen.getVersionName(withBuildDate = false)}"
+                    },
+                    icon = MaterialSymbols.Rounded.Info,
+                    screen = AboutScreen,
+                ),
+            ),
         ),
     )
+
 }
