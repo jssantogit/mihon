@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -36,7 +37,9 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.track.components.TrackLogoIcon
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.track.Tracker
+import eu.kanade.tachiyomi.data.track.hikka.Hikka
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeList
+import eu.kanade.tachiyomi.data.track.shikimori.Shikimori
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationSettingsItem
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsState
@@ -207,8 +210,8 @@ class SettingsTsuzukiIntegrationDetailScreen(
                         }
                     }
 
-                    if (item.id.value == "mal") {
-                        item(key = "mal_client_id") {
+                    when (item.id.value) {
+                        "mal" -> item(key = "mal_client_id") {
                             MalClientIdConfiguration(
                                 tracker = tracker as? MyAnimeList,
                                 onConfiguredChanged = { configured ->
@@ -218,6 +221,12 @@ class SettingsTsuzukiIntegrationDetailScreen(
                                     }
                                 },
                             )
+                        }
+                        "shikimori" -> item(key = "shikimori_oauth_app") {
+                            ShikimoriCredentialsConfiguration(tracker as? Shikimori)
+                        }
+                        "hikka" -> item(key = "hikka_oauth_app") {
+                            HikkaCredentialsConfiguration(tracker as? Hikka)
                         }
                     }
 
@@ -357,6 +366,90 @@ private fun MalClientIdConfiguration(
                 savedClientId = tracker?.getClientId().orEmpty()
                 clientId = savedClientId
                 onConfiguredChanged(savedClientId.isNotBlank())
+            },
+        ) {
+            Text(stringResource(MR.strings.action_save))
+        }
+    }
+}
+
+@Composable
+private fun ShikimoriCredentialsConfiguration(tracker: Shikimori?) {
+    ApplicationCredentialsConfiguration(
+        clientId = tracker?.getClientId().orEmpty(),
+        clientSecret = tracker?.getClientSecret().orEmpty(),
+        clientIdLabel = stringResource(MR.strings.tsuzuki_oauth_client_id_title),
+        clientSecretLabel = stringResource(MR.strings.tsuzuki_oauth_client_secret_title),
+        summary = stringResource(MR.strings.tsuzuki_shikimori_credentials_summary),
+        setup = stringResource(MR.strings.tsuzuki_shikimori_credentials_setup),
+        onSave = { clientId, clientSecret ->
+            tracker?.setApplicationCredentials(clientId, clientSecret)
+        },
+    )
+}
+
+@Composable
+private fun HikkaCredentialsConfiguration(tracker: Hikka?) {
+    ApplicationCredentialsConfiguration(
+        clientId = tracker?.getClientReference().orEmpty(),
+        clientSecret = tracker?.getClientSecret().orEmpty(),
+        clientIdLabel = stringResource(MR.strings.tsuzuki_hikka_reference_title),
+        clientSecretLabel = stringResource(MR.strings.tsuzuki_hikka_client_secret_title),
+        summary = stringResource(MR.strings.tsuzuki_hikka_credentials_summary),
+        setup = stringResource(MR.strings.tsuzuki_hikka_credentials_setup),
+        onSave = { clientReference, clientSecret ->
+            tracker?.setApplicationCredentials(clientReference, clientSecret)
+        },
+    )
+}
+
+@Composable
+private fun ApplicationCredentialsConfiguration(
+    clientId: String,
+    clientSecret: String,
+    clientIdLabel: String,
+    clientSecretLabel: String,
+    summary: String,
+    setup: String,
+    onSave: (String, String) -> Unit,
+) {
+    var savedClientId by remember(clientId) { mutableStateOf(clientId) }
+    var savedClientSecret by remember(clientSecret) { mutableStateOf(clientSecret) }
+    var editedClientId by remember(clientId) { mutableStateOf(clientId) }
+    var editedClientSecret by remember(clientSecret) { mutableStateOf(clientSecret) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(summary)
+        OutlinedTextField(
+            value = editedClientId,
+            onValueChange = { editedClientId = it },
+            label = { Text(clientIdLabel) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = editedClientSecret,
+            onValueChange = { editedClientSecret = it },
+            label = { Text(clientSecretLabel) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+        )
+        Text(setup)
+        TextButton(
+            enabled = editedClientId.trim() != savedClientId ||
+                editedClientSecret.trim() != savedClientSecret,
+            onClick = {
+                onSave(editedClientId, editedClientSecret)
+                savedClientId = editedClientId.trim()
+                savedClientSecret = editedClientSecret.trim()
+                editedClientId = savedClientId
+                editedClientSecret = savedClientSecret
             },
         ) {
             Text(stringResource(MR.strings.action_save))
