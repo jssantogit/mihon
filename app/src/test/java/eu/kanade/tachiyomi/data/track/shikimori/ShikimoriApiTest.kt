@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.track.shikimori
 
-import eu.kanade.tachiyomi.data.track.shikimori.dto.SMOAuth
 import io.kotest.matchers.shouldBe
 import okhttp3.FormBody
 import org.junit.jupiter.api.Test
