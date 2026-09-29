@@ -26,11 +26,13 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationAuthState
-import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationCapability
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationConfigState
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationSettingsItem
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiIntegrationsSettingsState
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationPolicy
 
 class SettingsTsuzukiIntegrationsScreen : Screen() {
 
@@ -72,23 +74,36 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                             .fillMaxSize()
                             .padding(contentPadding),
                     ) {
-                        items(
-                            items = current.items,
-                            key = { it.id.value },
-                        ) { item ->
-                            IntegrationSettingRow(
-                                item = item,
-                                onEnabledChange = {
-                                    screenModel.setEnabled(
-                                        id = item.id,
-                                        enabled = it,
-                                    )
-                                },
-                                onOpen = {
-                                    navigator.push(SettingsTsuzukiIntegrationDetailScreen(item.id.value))
-                                },
-                            )
-                            HorizontalDivider()
+                        IntegrationCategory.entries.forEach { category ->
+                            val categoryItems = current.items.filter { it.category == category }
+                            if (categoryItems.isEmpty()) return@forEach
+                            item(key = "header_${category.name}") {
+                                Text(
+                                    text = category.label(),
+                                    modifier = Modifier.padding(
+                                        horizontal = 16.dp,
+                                        vertical = 12.dp,
+                                    ),
+                                )
+                            }
+                            items(
+                                items = categoryItems,
+                                key = { it.id.value },
+                            ) { item ->
+                                IntegrationSettingRow(
+                                    item = item,
+                                    onEnabledChange = {
+                                        screenModel.setEnabled(
+                                            id = item.id,
+                                            enabled = it,
+                                        )
+                                    },
+                                    onOpen = {
+                                        navigator.push(SettingsTsuzukiIntegrationDetailScreen(item.id.value))
+                                    },
+                                )
+                                HorizontalDivider()
+                            }
                         }
                     }
                 }
@@ -139,7 +154,7 @@ class SettingsTsuzukiIntegrationDetailScreen(
                     item {
                         ListItem(
                             headlineContent = { Text("Ativada") },
-                            supportingContent = { Text("Usar ${item.label} como provedor no Tsuzuki") },
+                            supportingContent = { Text("Usar ${item.label} no Tsuzuki") },
                             trailingContent = {
                                 Switch(
                                     checked = item.enabled,
@@ -152,34 +167,70 @@ class SettingsTsuzukiIntegrationDetailScreen(
                     }
                     item {
                         ListItem(
-                            headlineContent = { Text("Recursos") },
-                            supportingContent = {
-                                Text("Escolha quais recursos deste provedor o Tsuzuki pode usar.")
-                            },
+                            headlineContent = { Text("Tipo") },
+                            supportingContent = { Text(item.category.label()) },
                         )
                     }
-                    items(
-                        items = item.capabilities,
-                        key = { it.name },
-                    ) { capability ->
-                        ListItem(
-                            headlineContent = { Text(capability.label()) },
-                            trailingContent = {
-                                Switch(
-                                    checked = item.capabilityEnabled[capability] ?: true,
-                                    onCheckedChange = {
-                                        screenModel.setCapabilityEnabled(item.id, capability, it)
-                                    },
-                                )
-                            },
-                        )
+                    if (item.capabilities.isNotEmpty()) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text("Recursos") },
+                                supportingContent = {
+                                    Text("Escolha quais recursos permitidos deste provedor o Tsuzuki pode usar.")
+                                },
+                            )
+                        }
+                        items(
+                            items = item.capabilities,
+                            key = { it.name },
+                        ) { capability ->
+                            val policy = item.policies[capability]?.policy
+                            ListItem(
+                                headlineContent = { Text(capability.label()) },
+                                supportingContent = {
+                                    if (policy != null && policy != IntegrationPolicy.ALLOWED) {
+                                        Text(policy.label())
+                                    }
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = item.capabilityEnabled[capability] ?: true,
+                                        onCheckedChange = {
+                                            screenModel.setCapabilityEnabled(item.id, capability, it)
+                                        },
+                                    )
+                                },
+                            )
+                        }
                     }
-                    if (TsuzukiIntegrationCapability.TRACKING in item.capabilities) {
+                    if (item.restrictedCapabilities.isNotEmpty()) {
+                        item {
+                            ListItem(
+                                headlineContent = { Text("Recursos não habilitados") },
+                                supportingContent = {
+                                    Text(
+                                        "Estes recursos existem tecnicamente, mas não entram no catálogo global " +
+                                            "enquanto as permissões ou termos aplicáveis não estiverem resolvidos.",
+                                    )
+                                },
+                            )
+                        }
+                        items(
+                            items = item.restrictedCapabilities.entries.toList(),
+                            key = { it.key.name },
+                        ) { (capability, policy) ->
+                            ListItem(
+                                headlineContent = { Text(capability.label()) },
+                                supportingContent = { Text(policy.policy.label()) },
+                            )
+                        }
+                    }
+                    if (IntegrationCapability.TRACKING in item.capabilities) {
                         item {
                             ListItem(
                                 headlineContent = { Text("Conta e monitoramento") },
                                 supportingContent = {
-                                    Text("Conectar conta e gerenciar preferências de monitoramento")
+                                    Text("Conectar conta e gerenciar o monitoramento existente")
                                 },
                                 modifier = Modifier.clickable {
                                     navigator.push(SettingsTrackingScreen)
@@ -220,15 +271,14 @@ private fun IntegrationSettingRow(
                 Text(
                     item.capabilities.joinToString(
                         separator = " • ",
-                        transform = TsuzukiIntegrationCapability::label,
+                        transform = IntegrationCapability::label,
                     ),
                 )
-                Text(
-                    text = "Configuração: ${item.configState.label()}",
-                )
-                Text(
-                    text = "Autenticação: ${item.authState.label()}",
-                )
+                if (item.restrictedCapabilities.isNotEmpty()) {
+                    Text("${item.restrictedCapabilities.size} recurso(s) bloqueado(s) por política")
+                }
+                Text("Configuração: ${item.configState.label()}")
+                Text("Autenticação: ${item.authState.label()}")
             }
         },
         trailingContent = {
@@ -241,18 +291,36 @@ private fun IntegrationSettingRow(
     )
 }
 
-private fun TsuzukiIntegrationCapability.label(): String = when (this) {
-    TsuzukiIntegrationCapability.SEARCH -> "Busca"
-    TsuzukiIntegrationCapability.DISCOVERY -> "Descobrir"
-    TsuzukiIntegrationCapability.METADATA -> "Metadados"
-    TsuzukiIntegrationCapability.RATINGS -> "Avaliações"
-    TsuzukiIntegrationCapability.CHAPTER_EVIDENCE -> "Evidência de capítulos"
-    TsuzukiIntegrationCapability.TRACKING -> "Monitoramento"
-    TsuzukiIntegrationCapability.USER_LISTS -> "Listas da conta"
-    TsuzukiIntegrationCapability.CROSSWALK -> "Identidade entre catálogos"
-    TsuzukiIntegrationCapability.REMOTE_LIBRARY -> "Biblioteca remota"
-    TsuzukiIntegrationCapability.READING_CONTENT -> "Conteúdo de leitura"
-    TsuzukiIntegrationCapability.DOWNLOADS -> "Downloads"
+private fun IntegrationCategory.label(): String = when (this) {
+    IntegrationCategory.METADATA_SERVICE -> "Metadados e serviços"
+    IntegrationCategory.PERSONAL_SERVER -> "Servidores pessoais"
+    IntegrationCategory.COMPATIBILITY -> "Compatibilidade"
+}
+
+private fun IntegrationCapability.label(): String = when (this) {
+    IntegrationCapability.SEARCH -> "Busca"
+    IntegrationCapability.DISCOVERY -> "Descobrir"
+    IntegrationCapability.METADATA_BASIC -> "Informações básicas"
+    IntegrationCapability.METADATA_ARTWORK -> "Capas e imagens"
+    IntegrationCapability.METADATA_EDITORIAL -> "Dados editoriais"
+    IntegrationCapability.METADATA_STAFF -> "Autores e equipe"
+    IntegrationCapability.RATINGS -> "Avaliações"
+    IntegrationCapability.RELATIONS -> "Relações"
+    IntegrationCapability.CROSSWALK -> "Identidade entre catálogos"
+    IntegrationCapability.TRACKING -> "Monitoramento"
+    IntegrationCapability.USER_LISTS -> "Listas da conta"
+    IntegrationCapability.REMOTE_LIBRARY -> "Biblioteca remota"
+    IntegrationCapability.READING_CONTENT -> "Conteúdo de leitura"
+    IntegrationCapability.DOWNLOADS -> "Downloads"
+}
+
+private fun IntegrationPolicy.label(): String = when (this) {
+    IntegrationPolicy.ALLOWED -> "Permitido"
+    IntegrationPolicy.ALLOWED_WITH_ATTRIBUTION -> "Permitido com atribuição"
+    IntegrationPolicy.USER_OWNED_DATA -> "Dados do seu próprio servidor"
+    IntegrationPolicy.COMMERCIAL_RESTRICTION -> "Uso condicionado por licença"
+    IntegrationPolicy.PERMISSION_REQUIRED -> "Permissão adicional necessária"
+    IntegrationPolicy.UNVERIFIED -> "Termos ainda não verificados"
 }
 
 private fun TsuzukiIntegrationConfigState.label(): String = when (this) {
