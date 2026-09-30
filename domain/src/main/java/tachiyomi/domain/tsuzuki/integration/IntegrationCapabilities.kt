@@ -1,11 +1,11 @@
 package tachiyomi.domain.tsuzuki.integration
 
+import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
-import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 
