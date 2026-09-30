@@ -20,7 +20,8 @@ import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 class EnrichCatalogRatingsTest {
 
     @Test
-    fun `mapped active rating provider enriches a catalog item even when it is absent from that provider catalog`() = runTest {
+    fun `mapped active rating provider enriches a catalog item when absent from that provider catalog`() =
+        runTest {
         val mal = object : RatingsProvider {
             override val integrationId = IntegrationId("mal")
 
