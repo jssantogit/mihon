@@ -167,7 +167,7 @@ private fun TitleHeader(
             verticalAlignment = Alignment.Top,
         ) {
             MangaCover.Book(
-                data = state.coverUrl,
+                data = state.coverUrl ?: state.sourceCover,
                 contentDescription = state.title.displayTitle,
                 modifier = Modifier.width(112.dp),
             )
