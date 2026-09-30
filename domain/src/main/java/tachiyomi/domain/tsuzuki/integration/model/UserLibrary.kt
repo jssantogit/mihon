@@ -22,6 +22,7 @@ data class UserLibraryEntry(
     val remoteStatus: String?,
     val progress: Double? = null,
     val score: Double? = null,
+    val listedAt: Long? = null,
 ) {
     init {
         require(listKeys.isNotEmpty()) { "User library entry must belong to at least one list" }
