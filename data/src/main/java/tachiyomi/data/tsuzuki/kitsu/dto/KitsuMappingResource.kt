@@ -19,6 +19,7 @@ data class KitsuMappingAttributes(
 @Serializable
 data class KitsuMappingRelationships(
     val item: KitsuMappingItemRelationship = KitsuMappingItemRelationship(),
+    val media: KitsuMappingItemRelationship = KitsuMappingItemRelationship(),
 )
 
 @Serializable
