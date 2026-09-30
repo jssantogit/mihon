@@ -2,10 +2,7 @@ package tachiyomi.domain.tsuzuki.source.interactor
 
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
-import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
@@ -95,10 +92,9 @@ class ResolveCanonicalSourceMangaContentBindingTest {
         }
         val networkToLocal = mockk<NetworkToLocalManga>()
         coEvery { networkToLocal(any<Manga>()) } answers {
-            firstArg<Manga>().copy(id = 99L)
+            (args[0] as Manga).copy(id = 99L)
         }
         val mangaRepository = mockk<MangaRepository>()
-        every { mangaRepository.getLibraryMangaAsFlow() } returns MutableStateFlow(emptyList())
 
         val resolved = ResolveCanonicalSourceManga(
             canonicalTitleRepository = titleRepository,
