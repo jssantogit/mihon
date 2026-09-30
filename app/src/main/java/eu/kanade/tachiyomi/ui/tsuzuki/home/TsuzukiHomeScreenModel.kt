@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.history.repository.HistoryRepository
+import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -62,14 +63,17 @@ class TsuzukiHomeScreenModel(
         getConfiguredHomeSections.subscribe(),
     ) { continueReading, sections ->
         val enriched = continueReading.map { item ->
-            val cover = try {
-                resolveCanonicalSourceManga.execute(item.canonicalTitleId)?.thumbnailUrl
+            val sourceManga = try {
+                resolveCanonicalSourceManga.execute(item.canonicalTitleId)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
                 null
             }
-            item.copy(coverUrl = cover)
+            item.copy(
+                coverUrl = sourceManga?.thumbnailUrl,
+                sourceCover = sourceManga?.asMangaCover(),
+            )
         }
         TsuzukiHomeScreenState(
             continueReading = enriched,
