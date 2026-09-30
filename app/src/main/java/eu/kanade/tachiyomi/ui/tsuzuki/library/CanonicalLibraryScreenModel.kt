@@ -183,9 +183,17 @@ class CanonicalLibraryScreenModel private constructor(
                                 } catch (_: Throwable) {
                                     null
                                 }
+                                val providerCover = item.preferredExternalCoverUrl()
+                                val localCover = item.localCoverUrl(covers)
+                                logcat {
+                                    "TsuzukiCover library title=${item.id.take(8)} " +
+                                        "provider=${!providerCover.isNullOrBlank()} " +
+                                        "source=${sourceCover != null && !sourceCover.url.isNullOrBlank()} " +
+                                        "local=${!localCover.isNullOrBlank()}"
+                                }
                                 item.toCardModel(
                                     progress = progress,
-                                    localCoverUrl = item.localCoverUrl(covers),
+                                    localCoverUrl = localCover,
                                     sourceCover = sourceCover,
                                 )
                             }
