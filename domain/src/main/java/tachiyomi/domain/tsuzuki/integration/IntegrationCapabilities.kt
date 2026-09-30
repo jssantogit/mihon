@@ -5,6 +5,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingResolution
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
@@ -49,6 +50,21 @@ interface RatingsProvider {
     val integrationId: IntegrationId
 
     suspend fun ratings(externalId: String): Result<List<ExternalRating>>
+
+    suspend fun resolveRatings(item: CatalogItem): Result<CatalogRatingResolution?> {
+        val providerId = integrationId.value
+        val externalId = when {
+            item.provider == providerId -> item.providerId
+            else -> item.externalIds[providerId]
+        } ?: return Result.success(null)
+
+        return ratings(externalId).map { ratings ->
+            CatalogRatingResolution(
+                externalId = externalId,
+                ratings = ratings,
+            )
+        }
+    }
 }
 
 interface TrackingProvider {
