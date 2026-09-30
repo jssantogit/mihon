@@ -1,0 +1,34 @@
+-- Provider-owned memberships are cached projections and stay separate from the local Tsuzuki library.
+CREATE TABLE tsuzuki_external_library_memberships(
+    canonical_title_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    list_key TEXT NOT NULL,
+    status TEXT,
+    remote_status TEXT,
+    progress REAL,
+    score REAL,
+    listed_at INTEGER,
+    synced_at INTEGER NOT NULL,
+    PRIMARY KEY(provider, external_id, list_key),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_external_library_title_index
+ON tsuzuki_external_library_memberships(canonical_title_id);
+
+CREATE INDEX tsuzuki_external_library_provider_index
+ON tsuzuki_external_library_memberships(provider);
+
+-- Provider-reported formats are persisted independently so unified-library facets do not require network reads.
+CREATE TABLE tsuzuki_title_format_observations(
+    canonical_title_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    format TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, provider),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_title_format_provider_index
+ON tsuzuki_title_format_observations(provider);

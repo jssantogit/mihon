@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALManga
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALSearchResult
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALUser
+import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALUserListPage
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.toTrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
@@ -42,6 +43,8 @@ interface MalIntegrationApi {
     ): List<TrackSearch>
 
     suspend fun getMangaDetails(id: Int): TrackSearch
+
+    suspend fun getUserMangaList(): List<MalUserListEntry>
 }
 
 class MyAnimeListApi(
@@ -223,41 +226,49 @@ class MyAnimeListApi(
         }
     }
 
-    suspend fun findListItems(query: String, offset: Int = 0): List<TrackSearch> {
+    suspend fun findListItems(query: String): List<TrackSearch> {
+        return getUserMangaList()
+            .filter { it.manga.title.contains(query, ignoreCase = true) }
+            .map(MalUserListEntry::manga)
+    }
+
+    override suspend fun getUserMangaList(): List<MalUserListEntry> {
         return withIOContext {
-            val myListSearchResult = getListPage(offset)
-
-            val matches = myListSearchResult.data
-                .filter { it.node.title.contains(query, ignoreCase = true) }
-                .map { it.node.toTrackSearch(trackerId) }
-
-            // Check next page if there's more
-            if (!myListSearchResult.paging.next.isNullOrBlank()) {
-                matches + findListItems(query, offset + LIST_PAGINATION_AMOUNT)
-            } else {
-                matches
-            }
+            val entries = mutableListOf<MalUserListEntry>()
+            var offset = 0
+            do {
+                val page = getUserListPage(offset)
+                entries += page.data.map { entry ->
+                    MalUserListEntry(
+                        manga = entry.node.toTrackSearch(trackerId),
+                        status = entry.listStatus.status,
+                        progress = entry.listStatus.numChaptersRead,
+                        score = entry.listStatus.score.toDouble(),
+                        updatedAt = entry.listStatus.updatedAt,
+                    )
+                }
+                offset += LIST_PAGINATION_AMOUNT
+            } while (!page.paging.next.isNullOrBlank())
+            entries
         }
     }
 
-    private suspend fun getListPage(offset: Int): MALSearchResult {
-        return withIOContext {
-            val urlBuilder = "$BASE_API_URL/users/@me/mangalist".toUri().buildUpon()
-                .appendQueryParameter("fields", SEARCH_FIELDS)
-                .appendQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
-            if (offset > 0) {
-                urlBuilder.appendQueryParameter("offset", offset.toString())
-            }
+    private suspend fun getUserListPage(offset: Int): MALUserListPage {
+        val urlBuilder = "$BASE_API_URL/users/@me/mangalist".toUri().buildUpon()
+            .appendQueryParameter("fields", SEARCH_FIELDS)
+            .appendQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
+        if (offset > 0) {
+            urlBuilder.appendQueryParameter("offset", offset.toString())
+        }
 
-            val request = Request.Builder()
-                .url(urlBuilder.build().toString())
-                .get()
-                .build()
-            with(json) {
-                authClient.newCall(request)
-                    .awaitSuccess()
-                    .parseAs()
-            }
+        val request = Request.Builder()
+            .url(urlBuilder.build().toString())
+            .get()
+            .build()
+        return with(json) {
+            authClient.newCall(request)
+                .awaitSuccess()
+                .parseAs()
         }
     }
 

@@ -8,6 +8,9 @@ import dev.zacsweers.metro.binding
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.MalIntegrationApi
+import eu.kanade.tachiyomi.data.track.myanimelist.MalUserListEntry
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
@@ -19,20 +22,31 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
+import tachiyomi.domain.tsuzuki.integration.UserListProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
+import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
+import tachiyomi.domain.tsuzuki.integration.model.UserListDefinition
+import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Instant
 
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<DiscoveryProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<MetadataProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<RatingsProvider>())
+@ContributesIntoSet(AppScope::class, binding = binding<UserListProvider>())
 class MalIntegrationProvider private constructor(
     private val api: MalIntegrationApi,
-) : SearchProvider, DiscoveryProvider, MetadataProvider, RatingsProvider {
+    override val connection: Flow<Boolean>,
+) : SearchProvider, DiscoveryProvider, MetadataProvider, RatingsProvider, UserListProvider {
 
     @Inject
-    constructor(trackerManager: TrackerManager) : this(trackerManager.myAnimeList.integrationApi)
+    constructor(trackerManager: TrackerManager) : this(
+        api = trackerManager.myAnimeList.integrationApi,
+        connection = trackerManager.myAnimeList.isLoggedInFlow,
+    )
 
     override val integrationId = IntegrationId("mal")
 
@@ -91,6 +105,26 @@ class MalIntegrationProvider private constructor(
             val details = api.getMangaDetails(externalId.requireMalId())
             listOfNotNull(details.toExternalRating())
         }
+    }
+
+    override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
+        UserLibrarySnapshot(
+            lists = MAL_USER_LISTS,
+            entries = api.getUserMangaList().map { it.toUserLibraryEntry() },
+        )
+    }
+
+    private fun MalUserListEntry.toUserLibraryEntry(): UserLibraryEntry {
+        val normalizedStatus = status.lowercase().trim()
+        return UserLibraryEntry(
+            item = manga.toCatalogItem(),
+            listKeys = setOf("mal:status:$normalizedStatus"),
+            status = normalizedStatus.toLibraryStatus(),
+            remoteStatus = normalizedStatus,
+            progress = progress,
+            score = score.takeIf { it > 0.0 },
+            listedAt = updatedAt?.toEpochMillisOrNull(),
+        )
     }
 
     private fun TrackSearch.toCatalogItem(): CatalogItem {
@@ -157,6 +191,19 @@ class MalIntegrationProvider private constructor(
     private fun String.normalizedMalValue(): String =
         lowercase().replace('_', ' ').trim().replace(WHITESPACE_REGEX, " ")
 
+    private fun String.toLibraryStatus(): LibraryStatus? = when (this) {
+        "reading" -> LibraryStatus.READING
+        "plan_to_read" -> LibraryStatus.PLANNING
+        "completed" -> LibraryStatus.COMPLETED
+        "on_hold" -> LibraryStatus.ON_HOLD
+        "dropped" -> LibraryStatus.DROPPED
+        else -> null
+    }
+
+    private fun String.toEpochMillisOrNull(): Long? = runCatching {
+        Instant.parse(this).toEpochMilliseconds()
+    }.getOrNull()
+
     private fun String.requireMalId(): Int =
         toIntOrNull() ?: throw IllegalArgumentException("Invalid MAL external id: $this")
 
@@ -173,9 +220,44 @@ class MalIntegrationProvider private constructor(
     companion object {
         private const val MAL_SCORE_MAX = 10.0
         private const val MAL_RANKING_BY_POPULARITY = "bypopularity"
+        private const val MAL_STATUS_SELECTION_GROUP = "mal:status"
         private val WHITESPACE_REGEX = Regex("""\s+""")
+        private val MAL_USER_LISTS = listOf(
+            UserListDefinition(
+                key = "mal:status:reading",
+                title = "Reading",
+                status = LibraryStatus.READING,
+                selectionGroup = MAL_STATUS_SELECTION_GROUP,
+            ),
+            UserListDefinition(
+                key = "mal:status:plan_to_read",
+                title = "Plan to Read",
+                status = LibraryStatus.PLANNING,
+                selectionGroup = MAL_STATUS_SELECTION_GROUP,
+            ),
+            UserListDefinition(
+                key = "mal:status:completed",
+                title = "Completed",
+                status = LibraryStatus.COMPLETED,
+                selectionGroup = MAL_STATUS_SELECTION_GROUP,
+            ),
+            UserListDefinition(
+                key = "mal:status:on_hold",
+                title = "On Hold",
+                status = LibraryStatus.ON_HOLD,
+                selectionGroup = MAL_STATUS_SELECTION_GROUP,
+            ),
+            UserListDefinition(
+                key = "mal:status:dropped",
+                title = "Dropped",
+                status = LibraryStatus.DROPPED,
+                selectionGroup = MAL_STATUS_SELECTION_GROUP,
+            ),
+        )
 
-        internal fun forTest(api: MalIntegrationApi): MalIntegrationProvider =
-            MalIntegrationProvider(api)
+        internal fun forTest(
+            api: MalIntegrationApi,
+            connection: Flow<Boolean> = flowOf(true),
+        ): MalIntegrationProvider = MalIntegrationProvider(api, connection)
     }
 }

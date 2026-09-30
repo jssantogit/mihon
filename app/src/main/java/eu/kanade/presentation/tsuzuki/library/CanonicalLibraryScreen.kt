@@ -1,6 +1,7 @@
 package eu.kanade.presentation.tsuzuki.library
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -23,6 +27,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,9 +49,12 @@ import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryReadingState
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Delete
+import mihon.icons.materialsymbols.rounded.FilterList
 import mihon.icons.materialsymbols.rounded.MoreVert
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
+import tachiyomi.domain.tsuzuki.library.model.LOCAL_LIBRARY_ORIGIN
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.screens.EmptyScreen
@@ -64,6 +72,10 @@ fun CanonicalLibraryScreen(
     onSetCategories: (String, List<Long>) -> Unit = { _, _ -> },
     onEditCategories: () -> Unit = {},
     onCategoryFilterChange: (Long?) -> Unit = {},
+    onStatusFilterChange: (LibraryStatus?) -> Unit = {},
+    onOriginFilterChange: (String?) -> Unit = {},
+    onToggleFormatFilter: (CatalogItemFormat) -> Unit = {},
+    onClearAdvancedFilters: () -> Unit = {},
     onRead: (CanonicalLibraryCardModel) -> Unit = {},
     onOpenItem: (CanonicalLibraryCardModel) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -71,6 +83,14 @@ fun CanonicalLibraryScreen(
     var categoryDialogItem by remember {
         mutableStateOf<CanonicalLibraryCardModel?>(null)
     }
+    var filterSheetVisible by remember { mutableStateOf(false) }
+
+    val successState = state as? CanonicalLibraryScreenState.Success
+    val advancedFilterCount = successState?.filters?.let { filters ->
+        (if (filters.origin != null) 1 else 0) +
+            filters.formats.size +
+            (if (filters.categoryId != null) 1 else 0)
+    } ?: 0
 
     Scaffold(
         modifier = modifier,
@@ -78,8 +98,24 @@ fun CanonicalLibraryScreen(
             SearchToolbar(
                 titleContent = { AppBarTitle(title) },
                 navigateUp = navigateUp,
-                searchQuery = (state as? CanonicalLibraryScreenState.Success)?.searchQuery,
+                searchQuery = successState?.searchQuery,
                 onChangeSearchQuery = onSearchQueryChange,
+                actions = {
+                    IconButton(onClick = { filterSheetVisible = true }) {
+                        BadgedBox(
+                            badge = {
+                                if (advancedFilterCount > 0) {
+                                    Badge { Text(advancedFilterCount.toString()) }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = MaterialSymbols.Rounded.FilterList,
+                                contentDescription = "Filter library",
+                            )
+                        }
+                    }
+                },
             )
         },
     ) { paddingValues ->
@@ -92,10 +128,17 @@ fun CanonicalLibraryScreen(
                 CanonicalLibraryScreenState.Loading -> LoadingScreen()
                 is CanonicalLibraryScreenState.Success -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        CanonicalLibraryCategoryFilters(
+                        CanonicalLibraryStatusFilters(
+                            selectedStatus = state.filters.status,
+                            onStatusFilterChange = onStatusFilterChange,
+                        )
+                        CanonicalLibraryActiveFilters(
+                            state = state,
                             categories = categories,
-                            selectedCategoryId = state.selectedCategoryId,
-                            onCategoryFilterChange = onCategoryFilterChange,
+                            onClearOrigin = { onOriginFilterChange(null) },
+                            onToggleFormat = onToggleFormatFilter,
+                            onClearCategory = { onCategoryFilterChange(null) },
+                            onShowAll = { filterSheetVisible = true },
                         )
                         if (state.items.isEmpty()) {
                             Box(
@@ -103,11 +146,12 @@ fun CanonicalLibraryScreen(
                                     .fillMaxWidth()
                                     .weight(1f),
                             ) {
-                                EmptyScreen(message = "No canonical titles in library")
+                                EmptyScreen(message = "No titles match the current library filters")
                             }
                         } else {
                             CanonicalLibraryList(
                                 items = state.items,
+                                selectedOrigin = state.filters.origin,
                                 onUpdateStatus = onUpdateStatus,
                                 onRemoveItem = onRemoveItem,
                                 onChangeCategories = { categoryDialogItem = it },
@@ -120,6 +164,18 @@ fun CanonicalLibraryScreen(
                 }
             }
         }
+    }
+
+    if (filterSheetVisible && successState != null) {
+        CanonicalLibraryFilterSheet(
+            state = successState,
+            categories = categories,
+            onDismiss = { filterSheetVisible = false },
+            onOriginFilterChange = onOriginFilterChange,
+            onToggleFormatFilter = onToggleFormatFilter,
+            onCategoryFilterChange = onCategoryFilterChange,
+            onClearAdvancedFilters = onClearAdvancedFilters,
+        )
     }
 
     categoryDialogItem?.let { item ->
@@ -146,29 +202,197 @@ fun CanonicalLibraryScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CanonicalLibraryCategoryFilters(
-    categories: List<Category>,
-    selectedCategoryId: Long?,
-    onCategoryFilterChange: (Long?) -> Unit,
+private fun CanonicalLibraryStatusFilters(
+    selectedStatus: LibraryStatus?,
+    onStatusFilterChange: (LibraryStatus?) -> Unit,
 ) {
-    FlowRow(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         FilterChip(
-            selected = selectedCategoryId == null,
-            onClick = { onCategoryFilterChange(null) },
+            selected = selectedStatus == null,
+            onClick = { onStatusFilterChange(null) },
             label = { Text("All") },
         )
-        categories.forEach { category ->
+        LibraryStatus.entries.forEach { status ->
             FilterChip(
-                selected = selectedCategoryId == category.id,
-                onClick = { onCategoryFilterChange(category.id) },
-                label = { Text(category.visualName) },
+                selected = selectedStatus == status,
+                onClick = { onStatusFilterChange(status) },
+                label = { Text(status.libraryLabel()) },
             )
+        }
+    }
+}
+
+private data class ActiveFilter(
+    val label: String,
+    val clear: () -> Unit,
+)
+
+@Composable
+private fun CanonicalLibraryActiveFilters(
+    state: CanonicalLibraryScreenState.Success,
+    categories: List<Category>,
+    onClearOrigin: () -> Unit,
+    onToggleFormat: (CatalogItemFormat) -> Unit,
+    onClearCategory: () -> Unit,
+    onShowAll: () -> Unit,
+) {
+    val filters = state.filters
+    val active = buildList {
+        filters.origin?.let { origin ->
+            add(ActiveFilter(origin.libraryOriginLabel(), onClearOrigin))
+        }
+        filters.formats
+            .sortedBy(CatalogItemFormat::ordinal)
+            .forEach { format ->
+                add(ActiveFilter(format.libraryFormatLabel()) { onToggleFormat(format) })
+            }
+        filters.categoryId?.let { categoryId ->
+            val label = categories
+                .firstOrNull { it.id == categoryId }
+                ?.visualName
+                ?: if (categoryId == Category.UNCATEGORIZED_ID) "Uncategorized" else "Category"
+            add(ActiveFilter(label, onClearCategory))
+        }
+    }
+
+    if (active.isEmpty()) return
+
+    val visible = active.take(2)
+    val hiddenCount = active.size - visible.size
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        visible.forEach { filter ->
+            SuggestionChip(
+                onClick = filter.clear,
+                label = { Text("${filter.label} ×") },
+            )
+        }
+        if (hiddenCount > 0) {
+            SuggestionChip(
+                onClick = onShowAll,
+                label = { Text("+$hiddenCount") },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CanonicalLibraryFilterSheet(
+    state: CanonicalLibraryScreenState.Success,
+    categories: List<Category>,
+    onDismiss: () -> Unit,
+    onOriginFilterChange: (String?) -> Unit,
+    onToggleFormatFilter: (CatalogItemFormat) -> Unit,
+    onCategoryFilterChange: (Long?) -> Unit,
+    onClearAdvancedFilters: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Filter Library", style = MaterialTheme.typography.titleLarge)
+
+            FilterSection("Origin") {
+                FilterChip(
+                    selected = state.filters.origin == null,
+                    onClick = { onOriginFilterChange(null) },
+                    label = { Text("All") },
+                )
+                state.availableOrigins
+                    .sortedBy(String::libraryOriginLabel)
+                    .forEach { origin ->
+                        FilterChip(
+                            selected = state.filters.origin == origin,
+                            onClick = { onOriginFilterChange(origin) },
+                            label = { Text(origin.libraryOriginLabel()) },
+                        )
+                    }
+            }
+
+            FilterSection("Format") {
+                state.availableFormats
+                    .sortedBy(CatalogItemFormat::ordinal)
+                    .forEach { format ->
+                        FilterChip(
+                            selected = format in state.filters.formats,
+                            onClick = { onToggleFormatFilter(format) },
+                            label = { Text(format.libraryFormatLabel()) },
+                        )
+                    }
+            }
+
+            FilterSection("Category") {
+                FilterChip(
+                    selected = state.filters.categoryId == null,
+                    onClick = { onCategoryFilterChange(null) },
+                    label = { Text("All") },
+                )
+                FilterChip(
+                    selected = state.filters.categoryId == Category.UNCATEGORIZED_ID,
+                    onClick = { onCategoryFilterChange(Category.UNCATEGORIZED_ID) },
+                    label = { Text("Uncategorized") },
+                )
+                categories
+                    .filter { it.id != Category.UNCATEGORIZED_ID }
+                    .forEach { category ->
+                        FilterChip(
+                            selected = state.filters.categoryId == category.id,
+                            onClick = { onCategoryFilterChange(category.id) },
+                            label = { Text(category.visualName) },
+                        )
+                    }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    onClick = {
+                        onClearAdvancedFilters()
+                        onDismiss()
+                    },
+                ) {
+                    Text("Clear filters")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Done")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilterSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            content()
         }
     }
 }
@@ -176,6 +400,7 @@ private fun CanonicalLibraryCategoryFilters(
 @Composable
 private fun CanonicalLibraryList(
     items: List<CanonicalLibraryCardModel>,
+    selectedOrigin: String?,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
     onChangeCategories: (CanonicalLibraryCardModel) -> Unit,
@@ -194,6 +419,7 @@ private fun CanonicalLibraryList(
         ) { item ->
             CanonicalLibraryItemCard(
                 item = item,
+                selectedOrigin = selectedOrigin,
                 onUpdateStatus = { status ->
                     onUpdateStatus(item.canonicalTitleId, status)
                 },
@@ -210,6 +436,7 @@ private fun CanonicalLibraryList(
 @Composable
 private fun CanonicalLibraryItemCard(
     item: CanonicalLibraryCardModel,
+    selectedOrigin: String?,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
     onChangeCategories: () -> Unit,
@@ -218,6 +445,13 @@ private fun CanonicalLibraryItemCard(
     modifier: Modifier = Modifier,
 ) {
     var statusMenuExpanded by remember { mutableStateOf(false) }
+    val contextualStatuses = if (selectedOrigin == null) {
+        item.originStatuses.values.flatten().toSet()
+    } else {
+        item.originStatuses[selectedOrigin].orEmpty()
+    }.ifEmpty { setOf(item.status) }
+    val canEditStatusFromChip = item.hasLocalMembership &&
+        (selectedOrigin == LOCAL_LIBRARY_ORIGIN || (selectedOrigin == null && item.origins.size == 1))
 
     Card(
         modifier = modifier
@@ -244,46 +478,46 @@ private fun CanonicalLibraryItemCard(
                     modifier = Modifier.weight(1f),
                 )
 
-                Box {
-                    IconButton(onClick = { statusMenuExpanded = true }) {
-                        Icon(
-                            imageVector = MaterialSymbols.Rounded.MoreVert,
-                            contentDescription = "Status options",
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = statusMenuExpanded,
-                        onDismissRequest = { statusMenuExpanded = false },
-                    ) {
-                        LibraryStatus.entries.forEach { status ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = status.name
-                                            .lowercase()
-                                            .replaceFirstChar { it.uppercase() },
-                                        fontWeight = if (status == item.status) {
-                                            FontWeight.Bold
-                                        } else {
-                                            FontWeight.Normal
-                                        },
-                                    )
-                                },
-                                onClick = {
-                                    statusMenuExpanded = false
-                                    onUpdateStatus(status)
-                                },
+                if (item.hasLocalMembership) {
+                    Box {
+                        IconButton(onClick = { statusMenuExpanded = true }) {
+                            Icon(
+                                imageVector = MaterialSymbols.Rounded.MoreVert,
+                                contentDescription = "Tsuzuki status options",
                             )
                         }
+                        DropdownMenu(
+                            expanded = statusMenuExpanded,
+                            onDismissRequest = { statusMenuExpanded = false },
+                        ) {
+                            LibraryStatus.entries.forEach { status ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = status.libraryLabel(),
+                                            fontWeight = if (status == item.status) {
+                                                FontWeight.Bold
+                                            } else {
+                                                FontWeight.Normal
+                                            },
+                                        )
+                                    },
+                                    onClick = {
+                                        statusMenuExpanded = false
+                                        onUpdateStatus(status)
+                                    },
+                                )
+                            }
+                        }
                     }
-                }
 
-                IconButton(onClick = onRemove) {
-                    Icon(
-                        imageVector = MaterialSymbols.Rounded.Delete,
-                        contentDescription = "Remove from Library",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+                    IconButton(onClick = onRemove) {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.Delete,
+                            contentDescription = "Remove from Tsuzuki Library",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
 
@@ -294,13 +528,15 @@ private fun CanonicalLibraryItemCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 SuggestionChip(
-                    onClick = { statusMenuExpanded = true },
+                    onClick = {
+                        if (canEditStatusFromChip) {
+                            statusMenuExpanded = true
+                        }
+                    },
+                    enabled = canEditStatusFromChip,
                     label = {
                         Text(
-                            text = "Status: ${
-                                item.status.name.lowercase()
-                                    .replaceFirstChar { it.uppercase() }
-                            }",
+                            text = "Status: ${contextualStatuses.joinToString(" · ") { it.libraryLabel() }}",
                             style = MaterialTheme.typography.labelSmall,
                         )
                     },
@@ -318,6 +554,32 @@ private fun CanonicalLibraryItemCard(
                         )
                     },
                 )
+                if (item.origins.isNotEmpty()) {
+                    SuggestionChip(
+                        onClick = {},
+                        enabled = false,
+                        label = {
+                            Text(
+                                item.origins
+                                    .sorted()
+                                    .joinToString(" · ") { it.libraryOriginLabel() },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                    )
+                }
+                if (item.format != CatalogItemFormat.UNKNOWN) {
+                    SuggestionChip(
+                        onClick = {},
+                        enabled = false,
+                        label = {
+                            Text(
+                                item.format.libraryFormatLabel(),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                    )
+                }
                 SuggestionChip(
                     onClick = onRead,
                     label = {
@@ -346,4 +608,34 @@ private fun CanonicalLibraryItemCard(
             }
         }
     }
+}
+
+private fun LibraryStatus.libraryLabel(): String = when (this) {
+    LibraryStatus.READING -> "Reading"
+    LibraryStatus.PLANNING -> "Planning"
+    LibraryStatus.COMPLETED -> "Completed"
+    LibraryStatus.ON_HOLD -> "On Hold"
+    LibraryStatus.DROPPED -> "Dropped"
+}
+
+private fun String.libraryOriginLabel(): String = when (this) {
+    LOCAL_LIBRARY_ORIGIN -> "Tsuzuki"
+    "mal" -> "MAL"
+    "kitsu" -> "Kitsu"
+    "mangaupdates" -> "MangaUpdates"
+    "bangumi" -> "Bangumi"
+    "shikimori" -> "Shikimori"
+    "hikka" -> "Hikka"
+    else -> replaceFirstChar { it.uppercase() }
+}
+
+private fun CatalogItemFormat.libraryFormatLabel(): String = when (this) {
+    CatalogItemFormat.MANGA -> "Manga"
+    CatalogItemFormat.NOVEL -> "Novel"
+    CatalogItemFormat.ONE_SHOT -> "One-shot"
+    CatalogItemFormat.MANHWA -> "Manhwa"
+    CatalogItemFormat.MANHUA -> "Manhua"
+    CatalogItemFormat.DOUJIN -> "Doujinshi"
+    CatalogItemFormat.WEBTOON -> "Webtoon"
+    CatalogItemFormat.UNKNOWN -> "Unknown"
 }

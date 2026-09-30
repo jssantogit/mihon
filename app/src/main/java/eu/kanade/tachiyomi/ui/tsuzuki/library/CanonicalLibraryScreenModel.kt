@@ -11,6 +11,7 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,12 +23,17 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
+import tachiyomi.domain.tsuzuki.library.interactor.ObserveUnifiedLibrary
+import tachiyomi.domain.tsuzuki.library.interactor.RefreshUserLibraries
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
+import tachiyomi.domain.tsuzuki.library.model.LibraryTitle
+import tachiyomi.domain.tsuzuki.library.model.UnifiedLibraryTitle
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
@@ -37,10 +43,14 @@ import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
 @Immutable
 sealed interface CanonicalLibraryScreenState {
     data object Loading : CanonicalLibraryScreenState
+
     data class Success(
         val items: List<CanonicalLibraryCardModel>,
         val searchQuery: String? = null,
         val selectedCategoryId: Long? = null,
+        val filters: CanonicalLibraryFilterState = CanonicalLibraryFilterState(),
+        val availableOrigins: Set<String> = emptySet(),
+        val availableFormats: Set<CatalogItemFormat> = emptySet(),
     ) : CanonicalLibraryScreenState
 }
 
@@ -49,23 +59,79 @@ sealed interface CanonicalLibraryEvent {
     data class OpenCanonicalTitle(val canonicalTitleId: String) : CanonicalLibraryEvent
 }
 
-@Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
-class CanonicalLibraryScreenModel(
-    private val observeCanonicalLibrary: ObserveCanonicalLibrary,
+class CanonicalLibraryScreenModel private constructor(
+    private val observeLibrary: () -> Flow<List<UnifiedLibraryTitle>>,
     private val setCanonicalLibraryStatus: SetCanonicalLibraryStatus,
     private val removeUnifiedLibraryTitle: RemoveUnifiedLibraryTitle,
     private val migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
     private val resolveCanonicalReadingStart: CanonicalReadingStartResolver,
     private val canonicalReadingRepository: CanonicalReadingRepository,
+    private val refreshUserLibrariesAction: (suspend () -> Unit)?,
 ) : ViewModel() {
+
+    @Inject
+    constructor(
+        observeUnifiedLibrary: ObserveUnifiedLibrary,
+        setCanonicalLibraryStatus: SetCanonicalLibraryStatus,
+        removeUnifiedLibraryTitle: RemoveUnifiedLibraryTitle,
+        migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
+        resolveCanonicalReadingStart: CanonicalReadingStartResolver,
+        canonicalReadingRepository: CanonicalReadingRepository,
+        refreshUserLibraries: RefreshUserLibraries,
+    ) : this(
+        observeLibrary = observeUnifiedLibrary::subscribe,
+        setCanonicalLibraryStatus = setCanonicalLibraryStatus,
+        removeUnifiedLibraryTitle = removeUnifiedLibraryTitle,
+        migrateMihonLibraryToCanonical = migrateMihonLibraryToCanonical,
+        resolveCanonicalReadingStart = resolveCanonicalReadingStart,
+        canonicalReadingRepository = canonicalReadingRepository,
+        refreshUserLibrariesAction = { refreshUserLibraries.refreshConnected() },
+    )
+
+    internal constructor(
+        observeCanonicalLibrary: ObserveCanonicalLibrary,
+        setCanonicalLibraryStatus: SetCanonicalLibraryStatus,
+        removeUnifiedLibraryTitle: RemoveUnifiedLibraryTitle,
+        migrateMihonLibraryToCanonical: MigrateMihonLibraryToCanonical,
+        resolveCanonicalReadingStart: CanonicalReadingStartResolver,
+        canonicalReadingRepository: CanonicalReadingRepository,
+    ) : this(
+        observeLibrary = {
+            observeCanonicalLibrary.subscribe().map { items ->
+                items.map(LibraryTitle::toLocalUnifiedTitle)
+            }
+        },
+        setCanonicalLibraryStatus = setCanonicalLibraryStatus,
+        removeUnifiedLibraryTitle = removeUnifiedLibraryTitle,
+        migrateMihonLibraryToCanonical = migrateMihonLibraryToCanonical,
+        resolveCanonicalReadingStart = resolveCanonicalReadingStart,
+        canonicalReadingRepository = canonicalReadingRepository,
+        refreshUserLibrariesAction = null,
+    )
 
     private val eventChannel = Channel<CanonicalLibraryEvent>()
     val events = eventChannel.receiveAsFlow()
 
     private val searchQuery = MutableStateFlow<String?>(null)
-    private val selectedCategoryId = MutableStateFlow<Long?>(null)
+    private val filters = MutableStateFlow(CanonicalLibraryFilterState())
+
+    init {
+        refreshUserLibrariesAction?.let { refresh ->
+            viewModelScope.launch {
+                try {
+                    refresh()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    logcat(LogPriority.WARN, error) {
+                        "Failed to refresh connected user libraries non-blockingly"
+                    }
+                }
+            }
+        }
+    }
 
     val state: StateFlow<CanonicalLibraryScreenState> = flow<CanonicalLibraryScreenState> {
         try {
@@ -76,7 +142,7 @@ class CanonicalLibraryScreenModel(
             logcat(LogPriority.WARN, e) { "Mihon library migration failed non-blockingly" }
         }
 
-        val cards = observeCanonicalLibrary.subscribe()
+        val cards = observeLibrary()
             .flatMapLatest { libraryItems ->
                 if (libraryItems.isEmpty()) {
                     flowOf(emptyList())
@@ -95,27 +161,27 @@ class CanonicalLibraryScreenModel(
             combine(
                 cards,
                 searchQuery,
-                selectedCategoryId,
-            ) { items, query, categoryId ->
-                val categoryFilteredItems = when (categoryId) {
-                    null -> items
-                    Category.UNCATEGORIZED_ID -> items.filter { it.categories.isEmpty() }
-                    else -> items.filter { item ->
-                        item.categories.any { it.id == categoryId }
-                    }
-                }
+                filters,
+            ) { items, query, filterState ->
+                val filteredByFacets = filterCanonicalLibraryCards(items, filterState)
                 val normalizedQuery = query?.trim().orEmpty()
-                val filteredItems = if (normalizedQuery.isEmpty()) {
-                    categoryFilteredItems
+                val visibleItems = if (normalizedQuery.isEmpty()) {
+                    filteredByFacets
                 } else {
-                    categoryFilteredItems.filter {
+                    filteredByFacets.filter {
                         it.title.contains(normalizedQuery, ignoreCase = true)
                     }
                 }
+
                 CanonicalLibraryScreenState.Success(
-                    items = filteredItems,
+                    items = visibleItems,
                     searchQuery = query,
-                    selectedCategoryId = categoryId,
+                    selectedCategoryId = filterState.categoryId,
+                    filters = filterState,
+                    availableOrigins = items.flatMapTo(linkedSetOf()) { it.origins },
+                    availableFormats = items.mapNotNullTo(linkedSetOf()) { item ->
+                        item.format.takeUnless { it == CatalogItemFormat.UNKNOWN }
+                    },
                 )
             },
         )
@@ -130,7 +196,35 @@ class CanonicalLibraryScreenModel(
     }
 
     fun selectCategory(categoryId: Long?) {
-        selectedCategoryId.value = categoryId
+        filters.update { it.copy(categoryId = categoryId) }
+    }
+
+    fun selectStatus(status: LibraryStatus?) {
+        filters.update { it.copy(status = status) }
+    }
+
+    fun selectOrigin(origin: String?) {
+        filters.update { it.copy(origin = origin) }
+    }
+
+    fun toggleFormat(format: CatalogItemFormat) {
+        filters.update { current ->
+            val formats = current.formats.toMutableSet()
+            if (!formats.add(format)) {
+                formats.remove(format)
+            }
+            current.copy(formats = formats)
+        }
+    }
+
+    fun clearAdvancedFilters() {
+        filters.update {
+            it.copy(
+                origin = null,
+                formats = emptySet(),
+                categoryId = null,
+            )
+        }
     }
 
     fun setStatus(canonicalTitleId: String, status: LibraryStatus) {
@@ -157,6 +251,19 @@ class CanonicalLibraryScreenModel(
         }
     }
 
+    fun refreshUserLibraries() {
+        val refresh = refreshUserLibrariesAction ?: return
+        viewModelScope.launch {
+            try {
+                refresh()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                logcat(LogPriority.WARN, error) { "Failed to refresh connected user libraries" }
+            }
+        }
+    }
+
     fun readOrContinue(canonicalTitleId: String) {
         viewModelScope.launch {
             when (val result = resolveCanonicalReadingStart.execute(canonicalTitleId)) {
@@ -172,3 +279,12 @@ class CanonicalLibraryScreenModel(
         }
     }
 }
+
+private fun LibraryTitle.toLocalUnifiedTitle() = UnifiedLibraryTitle(
+    title = title,
+    localEntry = entry,
+    externalMemberships = emptyList(),
+    sources = sources,
+    categories = categories,
+    format = CatalogItemFormat.UNKNOWN,
+)

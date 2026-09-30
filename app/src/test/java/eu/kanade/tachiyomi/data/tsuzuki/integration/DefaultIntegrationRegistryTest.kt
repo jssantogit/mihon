@@ -19,10 +19,12 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.UserListProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
+import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
 
 class DefaultIntegrationRegistryTest {
@@ -72,6 +74,18 @@ class DefaultIntegrationRegistryTest {
         registry.chapterEvidenceProviders().map { it.producerId } shouldContainExactly listOf("mal")
         registry.ratingsProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
         registry.trackingProviders().map { it.integrationId.value } shouldContainExactly listOf("mal")
+    }
+
+    @Test
+    fun `registry exposes enabled user list providers`() = runTest {
+        val mal = FakeUserListProvider("mal")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("mal" to true)),
+            userListProviders = setOf(mal),
+        )
+
+        registry.userListProviders() shouldContainExactly listOf(mal)
     }
 
     @Test
@@ -239,6 +253,7 @@ class DefaultIntegrationRegistryTest {
         chapterEvidenceProviders: Set<ChapterEvidenceProvider> = emptySet(),
         ratingsProviders: Set<RatingsProvider> = emptySet(),
         trackingProviders: Set<TrackingProvider> = emptySet(),
+        userListProviders: Set<UserListProvider> = emptySet(),
     ) = DefaultIntegrationRegistry(
         settingsRepository = FakeIntegrationSettingsRepository(settings),
         searchProviders = searchProviders,
@@ -247,6 +262,7 @@ class DefaultIntegrationRegistryTest {
         chapterEvidenceProviders = chapterEvidenceProviders,
         ratingsProviders = ratingsProviders,
         trackingProviders = trackingProviders,
+        userListProviders = userListProviders,
         scope = scope,
     )
 
@@ -305,6 +321,13 @@ class DefaultIntegrationRegistryTest {
 
         override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
             Result.success(emptyList())
+    }
+
+    private class FakeUserListProvider(id: String) : UserListProvider {
+        override val integrationId = IntegrationId(id)
+        override val connection: Flow<Boolean> = MutableStateFlow(true)
+        override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> =
+            Result.success(UserLibrarySnapshot(emptyList(), emptyList()))
     }
 
     private class FakeTrackingProvider(id: String) : TrackingProvider {

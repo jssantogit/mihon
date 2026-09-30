@@ -58,6 +58,7 @@ import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSyncIntentRepository
+import tachiyomi.domain.tsuzuki.library.interactor.RefreshUserLibraries
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
@@ -118,6 +119,7 @@ interface AppGraph : ViewModelGraph {
     val addonSyncIntentRepository: AddonSyncIntentRepository
     val trackerManager: TrackerManager
     val accountRepository: AccountRepository
+    val refreshUserLibraries: RefreshUserLibraries
     val supabaseSyncRuntime: SupabaseSyncRuntime
     val extensionManager: ExtensionManager
     val chapterCache: ChapterCache

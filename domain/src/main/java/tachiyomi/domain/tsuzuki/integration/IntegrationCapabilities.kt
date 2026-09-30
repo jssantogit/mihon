@@ -1,11 +1,13 @@
 package tachiyomi.domain.tsuzuki.integration
 
+import kotlinx.coroutines.flow.Flow
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
+import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 
 typealias IntegrationId = tachiyomi.domain.tsuzuki.capability.IntegrationId
 
@@ -49,4 +51,12 @@ interface TrackingProvider {
     suspend fun isConnected(): Boolean
 
     suspend fun update(update: TrackingUpdate): Result<Unit>
+}
+
+interface UserListProvider {
+    val integrationId: IntegrationId
+
+    val connection: Flow<Boolean>
+
+    suspend fun fetchLibrary(): Result<UserLibrarySnapshot>
 }

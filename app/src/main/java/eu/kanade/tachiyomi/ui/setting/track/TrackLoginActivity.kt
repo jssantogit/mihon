@@ -33,8 +33,10 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
     private suspend fun handleMyAnimeList(code: String?) {
         if (code != null) {
             trackerManager.myAnimeList.login(code)
+            refreshUserLibraries.refreshForLegacyTracker(trackerManager.myAnimeList.id)
         } else {
             trackerManager.myAnimeList.logout()
+            refreshUserLibraries.clearForLegacyTracker(trackerManager.myAnimeList.id)
         }
     }
 

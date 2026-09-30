@@ -7,5 +7,6 @@ enum class CatalogItemFormat {
     MANHWA,
     MANHUA,
     DOUJIN,
+    WEBTOON,
     UNKNOWN,
 }

@@ -87,6 +87,10 @@ data object LibraryTab : Tab {
             onSetCategories = categoriesViewModel::setCategories,
             onEditCategories = { navigator.push(CategoryScreen()) },
             onCategoryFilterChange = screenModel::selectCategory,
+            onStatusFilterChange = screenModel::selectStatus,
+            onOriginFilterChange = screenModel::selectOrigin,
+            onToggleFormatFilter = screenModel::toggleFormat,
+            onClearAdvancedFilters = screenModel::clearAdvancedFilters,
             onRead = { item ->
                 screenModel.readOrContinue(item.canonicalTitleId)
             },
