@@ -10,6 +10,8 @@ import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 
 class ResolveCanonicalArtworkTest {
 
+    // Canonical artwork is shared state, so this regression belongs to the full validation lane.
+
     @Test
     fun `provider precedence resolves cover and banner independently with provenance`() = runTest {
         val repository = FakeTitleArtworkRepository(
