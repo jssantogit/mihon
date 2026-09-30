@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
@@ -69,6 +70,10 @@ class TsuzukiHomeScreenModel(
                 throw error
             } catch (_: Throwable) {
                 null
+            }
+            logcat {
+                "TsuzukiCover home title=${item.canonicalTitleId.take(8)} " +
+                    "sourceManga=${sourceManga != null} sourceThumbnail=${!sourceManga?.thumbnailUrl.isNullOrBlank()}"
             }
             item.copy(
                 coverUrl = sourceManga?.thumbnailUrl,
