@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.history.repository.HistoryRepository
-import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -28,6 +27,7 @@ import tachiyomi.domain.tsuzuki.home.repository.ContinueReadingVisibilityReposit
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.reader.interactor.ImportLegacyCanonicalProgress
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveCanonicalSourceManga
 import kotlin.time.Clock
 
 @Immutable
@@ -51,7 +51,7 @@ class TsuzukiHomeScreenModel(
     private val historyRepository: HistoryRepository,
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
-    private val mangaRepository: MangaRepository,
+    private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
 ) : ViewModel() {
 
     private val eventChannel = Channel<TsuzukiHomeEvent>(Channel.BUFFERED)
@@ -60,26 +60,14 @@ class TsuzukiHomeScreenModel(
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
-        observeCanonicalLibrary.subscribe(),
-    ) { continueReading, sections, library ->
-        val libraryById = library.associateBy { it.title.id }
+    ) { continueReading, sections ->
         val enriched = continueReading.map { item ->
-            var cover: String? = null
-            for (source in libraryById[item.canonicalTitleId]?.sources.orEmpty()) {
-                val manga = try {
-                    source.mihonMangaId
-                        ?.let { mangaId -> mangaRepository.getMangaById(mangaId) }
-                        ?: mangaRepository.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Throwable) {
-                    null
-                }
-                val candidate = manga?.thumbnailUrl
-                if (!candidate.isNullOrBlank()) {
-                    cover = candidate
-                    break
-                }
+            val cover = try {
+                resolveCanonicalSourceManga.execute(item.canonicalTitleId)?.thumbnailUrl
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
             }
             item.copy(coverUrl = cover)
         }
