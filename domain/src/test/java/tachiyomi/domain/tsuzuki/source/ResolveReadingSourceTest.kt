@@ -37,8 +37,8 @@ import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
-import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.SourceResolutionResult
 import tachiyomi.domain.tsuzuki.source.repository.ReadingSourcePreferenceRepository
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
