@@ -1,0 +1,43 @@
+CREATE TABLE tsuzuki_title_artwork_observations(
+    canonical_title_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    cover_url TEXT,
+    banner_url TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, provider),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_title_artwork_provider_index
+ON tsuzuki_title_artwork_observations(provider);
+
+getAllTsuzukiTitleArtworkObservations:
+SELECT *
+FROM tsuzuki_title_artwork_observations
+ORDER BY canonical_title_id ASC, provider ASC;
+
+getTsuzukiTitleArtworkObservationsByTitle:
+SELECT *
+FROM tsuzuki_title_artwork_observations
+WHERE canonical_title_id = :canonicalTitleId
+ORDER BY provider ASC;
+
+upsertTsuzukiTitleArtworkObservation:
+INSERT INTO tsuzuki_title_artwork_observations(
+    canonical_title_id,
+    provider,
+    cover_url,
+    banner_url,
+    updated_at
+)
+VALUES (
+    :canonicalTitleId,
+    :provider,
+    :coverUrl,
+    :bannerUrl,
+    :updatedAt
+)
+ON CONFLICT(canonical_title_id, provider) DO UPDATE SET
+    cover_url = excluded.cover_url,
+    banner_url = excluded.banner_url,
+    updated_at = excluded.updated_at;
