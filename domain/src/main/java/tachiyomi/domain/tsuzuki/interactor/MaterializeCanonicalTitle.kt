@@ -30,18 +30,18 @@ class MaterializeCanonicalTitle internal constructor(
         externalId: String,
         externalIds: Map<String, String> = emptyMap(),
     ): CanonicalTitle {
-        val mappedExisting = externalIds
-            .asSequence()
-            .filter { (mappedProvider, mappedExternalId) ->
-                mappedProvider.isNotBlank() &&
-                    mappedExternalId.isNotBlank() &&
-                    !(mappedProvider == provider && mappedExternalId == externalId)
+        val mappedExisting = buildList {
+            for ((mappedProvider, mappedExternalId) in externalIds) {
+                if (
+                    mappedProvider.isBlank() ||
+                    mappedExternalId.isBlank() ||
+                    (mappedProvider == provider && mappedExternalId == externalId)
+                ) {
+                    continue
+                }
+                repository.getByExternalIdentity(mappedProvider, mappedExternalId)?.let(::add)
             }
-            .mapNotNull { (mappedProvider, mappedExternalId) ->
-                repository.getByExternalIdentity(mappedProvider, mappedExternalId)
-            }
-            .distinctBy(CanonicalTitle::id)
-            .toList()
+        }.distinctBy(CanonicalTitle::id)
 
         val primaryExisting = repository.getByExternalIdentity(provider, externalId)
         val resolved = when {
