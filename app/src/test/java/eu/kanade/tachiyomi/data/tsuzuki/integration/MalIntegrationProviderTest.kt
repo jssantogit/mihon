@@ -59,7 +59,7 @@ class MalIntegrationProviderTest {
     }
 
     @Test
-    fun `mal participates in catalog discovery`() = runTest {
+    fun `mal exposes popular top rated and favorites discovery rankings`() = runTest {
         val api = FakeMalIntegrationApi(
             rankingResults = listOf(
                 malTrack(id = 42, title = "Monster", score = 8.72),
@@ -68,11 +68,20 @@ class MalIntegrationProviderTest {
         val provider = MalIntegrationProvider.forTest(api)
 
         (provider as Any is DiscoveryProvider) shouldBe true
-        val page = (provider as DiscoveryProvider).popular(offset = 0, limit = 20).getOrThrow()
+        val discovery = provider as DiscoveryProvider
+        val popular = discovery.popular(offset = 0, limit = 20).getOrThrow()
+        val topRated = discovery.topRated(offset = 0, limit = 20).getOrThrow()
+        val favorites = discovery.favorites(offset = 0, limit = 20).getOrThrow()
 
-        page.items.single().provider shouldBe "mal"
-        page.items.single().title shouldBe "Monster"
-        api.rankingRequests shouldContainExactly listOf(Triple("bypopularity", 0, 20))
+        popular.items.single().provider shouldBe "mal"
+        popular.items.single().title shouldBe "Monster"
+        topRated.items.single().title shouldBe "Monster"
+        favorites.items.single().title shouldBe "Monster"
+        api.rankingRequests shouldContainExactly listOf(
+            Triple("bypopularity", 0, 20),
+            Triple("all", 0, 20),
+            Triple("favorite", 0, 20),
+        )
     }
 
     @Test
