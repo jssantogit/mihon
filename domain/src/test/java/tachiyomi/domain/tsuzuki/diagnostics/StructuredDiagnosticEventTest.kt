@@ -36,7 +36,7 @@ class StructuredDiagnosticEventTest {
     }
 
     @Test
-    fun `sanitizer rejects secret shaped correlation ids and malformed language values`() {
+    fun `sanitizer rejects secret shaped correlation ids`() {
         val event = StructuredDiagnosticEvent(
             timestampMillis = 1_790_755_200_000,
             severity = DiagnosticSeverity.INFO,
@@ -52,5 +52,30 @@ class StructuredDiagnosticEventTest {
         )
 
         StructuredDiagnosticSanitizer.sanitize(event) shouldBe null
+    }
+
+    @Test
+    fun `sanitizer drops secret url token and cookie values under a recognized attribute key`() {
+        listOf(
+            "https://user:pass@private.example/path?token=secret",
+            "Bearer top-secret-token",
+            "session=private-cookie",
+        ).forEach { unsafeLanguage ->
+            val event = StructuredDiagnosticEvent(
+                timestampMillis = 1_790_755_200_000,
+                severity = DiagnosticSeverity.INFO,
+                subsystem = DiagnosticSubsystem.SOURCE,
+                name = DiagnosticEventName.SOURCE_RESOLVE_STARTED,
+                sessionId = "d2719c3b-4518-4d6b-9b09-2834381a322c",
+                operationId = null,
+                stage = DiagnosticStage.RESOLVE,
+                outcome = DiagnosticOutcome.STARTED,
+                attributes = mapOf(
+                    "language" to DiagnosticAttributeValue.Text(unsafeLanguage),
+                ),
+            )
+
+            StructuredDiagnosticSanitizer.sanitize(event)?.attributes shouldBe emptyMap()
+        }
     }
 }

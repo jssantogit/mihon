@@ -11,6 +11,7 @@ class SafeHttpLoggingMessageTest {
             "Authorization: Bearer access-token",
             "Cookie: session=private-cookie",
             "X-Api-Key: custom-secret",
+            "X-Private-Descriptor: private-server-name",
             "Accept: application/json",
             "<-- 200 OK https://private.example/api/manga?title=secret (42ms, 128-byte body)",
             "Content-Type: application/json",
@@ -38,6 +39,8 @@ class SafeHttpLoggingMessageTest {
             output.contains("private-cookie") shouldBe false
             output.contains("custom-secret") shouldBe false
             output.contains("application/json") shouldBe false
+            output.contains("X-Private-Descriptor") shouldBe false
+            output.contains("private-server-name") shouldBe false
         }
     }
 
