@@ -439,6 +439,7 @@ private fun TrackerCredentialLoginDialog(
 
 private fun loginDescriptionRes(tracker: Tracker): StringResource = when {
     tracker is MyAnimeList && !tracker.hasClientId() -> MR.strings.tsuzuki_mal_client_id_required
+    tracker is MyAnimeList -> MR.strings.tsuzuki_mal_tracking_login_setup
     tracker is Shikimori && !tracker.hasApplicationCredentials() ->
         MR.strings.tsuzuki_shikimori_credentials_required
     tracker is Hikka && !tracker.hasApplicationCredentials() ->
