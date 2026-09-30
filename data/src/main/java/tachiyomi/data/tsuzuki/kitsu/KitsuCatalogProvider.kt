@@ -7,6 +7,7 @@ import dev.zacsweers.metro.SingleIn
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingResource
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuResourceIdentifier
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -160,6 +161,31 @@ class KitsuCatalogProvider(
             it.original ?: it.large ?: it.small
         }
 
+        val mappingIds = resource.relationships.mappings.data
+            .map(KitsuResourceIdentifier::id)
+            .toSet()
+        val externalIds = included
+            .asSequence()
+            .filter { mapping ->
+                mapping.type == "mappings" &&
+                    (
+                        mapping.id in mappingIds ||
+                            mapping.relationships.item.data?.let { item ->
+                                item.type == "manga" && item.id == resource.id
+                            } == true
+                        )
+            }
+            .mapNotNull { mapping ->
+                when (mapping.attributes.externalSite) {
+                    "myanimelist/manga" -> mapping.attributes.externalId
+                        .takeIf(String::isNotBlank)
+                        ?.let { "mal" to it }
+
+                    else -> null
+                }
+            }
+            .toMap()
+
         return CatalogItem(
             provider = providerId,
             providerId = resource.id,
@@ -171,28 +197,7 @@ class KitsuCatalogProvider(
             status = mappedStatus,
             format = mappedFormat,
             score = score,
-            externalIds = included
-                .asSequence()
-                .filter { mapping ->
-                    val mappingIds = resource.relationships.mappings.data
-                        .asSequence()
-                        .map { it.id }
-                        .toSet()
-                    mapping.type == "mappings" &&
-                        (
-                            mapping.id in mappingIds ||
-                                mapping.relationships.item.data?.let { item ->
-                                    item.type == "manga" && item.id == resource.id
-                                } == true
-                            ) &&
-                        mapping.attributes.externalSite == "myanimelist/manga"
-                }
-                .mapNotNull { mapping ->
-                    mapping.attributes.externalId
-                        .takeIf(String::isNotBlank)
-                        ?.let { "mal" to it }
-                }
-                .toMap(),
+            externalIds = externalIds,
             genres = emptyList(),
             tags = emptyList(),
             startDate = attr.startDate,
