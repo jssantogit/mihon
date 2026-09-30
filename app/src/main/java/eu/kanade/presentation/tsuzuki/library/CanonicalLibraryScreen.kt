@@ -151,6 +151,7 @@ fun CanonicalLibraryScreen(
                         } else {
                             CanonicalLibraryList(
                                 items = state.items,
+                                selectedOrigin = state.filters.origin,
                                 onUpdateStatus = onUpdateStatus,
                                 onRemoveItem = onRemoveItem,
                                 onChangeCategories = { categoryDialogItem = it },
@@ -399,6 +400,7 @@ private fun FilterSection(
 @Composable
 private fun CanonicalLibraryList(
     items: List<CanonicalLibraryCardModel>,
+    selectedOrigin: String?,
     onUpdateStatus: (String, LibraryStatus) -> Unit,
     onRemoveItem: (String) -> Unit,
     onChangeCategories: (CanonicalLibraryCardModel) -> Unit,
@@ -417,6 +419,7 @@ private fun CanonicalLibraryList(
         ) { item ->
             CanonicalLibraryItemCard(
                 item = item,
+                selectedOrigin = selectedOrigin,
                 onUpdateStatus = { status ->
                     onUpdateStatus(item.canonicalTitleId, status)
                 },
@@ -433,6 +436,7 @@ private fun CanonicalLibraryList(
 @Composable
 private fun CanonicalLibraryItemCard(
     item: CanonicalLibraryCardModel,
+    selectedOrigin: String?,
     onUpdateStatus: (LibraryStatus) -> Unit,
     onRemove: () -> Unit,
     onChangeCategories: () -> Unit,
@@ -441,6 +445,13 @@ private fun CanonicalLibraryItemCard(
     modifier: Modifier = Modifier,
 ) {
     var statusMenuExpanded by remember { mutableStateOf(false) }
+    val contextualStatuses = if (selectedOrigin == null) {
+        item.originStatuses.values.flatten().toSet()
+    } else {
+        item.originStatuses[selectedOrigin].orEmpty()
+    }.ifEmpty { setOf(item.status) }
+    val canEditStatusFromChip = item.hasLocalMembership &&
+        (selectedOrigin == LOCAL_LIBRARY_ORIGIN || (selectedOrigin == null && item.origins.size == 1))
 
     Card(
         modifier = modifier
@@ -472,7 +483,7 @@ private fun CanonicalLibraryItemCard(
                         IconButton(onClick = { statusMenuExpanded = true }) {
                             Icon(
                                 imageVector = MaterialSymbols.Rounded.MoreVert,
-                                contentDescription = "Status options",
+                                contentDescription = "Tsuzuki status options",
                             )
                         }
                         DropdownMenu(
@@ -518,14 +529,14 @@ private fun CanonicalLibraryItemCard(
             ) {
                 SuggestionChip(
                     onClick = {
-                        if (item.hasLocalMembership) {
+                        if (canEditStatusFromChip) {
                             statusMenuExpanded = true
                         }
                     },
-                    enabled = item.hasLocalMembership,
+                    enabled = canEditStatusFromChip,
                     label = {
                         Text(
-                            text = "Status: ${item.status.libraryLabel()}",
+                            text = "Status: ${contextualStatuses.joinToString(" · ") { it.libraryLabel() }}",
                             style = MaterialTheme.typography.labelSmall,
                         )
                     },
