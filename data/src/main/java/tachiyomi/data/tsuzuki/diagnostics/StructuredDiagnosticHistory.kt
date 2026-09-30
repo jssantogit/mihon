@@ -250,8 +250,8 @@ class StructuredDiagnosticHistory internal constructor(
         if (target == null) {
             val nextIndex =
                 candidates.maxOfOrNull { it.name.substringAfterLast('-').substringBefore('.').toIntOrNull() ?: -1 }
-                ?.plus(1)
-                ?: 0
+                    ?.plus(1)
+                    ?: 0
             target = File(
                 instanceDirectory,
                 "segment-$day-${now.toString().padStart(13, '0')}-${nextIndex.toString().padStart(4, '0')}.jsonl",
