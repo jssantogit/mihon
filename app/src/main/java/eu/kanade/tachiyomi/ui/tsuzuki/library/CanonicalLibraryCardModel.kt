@@ -55,6 +55,7 @@ internal fun UnifiedLibraryTitle.toCardModel(
     progress: List<CanonicalChapterProgress>,
     localCoverUrl: String? = null,
     sourceCover: MangaCover? = null,
+    canonicalCoverUrl: String? = null,
 ): CanonicalLibraryCardModel {
     val readingState = progress.toReadingState()
     val originStatuses = buildMap<String, Set<LibraryStatus>> {
@@ -101,7 +102,7 @@ internal fun UnifiedLibraryTitle.toCardModel(
         originListOptions = originListOptions,
         format = format,
         hasLocalMembership = localEntry != null,
-        coverUrl = preferredExternalCoverUrl(),
+        coverUrl = canonicalCoverUrl ?: preferredExternalCoverUrl(),
         sourceCover = sourceCover,
         localCoverUrl = localCoverUrl,
     )

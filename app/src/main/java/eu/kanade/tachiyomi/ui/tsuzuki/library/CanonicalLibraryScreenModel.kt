@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.tsuzuki.artwork.resolveCanonicalArtwork
+import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -75,6 +77,7 @@ class CanonicalLibraryScreenModel private constructor(
     private val refreshUserLibrariesAction: (suspend () -> Unit)?,
     private val mangaRepository: MangaRepository? = null,
     private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga? = null,
+    private val titleArtworkRepository: TitleArtworkRepository? = null,
 ) : ViewModel() {
 
     @Inject
@@ -88,6 +91,7 @@ class CanonicalLibraryScreenModel private constructor(
         refreshUserLibraries: RefreshUserLibraries,
         mangaRepository: MangaRepository,
         resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
+        titleArtworkRepository: TitleArtworkRepository,
     ) : this(
         observeLibrary = observeUnifiedLibrary::subscribe,
         setCanonicalLibraryStatus = setCanonicalLibraryStatus,
@@ -98,6 +102,7 @@ class CanonicalLibraryScreenModel private constructor(
         refreshUserLibrariesAction = { refreshUserLibraries.refreshConnected() },
         mangaRepository = mangaRepository,
         resolveCanonicalSourceManga = resolveCanonicalSourceManga,
+        titleArtworkRepository = titleArtworkRepository,
     )
 
     internal constructor(
@@ -160,12 +165,17 @@ class CanonicalLibraryScreenModel private constructor(
             }
             ?: flowOf(emptyMap<Long, String?>())
 
+        val artworkObservations = titleArtworkRepository
+            ?.observeAll()
+            ?: flowOf(emptyList())
+
         val cards = combine(
             observeLibrary(),
             localCoverUrls,
-        ) { libraryItems, covers ->
-            libraryItems to covers
-        }.flatMapLatest { (libraryItems, covers) ->
+            artworkObservations,
+        ) { libraryItems, covers, artwork ->
+            Triple(libraryItems, covers, artwork.groupBy { it.canonicalTitleId })
+        }.flatMapLatest { (libraryItems, covers, artworkByTitle) ->
             if (libraryItems.isEmpty()) {
                 flowOf(emptyList())
             } else {
@@ -174,6 +184,9 @@ class CanonicalLibraryScreenModel private constructor(
                         canonicalReadingRepository
                             .observeProgressByCanonicalTitleId(item.id)
                             .map { progress ->
+                                val canonicalCover = resolveCanonicalArtwork(
+                                    artworkByTitle[item.id].orEmpty(),
+                                )?.coverUrl
                                 val sourceCover = try {
                                     resolveCanonicalSourceManga
                                         ?.execute(item.id)
@@ -183,7 +196,7 @@ class CanonicalLibraryScreenModel private constructor(
                                 } catch (_: Throwable) {
                                     null
                                 }
-                                val providerCover = item.preferredExternalCoverUrl()
+                                val providerCover = canonicalCover ?: item.preferredExternalCoverUrl()
                                 val localCover = item.localCoverUrl(covers)
                                 logcat {
                                     "TsuzukiCover library title=${item.id.take(8)} " +
@@ -195,6 +208,7 @@ class CanonicalLibraryScreenModel private constructor(
                                     progress = progress,
                                     localCoverUrl = localCover,
                                     sourceCover = sourceCover,
+                                    canonicalCoverUrl = canonicalCover,
                                 )
                             }
                     },
