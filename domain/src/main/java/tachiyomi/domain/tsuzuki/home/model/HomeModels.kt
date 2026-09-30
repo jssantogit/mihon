@@ -1,5 +1,6 @@
 package tachiyomi.domain.tsuzuki.home.model
 
+import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 
 data class HomeContinueReadingItem(
@@ -11,6 +12,7 @@ data class HomeContinueReadingItem(
     val updatedAt: Long,
     val newChapterCount: Int = 0,
     val coverUrl: String? = null,
+    val sourceCover: MangaCover? = null,
 ) {
     init {
         require(newChapterCount >= 0) { "New chapter count must not be negative" }
