@@ -201,6 +201,44 @@ class MihonReadingSourceGatewayTest {
     }
 
     @Test
+    fun `materialize enriches incomplete candidate before persistence`() = runTest {
+        val detailed = SManga.create().apply {
+            url = "/manga/dandadan"
+            title = "Dandadan"
+            thumbnail_url = "https://cdn.example/dandadan.jpg"
+            description = "Aliens and spirits."
+            initialized = true
+        }
+        sourceManager.sourcesList += TestCatalogueSource(
+            id = 10L,
+            name = "Test Source",
+            lang = "pt-BR",
+            detailResult = detailed,
+        )
+
+        gateway.materialize(
+            ReadingSourceCandidate(
+                sourceId = 10L,
+                sourceName = "Test Source",
+                language = "pt-BR",
+                sourceUrl = "/manga/dandadan",
+                title = "Dandadan",
+                thumbnailUrl = null,
+                author = null,
+                artist = null,
+                description = null,
+                genres = null,
+                status = 0L,
+            ),
+        ).getOrThrow()
+
+        mangaRepository.lastInsertedManga?.thumbnailUrl shouldBe
+            "https://cdn.example/dandadan.jpg"
+        mangaRepository.lastInsertedManga?.description shouldBe "Aliens and spirits."
+        mangaRepository.lastInsertedManga?.initialized shouldBe true
+    }
+
+    @Test
     fun `materialize persists accepted candidate metadata without favoriting`() = runTest {
         val candidate = candidate()
         val materialized = gateway.materialize(candidate).getOrThrow()
