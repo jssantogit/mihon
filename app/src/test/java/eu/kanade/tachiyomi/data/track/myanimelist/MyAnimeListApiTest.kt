@@ -12,9 +12,43 @@ class MyAnimeListApiTest {
 
     @Test
     fun `auth url uses the user supplied client id`() {
-        val url = MyAnimeListApi.authUrl("user-owned-client").toHttpUrl()
+        val url = MyAnimeListApi.authUrl(
+            clientId = "user-owned-client",
+            codeVerifier = "verifier-value",
+            state = "state-value",
+        ).toHttpUrl()
 
         url.queryParameter("client_id") shouldBe "user-owned-client"
+    }
+
+    @Test
+    fun `authorization request binds callback state and persisted pkce verifier`() {
+        val url = MyAnimeListApi.authUrl(
+            clientId = "user-owned-client",
+            codeVerifier = "verifier-value",
+            state = "state-value",
+        ).toHttpUrl()
+
+        url.queryParameter("redirect_uri") shouldBe MyAnimeListApi.CALLBACK_URL
+        url.queryParameter("state") shouldBe "state-value"
+        url.queryParameter("code_challenge") shouldBe "verifier-value"
+        url.queryParameter("code_challenge_method") shouldBe "plain"
+    }
+
+    @Test
+    fun `access token request reuses callback and persisted pkce verifier`() {
+        val request = MyAnimeListApi.accessTokenRequest(
+            authCode = "authorization-code",
+            clientId = "user-owned-client",
+            codeVerifier = "verifier-value",
+        )
+        val body = request.body as FormBody
+
+        body.formValue("client_id") shouldBe "user-owned-client"
+        body.formValue("code") shouldBe "authorization-code"
+        body.formValue("code_verifier") shouldBe "verifier-value"
+        body.formValue("redirect_uri") shouldBe MyAnimeListApi.CALLBACK_URL
+        body.formValue("grant_type") shouldBe "authorization_code"
     }
 
     @Test
@@ -82,4 +116,7 @@ class MyAnimeListApiTest {
             )
         }
     }
+
+    private fun FormBody.formValue(name: String): String =
+        (0 until size).first { this.name(it) == name }.let { value(it) }
 }
