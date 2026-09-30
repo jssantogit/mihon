@@ -59,6 +59,26 @@ class SearchIntegrations(
 
         items.map { item ->
             async {
+                val resolvedIdentities = providers
+                    .map { provider ->
+                        async {
+                            try {
+                                semaphore.withPermit {
+                                    provider.resolveExternalIds(item).getOrElse { emptyMap() }
+                                }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Throwable) {
+                                emptyMap()
+                            }
+                        }
+                    }
+                    .awaitAll()
+                    .fold(item.externalIds.toMutableMap()) { accumulated, identities ->
+                        accumulated.apply { putAll(identities) }
+                    }
+
+                val identifiedItem = item.copy(externalIds = resolvedIdentities)
                 val existingScores = item.scores
                     .ifEmpty { listOfNotNull(item.score) }
                     .filter { score -> score.provider in activeProviderIds }
@@ -71,7 +91,7 @@ class SearchIntegrations(
                         async {
                             try {
                                 semaphore.withPermit {
-                                    provider.ratingFor(item).getOrNull()
+                                    provider.ratingFor(identifiedItem).getOrNull()
                                 }
                             } catch (error: CancellationException) {
                                 throw error
@@ -93,11 +113,11 @@ class SearchIntegrations(
                 val scores = (existingScores + resolvedScores)
                     .distinctBy(CatalogScore::provider)
 
-                item.copy(
+                identifiedItem.copy(
                     score = scores.firstOrNull(),
                     scores = scores,
                     externalIds = buildMap {
-                        putAll(item.externalIds)
+                        putAll(identifiedItem.externalIds)
                         matches.forEach { match ->
                             put(match.rating.providerId, match.externalId)
                         }
