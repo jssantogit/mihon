@@ -7,6 +7,7 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
 import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
+import logcat.logcat
 import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -39,8 +40,16 @@ class NetworkHelper(
             .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
 
         if (preferences.verboseLogging.get()) {
-            val httpLoggingInterceptor = HttpLoggingInterceptor().apply {
+            val httpLoggingInterceptor = HttpLoggingInterceptor { message ->
+                safeHttpLoggingMessage(message)?.let { safeMessage ->
+                    logcat { safeMessage }
+                }
+            }.apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
+                redactHeader("Authorization")
+                redactHeader("Proxy-Authorization")
+                redactHeader("Cookie")
+                redactHeader("Set-Cookie")
             }
             builder.addNetworkInterceptor(httpLoggingInterceptor)
         }

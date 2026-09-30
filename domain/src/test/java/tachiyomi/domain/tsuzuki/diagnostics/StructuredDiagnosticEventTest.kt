@@ -16,8 +16,13 @@ class StructuredDiagnosticEventTest {
             stage = DiagnosticStage.SEARCH,
             outcome = DiagnosticOutcome.FAILED,
             attributes = mapOf(
-                "source_id" to DiagnosticAttributeValue.Number(42),
+                "source_id" to DiagnosticAttributeValue.Number(-42),
+                "preferred_source_count" to DiagnosticAttributeValue.Number(2),
+                "target_source_count" to DiagnosticAttributeValue.Number(1),
+                "http_status" to DiagnosticAttributeValue.Number(503),
                 "language" to DiagnosticAttributeValue.Text("en-US"),
+                "canonical_title_ref" to DiagnosticAttributeValue.Text("0123456789abcdef"),
+                "mihon_manga_ref" to DiagnosticAttributeValue.Text("fedcba9876543210"),
                 "search_text" to DiagnosticAttributeValue.Text("secret manga title"),
                 "api_key" to DiagnosticAttributeValue.Text("sk_test_secret"),
                 "extra" to DiagnosticAttributeValue.Text("https://user:pass@example.test/path?token=secret"),
@@ -27,12 +32,17 @@ class StructuredDiagnosticEventTest {
         val sanitized = StructuredDiagnosticSanitizer.sanitize(event)
 
         sanitized?.attributes shouldBe mapOf(
-            DiagnosticAttribute.SOURCE_ID to DiagnosticAttributeValue.Number(42),
+            DiagnosticAttribute.SOURCE_ID to DiagnosticAttributeValue.Number(-42),
+            DiagnosticAttribute.PREFERRED_SOURCE_COUNT to DiagnosticAttributeValue.Number(2),
+            DiagnosticAttribute.TARGET_SOURCE_COUNT to DiagnosticAttributeValue.Number(1),
+            DiagnosticAttribute.HTTP_STATUS to DiagnosticAttributeValue.Number(503),
             DiagnosticAttribute.LANGUAGE to DiagnosticAttributeValue.Text("en-US"),
+            DiagnosticAttribute.CANONICAL_TITLE_REF to DiagnosticAttributeValue.Text("0123456789abcdef"),
+            DiagnosticAttribute.MIHON_MANGA_REF to DiagnosticAttributeValue.Text("fedcba9876543210"),
         )
-        sanitized?.toString()?.contains("secret") shouldBe false
-        sanitized?.toString()?.contains("example.test") shouldBe false
-        sanitized?.toString()?.contains("search_text") shouldBe false
+        sanitized?.attributes.toString().contains("secret") shouldBe false
+        sanitized?.attributes.toString().contains("example.test") shouldBe false
+        sanitized?.attributes.toString().contains("search_text") shouldBe false
     }
 
     @Test
