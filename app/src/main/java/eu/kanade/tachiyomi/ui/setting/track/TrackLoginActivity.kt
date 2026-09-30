@@ -48,7 +48,7 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
         state: String?,
     ) {
         if (code != null) {
-            trackerManager.myAnimeList.login(code, state)
+            trackerManager.myAnimeList.loginWithAuthorizationCode(code, state)
             refreshUserLibraries.refreshForLegacyTracker(trackerManager.myAnimeList.id)
         } else {
             trackerManager.myAnimeList.logout()

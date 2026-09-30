@@ -189,9 +189,9 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
     }
 
     override suspend fun login(username: String, password: String): Unit =
-        login(authCode = password, state = expectedOAuthState())
+        loginWithAuthorizationCode(authCode = password, state = expectedOAuthState())
 
-    suspend fun login(authCode: String, state: String?) {
+    suspend fun loginWithAuthorizationCode(authCode: String, state: String?) {
         val codeVerifier = trackPreferences
             .trackOAuthSession(this, MAL_OAUTH_VERIFIER_KEY)
             .get()
