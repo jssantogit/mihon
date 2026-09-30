@@ -19,8 +19,8 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
-import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 
 class SearchIntegrationsTest {
 
@@ -96,8 +96,8 @@ class SearchIntegrationsTest {
         val results = search.execute(CatalogQuery(query = "One Piece"))
 
         results.size shouldBe 1
-        results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mal")
-        results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(85.08, 9.21)
+        results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("mal", "kitsu")
+        results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(9.21, 85.08)
     }
 
     @Test
@@ -145,8 +145,8 @@ class SearchIntegrationsTest {
         val results = search.execute(CatalogQuery(query = "One Piece"))
 
         results.size shouldBe 1
-        results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mal")
-        results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(85.08, 9.21)
+        results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("mal", "kitsu")
+        results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(9.21, 85.08)
     }
 
     @Test
