@@ -7,4 +7,5 @@ data class KitsuMangaResponse(
     val data: List<KitsuMangaResource> = emptyList(),
     val meta: KitsuMeta? = null,
     val links: KitsuLinks? = null,
+    val included: List<KitsuMappingResource> = emptyList(),
 )
