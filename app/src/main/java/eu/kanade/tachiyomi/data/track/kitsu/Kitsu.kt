@@ -70,6 +70,9 @@ class Kitsu(id: Long) : BaseTracker(id, "Kitsu"), DeletableTracker {
 
     private val api by lazy { KitsuApi(id, client, interceptor) }
 
+    internal val integrationApi: KitsuUserLibraryApi
+        get() = api
+
     private val scorePreference by lazy { trackPreferences.kitsuScoreType }
 
     override fun getLogo() = R.drawable.brand_kitsu

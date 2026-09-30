@@ -1,6 +1,13 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import io.kotest.matchers.shouldBe
+import eu.kanade.tachiyomi.data.track.kitsu.KitsuUserLibraryApi
+import eu.kanade.tachiyomi.data.track.kitsu.KitsuUserListEntry
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuManga
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaPoster
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaPosters
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaStaffData
+import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaTitles
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
@@ -10,10 +17,13 @@ import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.model.LibraryStatus
+import kotlin.time.Instant
 
 class KitsuIntegrationProviderTest {
 
@@ -60,6 +70,70 @@ class KitsuIntegrationProviderTest {
     }
 
     @Test
+    fun `kitsu projects remote statuses formats and timestamps into unified library`() = runTest {
+        val updatedAt = "2026-09-30T08:00:00Z"
+        val provider = KitsuIntegrationProvider.forTest(
+            delegate = KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(KitsuMangaResponse()),
+                ),
+            ),
+            userLibraryApi = FakeKitsuUserLibraryApi(
+                listOf(
+                    KitsuUserListEntry(
+                        manga = KitsuManga(
+                            id = "42",
+                            titles = KitsuMangaTitles(preferred = "Solo Leveling"),
+                            chapterCount = 200,
+                            staff = KitsuMangaStaffData(nodes = emptyList()),
+                            posterImage = KitsuMangaPosters(
+                                views = emptyList(),
+                                original = KitsuMangaPoster(
+                                    name = "original",
+                                    url = "https://example.com/solo.jpg",
+                                ),
+                            ),
+                            description = mapOf("en" to "Hunters and gates."),
+                            status = "FINISHED",
+                            subtype = "MANHWA",
+                            startDate = "2018-03-04",
+                            endDate = "2021-12-29",
+                            slug = "solo-leveling",
+                            averageRating = 84.5,
+                        ),
+                        status = "PLANNED",
+                        progress = 12.0,
+                        score = 18.0,
+                        updatedAt = updatedAt,
+                    ),
+                ),
+            ),
+        )
+
+        val snapshot = (provider as UserListProvider).fetchLibrary().getOrThrow()
+        snapshot.lists.map { it.key } shouldBe listOf(
+            "kitsu:status:current",
+            "kitsu:status:planned",
+            "kitsu:status:completed",
+            "kitsu:status:on_hold",
+            "kitsu:status:dropped",
+        )
+
+        val entry = snapshot.entries.single()
+        entry.item.provider shouldBe "kitsu"
+        entry.item.providerId shouldBe "42"
+        entry.item.format shouldBe CatalogItemFormat.MANHWA
+        entry.item.score?.value shouldBe 84.5
+        entry.item.score?.maxValue shouldBe 100.0
+        entry.listKeys shouldBe setOf("kitsu:status:planned")
+        entry.status shouldBe LibraryStatus.PLANNING
+        entry.remoteStatus shouldBe "planned"
+        entry.progress shouldBe 12.0
+        entry.score shouldBe 18.0
+        entry.listedAt shouldBe Instant.parse(updatedAt).toEpochMilliseconds()
+    }
+
+    @Test
     fun `kitsu exposes provider specific rating capability`() = runTest {
         val provider = KitsuIntegrationProvider(
             KitsuCatalogProvider(
@@ -87,6 +161,12 @@ class KitsuIntegrationProviderTest {
         rating.label shouldBe "Kitsu"
         rating.value shouldBe 84.51
         rating.scaleMax shouldBe 100.0
+    }
+
+    private class FakeKitsuUserLibraryApi(
+        private val entries: List<KitsuUserListEntry>,
+    ) : KitsuUserLibraryApi {
+        override suspend fun getUserMangaList(): List<KitsuUserListEntry> = entries
     }
 
     private class FakeKitsuClient(
