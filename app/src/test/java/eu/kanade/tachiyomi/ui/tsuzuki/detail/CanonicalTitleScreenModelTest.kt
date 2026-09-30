@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
