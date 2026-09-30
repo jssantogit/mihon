@@ -17,6 +17,7 @@ enum class CanonicalLibraryReadingState {
 data class CanonicalLibraryFilterState(
     val status: LibraryStatus? = null,
     val origin: String? = null,
+    val listKey: String? = null,
     val formats: Set<CatalogItemFormat> = emptySet(),
     val categoryId: Long? = null,
 )
@@ -28,11 +29,12 @@ data class CanonicalLibraryCardModel(
     val categories: List<Category>,
     val readingState: CanonicalLibraryReadingState,
     val originStatuses: Map<String, Set<LibraryStatus>> = emptyMap(),
+    val originListKeys: Map<String, Set<String>> = emptyMap(),
     val format: CatalogItemFormat = CatalogItemFormat.UNKNOWN,
     val hasLocalMembership: Boolean = true,
 ) {
     val origins: Set<String>
-        get() = originStatuses.keys
+        get() = originStatuses.keys + originListKeys.keys
 }
 
 internal fun UnifiedLibraryTitle.toCardModel(
@@ -50,6 +52,11 @@ internal fun UnifiedLibraryTitle.toCardModel(
                 )
             }
     }
+    val originListKeys = externalMemberships
+        .groupBy { it.provider }
+        .mapValues { (_, memberships) ->
+            memberships.map { it.listKey }.toSet()
+        }
     val primaryStatus = localEntry?.status
         ?: externalMemberships.firstNotNullOfOrNull { it.status }
         ?: LibraryStatus.PLANNING
@@ -61,6 +68,7 @@ internal fun UnifiedLibraryTitle.toCardModel(
         categories = categories,
         readingState = readingState,
         originStatuses = originStatuses,
+        originListKeys = originListKeys,
         format = format,
         hasLocalMembership = localEntry != null,
     )
@@ -89,6 +97,11 @@ internal fun filterCanonicalLibraryCards(
             .asSequence()
             .filter { (origin, _) -> filters.origin == null || origin == filters.origin }
             .any { (_, statuses) -> filters.status in statuses }
+    val listMatches = filters.listKey == null ||
+        item.originListKeys
+            .asSequence()
+            .filter { (origin, _) -> filters.origin == null || origin == filters.origin }
+            .any { (_, listKeys) -> filters.listKey in listKeys }
     val formatMatches = filters.formats.isEmpty() || item.format in filters.formats
     val categoryMatches = when (filters.categoryId) {
         null -> true
@@ -96,7 +109,7 @@ internal fun filterCanonicalLibraryCards(
         else -> item.categories.any { it.id == filters.categoryId }
     }
 
-    originMatches && statusMatches && formatMatches && categoryMatches
+    originMatches && statusMatches && listMatches && formatMatches && categoryMatches
 }
 
 private fun List<CanonicalChapterProgress>.toReadingState(): CanonicalLibraryReadingState = when {
