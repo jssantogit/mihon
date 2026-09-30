@@ -164,7 +164,6 @@ internal fun availableProviderListFilters(
         .toList()
 }
 
-
 private fun UnifiedLibraryTitle.preferredExternalCoverUrl(): String? =
     externalMemberships
         .asSequence()
