@@ -164,10 +164,17 @@ class KitsuCatalogProvider(
                 .asSequence()
                 .filter { mapping ->
                     mapping.type == "mappings" &&
-                        mapping.relationships.item.data?.let { item ->
-                            item.type == "manga" && item.id == resource.id
-                        } == true &&
-                        mapping.attributes.externalSite == "myanimelist/manga"
+                        mapping.attributes.externalSite == "myanimelist/manga" &&
+                        (
+                            mapping.id in resource.relationships.mappings.data
+                                .asSequence()
+                                .filter { identifier -> identifier.type == "mappings" }
+                                .map { identifier -> identifier.id }
+                                .toSet() ||
+                                mapping.relationships.item.data?.let { item ->
+                                    item.type == "manga" && item.id == resource.id
+                                } == true
+                            )
                 }
                 .mapNotNull { mapping ->
                     mapping.attributes.externalId

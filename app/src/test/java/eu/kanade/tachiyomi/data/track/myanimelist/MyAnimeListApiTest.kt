@@ -36,6 +36,7 @@ class MyAnimeListApiTest {
         }
 
         values["client_id"] shouldBe "user-owned-client"
+        values["client_secret"] shouldBe null
         values["code"] shouldBe "authorization-code"
         values["code_verifier"] shouldBe "persisted-verifier"
         values["redirect_uri"] shouldBe MyAnimeListApi.CALLBACK_URL
@@ -54,11 +55,12 @@ class MyAnimeListApiTest {
         val request = MyAnimeListApi.refreshTokenRequest(oauth, "user-owned-client")
         val body = request.body as FormBody
 
-        val clientId = (0 until body.size)
-            .first { body.name(it) == "client_id" }
-            .let(body::value)
+        val values = (0 until body.size).associate { index ->
+            body.name(index) to body.value(index)
+        }
 
-        clientId shouldBe "user-owned-client"
+        values["client_id"] shouldBe "user-owned-client"
+        values["client_secret"] shouldBe null
     }
 
     @Test
