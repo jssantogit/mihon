@@ -6,8 +6,8 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.library.model.TitleFormatObservation
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
-import tachiyomi.domain.tsuzuki.repository.TitleFormatObservationRepository
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
+import tachiyomi.domain.tsuzuki.repository.TitleFormatObservationRepository
 import kotlin.time.Clock
 
 class MaterializeCanonicalTitleFromCatalog internal constructor(
