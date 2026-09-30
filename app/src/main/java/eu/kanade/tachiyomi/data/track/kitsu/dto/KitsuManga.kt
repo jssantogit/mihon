@@ -75,7 +75,11 @@ data class KitsuMangaPosters(
     val original: KitsuMangaPoster,
 ) {
     // we only ask for the "small" poster in the query
-    fun getPosterUrl(): String = views.firstOrNull()?.url ?: original.url
+    fun getPosterUrl(): String = views
+        .asSequence()
+        .map(KitsuMangaPoster::url)
+        .firstOrNull(String::isNotBlank)
+        ?: original.url
 }
 
 @Serializable
