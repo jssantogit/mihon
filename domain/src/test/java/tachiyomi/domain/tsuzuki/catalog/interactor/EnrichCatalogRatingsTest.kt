@@ -16,7 +16,7 @@ import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 
-class EnrichCatalogRatingsTest {
+// Regression contract: ratings are work-level enrichment, not catalog ownership.\nclass EnrichCatalogRatingsTest {
 
     @Test
     fun `mapped active rating provider enriches a catalog item even when it is absent from that provider catalog`() = runTest {
