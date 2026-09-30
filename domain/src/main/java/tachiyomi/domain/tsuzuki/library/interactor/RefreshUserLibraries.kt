@@ -142,6 +142,7 @@ class RefreshUserLibraries internal constructor(
                         score = entry.score,
                         listedAt = entry.listedAt,
                         syncedAt = syncedAt,
+                        coverUrl = entry.item.coverUrl,
                     )
                 }
             }
