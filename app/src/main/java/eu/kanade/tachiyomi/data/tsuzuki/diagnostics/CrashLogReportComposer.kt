@@ -10,8 +10,8 @@ object CrashLogReportComposer {
         logcat: LogcatCapture,
     ): String = buildString {
         appendSection(debugInfo)
-        extensionsInfo?.takeIf(String::isNotBlank)?.let(::appendSection)
-        exception?.takeIf(String::isNotBlank)?.let(::appendSection)
+        extensionsInfo?.takeIf(String::isNotBlank)?.let { appendSection(it) }
+        exception?.takeIf(String::isNotBlank)?.let { appendSection(it) }
         appendLine("Structured diagnostic history:")
         appendLine(structuredHistory.ifBlank { "(no recent structured events)" })
         appendLine()
