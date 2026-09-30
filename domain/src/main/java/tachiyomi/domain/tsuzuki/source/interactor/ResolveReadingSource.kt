@@ -168,20 +168,20 @@ class ResolveReadingSource(
             val searchResult = try {
                 readingSourceGateway.search(sourceId, canonicalTitle.displayTitle)
             } catch (e: CancellationException) {
-                trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.CANCELLED, errorCategory(e))
+                trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.CANCELLED, e)
                 throw e
             } catch (e: Throwable) {
-                trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.THREW, errorCategory(e))
+                trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.THREW, e)
                 continue
             }
 
             val failure = searchResult.exceptionOrNull()
             if (failure != null) {
                 if (failure is CancellationException) {
-                    trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.CANCELLED, errorCategory(failure))
+                    trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.CANCELLED, failure)
                     throw failure
                 }
-                trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.TYPED_FAILURE, errorCategory(failure))
+                trace.recordSearchFailure(sourceId, attempt, DiagnosticOutcome.TYPED_FAILURE, failure)
                 continue
             }
 
@@ -231,10 +231,10 @@ class ResolveReadingSource(
                             verifiedByUser = false,
                         )
                     } catch (e: CancellationException) {
-                        trace.recordConfirmationFailure(sourceId, errorCategory(e), DiagnosticOutcome.CANCELLED)
+                        trace.recordConfirmationFailure(sourceId, e, DiagnosticOutcome.CANCELLED)
                         throw e
                     } catch (e: Throwable) {
-                        trace.recordConfirmationFailure(sourceId, errorCategory(e))
+                        trace.recordConfirmationFailure(sourceId, e)
                         null
                     }
 
@@ -285,10 +285,10 @@ class ResolveReadingSource(
         val installed = try {
             readingSourceGateway.listInstalled(language)
         } catch (e: CancellationException) {
-            trace.recordInstalledListFailure(DiagnosticOutcome.CANCELLED, errorCategory(e))
+            trace.recordInstalledListFailure(DiagnosticOutcome.CANCELLED, e)
             throw e
         } catch (e: Throwable) {
-            trace.recordInstalledListFailure(DiagnosticOutcome.THREW, errorCategory(e))
+            trace.recordInstalledListFailure(DiagnosticOutcome.THREW, e)
             emptyList()
         }
         return (preferredIds + installed.map { it.sourceId })
@@ -308,10 +308,10 @@ class ResolveReadingSource(
         val installed = try {
             readingSourceGateway.listInstalled(language)
         } catch (e: CancellationException) {
-            trace.recordInstalledListFailure(DiagnosticOutcome.CANCELLED, errorCategory(e))
+            trace.recordInstalledListFailure(DiagnosticOutcome.CANCELLED, e)
             throw e
         } catch (e: Throwable) {
-            trace.recordInstalledListFailure(DiagnosticOutcome.THREW, errorCategory(e))
+            trace.recordInstalledListFailure(DiagnosticOutcome.THREW, e)
             return false
         }
         return installed.any { it.sourceId !in searchedSourceIds }
@@ -330,11 +330,36 @@ private fun SourceResolutionResult.toDiagnosticOutcome(sourceFailureCount: Int):
     is SourceResolutionResult.Conflict -> DiagnosticOutcome.FAILED
 }
 
-private fun errorCategory(error: Throwable): DiagnosticErrorCategory = when (error) {
-    is java.net.SocketTimeoutException -> DiagnosticErrorCategory.TIMEOUT
-    is java.io.IOException -> DiagnosticErrorCategory.NETWORK
-    else -> DiagnosticErrorCategory.UNKNOWN
+private fun errorCategory(error: Throwable): DiagnosticErrorCategory {
+    val typed = generateSequence(error) { it.cause }
+        .filterIsInstance<ReadingSourceSearchFailure>()
+        .firstOrNull()
+    if (typed != null) {
+        return when (typed.kind) {
+            ReadingSourceFailureKind.SOURCE_DISABLED,
+            ReadingSourceFailureKind.SOURCE_UNAVAILABLE,
+            -> DiagnosticErrorCategory.SOURCE_UNAVAILABLE
+            ReadingSourceFailureKind.HTTP_RESPONSE -> DiagnosticErrorCategory.HTTP
+            ReadingSourceFailureKind.NETWORK_FAILURE -> DiagnosticErrorCategory.NETWORK
+            ReadingSourceFailureKind.TIMEOUT -> DiagnosticErrorCategory.TIMEOUT
+            ReadingSourceFailureKind.CAPTCHA_REQUIRED -> DiagnosticErrorCategory.CAPTCHA
+            ReadingSourceFailureKind.MALFORMED_RESPONSE -> DiagnosticErrorCategory.MALFORMED_RESPONSE
+            ReadingSourceFailureKind.EXTENSION_FAILURE -> DiagnosticErrorCategory.EXTENSION
+            ReadingSourceFailureKind.INDETERMINATE -> DiagnosticErrorCategory.UNKNOWN
+        }
+    }
+    return when (error) {
+        is java.net.SocketTimeoutException -> DiagnosticErrorCategory.TIMEOUT
+        is java.io.IOException -> DiagnosticErrorCategory.NETWORK
+        else -> DiagnosticErrorCategory.UNKNOWN
+    }
 }
+
+private fun httpStatus(error: Throwable): Int? =
+    generateSequence(error) { it.cause }
+        .filterIsInstance<ReadingSourceSearchFailure>()
+        .mapNotNull(ReadingSourceSearchFailure::httpStatus)
+        .firstOrNull()
 
 private class ResolverTrace(
     private val recorder: StructuredDiagnosticRecorder,
@@ -368,6 +393,7 @@ private class ResolverTrace(
         autoConfirmAttempted: Boolean? = null,
         ambiguous: Boolean? = null,
         errorCategory: DiagnosticErrorCategory? = null,
+        httpStatus: Int? = null,
         severity: DiagnosticSeverity = DiagnosticSeverity.INFO,
         durationMillis: Long? = null,
     ) {
@@ -386,6 +412,7 @@ private class ResolverTrace(
             autoConfirmAttempted?.let { put("auto_confirm_attempted", DiagnosticAttributeValue.Flag(it)) }
             ambiguous?.let { put("ambiguous", DiagnosticAttributeValue.Flag(it)) }
             errorCategory?.let { put("error_category", DiagnosticAttributeValue.Code(it)) }
+            httpStatus?.let { put("http_status", DiagnosticAttributeValue.Number(it.toLong())) }
             canonicalTitleReference?.let { put("canonical_title_ref", DiagnosticAttributeValue.Text(it)) }
             mihonMangaId?.let { id ->
                 safely { recorder.mihonMangaReference(id) }?.let {
@@ -416,7 +443,7 @@ private class ResolverTrace(
         sourceId: Long,
         attempt: Int,
         outcome: DiagnosticOutcome,
-        category: DiagnosticErrorCategory,
+        error: Throwable,
     ) {
         if (outcome != DiagnosticOutcome.CANCELLED) sourceFailureCount++
         emit(
@@ -425,7 +452,8 @@ private class ResolverTrace(
             outcome = outcome,
             sourceId = sourceId,
             attempt = attempt,
-            errorCategory = category,
+            errorCategory = errorCategory(error),
+            httpStatus = httpStatus(error),
             severity = DiagnosticSeverity.WARN,
         )
     }
@@ -461,7 +489,7 @@ private class ResolverTrace(
 
     fun recordConfirmationFailure(
         sourceId: Long,
-        category: DiagnosticErrorCategory,
+        error: Throwable,
         outcome: DiagnosticOutcome = DiagnosticOutcome.THREW,
     ) {
         emit(
@@ -469,17 +497,19 @@ private class ResolverTrace(
             stage = DiagnosticStage.CONFIRMATION,
             outcome = outcome,
             sourceId = sourceId,
-            errorCategory = category,
+            errorCategory = errorCategory(error),
+            httpStatus = httpStatus(error),
             severity = DiagnosticSeverity.WARN,
         )
     }
 
-    fun recordInstalledListFailure(outcome: DiagnosticOutcome, category: DiagnosticErrorCategory) {
+    fun recordInstalledListFailure(outcome: DiagnosticOutcome, error: Throwable) {
         emit(
             name = DiagnosticEventName.SOURCE_RESOLVE_PREFERRED_SOURCES,
             stage = DiagnosticStage.PREFERRED_SOURCES,
             outcome = outcome,
-            errorCategory = category,
+            errorCategory = errorCategory(error),
+            httpStatus = httpStatus(error),
             severity = DiagnosticSeverity.WARN,
         )
     }
