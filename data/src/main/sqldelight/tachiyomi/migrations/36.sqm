@@ -1,0 +1,4 @@
+-- Retain provider artwork for cover-first unified Library presentation.
+-- Existing memberships remain valid and receive cover artwork on the next provider refresh.
+ALTER TABLE tsuzuki_external_library_memberships
+ADD COLUMN cover_url TEXT;
