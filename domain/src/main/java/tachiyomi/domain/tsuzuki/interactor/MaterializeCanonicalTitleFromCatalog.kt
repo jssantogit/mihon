@@ -53,6 +53,7 @@ class MaterializeCanonicalTitleFromCatalog internal constructor(
             displayTitle = catalogItem.title,
             provider = catalogItem.provider,
             externalId = catalogItem.providerId,
+            externalIds = catalogItem.externalIds,
         )
         val now = clock()
         reportedChapterCountRepository?.upsert(
