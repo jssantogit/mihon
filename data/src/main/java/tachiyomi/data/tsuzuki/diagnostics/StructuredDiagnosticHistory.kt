@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 /** Best-effort, bounded JSONL history. Only sanitized domain events are accepted. */
-class StructuredDiagnosticHistory internal constructor(
+class StructuredDiagnosticHistory(
     directory: File,
     private val persistenceEnabled: () -> Boolean,
     private val writerExecutor: ExecutorService,
@@ -126,7 +126,9 @@ class StructuredDiagnosticHistory internal constructor(
     ): String {
         flush(flushTimeoutMillis)
         if (!isEnabled()) return ""
-        val limit = maxSnapshotBytes.coerceAtLeast(0).coerceAtMost(maxBytes).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val limit = maxSnapshotBytes.coerceAtLeast(
+            0,
+        ).coerceAtMost(maxBytes).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         if (limit == 0) return ""
         return try {
             withRootLock {
@@ -165,35 +167,37 @@ class StructuredDiagnosticHistory internal constructor(
     private fun submitFlushTask(deadlineNanos: Long): Future<Boolean>? {
         while (System.nanoTime() <= deadlineNanos) {
             try {
-                return writerExecutor.submit(Callable {
-                    var dropped = 0L
-                    try {
-                        if (!isEnabled()) {
-                            droppedEvents.set(0)
-                            true
-                        } else {
-                            dropped = droppedEvents.getAndSet(0)
-                            if (dropped == 0L) {
+                return writerExecutor.submit(
+                    Callable {
+                        var dropped = 0L
+                        try {
+                            if (!isEnabled()) {
+                                droppedEvents.set(0)
                                 true
                             } else {
-                                when (appendRecords(listOf(encodeDroppedRecord(dropped, clockMillis().coerceAtLeast(0))))) {
-                                    AppendResult.WRITTEN -> true
-                                    AppendResult.DISABLED -> {
-                                        droppedEvents.set(0)
-                                        true
-                                    }
-                                    AppendResult.FAILED -> {
-                                        droppedEvents.addAndGet(dropped)
-                                        false
+                                dropped = droppedEvents.getAndSet(0)
+                                if (dropped == 0L) {
+                                    true
+                                } else {
+                                    when (appendRecords(listOf(encodeDroppedRecord(dropped, clockMillis().coerceAtLeast(0))))) {
+                                        AppendResult.WRITTEN -> true
+                                        AppendResult.DISABLED -> {
+                                            droppedEvents.set(0)
+                                            true
+                                        }
+                                        AppendResult.FAILED -> {
+                                            droppedEvents.addAndGet(dropped)
+                                            false
+                                        }
                                     }
                                 }
                             }
+                        } catch (_: RuntimeException) {
+                            if (dropped > 0 && isEnabled()) droppedEvents.addAndGet(dropped)
+                            false
                         }
-                    } catch (_: RuntimeException) {
-                        if (dropped > 0 && isEnabled()) droppedEvents.addAndGet(dropped)
-                        false
-                    }
-                })
+                    },
+                )
             } catch (_: RejectedExecutionException) {
                 if (System.nanoTime() >= deadlineNanos) return null
                 try {
@@ -322,7 +326,7 @@ class StructuredDiagnosticHistory internal constructor(
             false
         }
         if (!acquiredLocally) throw TimeoutException("Diagnostic history lock unavailable")
-        try {
+        return try {
             rootDirectory.mkdirs()
             val lockFile = File(rootDirectory, LOCK_FILE_NAME)
             FileChannel.open(
