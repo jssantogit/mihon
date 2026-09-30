@@ -13,6 +13,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.UserListProvider
 
 class KitsuIntegrationProviderTest {
 
@@ -43,6 +44,19 @@ class KitsuIntegrationProviderTest {
 
         page.items.single().chapterCount shouldBe 205
         (provider as Any is ChapterEvidenceProvider) shouldBe false
+    }
+
+    @Test
+    fun `kitsu exposes account library capability`() = runTest {
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(KitsuMangaResponse()),
+                ),
+            ),
+        )
+
+        (provider as Any is UserListProvider) shouldBe true
     }
 
     @Test
