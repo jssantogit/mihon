@@ -120,7 +120,8 @@ class RefreshUserLibrariesTest {
         override fun searchProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.SearchProvider>()
         override fun discoveryProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.DiscoveryProvider>()
         override fun metadataProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.MetadataProvider>()
-        override fun chapterEvidenceProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider>()
+        override fun chapterEvidenceProviders() =
+            emptyList<tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider>()
         override fun ratingsProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.RatingsProvider>()
         override fun trackingProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.TrackingProvider>()
         override fun userListProviders() = listOf(provider)
