@@ -137,7 +137,6 @@ private fun List<CanonicalChapterProgress>.toReadingState(): CanonicalLibraryRea
     else -> CanonicalLibraryReadingState.NOT_STARTED
 }
 
-
 internal fun availableProviderListFilters(
     items: List<CanonicalLibraryCardModel>,
     origin: String?,
