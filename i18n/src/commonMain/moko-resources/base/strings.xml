@@ -1227,9 +1227,10 @@
     <string name="tsuzuki_bangumi_access_token">Personal access token</string>
     <string name="tsuzuki_bangumi_access_token_summary">Use a personal Bangumi access token instead of a shared OAuth application. The token stays on this device.</string>
     <string name="tsuzuki_mal_client_id_title">MyAnimeList Client ID</string>
-    <string name="tsuzuki_mal_client_id_summary">MyAnimeList requires your own API Client ID. Tsuzuki does not include a shared MAL credential.</string>
+    <string name="tsuzuki_mal_client_id_summary">MyAnimeList requires your own public API client. Use App Type Android or Other; Web clients require a Client Secret and are not supported by the on-device OAuth flow.</string>
     <string name="tsuzuki_mal_client_id_required">Add your MyAnimeList Client ID before enabling this integration.</string>
-    <string name="tsuzuki_mal_client_id_setup">Create a client at myanimelist.net/apiconfig and register tsuzuki://myanimelist-auth as its redirect URL. Leave this field empty and save to remove the credential.</string>
+    <string name="tsuzuki_mal_client_id_setup">Create a public client at myanimelist.net/apiconfig (App Type Android or Other, not Web) and register tsuzuki://myanimelist-auth exactly as its redirect URL. Leave this field empty and save to remove the credential.</string>
+    <string name="tsuzuki_mal_tracking_login_setup">Authentication uses your public MAL client. App Type must be Android or Other and the redirect URL must be exactly tsuzuki://myanimelist-auth. Web clients require a Client Secret and cannot authenticate in this on-device flow.</string>
     <string name="tsuzuki_integration_provider_kitsu">Public catalog and metadata with optional account tracking. Uses the app's existing Kitsu client configuration.</string>
     <string name="tsuzuki_integration_provider_mal">Catalog metadata and ratings using your own MyAnimeList API Client ID, with optional OAuth2/PKCE account tracking.</string>
     <string name="tsuzuki_integration_provider_mangaupdates">Manga-focused public metadata with account lists and ratings. Attribution is preserved when its data is used.</string>
