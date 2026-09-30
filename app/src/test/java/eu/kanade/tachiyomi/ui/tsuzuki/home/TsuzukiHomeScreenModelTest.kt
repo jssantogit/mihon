@@ -107,6 +107,7 @@ class TsuzukiHomeScreenModelTest {
     }
 
     @Test
+    // Provider artwork must survive the transient Search -> canonical boundary.
     fun `continue reading prefers persisted canonical provider artwork over source fallback`() = runTest(dispatcher) {
         val resolver = mockk<ResolveCanonicalSourceManga>()
         coEvery { resolver.execute("title-1") } returns Manga.create().copy(
