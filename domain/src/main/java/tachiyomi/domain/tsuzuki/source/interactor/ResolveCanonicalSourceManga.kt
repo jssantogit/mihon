@@ -34,7 +34,7 @@ class ResolveCanonicalSourceManga(
         var fallback: Manga? = null
         for (mapping in mappings) {
             val persisted = findPersistedManga(mapping)
-            if (!persisted?.thumbnailUrl.isNullOrBlank()) {
+            if (!persisted?.thumbnailUrl.isNullOrBlank() && persisted.initialized) {
                 return persisted
             }
             if (fallback == null && persisted != null) {
