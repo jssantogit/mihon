@@ -11,10 +11,35 @@ import org.junit.jupiter.api.Test
 class MyAnimeListApiTest {
 
     @Test
-    fun `auth url uses the user supplied client id`() {
-        val url = MyAnimeListApi.authUrl("user-owned-client").toHttpUrl()
+    fun `auth url carries client redirect and persisted PKCE verifier`() {
+        val verifier = "v".repeat(64)
+        val url = MyAnimeListApi.authUrl(
+            clientId = "user-owned-client",
+            codeVerifier = verifier,
+        ).toHttpUrl()
 
         url.queryParameter("client_id") shouldBe "user-owned-client"
+        url.queryParameter("redirect_uri") shouldBe MyAnimeListApi.CALLBACK_URL
+        url.queryParameter("code_challenge") shouldBe verifier
+        url.queryParameter("code_challenge_method") shouldBe "plain"
+    }
+
+    @Test
+    fun `access token request reuses redirect and PKCE verifier`() {
+        val verifier = "v".repeat(64)
+        val request = MyAnimeListApi.accessTokenRequest(
+            authCode = "authorization-code",
+            clientId = "user-owned-client",
+            codeVerifier = verifier,
+        )
+        val body = request.body as FormBody
+        val values = (0 until body.size).associate { body.name(it) to body.value(it) }
+
+        values["client_id"] shouldBe "user-owned-client"
+        values["code"] shouldBe "authorization-code"
+        values["redirect_uri"] shouldBe MyAnimeListApi.CALLBACK_URL
+        values["code_verifier"] shouldBe verifier
+        values["grant_type"] shouldBe "authorization_code"
     }
 
     @Test
