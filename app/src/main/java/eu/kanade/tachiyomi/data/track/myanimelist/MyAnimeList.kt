@@ -238,7 +238,6 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
     }
 }
 
-
 class MALPkceVerifierMissing : IllegalStateException(
     "MyAnimeList authentication session expired. Start the connection again.",
 )
