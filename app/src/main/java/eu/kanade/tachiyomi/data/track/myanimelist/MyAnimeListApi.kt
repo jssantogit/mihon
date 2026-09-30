@@ -253,15 +253,8 @@ class MyAnimeListApi(
     }
 
     private suspend fun getUserListPage(offset: Int): MALUserListPage {
-        val urlBuilder = "$BASE_API_URL/users/@me/mangalist".toUri().buildUpon()
-            .appendQueryParameter("fields", SEARCH_FIELDS)
-            .appendQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
-        if (offset > 0) {
-            urlBuilder.appendQueryParameter("offset", offset.toString())
-        }
-
         val request = Request.Builder()
-            .url(urlBuilder.build().toString())
+            .url(userMangaListUrl(offset))
             .get()
             .build()
         return with(json) {
@@ -329,6 +322,16 @@ class MyAnimeListApi(
             .addQueryParameter("response_type", "code")
             .build()
             .toString()
+
+        internal fun userMangaListUrl(offset: Int): String {
+            val urlBuilder = "$BASE_API_URL/users/@me/mangalist".toUri().buildUpon()
+                .appendQueryParameter("fields", SEARCH_FIELDS)
+                .appendQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
+            if (offset > 0) {
+                urlBuilder.appendQueryParameter("offset", offset.toString())
+            }
+            return urlBuilder.build().toString()
+        }
 
         internal fun accessTokenRequest(
             authCode: String,
