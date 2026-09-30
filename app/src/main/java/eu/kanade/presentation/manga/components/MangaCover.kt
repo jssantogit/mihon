@@ -4,6 +4,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -23,15 +27,35 @@ enum class MangaCover(val ratio: Float) {
     @Composable
     operator fun invoke(
         data: Any?,
+        fallbackData: List<Any?> = emptyList(),
         modifier: Modifier = Modifier,
         contentDescription: String = "",
         shape: Shape = MaterialTheme.shapes.extraSmall,
         onClick: (() -> Unit)? = null,
     ) {
+        val candidates = remember(data, fallbackData) {
+            buildList {
+                if (data != null) add(data)
+                fallbackData.forEach { candidate ->
+                    if (candidate != null && none { it == candidate }) {
+                        add(candidate)
+                    }
+                }
+            }
+        }
+        var candidateIndex by remember(candidates) { mutableIntStateOf(0) }
+        val errorPainter = rememberResourceBitmapPainter(id = R.drawable.cover_error)
+
         AsyncImage(
-            model = data,
+            model = candidates.getOrNull(candidateIndex),
             placeholder = ColorPainter(CoverPlaceholderColor),
-            error = rememberResourceBitmapPainter(id = R.drawable.cover_error),
+            error = errorPainter,
+            fallback = errorPainter,
+            onError = {
+                if (candidateIndex < candidates.lastIndex) {
+                    candidateIndex += 1
+                }
+            },
             contentDescription = contentDescription,
             modifier = modifier
                 .aspectRatio(ratio)
