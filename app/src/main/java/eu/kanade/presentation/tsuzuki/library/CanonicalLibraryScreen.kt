@@ -14,8 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -44,6 +45,7 @@ import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.SearchToolbar
+import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCardModel
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryReadingState
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
@@ -438,25 +440,23 @@ private fun CanonicalLibraryList(
     onOpenItem: (CanonicalLibraryCardModel) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 104.dp),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(
             items = items,
             key = CanonicalLibraryCardModel::canonicalTitleId,
         ) { item ->
-            CanonicalLibraryItemCard(
-                item = item,
-                selectedOrigin = selectedOrigin,
-                onUpdateStatus = { status ->
-                    onUpdateStatus(item.canonicalTitleId, status)
-                },
-                onRemove = { onRemoveItem(item.canonicalTitleId) },
-                onChangeCategories = { onChangeCategories(item) },
-                onRead = { onRead(item) },
-                onOpenItem = { onOpenItem(item) },
+            MangaCover.Book(
+                data = item.coverUrl,
+                contentDescription = item.title,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenItem(item) },
             )
         }
     }
