@@ -36,7 +36,7 @@ class KitsuApi(
     private val trackerId: Long,
     private val client: OkHttpClient,
     interceptor: KitsuInterceptor,
-) {
+) : KitsuUserLibraryApi {
 
     private val json: Json by injectLazy()
 
@@ -336,6 +336,93 @@ class KitsuApi(
                     .data.findMangaById
                     ?.toTrackSearch(trackerId)
             }
+        }
+    }
+
+    override suspend fun getUserMangaList(): List<KitsuUserListEntry> {
+        return withIOContext {
+            val entries = mutableListOf<KitsuUserListEntry>()
+            val seenCursors = mutableSetOf<String>()
+            var after: String? = null
+
+            while (true) {
+                val page = getUserMangaListPage(after)
+                entries += page.nodes.map { node ->
+                    KitsuUserListEntry(
+                        manga = node.media,
+                        status = node.status,
+                        progress = node.progress.toDouble(),
+                        score = node.rating?.toDouble() ?: 0.0,
+                        updatedAt = node.updatedAt,
+                    )
+                }
+
+                if (!page.pageInfo.hasNextPage) break
+                val nextCursor = page.pageInfo.endCursor
+                    ?.takeIf(String::isNotBlank)
+                    ?: error("Kitsu library reported another page without an end cursor")
+                check(seenCursors.add(nextCursor)) {
+                    "Kitsu library pagination repeated cursor $nextCursor"
+                }
+                after = nextCursor
+            }
+
+            entries
+        }
+    }
+
+    private suspend fun getUserMangaListPage(after: String?): KitsuUserLibraryConnection {
+        val query = $"""
+            |query Query($after: String) {
+              |currentAccount {
+                |profile {
+                  |library {
+                    |all(first: 100, after: $after, mediaType: MANGA) {
+                      |pageInfo {
+                        |endCursor
+                        |hasNextPage
+                      |}
+                      |nodes {
+                        |id
+                        |status
+                        |progress
+                        |rating
+                        |updatedAt
+                        |media {
+                          |... on Manga {
+                            |$COMMON_MANGA_DATA
+                          |}
+                        |}
+                      |}
+                    |}
+                  |}
+                |}
+              |}
+            |}
+        """.trimMargin()
+
+        val payload = buildJsonObject {
+            put("query", query)
+            putJsonObject("variables") {
+                after?.let { put("after", it) }
+            }
+        }
+
+        return with(json) {
+            val parsed = authClient.newCall(
+                POST(
+                    GRAPHQL_API_URL,
+                    body = payload.toString().toRequestBody(jsonMime),
+                ),
+            )
+                .awaitSuccess()
+                .parseAs<KitsuUserLibraryResult>()
+
+            parsed.data.currentAccount
+                ?.profile
+                ?.library
+                ?.all
+                ?: error("Kitsu account is unavailable while loading the user library")
         }
     }
 
