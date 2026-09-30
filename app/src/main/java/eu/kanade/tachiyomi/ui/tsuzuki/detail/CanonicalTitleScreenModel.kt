@@ -23,6 +23,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.tsuzuki.artwork.ResolveCanonicalArtwork
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
@@ -143,6 +144,7 @@ class CanonicalTitleScreenModel(
     private val mangaRepository: MangaRepository? = null,
     private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
     private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga? = null,
+    private val resolveCanonicalArtwork: ResolveCanonicalArtwork? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -550,6 +552,13 @@ class CanonicalTitleScreenModel(
             .map { it.canonicalChapterId }
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
+        val canonicalArtwork = try {
+            resolveCanonicalArtwork?.execute(canonicalTitleId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
         var metadata = try {
             resolveCanonicalSourceManga?.execute(canonicalTitleId)
         } catch (error: CancellationException) {
@@ -692,7 +701,7 @@ class CanonicalTitleScreenModel(
         logcat {
             "TsuzukiCover detail title=${canonicalTitleId.take(8)} " +
                 "integrationRequested=$includeIntegrationMetadata " +
-                "provider=${!integrationMetadata?.artworkUrl?.value.isNullOrBlank()} " +
+                "provider=${!((integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl)).isNullOrBlank()} " +
                 "source=${metadata != null && !metadata.thumbnailUrl.isNullOrBlank()}"
         }
 
@@ -702,7 +711,7 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
-            coverUrl = integrationMetadata?.artworkUrl?.value,
+            coverUrl = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl,
             sourceCover = metadata?.asMangaCover(),
             author = integrationMetadata
                 ?.authors
