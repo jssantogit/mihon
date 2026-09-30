@@ -18,9 +18,9 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.history.repository.HistoryRepository
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
 import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
-import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -106,8 +106,8 @@ class TsuzukiHomeScreenModelTest {
         item.sourceCover?.url shouldBe "https://cdn.example/dandadan.jpg"
     }
 
-    @Test
     // Provider artwork must survive the transient Search -> canonical boundary.
+    @Test
     fun `continue reading prefers persisted canonical provider artwork over source fallback`() = runTest(dispatcher) {
         val resolver = mockk<ResolveCanonicalSourceManga>()
         coEvery { resolver.execute("title-1") } returns Manga.create().copy(
