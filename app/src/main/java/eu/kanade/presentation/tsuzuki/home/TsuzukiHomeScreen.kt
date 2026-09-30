@@ -96,6 +96,7 @@ private fun HeroCard(
         ) {
             MangaCover.Book(
                 data = item.sourceCover ?: item.coverUrl,
+                fallbackData = listOf(item.coverUrl),
                 contentDescription = item.title,
                 modifier = Modifier.width(96.dp),
             )
