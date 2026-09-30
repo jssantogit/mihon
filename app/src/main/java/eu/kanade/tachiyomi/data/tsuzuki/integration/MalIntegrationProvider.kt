@@ -232,6 +232,8 @@ class MalIntegrationProvider private constructor(
 
     companion object {
         private const val MAL_SCORE_MAX = 10.0
+        // MAL's manga ranking API has no trending/recently-updated mode. Keep those empty rather
+        // than relabeling a different ranking, and expose only the documented ranking semantics.
         private const val MAL_RANKING_BY_POPULARITY = "bypopularity"
         private const val MAL_RANKING_TOP = "all"
         private const val MAL_RANKING_FAVORITE = "favorite"
