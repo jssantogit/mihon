@@ -10,7 +10,7 @@ import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 
 class ResolveCanonicalArtworkTest {
 
-    // Canonical artwork is durable shared state, so this regression belongs to the full validation lane.
+    // Canonical artwork is durable shared state; validate its full persistence and UI path together.
 
     @Test
     fun `provider precedence resolves cover and banner independently with provenance`() = runTest {
