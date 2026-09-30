@@ -6,17 +6,18 @@ import android.os.Bundle
 import dev.zacsweers.metro.HasMemberInjections
 import dev.zacsweers.metro.Inject
 import eu.kanade.tachiyomi.data.track.TrackerManager
-import tachiyomi.domain.tsuzuki.library.interactor.RefreshUserLibraries
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.util.view.setComposeContent
 import mihon.app.di.appGraph
+import tachiyomi.domain.tsuzuki.library.interactor.RefreshUserLibraries
 import tachiyomi.presentation.core.screens.LoadingScreen
 
 @HasMemberInjections
 abstract class BaseOAuthLoginActivity : BaseActivity() {
 
     @Inject protected lateinit var trackerManager: TrackerManager
+
     @Inject protected lateinit var refreshUserLibraries: RefreshUserLibraries
 
     abstract fun handleResult(uri: Uri)
