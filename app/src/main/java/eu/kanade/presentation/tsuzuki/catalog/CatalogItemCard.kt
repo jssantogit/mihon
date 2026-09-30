@@ -130,9 +130,10 @@ private fun CatalogRatingBadges(
 ) {
     if (scores.isEmpty()) return
 
-    Column(
+    Row(
         modifier = modifier,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         scores.forEach { score ->
             CatalogRatingBadge(score = score)
