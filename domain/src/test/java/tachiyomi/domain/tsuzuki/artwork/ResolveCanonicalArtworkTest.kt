@@ -10,7 +10,7 @@ import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 
 class ResolveCanonicalArtworkTest {
 
-    // Canonical artwork is durable shared state; validate its full persistence and UI path together.
+    // Canonical artwork is durable shared state; validate persistence, source fallback, and UI together.
 
     @Test
     fun `provider precedence resolves cover and banner independently with provenance`() = runTest {
