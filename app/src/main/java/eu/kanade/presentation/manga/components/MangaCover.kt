@@ -70,7 +70,6 @@ enum class MangaCover(val ratio: Float) {
 
 private val CoverPlaceholderColor = Color(0x1F888888)
 
-
 internal fun coverCandidates(
     primary: Any?,
     fallbacks: List<Any?>,
