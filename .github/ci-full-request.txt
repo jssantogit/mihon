@@ -1,3 +1,12 @@
-Tsuzuki Generic Test — isolated ARM64 phone-smoke APK requested on 2026-09-25.
-Verified source code: c174a6cc23927dccb184c7bd49b5671f4f7a0585 (full CI 36186318537 GREEN).
-Build only the generic APK lane from this branch. No merge, PR, live provider probes, or distribution release.
+Tsuzuki full verification request — catalog rating enrichment and browser OAuth fixes.
+
+Scope:
+- Work-level rating enrichment across enabled providers using verified external identities only.
+- Kitsu MAL↔Kitsu mapping support for cross-provider rating lookup.
+- MAL OAuth2/PKCE verifier + state persistence across browser round-trips.
+- Browser OAuth failures surfaced for MAL, Shikimori, and Hikka.
+
+Acceptance:
+- Format, Domain, App, SQLDelight/Supabase gates when applicable, and Release Compile must be green.
+- No title-similarity identity matching.
+- No APK requested by this marker.
