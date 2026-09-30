@@ -174,17 +174,13 @@ class CanonicalLibraryScreenModel private constructor(
                         canonicalReadingRepository
                             .observeProgressByCanonicalTitleId(item.id)
                             .map { progress ->
-                                val sourceCover = if (item.preferredExternalCoverUrl().isNullOrBlank()) {
-                                    try {
-                                        resolveCanonicalSourceManga
-                                            ?.execute(item.id)
-                                            ?.asMangaCover()
-                                    } catch (error: CancellationException) {
-                                        throw error
-                                    } catch (_: Throwable) {
-                                        null
-                                    }
-                                } else {
+                                val sourceCover = try {
+                                    resolveCanonicalSourceManga
+                                        ?.execute(item.id)
+                                        ?.asMangaCover()
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (_: Throwable) {
                                     null
                                 }
                                 item.toCardModel(
