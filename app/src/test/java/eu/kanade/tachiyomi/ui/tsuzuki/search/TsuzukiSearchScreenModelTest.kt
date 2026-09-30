@@ -211,7 +211,7 @@ class TsuzukiSearchScreenModelTest {
         val discover = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
         val trending = discover.blocks.first { it.kind == DiscoverKind.TRENDING }.items.single()
         val popular = discover.blocks.first { it.kind == DiscoverKind.POPULAR }.items.single()
-        trending.scores.map(CatalogScore::provider) shouldBe listOf("kitsu", "mal")
+        trending.scores.map(CatalogScore::provider) shouldBe listOf("mal", "kitsu")
         popular.scores.map(CatalogScore::provider) shouldBe listOf("mal", "kitsu")
     }
 
