@@ -30,24 +30,24 @@ class MaterializeCanonicalTitle internal constructor(
         externalId: String,
         externalIds: Map<String, String> = emptyMap(),
     ): CanonicalTitle {
-        val mappedExisting = buildList {
-            for ((mappedProvider, mappedExternalId) in externalIds) {
-                if (
-                    mappedProvider.isBlank() ||
-                    mappedExternalId.isBlank() ||
-                    (mappedProvider == provider && mappedExternalId == externalId)
-                ) {
-                    continue
-                }
-                repository.getByExternalIdentity(mappedProvider, mappedExternalId)?.let(::add)
+        val mappedExisting = mutableListOf<CanonicalTitle>()
+        for ((mappedProvider, mappedExternalId) in externalIds) {
+            if (
+                mappedProvider.isBlank() ||
+                mappedExternalId.isBlank() ||
+                (mappedProvider == provider && mappedExternalId == externalId)
+            ) {
+                continue
             }
-        }.distinctBy(CanonicalTitle::id)
+            repository.getByExternalIdentity(mappedProvider, mappedExternalId)?.let(mappedExisting::add)
+        }
+        val distinctMappedExisting = mappedExisting.distinctBy(CanonicalTitle::id)
 
         val primaryExisting = repository.getByExternalIdentity(provider, externalId)
         val resolved = when {
             primaryExisting != null -> primaryExisting
-            mappedExisting.size == 1 -> {
-                mappedExisting.single().also { existing ->
+            distinctMappedExisting.size == 1 -> {
+                distinctMappedExisting.single().also { existing ->
                     attachIdentityIfSafe(
                         title = existing,
                         provider = provider,
@@ -75,7 +75,7 @@ class MaterializeCanonicalTitle internal constructor(
             }
         }
 
-        externalIds.forEach { (mappedProvider, mappedExternalId) ->
+        for ((mappedProvider, mappedExternalId) in externalIds) {
             if (
                 mappedProvider.isNotBlank() &&
                 mappedExternalId.isNotBlank() &&
