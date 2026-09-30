@@ -122,13 +122,22 @@ class MangaUpdatesApi(
             }
 
             entries += response.results
-            val reachedTotal = response.totalHits > 0 && entries.size >= response.totalHits
-            if (response.results.isEmpty() || reachedTotal || response.results.size < USER_LIST_PAGE_SIZE) {
+            val responsePageSize = response.perPage
+                .takeIf { it > 0 }
+                ?: USER_LIST_PAGE_SIZE
+            if (
+                !shouldFetchNextUserListPage(
+                    totalHits = response.totalHits,
+                    accumulatedCount = entries.size,
+                    resultCount = response.results.size,
+                    responsePageSize = responsePageSize,
+                )
+            ) {
                 break
             }
 
             val nextPage = response.page + 1
-            check(requestedPage == null || nextPage > requestedPage!!) {
+            check(requestedPage == null || nextPage > requestedPage) {
                 "MangaUpdates list pagination did not advance for list $listId"
             }
             requestedPage = nextPage
@@ -352,6 +361,17 @@ class MangaUpdatesApi(
     companion object {
         private const val BASE_URL = "https://api.mangaupdates.com"
         private const val USER_LIST_PAGE_SIZE = 100
+
+        internal fun shouldFetchNextUserListPage(
+            totalHits: Int,
+            accumulatedCount: Int,
+            resultCount: Int,
+            responsePageSize: Int,
+        ): Boolean {
+            if (resultCount <= 0) return false
+            if (totalHits > 0) return accumulatedCount < totalHits
+            return responsePageSize > 0 && resultCount >= responsePageSize
+        }
 
         private val CONTENT_TYPE = "application/json".toMediaType()
     }
