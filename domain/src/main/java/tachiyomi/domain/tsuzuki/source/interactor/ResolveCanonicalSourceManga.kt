@@ -49,7 +49,9 @@ class ResolveCanonicalSourceManga(
                     "thumbnail=${!persisted?.thumbnailUrl.isNullOrBlank()} mappedMihonId=${mapping.mihonMangaId != null}"
             }
             if (!persisted?.thumbnailUrl.isNullOrBlank() && persisted.initialized) {
-                logcat { "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} selected=persisted" }
+                logcat {
+                    "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} selected=persisted"
+                }
                 return persisted
             }
             if (fallback == null && persisted != null) {
