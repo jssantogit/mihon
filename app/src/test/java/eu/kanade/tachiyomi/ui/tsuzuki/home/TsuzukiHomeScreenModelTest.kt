@@ -18,7 +18,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.history.repository.HistoryRepository
-import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -31,6 +31,7 @@ import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.reader.interactor.ImportLegacyCanonicalProgress
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveCanonicalSourceManga
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TsuzukiHomeScreenModelTest {
@@ -77,6 +78,28 @@ class TsuzukiHomeScreenModelTest {
 
         model.state.value.continueReading.map { it.canonicalTitleId } shouldBe
             listOf("title-1")
+    }
+
+    @Test
+    fun `continue reading resolves cover even when title is outside Library`() = runTest(dispatcher) {
+        val resolver = mockk<ResolveCanonicalSourceManga>()
+        coEvery { resolver.execute("title-1") } returns Manga.create().copy(
+            id = 77L,
+            source = 10L,
+            url = "/dandadan",
+            title = "Dandadan",
+            thumbnailUrl = "https://cdn.example/dandadan.jpg",
+        )
+        val model = createModel(
+            continueReading = MutableStateFlow(listOf(item(updatedAt = 500))),
+            sections = MutableStateFlow(emptyList()),
+            sourceMangaResolver = resolver,
+        )
+
+        advanceUntilIdle()
+
+        model.state.value.continueReading.single().coverUrl shouldBe
+            "https://cdn.example/dandadan.jpg"
     }
 
     @Test
@@ -134,6 +157,8 @@ class TsuzukiHomeScreenModelTest {
             mockk(relaxed = true),
         materializer: MaterializeCanonicalTitleFromCatalog =
             mockk(relaxed = true),
+        sourceMangaResolver: ResolveCanonicalSourceManga =
+            mockk(relaxed = true),
     ): TsuzukiHomeScreenModel {
         val observeHome = mockk<ObserveHomeContinueReading>()
         every { observeHome.subscribe() } returns continueReading
@@ -159,7 +184,7 @@ class TsuzukiHomeScreenModelTest {
             historyRepository = history,
             importLegacyCanonicalProgress = importLegacy,
             materializeCanonicalTitleFromCatalog = materializer,
-            mangaRepository = mockk(relaxed = true),
+            resolveCanonicalSourceManga = sourceMangaResolver,
         )
     }
 

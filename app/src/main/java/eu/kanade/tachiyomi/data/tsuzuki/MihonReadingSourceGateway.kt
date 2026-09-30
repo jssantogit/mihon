@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.network.HttpException
 import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerializationException
 import org.json.JSONException
@@ -104,6 +105,75 @@ class MihonReadingSourceGateway(
         }
     }
 
+    override suspend fun getDetails(candidate: ReadingSourceCandidate): Result<ReadingSourceCandidate> {
+        val disabledSources = sourcePreferences.disabledSources.get()
+        if (candidate.sourceId.toString() in disabledSources) {
+            return Result.failure(
+                ReadingSourceSearchFailure(
+                    kind = ReadingSourceFailureKind.SOURCE_DISABLED,
+                    cause = IllegalStateException("Source ${candidate.sourceId} is disabled"),
+                ),
+            )
+        }
+
+        val source = sourceManager.get(candidate.sourceId)
+        if (source !is CatalogueSource) {
+            return Result.failure(
+                ReadingSourceSearchFailure(
+                    kind = ReadingSourceFailureKind.SOURCE_UNAVAILABLE,
+                    cause = IllegalStateException("Source ${candidate.sourceId} is not an installed CatalogueSource"),
+                ),
+            )
+        }
+
+        return try {
+            val seed = SManga.create().apply {
+                url = candidate.sourceUrl
+                title = candidate.title
+                thumbnail_url = candidate.thumbnailUrl
+                author = candidate.author
+                artist = candidate.artist
+                description = candidate.description
+                genre = candidate.genres?.joinToString(", ")
+                status = candidate.status.toInt()
+            }
+            val details = source.getMangaUpdate(
+                manga = seed,
+                chapters = emptyList(),
+                fetchDetails = true,
+                fetchChapters = false,
+            ).manga
+            Result.success(
+                candidate.copy(
+                    title = details.title.ifBlank { candidate.title },
+                    thumbnailUrl = details.thumbnail_url
+                        ?.takeIf { it.isNotBlank() }
+                        ?: candidate.thumbnailUrl,
+                    author = details.author
+                        ?.takeIf { it.isNotBlank() }
+                        ?: candidate.author,
+                    artist = details.artist
+                        ?.takeIf { it.isNotBlank() }
+                        ?: candidate.artist,
+                    description = details.description
+                        ?.takeIf { it.isNotBlank() }
+                        ?: candidate.description,
+                    genres = details.getGenres()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: candidate.genres,
+                    status = details.status
+                        .takeIf { it != SManga.UNKNOWN }
+                        ?.toLong()
+                        ?: candidate.status,
+                ),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error.toReadingSourceSearchFailure())
+        }
+    }
+
     private fun Throwable.toReadingSourceSearchFailure(): ReadingSourceSearchFailure {
         if (this is ReadingSourceSearchFailure) return this
 
@@ -139,24 +209,33 @@ class MihonReadingSourceGateway(
 
     override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
         return try {
+            val resolvedCandidate = if (
+                candidate.thumbnailUrl.isNullOrBlank() ||
+                candidate.description.isNullOrBlank()
+            ) {
+                getDetails(candidate).getOrElse { candidate }
+            } else {
+                candidate
+            }
             val manga = Manga.create().copy(
-                source = candidate.sourceId,
-                url = candidate.sourceUrl,
-                title = candidate.title,
-                thumbnailUrl = candidate.thumbnailUrl,
-                author = candidate.author,
-                artist = candidate.artist,
-                description = candidate.description,
-                genre = candidate.genres,
-                status = candidate.status,
+                source = resolvedCandidate.sourceId,
+                url = resolvedCandidate.sourceUrl,
+                title = resolvedCandidate.title,
+                thumbnailUrl = resolvedCandidate.thumbnailUrl,
+                author = resolvedCandidate.author,
+                artist = resolvedCandidate.artist,
+                description = resolvedCandidate.description,
+                genre = resolvedCandidate.genres,
+                status = resolvedCandidate.status,
+                initialized = resolvedCandidate !== candidate,
                 favorite = false,
             )
             val localManga = networkToLocalManga(manga)
             val payload = MihonContentBindingPayload(
-                sourceId = candidate.sourceId,
+                sourceId = resolvedCandidate.sourceId,
                 mihonMangaId = localManga.id,
-                sourceUrl = candidate.sourceUrl,
-                language = candidate.language,
+                sourceUrl = resolvedCandidate.sourceUrl,
+                language = resolvedCandidate.language,
             )
             Result.success(
                 MaterializedReadingSource(

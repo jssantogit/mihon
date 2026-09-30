@@ -54,6 +54,7 @@ import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveCanonicalSourceManga
 import kotlin.time.Clock
 import kotlin.time.TimeSource
 
@@ -138,6 +139,7 @@ class CanonicalTitleScreenModel(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
     private val mangaRepository: MangaRepository? = null,
     private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
+    private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -545,31 +547,39 @@ class CanonicalTitleScreenModel(
             .map { it.canonicalChapterId }
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
-        var metadata: tachiyomi.domain.manga.model.Manga? = null
-        val metadataSources = sourceTitleMappingRepository
-            ?.getByCanonicalTitleId(canonicalTitleId)
-            .orEmpty()
-            .sortedByDescending { it.preferredOverride }
-        for (source in metadataSources) {
-            val manga = try {
-                source.mihonMangaId
-                    ?.let { mangaRepository?.getMangaById(it) }
-                    ?: mangaRepository?.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                null
-            }
-            if (
-                manga != null &&
-                (
-                    !manga.thumbnailUrl.isNullOrBlank() ||
-                        !manga.description.isNullOrBlank() ||
-                        !manga.author.isNullOrBlank()
-                    )
-            ) {
-                metadata = manga
-                break
+        var metadata = try {
+            resolveCanonicalSourceManga?.execute(canonicalTitleId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
+        if (metadata == null) {
+            val metadataSources = sourceTitleMappingRepository
+                ?.getByCanonicalTitleId(canonicalTitleId)
+                .orEmpty()
+                .sortedByDescending { it.preferredOverride }
+            for (source in metadataSources) {
+                val manga = try {
+                    source.mihonMangaId
+                        ?.let { mangaRepository?.getMangaById(it) }
+                        ?: mangaRepository?.getMangaByUrlAndSourceId(source.sourceUrl, source.sourceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    null
+                }
+                if (
+                    manga != null &&
+                    (
+                        !manga.thumbnailUrl.isNullOrBlank() ||
+                            !manga.description.isNullOrBlank() ||
+                            !manga.author.isNullOrBlank()
+                        )
+                ) {
+                    metadata = manga
+                    break
+                }
             }
         }
 

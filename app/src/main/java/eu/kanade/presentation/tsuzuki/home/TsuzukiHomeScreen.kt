@@ -7,17 +7,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -35,7 +31,6 @@ import tachiyomi.presentation.core.components.material.Scaffold
 fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
-    onRemoveFromContinueReading: (HomeContinueReadingItem) -> Unit,
     onFolder: (collectionId: String, folderId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -60,29 +55,6 @@ fun TsuzukiHomeScreen(
                         item = hero,
                         onClick = { onContinueReading(hero) },
                     )
-                }
-            }
-
-            if (state.continueReading.isNotEmpty()) {
-                item(key = "continue_header") {
-                    SectionHeader("Continuar lendo")
-                }
-                item(key = "continue_content") {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(
-                            items = state.continueReading,
-                            key = { it.canonicalTitleId },
-                        ) { item ->
-                            ContinueReadingCard(
-                                item = item,
-                                onClick = { onContinueReading(item) },
-                                onRemove = { onRemoveFromContinueReading(item) },
-                            )
-                        }
-                    }
                 }
             }
 
@@ -172,66 +144,6 @@ private fun SectionMessage(message: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     )
-}
-
-@Composable
-private fun ContinueReadingCard(
-    item: HomeContinueReadingItem,
-    onClick: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .width(164.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-    ) {
-        MangaCover.Book(
-            data = item.coverUrl,
-            contentDescription = item.title,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp),
-        )
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    modifier = Modifier.weight(1f),
-                )
-                if (item.newChapterCount > 0) {
-                    Text(
-                        text = "+${item.newChapterCount}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            Text(
-                text = "Capítulo ${item.chapterDisplayNumber}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "Página ${item.lastPageRead + 1}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = onRemove) {
-                Text("Remover")
-            }
-        }
-    }
 }
 
 @Composable

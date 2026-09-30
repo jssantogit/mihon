@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.online.HttpSource
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
@@ -162,6 +163,82 @@ class MihonReadingSourceGatewayTest {
     }
 
     @Test
+    fun `details resolve artwork from exact source url when search candidate has no thumbnail`() = runTest {
+        val detailed = SManga.create().apply {
+            url = "/manga/dandadan"
+            title = "Dandadan"
+            thumbnail_url = "https://cdn.example/dandadan.jpg"
+            author = "Yukinobu Tatsu"
+            initialized = true
+        }
+        val source = TestCatalogueSource(
+            id = 10L,
+            name = "Test Source",
+            lang = "pt-BR",
+            detailResult = detailed,
+        )
+        sourceManager.sourcesList += source
+
+        val result = gateway.getDetails(
+            ReadingSourceCandidate(
+                sourceId = 10L,
+                sourceName = "Test Source",
+                language = "pt-BR",
+                sourceUrl = "/manga/dandadan",
+                title = "Dandadan",
+                thumbnailUrl = null,
+                author = null,
+                artist = null,
+                description = null,
+                genres = null,
+                status = 0L,
+            ),
+        ).getOrThrow()
+
+        result.thumbnailUrl shouldBe "https://cdn.example/dandadan.jpg"
+        result.author shouldBe "Yukinobu Tatsu"
+        source.lastDetailUrl shouldBe "/manga/dandadan"
+    }
+
+    @Test
+    fun `materialize enriches incomplete candidate before persistence`() = runTest {
+        val detailed = SManga.create().apply {
+            url = "/manga/dandadan"
+            title = "Dandadan"
+            thumbnail_url = "https://cdn.example/dandadan.jpg"
+            description = "Aliens and spirits."
+            initialized = true
+        }
+        sourceManager.sourcesList += TestCatalogueSource(
+            id = 10L,
+            name = "Test Source",
+            lang = "pt-BR",
+            detailResult = detailed,
+        )
+
+        gateway.materialize(
+            ReadingSourceCandidate(
+                sourceId = 10L,
+                sourceName = "Test Source",
+                language = "pt-BR",
+                sourceUrl = "/manga/dandadan",
+                title = "Dandadan",
+                thumbnailUrl = null,
+                author = null,
+                artist = null,
+                description = null,
+                genres = null,
+                status = 0L,
+            ),
+        ).getOrThrow()
+
+        mangaRepository.lastInsertedManga?.thumbnailUrl shouldBe
+            "https://cdn.example/dandadan.jpg"
+        mangaRepository.lastInsertedManga?.description shouldBe "Aliens and spirits."
+        mangaRepository.lastInsertedManga?.initialized shouldBe true
+    }
+
+    @Test
     fun `materialize persists accepted candidate metadata without favoriting`() = runTest {
         val candidate = candidate()
         val materialized = gateway.materialize(candidate).getOrThrow()
@@ -216,8 +293,10 @@ class MihonReadingSourceGatewayTest {
         override val lang: String,
         private val searchResults: List<SManga> = emptyList(),
         private val errorToThrow: Throwable? = null,
+        private val detailResult: SManga? = null,
     ) : CatalogueSource {
         var lastPageSearched: Int? = null
+        var lastDetailUrl: String? = null
         var lastQuerySearched: String? = null
         var lastFiltersSearched: FilterList? = null
         private val filters = FilterList()
@@ -232,6 +311,16 @@ class MihonReadingSourceGatewayTest {
             lastQuerySearched = query
             lastFiltersSearched = filters
             return MangasPage(searchResults, false)
+        }
+
+        override suspend fun getMangaUpdate(
+            manga: SManga,
+            chapters: List<eu.kanade.tachiyomi.source.model.SChapter>,
+            fetchDetails: Boolean,
+            fetchChapters: Boolean,
+        ): SMangaUpdate {
+            lastDetailUrl = manga.url
+            return SMangaUpdate(detailResult ?: manga, chapters)
         }
 
         override suspend fun getPopularManga(page: Int): MangasPage = MangasPage(emptyList(), false)

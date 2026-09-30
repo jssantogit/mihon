@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
@@ -71,6 +72,7 @@ import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveCanonicalSourceManga
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CanonicalTitleScreenModelTest {
@@ -143,6 +145,14 @@ class CanonicalTitleScreenModelTest {
 
     @Test
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
+        val sourceResolver = mockk<ResolveCanonicalSourceManga>()
+        coEvery { sourceResolver.execute("title") } returns Manga.create().copy(
+            id = 77L,
+            source = 10L,
+            url = "/dandadan",
+            title = "Dandadan",
+            thumbnailUrl = "https://cdn.example/dandadan.jpg",
+        )
         val resolver = mockk<ResolveCanonicalMetadata>()
         coEvery { resolver.execute("title") } returns Result.success(
             ResolvedMetadata(
@@ -234,12 +244,14 @@ class CanonicalTitleScreenModelTest {
                 ),
             ),
             resolveCanonicalMetadata = resolver,
+            resolveCanonicalSourceManga = sourceResolver,
         )
 
         model.start("title")
         advanceUntilIdle()
 
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+        state.coverUrl shouldBe "https://cdn.example/dandadan.jpg"
         state.tags shouldBe listOf("Psychological", "Crime")
         state.editorialStatus shouldBe "COMPLETED"
         state.editorialFormat shouldBe "MANGA"
