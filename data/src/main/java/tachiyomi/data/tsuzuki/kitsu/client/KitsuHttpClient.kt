@@ -14,6 +14,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import java.io.IOException
@@ -110,6 +111,29 @@ class KitsuHttpClient(
     }
 
     override suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse> = getMangaDetails(id)
+
+    override suspend fun getMangaByMalId(malId: String): Result<KitsuSingleMangaResponse?> {
+        val normalizedMalId = malId.trim()
+        if (normalizedMalId.isEmpty()) return Result.success(null)
+
+        val url = baseUrl.newBuilder()
+            .addPathSegment("mappings")
+            .addQueryParameter("filter[external_site]", "myanimelist/manga")
+            .addQueryParameter("filter[external_id]", normalizedMalId)
+            .addQueryParameter("include", "media")
+            .build()
+
+        return executeRequest<KitsuMappingResponse>(url).map { response ->
+            response.included
+                .firstOrNull { resource -> resource.type == "manga" }
+                ?.let { resource ->
+                    KitsuSingleMangaResponse(
+                        data = resource,
+                        included = response.data,
+                    )
+                }
+        }
+    }
 
     private suspend inline fun <reified T> executeRequest(url: HttpUrl): Result<T> {
         return try {
