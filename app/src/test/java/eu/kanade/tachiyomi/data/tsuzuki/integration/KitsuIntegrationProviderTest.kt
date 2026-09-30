@@ -22,6 +22,7 @@ import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuResourceIdentifier
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
@@ -78,6 +79,115 @@ class KitsuIntegrationProviderTest {
         page.items.single().chapterCount shouldBe 205
         page.items.single().externalIds shouldBe mapOf("mal" to "57325")
         (provider as Any is ChapterEvidenceProvider) shouldBe false
+    }
+
+    @Test
+    fun `kitsu resolves MAL catalog work only through exact published mapping`() = runTest {
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(
+                        KitsuMangaResponse(
+                            data = listOf(
+                                KitsuMangaResource(
+                                    id = "kitsu-one-piece",
+                                    type = "manga",
+                                    attributes = KitsuMangaAttributes(
+                                        canonicalTitle = "One Piece",
+                                        averageRating = "85.08",
+                                    ),
+                                ),
+                            ),
+                            included = listOf(
+                                KitsuMappingResource(
+                                    id = "mapping-one-piece",
+                                    type = "mappings",
+                                    attributes = KitsuMappingAttributes(
+                                        externalSite = "myanimelist/manga",
+                                        externalId = "13",
+                                    ),
+                                    relationships = KitsuMappingRelationships(
+                                        item = KitsuMappingItemRelationship(
+                                            data = KitsuResourceIdentifier(
+                                                type = "manga",
+                                                id = "kitsu-one-piece",
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val identities = (provider as RatingsProvider).resolveExternalIds(
+            CatalogItem(
+                provider = "mal",
+                providerId = "13",
+                title = "One Piece",
+            ),
+        ).getOrThrow()
+
+        identities shouldBe mapOf(
+            "kitsu" to "kitsu-one-piece",
+            "mal" to "13",
+        )
+    }
+
+    @Test
+    fun `kitsu resolves missing MAL mapping from exact Kitsu details`() = runTest {
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(KitsuMangaResponse()),
+                    detailResult = Result.success(
+                        KitsuSingleMangaResponse(
+                            data = KitsuMangaResource(
+                                id = "kitsu-one-piece",
+                                type = "manga",
+                                attributes = KitsuMangaAttributes(
+                                    canonicalTitle = "One Piece",
+                                    averageRating = "85.08",
+                                ),
+                            ),
+                            included = listOf(
+                                KitsuMappingResource(
+                                    id = "mapping-one-piece",
+                                    type = "mappings",
+                                    attributes = KitsuMappingAttributes(
+                                        externalSite = "myanimelist/manga",
+                                        externalId = "13",
+                                    ),
+                                    relationships = KitsuMappingRelationships(
+                                        item = KitsuMappingItemRelationship(
+                                            data = KitsuResourceIdentifier(
+                                                type = "manga",
+                                                id = "kitsu-one-piece",
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val identities = (provider as RatingsProvider).resolveExternalIds(
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "kitsu-one-piece",
+                title = "One Piece",
+            ),
+        ).getOrThrow()
+
+        identities shouldBe mapOf(
+            "kitsu" to "kitsu-one-piece",
+            "mal" to "13",
+        )
     }
 
     @Test

@@ -2,6 +2,8 @@ package eu.kanade.presentation.tsuzuki.catalog
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -123,6 +125,7 @@ fun CatalogCompactCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CatalogRatingBadges(
     scores: List<CatalogScore>,
@@ -130,8 +133,9 @@ private fun CatalogRatingBadges(
 ) {
     if (scores.isEmpty()) return
 
-    Column(
+    FlowRow(
         modifier = modifier,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
     ) {
         scores.forEach { score ->

@@ -104,6 +104,49 @@ class KitsuIntegrationProvider private constructor(
             )
         }
 
+    override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+        val knownKitsuId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank)
+
+        if (knownKitsuId != null) {
+            val known = buildMap {
+                put(integrationId.value, knownKitsuId)
+                putAll(item.externalIds)
+            }
+            if ("mal" in known) return Result.success(known)
+
+            return delegate.getDetails(knownKitsuId).map { details ->
+                buildMap {
+                    putAll(known)
+                    putAll(details.externalIds)
+                }
+            }
+        }
+
+        val malId = when {
+            item.provider == "mal" -> item.providerId
+            else -> item.externalIds["mal"]
+        }?.takeIf(String::isNotBlank) ?: return Result.success(emptyMap())
+
+        return delegate.search(
+            CatalogQuery(
+                query = item.title,
+                limit = RATING_IDENTITY_SEARCH_LIMIT,
+            ),
+        ).map { page ->
+            val exact = page.items.firstOrNull { candidate ->
+                candidate.externalIds["mal"] == malId
+            } ?: return@map emptyMap()
+
+            buildMap {
+                put(integrationId.value, exact.providerId)
+                putAll(exact.externalIds)
+            }
+        }
+    }
+
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
         UserLibrarySnapshot(
             lists = KITSU_USER_LISTS,
@@ -197,6 +240,7 @@ class KitsuIntegrationProvider private constructor(
 
     companion object {
         private const val KITSU_SCORE_MAX = 100.0
+        private const val RATING_IDENTITY_SEARCH_LIMIT = 10
         private const val KITSU_STATUS_SELECTION_GROUP = "kitsu:status"
 
         private val KITSU_USER_LISTS = listOf(

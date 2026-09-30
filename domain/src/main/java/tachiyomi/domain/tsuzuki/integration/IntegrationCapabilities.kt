@@ -5,6 +5,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.TrackingUpdate
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
@@ -49,6 +50,40 @@ interface RatingsProvider {
     val integrationId: IntegrationId
 
     suspend fun ratings(externalId: String): Result<List<ExternalRating>>
+
+    /**
+     * Adds only identities that can be proven by provider IDs or provider-published mappings.
+     * Implementations may use title search to find candidates, but title equality alone must never
+     * be returned as identity evidence.
+     */
+    suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+        val externalId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank) ?: return Result.success(emptyMap())
+
+        return Result.success(mapOf(integrationId.value to externalId))
+    }
+
+    /**
+     * Resolves this provider's rating for a catalog work without treating the catalog provider as
+     * rating authority. The default path only accepts an exact known provider identity.
+     */
+    suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+        val externalId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank) ?: return Result.success(null)
+
+        return ratings(externalId).map { values ->
+            values.firstOrNull()?.let { rating ->
+                CatalogRatingMatch(
+                    externalId = externalId,
+                    rating = rating,
+                )
+            }
+        }
+    }
 }
 
 interface TrackingProvider {

@@ -12,9 +12,34 @@ class MyAnimeListApiTest {
 
     @Test
     fun `auth url uses the user supplied client id`() {
-        val url = MyAnimeListApi.authUrl("user-owned-client").toHttpUrl()
+        val url = MyAnimeListApi.authUrl(
+            clientId = "user-owned-client",
+            codeVerifier = "persisted-verifier",
+        ).toHttpUrl()
 
         url.queryParameter("client_id") shouldBe "user-owned-client"
+        url.queryParameter("redirect_uri") shouldBe MyAnimeListApi.CALLBACK_URL
+        url.queryParameter("code_challenge") shouldBe "persisted-verifier"
+        url.queryParameter("code_challenge_method") shouldBe "plain"
+    }
+
+    @Test
+    fun `access token request reuses redirect uri and persisted verifier`() {
+        val request = MyAnimeListApi.accessTokenRequest(
+            authCode = "authorization-code",
+            codeVerifier = "persisted-verifier",
+            clientId = "user-owned-client",
+        )
+        val body = request.body as FormBody
+        val values = (0 until body.size).associate { index ->
+            body.name(index) to body.value(index)
+        }
+
+        values["client_id"] shouldBe "user-owned-client"
+        values["code"] shouldBe "authorization-code"
+        values["code_verifier"] shouldBe "persisted-verifier"
+        values["redirect_uri"] shouldBe MyAnimeListApi.CALLBACK_URL
+        values["grant_type"] shouldBe "authorization_code"
     }
 
     @Test
