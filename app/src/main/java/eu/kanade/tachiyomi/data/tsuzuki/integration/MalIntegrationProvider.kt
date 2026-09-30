@@ -9,6 +9,8 @@ import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.MalIntegrationApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MalUserListEntry
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
