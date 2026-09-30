@@ -5,12 +5,22 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticEvent
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticSanitizer
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
@@ -36,6 +46,7 @@ class ResolveReadingSourceTest {
     private lateinit var mappings: FakeSourceTitleMappingRepository
     private lateinit var preferences: FakeReadingSourcePreferenceRepository
     private lateinit var gateway: FakeReadingSourceGateway
+    private lateinit var diagnostics: FakeDiagnosticRecorder
     private lateinit var resolver: ResolveReadingSource
 
     @BeforeEach
@@ -44,6 +55,7 @@ class ResolveReadingSourceTest {
         mappings = FakeSourceTitleMappingRepository()
         preferences = FakeReadingSourcePreferenceRepository()
         gateway = FakeReadingSourceGateway()
+        diagnostics = FakeDiagnosticRecorder()
         resolver = ResolveReadingSource(
             canonicalTitleRepository = titles,
             sourceTitleMappingRepository = mappings,
@@ -56,6 +68,7 @@ class ResolveReadingSourceTest {
                 idFactory = { "new-mapping" },
                 clock = { 1000L },
             ),
+            diagnosticRecorder = diagnostics,
         )
     }
 
@@ -105,6 +118,18 @@ class ResolveReadingSourceTest {
         titles.insert(title("title-1", "One Piece"))
 
         resolver.execute("title-1", "en") shouldBe SourceResolutionResult.NoPreferredSources("en")
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.NO_PREFERRED_SOURCES
+    }
+
+    @Test
+    fun `missing canonical title returns NotFound with terminal diagnostic`() = runTest {
+        resolver.execute("missing-title", "en") shouldBe SourceResolutionResult.NotFound(
+            searchedSourceIds = emptyList(),
+            canBroaden = false,
+        )
+
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.NOT_FOUND_NO_CANDIDATES
+        gateway.searchedSourceIds shouldBe emptyList()
     }
 
     @Test
@@ -257,6 +282,262 @@ class ResolveReadingSourceTest {
         shouldThrow<CancellationException> {
             resolver.execute("title-1", "en")
         }
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.CANCELLED
+    }
+
+    @Test
+    fun `reused mapping has correlated operation events and new executions get new ids`() = runTest {
+        mappings.upsert(mapping("saved", "title-1", 10L, "en"))
+
+        resolver.execute("title-1", "en")
+        val firstOperationId = diagnostics.events.last().operationId
+        resolver.execute("title-1", "en")
+        val secondOperationId = diagnostics.events.last().operationId
+
+        (firstOperationId != secondOperationId) shouldBe true
+        val firstExecutionEvents = diagnostics.events.filter { it.operationId == firstOperationId }
+        firstExecutionEvents.first().name shouldBe DiagnosticEventName.SOURCE_RESOLVE_STARTED
+        firstExecutionEvents.last().outcome shouldBe DiagnosticOutcome.REUSED
+    }
+
+    @Test
+    fun `all failed source attempts are diagnosed while public result remains NotFound`() = runTest {
+        titles.insert(title("title-1", "Bleach"))
+        preferences.replaceForLanguage("en", listOf(10L, 20L))
+        gateway.sourceErrors[10L] = IllegalStateException("private exception text")
+        gateway.typedSearchErrors[20L] = IllegalArgumentException("private typed failure")
+        gateway.availableSources = listOf(
+            ReadingSourceDescriptor(10L, "One", "en"),
+            ReadingSourceDescriptor(20L, "Two", "en"),
+        )
+
+        resolver.execute("title-1", "en") shouldBe SourceResolutionResult.NotFound(
+            searchedSourceIds = listOf(10L, 20L),
+            canBroaden = false,
+        )
+
+        val operationEvents = diagnostics.events
+        operationEvents.filter { it.name == DiagnosticEventName.SOURCE_SEARCH_FAILED }.size shouldBe 2
+        operationEvents.filter { it.name == DiagnosticEventName.SOURCE_SEARCH_FAILED }
+            .map { it.outcome }
+            .toSet() shouldBe setOf(DiagnosticOutcome.THREW, DiagnosticOutcome.TYPED_FAILURE)
+        operationEvents.last().outcome shouldBe DiagnosticOutcome.NOT_FOUND_WITH_SOURCE_FAILURES
+        operationEvents.any { it.toString().contains("private") } shouldBe false
+    }
+
+    @Test
+    fun `exact candidate records confidence auto confirmation and resolved terminal`() = runTest {
+        titles.insert(title("title-1", "Attack on Titan"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.searchResults[10L] = listOf(candidate(10L, "/aot", "Attack on Titan"))
+        gateway.materializeResult = Result.success(MaterializedReadingSource(555L, 10L, "/aot", "en"))
+
+        resolver.execute("title-1", "en")
+
+        val matchEvent = diagnostics.events.single {
+            it.name == DiagnosticEventName.SOURCE_MATCH_EVALUATED && it.stage == DiagnosticStage.MATCH
+        }
+        matchEvent.attributes["confidence_score"] shouldBe DiagnosticAttributeValue.Number(100L)
+        matchEvent.attributes["auto_confirm_attempted"] shouldBe DiagnosticAttributeValue.Flag(true)
+        matchEvent.attributes["ambiguous"] shouldBe DiagnosticAttributeValue.Flag(false)
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.SUCCEEDED
+        diagnostics.events.last().durationMillis?.let { (it >= 0L) shouldBe true } ?: error("duration missing")
+    }
+
+    @Test
+    fun `empty search results record candidate count and no candidates terminal`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        preferences.replaceForLanguage("en", listOf(10L))
+
+        resolver.execute("title-1", "en")
+
+        diagnostics.events.single { it.name == DiagnosticEventName.SOURCE_SEARCH_COMPLETED }
+            .attributes["candidate_count"] shouldBe DiagnosticAttributeValue.Number(0L)
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.NOT_FOUND_NO_CANDIDATES
+    }
+
+    @Test
+    fun `confirmation failure remains needs confirmation and is recorded`() = runTest {
+        titles.insert(title("title-1", "Attack on Titan"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.searchResults[10L] = listOf(candidate(10L, "/aot", "Attack on Titan"))
+        gateway.materializeResult = Result.failure(IllegalStateException("private materialization detail"))
+
+        resolver.execute("title-1", "en").shouldBeInstanceOf<SourceResolutionResult.NeedsConfirmation>()
+
+        diagnostics.events.single { it.name == DiagnosticEventName.SOURCE_MAPPING_CONFIRMATION_FAILED }
+            .outcome shouldBe DiagnosticOutcome.THREW
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.NEEDS_CONFIRMATION
+        diagnostics.events.any { it.toString().contains("private") } shouldBe false
+    }
+
+    @Test
+    fun `cancellation during automatic confirmation propagates`() = runTest {
+        titles.insert(title("title-1", "Attack on Titan"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.searchResults[10L] = listOf(candidate(10L, "/aot", "Attack on Titan"))
+        gateway.materializeResult = Result.failure(CancellationException("cancelled"))
+
+        shouldThrow<CancellationException> { resolver.execute("title-1", "en") }
+
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.CANCELLED
+    }
+
+    @Test
+    fun `installed source listing failure is captured without changing broadened search`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.installedError = IllegalStateException("private installed-list failure")
+
+        resolver.execute("title-1", "en", broaden = true) shouldBe SourceResolutionResult.NotFound(
+            searchedSourceIds = listOf(10L),
+            canBroaden = false,
+        )
+
+        diagnostics.events.any {
+            it.name == DiagnosticEventName.SOURCE_RESOLVE_PREFERRED_SOURCES &&
+                it.outcome == DiagnosticOutcome.THREW
+        } shouldBe true
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.NOT_FOUND_NO_CANDIDATES
+    }
+
+    @Test
+    fun `broadened search keeps diagnostic attempts after one hundred sources`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        val sourceIds = (1L..101L).toList()
+        preferences.replaceForLanguage("en", sourceIds)
+
+        resolver.execute("title-1", "en", broaden = true)
+
+        diagnostics.events.filter { it.name == DiagnosticEventName.SOURCE_SEARCH_STARTED }.size shouldBe 101
+        diagnostics.events.single {
+            it.name == DiagnosticEventName.SOURCE_SEARCH_STARTED && it.attempt == 101
+        }.attributes["source_id"] shouldBe DiagnosticAttributeValue.Number(101L)
+        val startDraft = diagnostics.events.single {
+            it.name == DiagnosticEventName.SOURCE_SEARCH_STARTED && it.attempt == 101
+        }
+        val completedDraft = diagnostics.events.single {
+            it.name == DiagnosticEventName.SOURCE_SEARCH_COMPLETED && it.attempt == 101
+        }
+        StructuredDiagnosticSanitizer.sanitize(startDraft)?.attempt shouldBe 101
+        StructuredDiagnosticSanitizer.sanitize(startDraft)?.attributes?.get(DiagnosticAttribute.SOURCE_ID) shouldBe
+            DiagnosticAttributeValue.Number(101L)
+        StructuredDiagnosticSanitizer.sanitize(completedDraft)?.attempt shouldBe 101
+    }
+
+    @Test
+    fun `concurrent executions keep independent operation ids`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        titles.insert(title("title-2", "Bleach"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.searchDelayMillis = 1L
+
+        val first = async { resolver.execute("title-1", "en") }
+        val second = async { resolver.execute("title-2", "en") }
+        first.await()
+        second.await()
+
+        val operationIds = diagnostics.events.mapNotNull { it.operationId }.distinct()
+        operationIds.size shouldBe 2
+        operationIds.forEach { id ->
+            diagnostics.events.filter { it.operationId == id }.map { it.sessionId }.distinct().size shouldBe 1
+            diagnostics.events.filter { it.operationId == id }.last().name shouldBe
+                DiagnosticEventName.SOURCE_RESOLVE_COMPLETED
+        }
+    }
+
+    @Test
+    fun `diagnostic recorder failure never changes resolver result`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        diagnostics.recordFailure = IllegalStateException("recorder failure")
+
+        resolver.execute("title-1", "en") shouldBe SourceResolutionResult.NotFound(
+            searchedSourceIds = listOf(10L),
+            canBroaden = false,
+        )
+    }
+
+    @Test
+    fun `ordinary pseudonym lookup failure does not change resolver result`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        diagnostics.referenceFailure = IllegalStateException("unsafe reference failure")
+
+        resolver.execute("title-1", "en") shouldBe SourceResolutionResult.NotFound(
+            searchedSourceIds = listOf(10L),
+            canBroaden = false,
+        )
+
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.NOT_FOUND_NO_CANDIDATES
+        diagnostics.events.any { "canonical_title_ref" in it.attributes } shouldBe false
+    }
+
+    @Test
+    fun `cancellation from diagnostic identity lookup propagates`() = runTest {
+        val expected = CancellationException("diagnostic cancellation")
+        diagnostics.referenceFailure = expected
+
+        val thrown = shouldThrow<CancellationException> {
+            resolver.execute("title-1", "en")
+        }
+        (thrown === expected) shouldBe true
+    }
+
+    @Test
+    fun `recorder cancellation propagates`() = runTest {
+        val expected = CancellationException("diagnostic recorder cancellation")
+        diagnostics.recordFailure = expected
+
+        val thrown = shouldThrow<CancellationException> {
+            resolver.execute("missing-title", "en")
+        }
+
+        (thrown === expected) shouldBe true
+    }
+
+    @Test
+    fun `terminal recorder failure preserves original resolver exception instance`() = runTest {
+        val original = IllegalStateException("business repository failure")
+        val recorderFailure = IllegalArgumentException("terminal recorder failure")
+        titles.getByIdFailure = original
+        diagnostics.failedEventName = DiagnosticEventName.SOURCE_RESOLVE_COMPLETED
+        diagnostics.recordFailure = recorderFailure
+
+        val thrown = shouldThrow<IllegalStateException> {
+            resolver.execute("title-1", "en")
+        }
+
+        (thrown === original) shouldBe true
+    }
+
+    @Test
+    fun `repair materialization failure propagates unchanged`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        mappings.upsert(
+            mapping("incomplete", "title-1", 10L, "en", mihonMangaId = null),
+        )
+        val original = IllegalStateException("materialization failure")
+        gateway.materializeResult = Result.failure(original)
+
+        val thrown = shouldThrow<IllegalStateException> {
+            resolver.execute("title-1", "en")
+        }
+
+        (thrown === original) shouldBe true
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.FAILED
+    }
+
+    @Test
+    fun `typed cancellation result propagates`() = runTest {
+        titles.insert(title("title-1", "One Piece"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.typedSearchErrors[10L] = CancellationException("cancelled")
+
+        shouldThrow<CancellationException> {
+            resolver.execute("title-1", "en")
+        }
+        diagnostics.events.last().outcome shouldBe DiagnosticOutcome.CANCELLED
     }
 
     private fun title(id: String, name: String) =
@@ -301,7 +582,11 @@ class ResolveReadingSourceTest {
 
     private class FakeCanonicalTitleRepository : CanonicalTitleRepository {
         val titles = mutableMapOf<String, CanonicalTitle>()
-        override suspend fun getById(id: String): CanonicalTitle? = titles[id]
+        var getByIdFailure: Throwable? = null
+        override suspend fun getById(id: String): CanonicalTitle? {
+            getByIdFailure?.let { throw it }
+            return titles[id]
+        }
         override fun getByIdAsFlow(id: String): Flow<CanonicalTitle?> = emptyFlow()
         override suspend fun getByExternalIdentity(provider: String, externalId: String): CanonicalTitle? = null
         override suspend fun getOrCreateByExternalIdentity(
@@ -344,21 +629,48 @@ class ResolveReadingSourceTest {
         val searchedSourceIds = mutableListOf<Long>()
         val searchResults = mutableMapOf<Long, List<ReadingSourceCandidate>>()
         val sourceErrors = mutableMapOf<Long, Throwable>()
+        val typedSearchErrors = mutableMapOf<Long, Throwable>()
+        var installedError: Throwable? = null
         var availableSources = emptyList<ReadingSourceDescriptor>()
         var materializeResult: Result<MaterializedReadingSource> = Result.failure(IllegalStateException())
         var materializeCallCount = 0
+        var searchDelayMillis = 0L
 
-        override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> = availableSources
+        override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> {
+            installedError?.let { throw it }
+            return availableSources
+        }
 
         override suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>> {
+            if (searchDelayMillis > 0L) delay(searchDelayMillis)
             searchedSourceIds += sourceId
             sourceErrors[sourceId]?.let { throw it }
+            typedSearchErrors[sourceId]?.let { return Result.failure(it) }
             return Result.success(searchResults[sourceId] ?: emptyList())
         }
 
         override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
             materializeCallCount++
             return materializeResult
+        }
+    }
+
+    private class FakeDiagnosticRecorder : StructuredDiagnosticRecorder {
+        override val sessionId: String = "00000000-0000-0000-0000-000000000001"
+        val events = mutableListOf<StructuredDiagnosticEvent>()
+        var recordFailure: Throwable? = null
+        var failedEventName: DiagnosticEventName? = null
+        var referenceFailure: Throwable? = null
+        override fun canonicalTitleReference(canonicalTitleId: String): String {
+            referenceFailure?.let { throw it }
+            return "0123456789abcdef"
+        }
+        override fun mihonMangaReference(mihonMangaId: Long): String = "fedcba9876543210"
+        override fun record(event: StructuredDiagnosticEvent) {
+            if (failedEventName == null || failedEventName == event.name) {
+                recordFailure?.let { throw it }
+            }
+            events += event
         }
     }
 }
