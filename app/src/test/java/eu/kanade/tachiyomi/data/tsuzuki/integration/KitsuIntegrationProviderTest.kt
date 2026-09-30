@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaStaffData
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaTitles
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
@@ -79,6 +80,59 @@ class KitsuIntegrationProviderTest {
         page.items.single().chapterCount shouldBe 205
         page.items.single().externalIds shouldBe mapOf("mal" to "57325")
         (provider as Any is ChapterEvidenceProvider) shouldBe false
+    }
+
+    @Test
+    fun `kitsu reads MAL mapping from live JSON API relationship linkage`() = runTest {
+        val response = Json {
+            ignoreUnknownKeys = true
+        }.decodeFromString<KitsuMangaResponse>(
+            """
+            {
+              "data": [
+                {
+                  "id": "kitsu-one-piece",
+                  "type": "manga",
+                  "attributes": {
+                    "canonicalTitle": "One Piece",
+                    "averageRating": "85.08"
+                  },
+                  "relationships": {
+                    "mappings": {
+                      "data": [
+                        {
+                          "type": "mappings",
+                          "id": "mapping-one-piece"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "included": [
+                {
+                  "id": "mapping-one-piece",
+                  "type": "mappings",
+                  "attributes": {
+                    "externalSite": "myanimelist/manga",
+                    "externalId": "13"
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(response),
+                ),
+            ),
+        )
+
+        val page = provider.search(CatalogQuery(query = "One Piece")).getOrThrow()
+
+        page.items.single().externalIds shouldBe mapOf("mal" to "13")
     }
 
     @Test
