@@ -55,6 +55,7 @@ class SearchIntegrations(
         }
 
         val activeProviderIds = providers.map { it.integrationId.value }.toSet()
+        // Catalog rows may need provider detail lookups; keep network pressure bounded.
         val semaphore = Semaphore(RATING_LOOKUP_CONCURRENCY)
 
         items.map { item ->
