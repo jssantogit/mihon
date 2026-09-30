@@ -52,6 +52,20 @@ interface RatingsProvider {
     suspend fun ratings(externalId: String): Result<List<ExternalRating>>
 
     /**
+     * Adds only identities that can be proven by provider IDs or provider-published mappings.
+     * Implementations may use title search to find candidates, but title equality alone must never
+     * be returned as identity evidence.
+     */
+    suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+        val externalId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank) ?: return Result.success(emptyMap())
+
+        return Result.success(mapOf(integrationId.value to externalId))
+    }
+
+    /**
      * Resolves this provider's rating for a catalog work without treating the catalog provider as
      * rating authority. The default path only accepts an exact known provider identity.
      */
