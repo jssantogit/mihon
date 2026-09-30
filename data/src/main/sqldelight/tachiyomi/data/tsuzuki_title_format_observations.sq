@@ -1,0 +1,33 @@
+CREATE TABLE tsuzuki_title_format_observations(
+    canonical_title_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    format TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, provider),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_title_format_provider_index
+ON tsuzuki_title_format_observations(provider);
+
+getAllTsuzukiTitleFormatObservations:
+SELECT *
+FROM tsuzuki_title_format_observations
+ORDER BY canonical_title_id ASC, provider ASC;
+
+upsertTsuzukiTitleFormatObservation:
+INSERT INTO tsuzuki_title_format_observations(
+    canonical_title_id,
+    provider,
+    format,
+    updated_at
+)
+VALUES (
+    :canonicalTitleId,
+    :provider,
+    :format,
+    :updatedAt
+)
+ON CONFLICT(canonical_title_id, provider) DO UPDATE SET
+    format = excluded.format,
+    updated_at = excluded.updated_at;
