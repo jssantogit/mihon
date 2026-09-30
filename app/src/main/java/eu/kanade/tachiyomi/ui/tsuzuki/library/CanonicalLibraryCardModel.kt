@@ -39,6 +39,7 @@ data class CanonicalLibraryCardModel(
     val originListOptions: Map<String, Set<CanonicalLibraryListFilterOption>> = emptyMap(),
     val format: CatalogItemFormat = CatalogItemFormat.UNKNOWN,
     val hasLocalMembership: Boolean = true,
+    val coverUrl: String? = null,
 ) {
     val origins: Set<String>
         get() = originStatuses.keys + originListKeys.keys
@@ -46,6 +47,7 @@ data class CanonicalLibraryCardModel(
 
 internal fun UnifiedLibraryTitle.toCardModel(
     progress: List<CanonicalChapterProgress>,
+    localCoverUrl: String? = null,
 ): CanonicalLibraryCardModel {
     val readingState = progress.toReadingState()
     val originStatuses = buildMap<String, Set<LibraryStatus>> {
@@ -92,11 +94,13 @@ internal fun UnifiedLibraryTitle.toCardModel(
         originListOptions = originListOptions,
         format = format,
         hasLocalMembership = localEntry != null,
+        coverUrl = preferredExternalCoverUrl() ?: localCoverUrl,
     )
 }
 
 internal fun CanonicalLibraryItem.toCardModel(
     progress: List<CanonicalChapterProgress>,
+    localCoverUrl: String? = null,
 ): CanonicalLibraryCardModel = CanonicalLibraryCardModel(
     canonicalTitleId = title.id,
     title = title.displayTitle,
@@ -106,6 +110,7 @@ internal fun CanonicalLibraryItem.toCardModel(
     originStatuses = mapOf(LOCAL_LIBRARY_ORIGIN to setOf(entry.status)),
     format = CatalogItemFormat.UNKNOWN,
     hasLocalMembership = true,
+    coverUrl = localCoverUrl,
 )
 
 internal fun filterCanonicalLibraryCards(
@@ -158,3 +163,29 @@ internal fun availableProviderListFilters(
         )
         .toList()
 }
+
+
+private fun UnifiedLibraryTitle.preferredExternalCoverUrl(): String? =
+    externalMemberships
+        .asSequence()
+        .filter { !it.coverUrl.isNullOrBlank() }
+        .sortedWith(
+            compareBy(
+                { membership ->
+                    LIBRARY_ARTWORK_PROVIDER_PRECEDENCE.indexOf(membership.provider)
+                        .takeIf { it >= 0 }
+                        ?: Int.MAX_VALUE
+                },
+                { it.provider },
+                { it.externalId },
+            ),
+        )
+        .mapNotNull { it.coverUrl }
+        .firstOrNull()
+
+private val LIBRARY_ARTWORK_PROVIDER_PRECEDENCE = listOf(
+    "kitsu",
+    "mal",
+    "mangaupdates",
+    "bangumi",
+)
