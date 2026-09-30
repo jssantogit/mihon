@@ -9,8 +9,8 @@ import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALListItemStatus
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALManga
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALSearchResult
-import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALUserListPage
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALUser
+import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALUserListPage
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.toTrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
