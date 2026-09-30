@@ -109,7 +109,7 @@ class MalIntegrationProvider private constructor(
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
         UserLibrarySnapshot(
             lists = MAL_USER_LISTS,
-            entries = api.getUserMangaList().map(MalUserListEntry::toUserLibraryEntry),
+            entries = api.getUserMangaList().map { it.toUserLibraryEntry() },
         )
     }
 
