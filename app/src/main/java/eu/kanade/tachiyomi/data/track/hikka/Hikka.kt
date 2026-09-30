@@ -9,6 +9,8 @@ import eu.kanade.tachiyomi.data.track.hikka.dto.HKOAuth
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
@@ -48,6 +50,23 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
 
     fun hasApplicationCredentials(): Boolean =
         getClientReference().isNotBlank() && getClientSecret().isNotBlank()
+
+    override val isLoggedIn: Boolean
+        get() = userOwnedCredentialSessionActive(
+            baseLoggedIn = super.isLoggedIn,
+            getClientReference(),
+            getClientSecret(),
+        )
+
+    override val isLoggedInFlow: Flow<Boolean> by lazy {
+        combine(
+            super.isLoggedInFlow,
+            trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_REFERENCE_KEY).changes(),
+            trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_SECRET_KEY).changes(),
+        ) { baseLoggedIn, clientReference, clientSecret ->
+            userOwnedCredentialSessionActive(baseLoggedIn, clientReference, clientSecret)
+        }
+    }
 
     fun setApplicationCredentials(clientReference: String, clientSecret: String) {
         val normalizedReference = clientReference.trim()

@@ -7,6 +7,8 @@ import eu.kanade.tachiyomi.data.track.BaseTracker
 import eu.kanade.tachiyomi.data.track.DeletableTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
@@ -45,6 +47,21 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
         .trim()
 
     fun hasClientId(): Boolean = getClientId().isNotBlank()
+
+    override val isLoggedIn: Boolean
+        get() = userOwnedCredentialSessionActive(
+            baseLoggedIn = super.isLoggedIn,
+            getClientId(),
+        )
+
+    override val isLoggedInFlow: Flow<Boolean> by lazy {
+        combine(
+            super.isLoggedInFlow,
+            trackPreferences.integrationCredential(MAL_INTEGRATION_ID, MAL_CLIENT_ID_KEY).changes(),
+        ) { baseLoggedIn, clientId ->
+            userOwnedCredentialSessionActive(baseLoggedIn, clientId)
+        }
+    }
 
     fun setClientId(clientId: String) {
         val normalized = clientId.trim()

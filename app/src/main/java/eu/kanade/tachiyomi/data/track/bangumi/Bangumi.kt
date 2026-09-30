@@ -5,6 +5,8 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.BaseTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import tachiyomi.i18n.MR
 import tachiyomi.domain.track.model.Track as DomainTrack
 
@@ -148,6 +150,28 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
         trackPreferences.integrationCredential(INTEGRATION_ID, ACCESS_TOKEN_KEY).get().trim()
 
     fun hasPersonalAccessToken(): Boolean = getPersonalAccessToken().isNotBlank()
+
+    override val isLoggedIn: Boolean
+        get() = personalTokenSessionActive(
+            baseLoggedIn = super.isLoggedIn,
+            password = getPassword(),
+            accessToken = getPersonalAccessToken(),
+            expectedPasswordMarker = PERSONAL_TOKEN_MARKER,
+        )
+
+    override val isLoggedInFlow: Flow<Boolean> by lazy {
+        combine(
+            super.isLoggedInFlow,
+            trackPreferences.integrationCredential(INTEGRATION_ID, ACCESS_TOKEN_KEY).changes(),
+        ) { baseLoggedIn, accessToken ->
+            personalTokenSessionActive(
+                baseLoggedIn = baseLoggedIn,
+                password = getPassword(),
+                accessToken = accessToken,
+                expectedPasswordMarker = PERSONAL_TOKEN_MARKER,
+            )
+        }
+    }
 
     override fun logout() {
         super.logout()

@@ -7,6 +7,8 @@ import eu.kanade.tachiyomi.data.track.BaseTracker
 import eu.kanade.tachiyomi.data.track.DeletableTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.shikimori.dto.SMOAuth
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
@@ -53,6 +55,23 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
 
     fun hasApplicationCredentials(): Boolean =
         getClientId().isNotBlank() && getClientSecret().isNotBlank()
+
+    override val isLoggedIn: Boolean
+        get() = userOwnedCredentialSessionActive(
+            baseLoggedIn = super.isLoggedIn,
+            getClientId(),
+            getClientSecret(),
+        )
+
+    override val isLoggedInFlow: Flow<Boolean> by lazy {
+        combine(
+            super.isLoggedInFlow,
+            trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_ID_KEY).changes(),
+            trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_SECRET_KEY).changes(),
+        ) { baseLoggedIn, clientId, clientSecret ->
+            userOwnedCredentialSessionActive(baseLoggedIn, clientId, clientSecret)
+        }
+    }
 
     fun setApplicationCredentials(clientId: String, clientSecret: String) {
         val normalizedClientId = clientId.trim()
