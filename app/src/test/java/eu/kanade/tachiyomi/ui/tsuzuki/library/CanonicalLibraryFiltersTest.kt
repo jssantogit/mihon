@@ -90,11 +90,53 @@ class CanonicalLibraryFiltersTest {
         result.map { it.canonicalTitleId } shouldContainExactly listOf("custom")
     }
 
+
+    @Test
+    fun `provider list options expose named custom lists but hide status mirrors`() {
+        val items = listOf(
+            card(
+                id = "mal",
+                originStatuses = mapOf("mal" to setOf(LibraryStatus.PLANNING)),
+                originListKeys = mapOf("mal" to setOf("mal:status:plan_to_read")),
+                originListOptions = mapOf(
+                    "mal" to setOf(
+                        CanonicalLibraryListFilterOption(
+                            key = "mal:status:plan_to_read",
+                            title = "Plan to Read",
+                            selectionGroup = "mal:status",
+                        ),
+                    ),
+                ),
+                format = CatalogItemFormat.MANGA,
+            ),
+            card(
+                id = "mu",
+                originStatuses = mapOf("mangaupdates" to emptySet()),
+                originListKeys = mapOf("mangaupdates" to setOf("mangaupdates:list:99")),
+                originListOptions = mapOf(
+                    "mangaupdates" to setOf(
+                        CanonicalLibraryListFilterOption(
+                            key = "mangaupdates:list:99",
+                            title = "Favorites",
+                            selectionGroup = "mangaupdates:list",
+                        ),
+                    ),
+                ),
+                format = CatalogItemFormat.MANGA,
+            ),
+        )
+
+        availableProviderListFilters(items, "mal") shouldContainExactly emptyList()
+        availableProviderListFilters(items, "mangaupdates")
+            .map { it.key to it.title } shouldContainExactly listOf("mangaupdates:list:99" to "Favorites")
+    }
+
     private fun card(
         id: String,
         originStatuses: Map<String, Set<LibraryStatus>>,
         format: CatalogItemFormat,
         originListKeys: Map<String, Set<String>> = emptyMap(),
+        originListOptions: Map<String, Set<CanonicalLibraryListFilterOption>> = emptyMap(),
     ) = CanonicalLibraryCardModel(
         canonicalTitleId = id,
         title = id,
@@ -103,6 +145,7 @@ class CanonicalLibraryFiltersTest {
         readingState = CanonicalLibraryReadingState.NOT_STARTED,
         originStatuses = originStatuses,
         originListKeys = originListKeys,
+        originListOptions = originListOptions,
         format = format,
         hasLocalMembership = "tsuzuki" in originStatuses,
     )
