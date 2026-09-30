@@ -216,7 +216,7 @@ class TsuzukiSearchScreenModelTest {
     }
 
     @Test
-    fun `discover enriches a catalog item with every active provider rating even when peers do not list it`() = runTest(dispatcher) {
+    fun `discover enriches a catalog item with every active provider rating even when peers do not list it`() = runTest(\n        dispatcher,\n    ) {
         val kitsuDiscovery = object : DiscoveryProvider {
             override val integrationId = IntegrationId("kitsu")
 
