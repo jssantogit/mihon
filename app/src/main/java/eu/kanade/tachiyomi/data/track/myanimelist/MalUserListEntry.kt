@@ -7,4 +7,5 @@ data class MalUserListEntry(
     val status: String,
     val progress: Double,
     val score: Double,
+    val updatedAt: String? = null,
 )
