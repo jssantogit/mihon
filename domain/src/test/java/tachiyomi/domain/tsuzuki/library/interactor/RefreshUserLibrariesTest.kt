@@ -47,7 +47,12 @@ class RefreshUserLibrariesTest {
                     ),
                     entries = listOf(
                         UserLibraryEntry(
-                            item = CatalogItem(provider = "mal", providerId = "42", title = "Monster"),
+                            item = CatalogItem(
+                                provider = "mal",
+                                providerId = "42",
+                                title = "Monster",
+                                coverUrl = "https://cdn.example/monster.jpg",
+                            ),
                             listKeys = setOf("mal:status:plan_to_read"),
                             status = LibraryStatus.PLANNING,
                             remoteStatus = "plan_to_read",
@@ -84,6 +89,7 @@ class RefreshUserLibrariesTest {
             progress = null,
             score = null,
             syncedAt = 500L,
+            coverUrl = "https://cdn.example/monster.jpg",
         )
     }
 
