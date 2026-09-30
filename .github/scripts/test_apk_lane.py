@@ -41,6 +41,15 @@ class ApkLaneTest(unittest.TestCase):
         self.assertEqual(diagnostic["task"], "assembleRelease")
         self.assertEqual(diagnostic["apk"], "app/build/outputs/apk/release/app-arm64-v8a-release.apk")
 
+    def test_cover_rendering_fix_uses_signed_release_lane(self):
+        cover_fix = resolve_lane("tsuzuki/fix-cover-rendering")
+        self.assertEqual(cover_fix["lane"], "release")
+        self.assertEqual(cover_fix["task"], "assembleRelease")
+        self.assertEqual(
+            cover_fix["apk"],
+            "app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+        )
+
     def test_generic_addon_branch_uses_isolated_signed_preview(self):
         preview = resolve_lane("tsuzuki/generic-addon-compatibility")
         self.assertEqual(preview["lane"], "generic")
