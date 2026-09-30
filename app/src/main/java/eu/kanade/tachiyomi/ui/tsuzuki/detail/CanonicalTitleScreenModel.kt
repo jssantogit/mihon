@@ -689,6 +689,13 @@ class CanonicalTitleScreenModel(
             }
         }
 
+        logcat {
+            "TsuzukiCover detail title=${canonicalTitleId.take(8)} " +
+                "integrationRequested=$includeIntegrationMetadata " +
+                "provider=${!integrationMetadata?.artworkUrl?.value.isNullOrBlank()} " +
+                "source=${metadata != null && !metadata.thumbnailUrl.isNullOrBlank()}"
+        }
+
         val loaded = CanonicalTitleScreenState.Loaded(
             title = title,
             libraryEntry = libraryEntry,
