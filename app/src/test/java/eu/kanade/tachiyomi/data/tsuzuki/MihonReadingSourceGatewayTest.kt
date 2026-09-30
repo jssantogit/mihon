@@ -164,6 +164,7 @@ class MihonReadingSourceGatewayTest {
     }
 
     @Test
+    // Exact binding restoration is the source fallback for canonical artwork.
     fun `materialized binding payload restores exact source candidate without title search`() = runTest {
         val source = TestCatalogueSource(
             id = 10L,
