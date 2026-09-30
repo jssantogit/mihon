@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
@@ -69,6 +71,7 @@ sealed interface CanonicalTitleScreenState {
         val reportedChapterCounts: List<ReportedChapterCount> = emptyList(),
         val addonCoverage: List<ObservedAddonCoverage> = emptyList(),
         val coverUrl: String? = null,
+        val sourceCover: MangaCover? = null,
         val author: String? = null,
         val description: String? = null,
         val genres: List<String> = emptyList(),
@@ -692,7 +695,8 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
-            coverUrl = integrationMetadata?.artworkUrl?.value ?: metadata?.thumbnailUrl,
+            coverUrl = integrationMetadata?.artworkUrl?.value,
+            sourceCover = metadata?.asMangaCover(),
             author = integrationMetadata
                 ?.authors
                 ?.value
