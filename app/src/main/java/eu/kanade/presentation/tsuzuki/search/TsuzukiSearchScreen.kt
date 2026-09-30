@@ -254,6 +254,8 @@ private fun DiscoverSection(
             text = when (block.kind) {
                 DiscoverKind.TRENDING -> "Em alta"
                 DiscoverKind.POPULAR -> "Populares"
+                DiscoverKind.TOP_RATED -> "Mais bem avaliados"
+                DiscoverKind.FAVORITES -> "Mais favoritados"
                 DiscoverKind.RECENTLY_UPDATED -> "Atualizados recentemente"
             },
             modifier = Modifier.padding(horizontal = 16.dp),
