@@ -72,21 +72,21 @@ class KitsuHttpClient(
     }
 
     override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> {
-        val base = baseUrl.newBuilder()
+        val enrichedUrl = baseUrl.newBuilder()
             .addPathSegment("trending")
             .addPathSegment("manga")
             .addQueryParameter("limit", limit.toString())
+            .addQueryParameter("include", "mappings")
+            .build()
+        val enriched = executeRequest<KitsuMangaResponse>(enrichedUrl)
+        if (enriched.isSuccess) return enriched
 
-        val enriched = executeRequest<KitsuMangaResponse>(
-            base.clone()
-                .addQueryParameter("include", "mappings")
-                .build(),
-        )
-        return if (enriched.isSuccess) {
-            enriched
-        } else {
-            executeRequest(base.build())
-        }
+        val fallbackUrl = baseUrl.newBuilder()
+            .addPathSegment("trending")
+            .addPathSegment("manga")
+            .addQueryParameter("limit", limit.toString())
+            .build()
+        return executeRequest(fallbackUrl)
     }
 
     override suspend fun getPopularManga(offset: Int, limit: Int): Result<KitsuMangaResponse> {
