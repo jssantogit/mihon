@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticErrorCategory
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
@@ -35,6 +36,8 @@ import tachiyomi.domain.tsuzuki.source.interactor.ScoreSourceTitleMatch
 import tachiyomi.domain.tsuzuki.source.model.MaterializedReadingSource
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceCandidate
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourceDescriptor
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceFailureKind
+import tachiyomi.domain.tsuzuki.source.model.ReadingSourceSearchFailure
 import tachiyomi.domain.tsuzuki.source.model.ReadingSourcePreference
 import tachiyomi.domain.tsuzuki.source.model.SourceResolutionResult
 import tachiyomi.domain.tsuzuki.source.repository.ReadingSourcePreferenceRepository
@@ -323,6 +326,28 @@ class ResolveReadingSourceTest {
             .toSet() shouldBe setOf(DiagnosticOutcome.THREW, DiagnosticOutcome.TYPED_FAILURE)
         operationEvents.last().outcome shouldBe DiagnosticOutcome.NOT_FOUND_WITH_SOURCE_FAILURES
         operationEvents.any { it.toString().contains("private") } shouldBe false
+    }
+
+    @Test
+    fun `typed HTTP source failure records safe category and status`() = runTest {
+        titles.insert(title("title-1", "Bleach"))
+        preferences.replaceForLanguage("en", listOf(10L))
+        gateway.typedSearchErrors[10L] = ReadingSourceSearchFailure(
+            kind = ReadingSourceFailureKind.HTTP_RESPONSE,
+            httpStatus = 503,
+            cause = IllegalStateException("private provider response"),
+        )
+
+        resolver.execute("title-1", "en")
+
+        val failure = diagnostics.events.single {
+            it.name == DiagnosticEventName.SOURCE_SEARCH_FAILED
+        }
+        failure.outcome shouldBe DiagnosticOutcome.TYPED_FAILURE
+        failure.attributes["error_category"] shouldBe
+            DiagnosticAttributeValue.Code(DiagnosticErrorCategory.HTTP)
+        failure.attributes["http_status"] shouldBe DiagnosticAttributeValue.Number(503L)
+        failure.toString().contains("private provider response") shouldBe false
     }
 
     @Test
