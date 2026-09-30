@@ -8,6 +8,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
+import tachiyomi.data.subscribeToList
 import tachiyomi.data.subscribeToOneOrNull
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -31,6 +32,12 @@ class CanonicalTitleRepositoryImpl(
         return database.tsuzuki_titlesQueries
             .getTsuzukiTitleById(id, ::mapTitle)
             .subscribeToOneOrNull()
+    }
+
+    override fun getAllAsFlow(): Flow<List<CanonicalTitle>> {
+        return database.tsuzuki_titlesQueries
+            .getAllTsuzukiTitles(::mapTitle)
+            .subscribeToList()
     }
 
     override suspend fun getExternalIdentities(canonicalTitleId: String): List<ExternalIdentity> {
