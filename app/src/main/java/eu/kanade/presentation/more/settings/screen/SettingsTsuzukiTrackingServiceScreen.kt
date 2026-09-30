@@ -157,6 +157,7 @@ private fun TrackingServiceContent(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isLoggedIn by tracker.isLoggedInFlow.collectAsState(initial = tracker.isLoggedIn)
     var loginDialog by remember { mutableStateOf(false) }
     var logoutDialog by remember { mutableStateOf(false) }
@@ -178,6 +179,9 @@ private fun TrackingServiceContent(
                 Button(
                     onClick = {
                         tracker.logout()
+                        scope.launch {
+                            context.appGraph.refreshUserLibraries.clearForLegacyTracker(tracker.id)
+                        }
                         logoutDialog = false
                         context.toast(MR.strings.logout_success)
                     },
@@ -397,6 +401,7 @@ private fun TrackerCredentialLoginDialog(
                         val error = try {
                             withContext(Dispatchers.IO) {
                                 tracker.login(if (tokenOnly) "" else username, password)
+                                context.appGraph.refreshUserLibraries.refreshForLegacyTracker(tracker.id)
                             }
                             null
                         } catch (error: CancellationException) {
@@ -410,6 +415,7 @@ private fun TrackerCredentialLoginDialog(
                             onDismiss()
                         } else {
                             tracker.logout()
+                            context.appGraph.refreshUserLibraries.clearForLegacyTracker(tracker.id)
                             errorMessage = error.message ?: loginFailedMessage
                         }
                     }
