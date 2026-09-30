@@ -46,6 +46,7 @@ class ExternalLibraryRepositoryImpl(
                         remoteStatus = membership.remoteStatus,
                         progress = membership.progress,
                         score = membership.score,
+                        listedAt = membership.listedAt,
                         syncedAt = membership.syncedAt,
                     )
             }
@@ -72,6 +73,7 @@ class ExternalLibraryRepositoryImpl(
         remoteStatus: String?,
         progress: Double?,
         score: Double?,
+        listedAt: Long?,
         syncedAt: Long,
     ) = ExternalLibraryMembership(
         canonicalTitleId = canonicalTitleId,
@@ -82,6 +84,7 @@ class ExternalLibraryRepositoryImpl(
         remoteStatus = remoteStatus,
         progress = progress,
         score = score,
+        listedAt = listedAt,
         syncedAt = syncedAt,
     )
 }
