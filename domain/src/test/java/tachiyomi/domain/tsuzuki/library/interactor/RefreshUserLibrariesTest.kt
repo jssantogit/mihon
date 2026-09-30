@@ -10,6 +10,11 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.CapabilityPolicy
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationPolicy
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
@@ -73,6 +78,45 @@ class RefreshUserLibrariesTest {
     }
 
     @Test
+    fun `legacy tracker identity refreshes and clears its user library provider`() = runTest {
+        val externalRepository = FakeExternalLibraryRepository()
+        val materialize = MaterializeCanonicalTitleFromCatalog(
+            MaterializeCanonicalTitle(
+                repository = FakeTitleRepository(),
+                idFactory = { "canonical-42" },
+                clock = { 100L },
+            ),
+        )
+        val provider = FakeUserListProvider(
+            result = Result.success(
+                UserLibrarySnapshot(
+                    lists = emptyList(),
+                    entries = listOf(
+                        UserLibraryEntry(
+                            item = CatalogItem(provider = "mal", providerId = "42", title = "Monster"),
+                            listKeys = setOf("mal:status:reading"),
+                            status = LibraryStatus.READING,
+                            remoteStatus = "reading",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val interactor = RefreshUserLibraries(
+            registry = FakeRegistry(provider),
+            materializeCanonicalTitleFromCatalog = materialize,
+            externalLibraryRepository = externalRepository,
+            clock = { 500L },
+        )
+
+        interactor.refreshForLegacyTracker(1L)?.getOrThrow() shouldBe 1
+        externalRepository.memberships.value.size shouldBe 1
+
+        interactor.clearForLegacyTracker(1L)
+        externalRepository.memberships.value shouldBe emptyList()
+    }
+
+    @Test
     fun `failed refresh preserves the previous provider snapshot`() = runTest {
         val previous = ExternalLibraryMembership(
             canonicalTitleId = "existing",
@@ -117,6 +161,18 @@ class RefreshUserLibrariesTest {
     private class FakeRegistry(
         private val provider: UserListProvider,
     ) : IntegrationRegistry {
+        override fun manifests() = listOf(
+            IntegrationManifest(
+                integrationId = provider.integrationId,
+                displayName = "MyAnimeList",
+                category = IntegrationCategory.METADATA_SERVICE,
+                capabilities = mapOf(
+                    IntegrationCapability.USER_LISTS to CapabilityPolicy(IntegrationPolicy.ALLOWED),
+                ),
+                legacyTrackerId = 1L,
+            ),
+        )
+
         override fun searchProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.SearchProvider>()
         override fun discoveryProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.DiscoveryProvider>()
         override fun metadataProviders() = emptyList<tachiyomi.domain.tsuzuki.integration.MetadataProvider>()
