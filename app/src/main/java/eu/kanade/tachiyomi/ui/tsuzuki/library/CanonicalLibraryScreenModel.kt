@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveUnifiedLibrary
@@ -70,6 +71,7 @@ class CanonicalLibraryScreenModel private constructor(
     private val resolveCanonicalReadingStart: CanonicalReadingStartResolver,
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val refreshUserLibrariesAction: (suspend () -> Unit)?,
+    private val mangaRepository: MangaRepository? = null,
 ) : ViewModel() {
 
     @Inject
@@ -81,6 +83,7 @@ class CanonicalLibraryScreenModel private constructor(
         resolveCanonicalReadingStart: CanonicalReadingStartResolver,
         canonicalReadingRepository: CanonicalReadingRepository,
         refreshUserLibraries: RefreshUserLibraries,
+        mangaRepository: MangaRepository,
     ) : this(
         observeLibrary = observeUnifiedLibrary::subscribe,
         setCanonicalLibraryStatus = setCanonicalLibraryStatus,
@@ -89,6 +92,7 @@ class CanonicalLibraryScreenModel private constructor(
         resolveCanonicalReadingStart = resolveCanonicalReadingStart,
         canonicalReadingRepository = canonicalReadingRepository,
         refreshUserLibrariesAction = { refreshUserLibraries.refreshConnected() },
+        mangaRepository = mangaRepository,
     )
 
     internal constructor(
@@ -110,6 +114,7 @@ class CanonicalLibraryScreenModel private constructor(
         resolveCanonicalReadingStart = resolveCanonicalReadingStart,
         canonicalReadingRepository = canonicalReadingRepository,
         refreshUserLibrariesAction = null,
+        mangaRepository = null,
     )
 
     private val eventChannel = Channel<CanonicalLibraryEvent>()
@@ -143,20 +148,36 @@ class CanonicalLibraryScreenModel private constructor(
             logcat(LogPriority.WARN, e) { "Mihon library migration failed non-blockingly" }
         }
 
-        val cards = observeLibrary()
-            .flatMapLatest { libraryItems ->
-                if (libraryItems.isEmpty()) {
-                    flowOf(emptyList())
-                } else {
-                    combine(
-                        libraryItems.map { item ->
-                            canonicalReadingRepository
-                                .observeProgressByCanonicalTitleId(item.id)
-                                .map { progress -> item.toCardModel(progress) }
-                        },
-                    ) { values -> values.toList() }
-                }
+        val localCoverUrls = mangaRepository
+            ?.getLibraryMangaAsFlow()
+            ?.map { libraryManga ->
+                libraryManga.associate { item -> item.id to item.manga.thumbnailUrl }
             }
+            ?: flowOf(emptyMap<Long, String?>())
+
+        val cards = combine(
+            observeLibrary(),
+            localCoverUrls,
+        ) { libraryItems, covers ->
+            libraryItems to covers
+        }.flatMapLatest { (libraryItems, covers) ->
+            if (libraryItems.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                combine(
+                    libraryItems.map { item ->
+                        canonicalReadingRepository
+                            .observeProgressByCanonicalTitleId(item.id)
+                            .map { progress ->
+                                item.toCardModel(
+                                    progress = progress,
+                                    localCoverUrl = item.localCoverUrl(covers),
+                                )
+                            }
+                    },
+                ) { values -> values.toList() }
+            }
+        }
 
         emitAll(
             combine(
@@ -303,3 +324,13 @@ private fun LibraryTitle.toLocalUnifiedTitle() = UnifiedLibraryTitle(
     categories = categories,
     format = CatalogItemFormat.UNKNOWN,
 )
+
+
+private fun UnifiedLibraryTitle.localCoverUrl(
+    covers: Map<Long, String?>,
+): String? = sources
+    .asSequence()
+    .sortedByDescending { it.preferredOverride }
+    .mapNotNull { it.mihonMangaId }
+    .mapNotNull(covers::get)
+    .firstOrNull()
