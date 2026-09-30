@@ -209,24 +209,33 @@ class MihonReadingSourceGateway(
 
     override suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource> {
         return try {
+            val resolvedCandidate = if (
+                candidate.thumbnailUrl.isNullOrBlank() ||
+                candidate.description.isNullOrBlank()
+            ) {
+                getDetails(candidate).getOrElse { candidate }
+            } else {
+                candidate
+            }
             val manga = Manga.create().copy(
-                source = candidate.sourceId,
-                url = candidate.sourceUrl,
-                title = candidate.title,
-                thumbnailUrl = candidate.thumbnailUrl,
-                author = candidate.author,
-                artist = candidate.artist,
-                description = candidate.description,
-                genre = candidate.genres,
-                status = candidate.status,
+                source = resolvedCandidate.sourceId,
+                url = resolvedCandidate.sourceUrl,
+                title = resolvedCandidate.title,
+                thumbnailUrl = resolvedCandidate.thumbnailUrl,
+                author = resolvedCandidate.author,
+                artist = resolvedCandidate.artist,
+                description = resolvedCandidate.description,
+                genre = resolvedCandidate.genres,
+                status = resolvedCandidate.status,
+                initialized = resolvedCandidate !== candidate,
                 favorite = false,
             )
             val localManga = networkToLocalManga(manga)
             val payload = MihonContentBindingPayload(
-                sourceId = candidate.sourceId,
+                sourceId = resolvedCandidate.sourceId,
                 mihonMangaId = localManga.id,
-                sourceUrl = candidate.sourceUrl,
-                language = candidate.language,
+                sourceUrl = resolvedCandidate.sourceUrl,
+                language = resolvedCandidate.language,
             )
             Result.success(
                 MaterializedReadingSource(
