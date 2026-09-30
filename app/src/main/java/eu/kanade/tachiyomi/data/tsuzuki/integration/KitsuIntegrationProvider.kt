@@ -25,7 +25,6 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
-import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
@@ -105,19 +104,23 @@ class KitsuIntegrationProvider private constructor(
             )
         }
 
-    override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+    override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
         val knownKitsuId = when {
             item.provider == integrationId.value -> item.providerId
             else -> item.externalIds[integrationId.value]
         }?.takeIf(String::isNotBlank)
 
         if (knownKitsuId != null) {
-            return ratings(knownKitsuId).map { values ->
-                values.firstOrNull()?.let { rating ->
-                    CatalogRatingMatch(
-                        externalId = knownKitsuId,
-                        rating = rating,
-                    )
+            val known = buildMap {
+                put(integrationId.value, knownKitsuId)
+                putAll(item.externalIds)
+            }
+            if ("mal" in known) return Result.success(known)
+
+            return delegate.getDetails(knownKitsuId).map { details ->
+                buildMap {
+                    putAll(known)
+                    putAll(details.externalIds)
                 }
             }
         }
@@ -125,7 +128,7 @@ class KitsuIntegrationProvider private constructor(
         val malId = when {
             item.provider == "mal" -> item.providerId
             else -> item.externalIds["mal"]
-        }?.takeIf(String::isNotBlank) ?: return Result.success(null)
+        }?.takeIf(String::isNotBlank) ?: return Result.success(emptyMap())
 
         return delegate.search(
             CatalogQuery(
@@ -135,18 +138,11 @@ class KitsuIntegrationProvider private constructor(
         ).map { page ->
             val exact = page.items.firstOrNull { candidate ->
                 candidate.externalIds["mal"] == malId
-            } ?: return@map null
+            } ?: return@map emptyMap()
 
-            exact.score?.let { score ->
-                CatalogRatingMatch(
-                    externalId = exact.providerId,
-                    rating = ExternalRating(
-                        providerId = integrationId.value,
-                        label = "Kitsu",
-                        value = score.value,
-                        scaleMax = score.maxValue,
-                    ),
-                )
+            buildMap {
+                put(integrationId.value, exact.providerId)
+                putAll(exact.externalIds)
             }
         }
     }
