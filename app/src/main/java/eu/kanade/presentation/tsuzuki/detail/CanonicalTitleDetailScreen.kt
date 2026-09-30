@@ -168,6 +168,7 @@ private fun TitleHeader(
         ) {
             MangaCover.Book(
                 data = state.coverUrl ?: state.sourceCover,
+                fallbackData = listOf(state.sourceCover),
                 contentDescription = state.title.displayTitle,
                 modifier = Modifier.width(112.dp),
             )
