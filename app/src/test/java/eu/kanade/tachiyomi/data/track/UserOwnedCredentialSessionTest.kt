@@ -16,7 +16,7 @@ class UserOwnedCredentialSessionTest {
     @Test
     fun `session is active when base login and all user owned credentials are present`() {
         userOwnedCredentialSessionActive(
-            baseLoggedIn = true,
+            true,
             "client-id",
             "client-secret",
         ) shouldBe true
