@@ -98,7 +98,7 @@ class CanonicalLibraryFiltersTest {
     ) = CanonicalLibraryCardModel(
         canonicalTitleId = id,
         title = id,
-        status = originStatuses.values.flatten().first(),
+        status = originStatuses.values.flatten().firstOrNull() ?: LibraryStatus.PLANNING,
         categories = emptyList(),
         readingState = CanonicalLibraryReadingState.NOT_STARTED,
         originStatuses = originStatuses,
