@@ -45,7 +45,6 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
         )
     }
 
-
     fun getClientId(): String =
         trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_ID_KEY).get().trim()
 

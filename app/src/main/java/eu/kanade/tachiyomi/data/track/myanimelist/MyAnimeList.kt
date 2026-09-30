@@ -39,7 +39,6 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
     internal val integrationApi: MalIntegrationApi
         get() = api
 
-
     fun getClientId(): String = trackPreferences
         .integrationCredential(MAL_INTEGRATION_ID, MAL_CLIENT_ID_KEY)
         .get()

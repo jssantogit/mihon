@@ -26,7 +26,6 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
 
     private val api by lazy { BangumiApi(id, client, interceptor) }
 
-
     internal val integrationApi: BangumiIntegrationApi = object : BangumiIntegrationApi {
         override suspend fun search(query: String): List<TrackSearch> =
             this@Bangumi.search(query)
