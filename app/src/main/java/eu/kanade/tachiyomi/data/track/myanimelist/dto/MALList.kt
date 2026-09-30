@@ -44,4 +44,6 @@ data class MALUserListStatus(
     @SerialName("num_chapters_read")
     val numChaptersRead: Double = 0.0,
     val score: Int = 0,
+    @SerialName("updated_at")
+    val updatedAt: String? = null,
 )
