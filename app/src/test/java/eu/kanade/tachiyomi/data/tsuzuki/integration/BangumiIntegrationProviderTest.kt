@@ -7,8 +7,16 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.UserListProvider
 
 class BangumiIntegrationProviderTest {
+
+    @Test
+    fun `bangumi exposes account collection capability`() = runTest {
+        val provider = BangumiIntegrationProvider.forTest(FakeBangumiIntegrationApi())
+
+        (provider as Any is UserListProvider) shouldBe true
+    }
 
     @Test
     fun `bangumi discovery uses ranked manga browse`() = runTest {
