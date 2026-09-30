@@ -25,6 +25,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingResolution
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
@@ -103,6 +104,44 @@ class KitsuIntegrationProvider private constructor(
                 },
             )
         }
+
+    override suspend fun resolveRatings(item: CatalogItem): Result<CatalogRatingResolution?> {
+        val knownKitsuId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }
+        if (!knownKitsuId.isNullOrBlank()) {
+            return ratings(knownKitsuId).map { ratings ->
+                CatalogRatingResolution(
+                    externalId = knownKitsuId,
+                    ratings = ratings,
+                )
+            }
+        }
+
+        val malId = when {
+            item.provider == MAL_INTEGRATION_ID -> item.providerId
+            else -> item.externalIds[MAL_INTEGRATION_ID]
+        } ?: return Result.success(null)
+
+        return delegate.getByMalId(malId).map { matched ->
+            matched?.let { kitsuItem ->
+                CatalogRatingResolution(
+                    externalId = kitsuItem.providerId,
+                    ratings = listOfNotNull(
+                        kitsuItem.score?.let { score ->
+                            ExternalRating(
+                                providerId = integrationId.value,
+                                label = "Kitsu",
+                                value = score.value,
+                                scaleMax = score.maxValue,
+                            )
+                        },
+                    ),
+                )
+            }
+        }
+    }
 
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
         UserLibrarySnapshot(
@@ -197,6 +236,7 @@ class KitsuIntegrationProvider private constructor(
 
     companion object {
         private const val KITSU_SCORE_MAX = 100.0
+        private const val MAL_INTEGRATION_ID = "mal"
         private const val KITSU_STATUS_SELECTION_GROUP = "kitsu:status"
 
         private val KITSU_USER_LISTS = listOf(
