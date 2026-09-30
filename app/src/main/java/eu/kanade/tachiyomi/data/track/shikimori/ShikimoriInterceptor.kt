@@ -18,6 +18,8 @@ class ShikimoriInterceptor(private val shikimori: Shikimori) : Interceptor {
     private var oauth: SMOAuth? = shikimori.restoreToken()
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        shikimori.requireClientId()
+        shikimori.requireClientSecret()
         val originalRequest = chain.request()
 
         var currAuth = oauth ?: throw Exception("Not authenticated with Shikimori")
