@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
@@ -43,6 +44,55 @@ class SearchIntegrationsTest {
             "kitsu" to "1",
             "mal" to "2",
         )
+    }
+
+    @Test
+    fun `verified cross-provider mapping collapses one work and preserves both ratings`() = runTest {
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider(
+                    id = "kitsu",
+                    result = Result.success(
+                        page(
+                            CatalogItem(
+                                provider = "kitsu",
+                                providerId = "one-piece",
+                                title = "One Piece",
+                                score = CatalogScore(
+                                    provider = "kitsu",
+                                    value = 85.08,
+                                    maxValue = 100.0,
+                                ),
+                                externalIds = mapOf("mal" to "13"),
+                            ),
+                        ),
+                    ),
+                ),
+                FakeSearchProvider(
+                    id = "mal",
+                    result = Result.success(
+                        page(
+                            CatalogItem(
+                                provider = "mal",
+                                providerId = "13",
+                                title = "One Piece",
+                                score = CatalogScore(
+                                    provider = "mal",
+                                    value = 9.21,
+                                    maxValue = 10.0,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val results = search.execute(CatalogQuery(query = "One Piece"))
+
+        results.size shouldBe 1
+        results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mal")
+        results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(85.08, 9.21)
     }
 
     @Test
