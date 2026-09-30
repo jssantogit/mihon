@@ -105,6 +105,54 @@ class MihonReadingSourceGateway(
         }
     }
 
+    override suspend fun restoreMaterializedCandidate(
+        runtimePayload: ByteArray,
+        fallbackTitle: String,
+    ): Result<ReadingSourceCandidate> {
+        return try {
+            val payload = MihonContentBindingPayloadCodec.decode(runtimePayload)
+            val disabledSources = sourcePreferences.disabledSources.get()
+            if (payload.sourceId.toString() in disabledSources) {
+                return Result.failure(
+                    ReadingSourceSearchFailure(
+                        kind = ReadingSourceFailureKind.SOURCE_DISABLED,
+                        cause = IllegalStateException("Source ${payload.sourceId} is disabled"),
+                    ),
+                )
+            }
+            val source = sourceManager.get(payload.sourceId)
+            if (source !is CatalogueSource) {
+                return Result.failure(
+                    ReadingSourceSearchFailure(
+                        kind = ReadingSourceFailureKind.SOURCE_UNAVAILABLE,
+                        cause = IllegalStateException(
+                            "Source ${payload.sourceId} is not an installed CatalogueSource",
+                        ),
+                    ),
+                )
+            }
+            Result.success(
+                ReadingSourceCandidate(
+                    sourceId = payload.sourceId,
+                    sourceName = source.name,
+                    language = payload.language.ifBlank { source.lang },
+                    sourceUrl = payload.sourceUrl,
+                    title = fallbackTitle,
+                    thumbnailUrl = null,
+                    author = null,
+                    artist = null,
+                    description = null,
+                    genres = null,
+                    status = 0L,
+                ),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error.toReadingSourceSearchFailure())
+        }
+    }
+
     override suspend fun getDetails(candidate: ReadingSourceCandidate): Result<ReadingSourceCandidate> {
         val disabledSources = sourcePreferences.disabledSources.get()
         if (candidate.sourceId.toString() in disabledSources) {
