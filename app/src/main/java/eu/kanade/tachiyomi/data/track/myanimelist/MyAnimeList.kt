@@ -9,9 +9,12 @@ import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import eu.kanade.tachiyomi.data.track.userOwnedCredentialSessionActive
 import eu.kanade.tachiyomi.util.PkceUtil
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
 import tachiyomi.domain.track.model.Track as DomainTrack
@@ -201,7 +204,10 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
             val username = api.getCurrentUser()
             saveDisplayUsername(username)
             saveCredentials(username, oauth.accessToken)
-        } catch (_: Throwable) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logcat(LogPriority.ERROR, error) { "Failed to complete MyAnimeList OAuth" }
             logout()
         } finally {
             verifierPreference.delete()
