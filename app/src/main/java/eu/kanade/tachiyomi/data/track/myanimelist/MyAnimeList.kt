@@ -188,8 +188,8 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
         return api.findListItem(track) ?: add(track)
     }
 
-    override suspend fun login(username: String, password: String) =
-        login(password, expectedOAuthState())
+    override suspend fun login(username: String, password: String): Unit =
+        login(authCode = password, state = expectedOAuthState())
 
     suspend fun login(authCode: String, state: String?) {
         val codeVerifier = trackPreferences
