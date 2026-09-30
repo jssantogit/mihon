@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 /** Best-effort, bounded JSONL history. Only sanitized domain events are accepted. */
-class StructuredDiagnosticHistory(
+class StructuredDiagnosticHistory internal constructor(
     directory: File,
     private val persistenceEnabled: () -> Boolean,
     private val writerExecutor: ExecutorService,
@@ -179,7 +179,11 @@ class StructuredDiagnosticHistory(
                                 if (dropped == 0L) {
                                     true
                                 } else {
-                                    when (appendRecords(listOf(encodeDroppedRecord(dropped, clockMillis().coerceAtLeast(0))))) {
+                                    when (
+                                        appendRecords(
+                                            listOf(encodeDroppedRecord(dropped, clockMillis().coerceAtLeast(0))),
+                                        )
+                                    ) {
                                         AppendResult.WRITTEN -> true
                                         AppendResult.DISABLED -> {
                                             droppedEvents.set(0)
@@ -235,9 +239,17 @@ class StructuredDiagnosticHistory(
         val existingSegments = segmentFiles()
         val totalBytes = existingSegments.sumOf(File::length)
         val requiresEviction = totalBytes + batchBytes > maxBytes
-        var target = if (requiresEviction) null else candidates.lastOrNull()?.takeIf { it.length() + batchBytes <= segmentLimit }
+        var target = if (requiresEviction) {
+            null
+        } else {
+            candidates.lastOrNull()?.takeIf {
+                it.length() + batchBytes <=
+                    segmentLimit
+            }
+        }
         if (target == null) {
-            val nextIndex = candidates.maxOfOrNull { it.name.substringAfterLast('-').substringBefore('.').toIntOrNull() ?: -1 }
+            val nextIndex =
+                candidates.maxOfOrNull { it.name.substringAfterLast('-').substringBefore('.').toIntOrNull() ?: -1 }
                 ?.plus(1)
                 ?: 0
             target = File(
