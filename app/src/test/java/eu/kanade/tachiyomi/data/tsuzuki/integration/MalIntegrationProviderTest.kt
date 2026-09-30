@@ -157,6 +157,9 @@ class MalIntegrationProviderTest {
             detailRequests += id
             return detailsById[id] ?: error("Missing MAL fixture for id=$id")
         }
+
+        override suspend fun getUserMangaList() =
+            emptyList<eu.kanade.tachiyomi.data.track.myanimelist.MalUserListEntry>()
     }
 
     private fun malTrack(
