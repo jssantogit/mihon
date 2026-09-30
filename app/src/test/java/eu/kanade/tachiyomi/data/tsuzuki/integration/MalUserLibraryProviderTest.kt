@@ -51,6 +51,41 @@ class MalUserLibraryProviderTest {
         entry.score shouldBe 8.0
     }
 
+    @Test
+    fun `mal keeps completed titles out of the visible imported library for now`() = runTest {
+        val api = FakeMalIntegrationApi(
+            entries = listOf(
+                MalUserListEntry(
+                    manga = malTrack(1, "Reading", "manga"),
+                    status = "reading",
+                    progress = 10.0,
+                    score = 0.0,
+                ),
+                MalUserListEntry(
+                    manga = malTrack(2, "Planning", "manga"),
+                    status = "plan_to_read",
+                    progress = 0.0,
+                    score = 0.0,
+                ),
+                MalUserListEntry(
+                    manga = malTrack(3, "Completed", "manga"),
+                    status = "completed",
+                    progress = 20.0,
+                    score = 8.0,
+                ),
+            ),
+        )
+        val provider = MalIntegrationProvider.forTest(api)
+
+        val snapshot = provider.fetchLibrary().getOrThrow()
+
+        snapshot.entries.map { it.item.providerId } shouldContainExactly listOf("1", "2")
+        snapshot.entries.map { it.status } shouldContainExactly listOf(
+            LibraryStatus.READING,
+            LibraryStatus.PLANNING,
+        )
+    }
+
     private class FakeMalIntegrationApi(
         private val entries: List<MalUserListEntry>,
     ) : MalIntegrationApi {
