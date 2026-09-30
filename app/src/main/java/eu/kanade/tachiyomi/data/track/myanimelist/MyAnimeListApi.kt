@@ -323,9 +323,7 @@ class MyAnimeListApi(
         fun authUrl(clientId: String, codeVerifier: String): String = "$BASE_OAUTH_URL/authorize".toHttpUrl()
             .newBuilder()
             .addQueryParameter("client_id", requireClientId(clientId))
-            .addQueryParameter("redirect_uri", CALLBACK_URL)
             .addQueryParameter("code_challenge", requireCodeVerifier(codeVerifier))
-            .addQueryParameter("code_challenge_method", "plain")
             .addQueryParameter("response_type", "code")
             .build()
             .toString()
@@ -340,7 +338,6 @@ class MyAnimeListApi(
                 .add("client_id", requireClientId(clientId))
                 .add("code", authCode)
                 .add("code_verifier", requireCodeVerifier(codeVerifier))
-                .add("redirect_uri", CALLBACK_URL)
                 .add("grant_type", "authorization_code")
                 .build(),
         )
