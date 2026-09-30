@@ -50,8 +50,8 @@ class ResolveUserLibraryCanonicalTitle internal constructor(
                     mapping.mihonMangaId?.let { mangaId -> mangaId to mapping.canonicalTitleId }
                 }
                 .groupBy(
-                    keySelector = Pair<Long, String>::first,
-                    valueTransform = Pair<Long, String>::second,
+                    keySelector = { it.first },
+                    valueTransform = { it.second },
                 )
 
             val candidateIds = trackRepository
