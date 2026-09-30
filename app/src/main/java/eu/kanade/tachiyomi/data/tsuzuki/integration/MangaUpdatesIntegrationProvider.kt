@@ -102,7 +102,7 @@ class MangaUpdatesIntegrationProvider private constructor(
         val listsById = remote.lists.associateBy(MangaUpdatesUserList::id)
 
         UserLibrarySnapshot(
-            lists = remote.lists.map(MangaUpdatesUserList::toUserListDefinition),
+            lists = remote.lists.map { list -> list.toUserListDefinition() },
             entries = remote.entries.mapNotNull { entry ->
                 entry.toUserLibraryEntry(listsById[entry.listId] ?: return@mapNotNull null)
             },
