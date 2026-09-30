@@ -14,10 +14,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.tsuzuki.artwork.resolveCanonicalArtwork
+import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
@@ -54,6 +57,7 @@ class TsuzukiHomeScreenModel(
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
     private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
+    private val titleArtworkRepository: TitleArtworkRepository? = null,
 ) : ViewModel() {
 
     private val eventChannel = Channel<TsuzukiHomeEvent>(Channel.BUFFERED)
@@ -62,8 +66,13 @@ class TsuzukiHomeScreenModel(
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
-    ) { continueReading, sections ->
+        titleArtworkRepository?.observeAll() ?: flowOf(emptyList()),
+    ) { continueReading, sections, artworkObservations ->
+        val artworkByTitle = artworkObservations.groupBy { it.canonicalTitleId }
         val enriched = continueReading.map { item ->
+            val canonicalArtwork = resolveCanonicalArtwork(
+                artworkByTitle[item.canonicalTitleId].orEmpty(),
+            )
             val sourceManga = try {
                 resolveCanonicalSourceManga.execute(item.canonicalTitleId)
             } catch (error: CancellationException) {
@@ -73,10 +82,11 @@ class TsuzukiHomeScreenModel(
             }
             logcat {
                 "TsuzukiCover home title=${item.canonicalTitleId.take(8)} " +
+                    "provider=${!canonicalArtwork?.coverUrl.isNullOrBlank()} " +
                     "sourceManga=${sourceManga != null} sourceThumbnail=${!sourceManga?.thumbnailUrl.isNullOrBlank()}"
             }
             item.copy(
-                coverUrl = sourceManga?.thumbnailUrl,
+                coverUrl = canonicalArtwork?.coverUrl,
                 sourceCover = sourceManga?.asMangaCover(),
             )
         }
