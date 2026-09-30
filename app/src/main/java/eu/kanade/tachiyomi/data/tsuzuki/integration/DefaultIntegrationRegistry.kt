@@ -21,6 +21,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.UserListProvider
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
@@ -37,6 +38,7 @@ class DefaultIntegrationRegistry(
     private val chapterEvidenceProviders: Set<ChapterEvidenceProvider> = emptySet(),
     private val ratingsProviders: Set<RatingsProvider> = emptySet(),
     private val trackingProviders: Set<TrackingProvider> = emptySet(),
+    private val userListProviders: Set<UserListProvider> = emptySet(),
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : IntegrationRegistry {
 
@@ -107,6 +109,11 @@ class DefaultIntegrationRegistry(
         return trackingProviders.filter { it.integrationId.value in enabledIds }
     }
 
+    override fun userListProviders(): List<UserListProvider> = allowedProviders(
+        providers = userListProviders,
+        capability = IntegrationCapability.USER_LISTS,
+    )
+
     private fun <T> allowedProviders(
         providers: Set<T>,
         capability: IntegrationCapability,
@@ -118,6 +125,7 @@ class DefaultIntegrationRegistry(
                 is DiscoveryProvider -> provider.integrationId
                 is MetadataProvider -> provider.integrationId
                 is RatingsProvider -> provider.integrationId
+                is UserListProvider -> provider.integrationId
                 else -> return@filter false
             }
             if (id.value !in enabledIds) return@filter false
