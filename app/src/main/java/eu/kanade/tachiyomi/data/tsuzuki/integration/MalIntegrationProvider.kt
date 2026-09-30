@@ -29,6 +29,7 @@ import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 import tachiyomi.domain.tsuzuki.integration.model.UserListDefinition
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Instant
 
 @SingleIn(AppScope::class)
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
@@ -122,6 +123,7 @@ class MalIntegrationProvider private constructor(
             remoteStatus = normalizedStatus,
             progress = progress,
             score = score.takeIf { it > 0.0 },
+            listedAt = updatedAt?.toEpochMillisOrNull(),
         )
     }
 
@@ -197,6 +199,10 @@ class MalIntegrationProvider private constructor(
         "dropped" -> LibraryStatus.DROPPED
         else -> null
     }
+
+    private fun String.toEpochMillisOrNull(): Long? = runCatching {
+        Instant.parse(this).toEpochMilliseconds()
+    }.getOrNull()
 
     private fun String.requireMalId(): Int =
         toIntOrNull() ?: throw IllegalArgumentException("Invalid MAL external id: $this")
