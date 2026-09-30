@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.track.shikimori
 
-import android.net.Uri
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
@@ -21,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import tachiyomi.core.common.util.lang.withIOContext
@@ -309,11 +309,13 @@ class ShikimoriApi(
         private const val OAUTH_URL = "$BASE_URL/oauth/token"
         private const val LOGIN_URL = "$BASE_URL/oauth/authorize"
 
-        fun authUrl(clientId: String): Uri = LOGIN_URL.toUri().buildUpon()
-            .appendQueryParameter("client_id", requireCredential(clientId))
-            .appendQueryParameter("redirect_uri", CALLBACK_URL)
-            .appendQueryParameter("response_type", "code")
+        fun authUrl(clientId: String): String = LOGIN_URL.toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("client_id", requireCredential(clientId))
+            .addQueryParameter("redirect_uri", CALLBACK_URL)
+            .addQueryParameter("response_type", "code")
             .build()
+            .toString()
 
         internal fun accessTokenRequest(
             code: String,

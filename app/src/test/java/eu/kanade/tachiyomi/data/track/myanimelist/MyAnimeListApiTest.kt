@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.junit.jupiter.api.Test
 
@@ -11,9 +12,9 @@ class MyAnimeListApiTest {
 
     @Test
     fun `auth url uses the user supplied client id`() {
-        val uri = MyAnimeListApi.authUrl("user-owned-client")
+        val url = MyAnimeListApi.authUrl("user-owned-client").toHttpUrl()
 
-        uri.getQueryParameter("client_id") shouldBe "user-owned-client"
+        url.queryParameter("client_id") shouldBe "user-owned-client"
     }
 
     @Test

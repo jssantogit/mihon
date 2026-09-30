@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.track.hikka
 
-import android.net.Uri
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKManga
@@ -24,6 +23,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -217,13 +217,15 @@ class HikkaApi(
         const val BASE_URL = "https://hikka.io"
         private const val SCOPE = "readlist,read:user-details"
 
-        fun authUrl(clientReference: String): Uri = "$BASE_URL/oauth".toUri().buildUpon()
-            .appendQueryParameter(
+        fun authUrl(clientReference: String): String = "$BASE_URL/oauth".toHttpUrl()
+            .newBuilder()
+            .addQueryParameter(
                 "reference",
                 clientReference.trim().ifBlank { throw HikkaCredentialsMissing() },
             )
-            .appendQueryParameter("scope", SCOPE)
+            .addQueryParameter("scope", SCOPE)
             .build()
+            .toString()
 
         fun refreshTokenRequest(accessToken: String): Request {
             val headers = Headers.Builder()

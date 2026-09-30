@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.track.hikka
 
 import io.kotest.matchers.shouldBe
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okio.Buffer
 import org.junit.jupiter.api.Test
 
@@ -8,9 +9,9 @@ class HikkaApiTest {
 
     @Test
     fun `auth url uses user owned application reference`() {
-        val uri = HikkaApi.authUrl("user-reference")
+        val url = HikkaApi.authUrl("user-reference").toHttpUrl()
 
-        uri.getQueryParameter("reference") shouldBe "user-reference"
+        url.queryParameter("reference") shouldBe "user-reference"
     }
 
     @Test

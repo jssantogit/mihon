@@ -2,16 +2,17 @@ package eu.kanade.tachiyomi.data.track.shikimori
 
 import io.kotest.matchers.shouldBe
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.jupiter.api.Test
 
 class ShikimoriApiTest {
 
     @Test
     fun `auth url uses user owned client id and Tsuzuki callback`() {
-        val uri = ShikimoriApi.authUrl("user-client")
+        val url = ShikimoriApi.authUrl("user-client").toHttpUrl()
 
-        uri.getQueryParameter("client_id") shouldBe "user-client"
-        uri.getQueryParameter("redirect_uri") shouldBe ShikimoriApi.CALLBACK_URL
+        url.queryParameter("client_id") shouldBe "user-client"
+        url.queryParameter("redirect_uri") shouldBe ShikimoriApi.CALLBACK_URL
     }
 
     @Test

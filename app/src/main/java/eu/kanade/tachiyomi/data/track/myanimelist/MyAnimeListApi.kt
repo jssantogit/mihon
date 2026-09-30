@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.track.myanimelist
 
-import android.net.Uri
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
@@ -21,6 +20,7 @@ import eu.kanade.tachiyomi.network.parseAs
 import eu.kanade.tachiyomi.util.PkceUtil
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -311,11 +311,13 @@ class MyAnimeListApi(
 
         private var codeVerifier: String = ""
 
-        fun authUrl(clientId: String): Uri = "$BASE_OAUTH_URL/authorize".toUri().buildUpon()
-            .appendQueryParameter("client_id", requireClientId(clientId))
-            .appendQueryParameter("code_challenge", getPkceChallengeCode())
-            .appendQueryParameter("response_type", "code")
+        fun authUrl(clientId: String): String = "$BASE_OAUTH_URL/authorize".toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("client_id", requireClientId(clientId))
+            .addQueryParameter("code_challenge", getPkceChallengeCode())
+            .addQueryParameter("response_type", "code")
             .build()
+            .toString()
 
         fun mangaUrl(id: Long): Uri = "$BASE_API_URL/manga".toUri().buildUpon()
             .appendPath(id.toString())
