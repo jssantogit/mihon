@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.library
 
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
 import tachiyomi.domain.tsuzuki.library.model.LOCAL_LIBRARY_ORIGIN
@@ -40,7 +41,12 @@ data class CanonicalLibraryCardModel(
     val format: CatalogItemFormat = CatalogItemFormat.UNKNOWN,
     val hasLocalMembership: Boolean = true,
     val coverUrl: String? = null,
+    val sourceCover: MangaCover? = null,
+    val localCoverUrl: String? = null,
 ) {
+    val coverData: Any?
+        get() = coverUrl ?: sourceCover ?: localCoverUrl
+
     val origins: Set<String>
         get() = originStatuses.keys + originListKeys.keys
 }
@@ -48,6 +54,7 @@ data class CanonicalLibraryCardModel(
 internal fun UnifiedLibraryTitle.toCardModel(
     progress: List<CanonicalChapterProgress>,
     localCoverUrl: String? = null,
+    sourceCover: MangaCover? = null,
 ): CanonicalLibraryCardModel {
     val readingState = progress.toReadingState()
     val originStatuses = buildMap<String, Set<LibraryStatus>> {
@@ -94,7 +101,9 @@ internal fun UnifiedLibraryTitle.toCardModel(
         originListOptions = originListOptions,
         format = format,
         hasLocalMembership = localEntry != null,
-        coverUrl = preferredExternalCoverUrl() ?: localCoverUrl,
+        coverUrl = preferredExternalCoverUrl(),
+        sourceCover = sourceCover,
+        localCoverUrl = localCoverUrl,
     )
 }
 
@@ -110,7 +119,7 @@ internal fun CanonicalLibraryItem.toCardModel(
     originStatuses = mapOf(LOCAL_LIBRARY_ORIGIN to setOf(entry.status)),
     format = CatalogItemFormat.UNKNOWN,
     hasLocalMembership = true,
-    coverUrl = localCoverUrl,
+    localCoverUrl = localCoverUrl,
 )
 
 internal fun filterCanonicalLibraryCards(
@@ -164,7 +173,7 @@ internal fun availableProviderListFilters(
         .toList()
 }
 
-private fun UnifiedLibraryTitle.preferredExternalCoverUrl(): String? =
+internal fun UnifiedLibraryTitle.preferredExternalCoverUrl(): String? =
     externalMemberships
         .asSequence()
         .filter { !it.coverUrl.isNullOrBlank() }
