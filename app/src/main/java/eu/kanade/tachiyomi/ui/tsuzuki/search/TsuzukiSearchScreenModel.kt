@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -28,6 +30,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 
 @Immutable
@@ -128,10 +131,16 @@ class TsuzukiSearchScreenModel(
                 val items = searchIntegrations.execute(
                     CatalogQuery(query = normalized),
                 )
-                _state.value = if (items.isEmpty()) {
-                    SearchState.Empty(normalized)
+                if (items.isEmpty()) {
+                    _state.value = SearchState.Empty(normalized)
                 } else {
-                    SearchState.Results(normalized, items)
+                    val baseItems = items.map(::normalizeScores)
+                    _state.value = SearchState.Results(normalized, baseItems)
+
+                    val enrichedItems = enrichRatings(baseItems)
+                    if (enrichedItems != baseItems) {
+                        _state.value = SearchState.Results(normalized, enrichedItems)
+                    }
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -260,6 +269,14 @@ class TsuzukiSearchScreenModel(
                 recentSearches = recentSearches,
                 blocks = blocks,
             )
+
+            val enrichedBlocks = enrichRatingsAcrossBlocks(blocks)
+            if (enrichedBlocks != blocks) {
+                _state.value = SearchState.Discover(
+                    recentSearches = recentSearches,
+                    blocks = enrichedBlocks,
+                )
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -275,28 +292,168 @@ class TsuzukiSearchScreenModel(
         providers: List<DiscoveryProvider>,
         request: suspend (DiscoveryProvider) -> Result<CatalogPage>,
     ): DiscoverBlock {
-        val items = coroutineScope {
-            providers.map { provider ->
-                async {
-                    try {
-                        val result = request(provider)
-                        val error = result.exceptionOrNull()
-                        if (error is CancellationException) throw error
-                        result.getOrElse { emptyPage() }.items
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
-                }
-            }.awaitAll().flatten()
-        }.let(::mergeCatalogItemsByVerifiedIdentity)
+        val orderedProviders = providers.sortedWith(
+            compareBy<DiscoveryProvider>(
+                { provider ->
+                    DISCOVERY_PROVIDER_PRECEDENCE.indexOf(provider.integrationId.value)
+                        .takeIf { index -> index >= 0 }
+                        ?: Int.MAX_VALUE
+                },
+                { provider -> provider.integrationId.value },
+            ),
+        )
+
+        for (provider in orderedProviders) {
+            val items = try {
+                val result = request(provider)
+                val error = result.exceptionOrNull()
+                if (error is CancellationException) throw error
+                result.getOrNull()?.items.orEmpty()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                emptyList()
+            }
+
+            if (items.isNotEmpty()) {
+                return DiscoverBlock(
+                    kind = kind,
+                    items = items
+                        .distinctBy { item -> item.provider to item.providerId }
+                        .map(::normalizeScores),
+                )
+            }
+        }
 
         return DiscoverBlock(
             kind = kind,
-            items = items,
+            items = emptyList(),
         )
     }
+
+    private suspend fun enrichRatingsAcrossBlocks(
+        blocks: List<DiscoverBlock>,
+    ): List<DiscoverBlock> {
+        if (blocks.isEmpty()) return blocks
+
+        val uniqueItems = mergeCatalogItemsByVerifiedIdentity(
+            blocks.flatMap(DiscoverBlock::items),
+        )
+        val enrichedItems = enrichRatings(uniqueItems)
+
+        return blocks.map { block ->
+            block.copy(
+                items = block.items.map { item ->
+                    val itemKeys = item.identityKeysForDiscovery()
+                    val enriched = enrichedItems.firstOrNull { candidate ->
+                        candidate.identityKeysForDiscovery().any(itemKeys::contains)
+                    } ?: item
+                    item.mergeEnrichment(enriched)
+                },
+            )
+        }
+    }
+
+    private suspend fun enrichRatings(items: List<CatalogItem>): List<CatalogItem> {
+        val providers = registry.ratingsProviders()
+            .sortedWith(
+                compareBy<RatingsProvider>(
+                    { provider ->
+                        RATING_PROVIDER_PRECEDENCE.indexOf(provider.integrationId.value)
+                            .takeIf { index -> index >= 0 }
+                            ?: Int.MAX_VALUE
+                    },
+                    { provider -> provider.integrationId.value },
+                ),
+            )
+        if (providers.isEmpty()) return items
+
+        val semaphore = Semaphore(RATING_ENRICHMENT_CONCURRENCY)
+        return coroutineScope {
+            items.map { item ->
+                async {
+                    semaphore.withPermit {
+                        enrichRatings(item, providers)
+                    }
+                }
+            }.awaitAll()
+        }
+    }
+
+    private suspend fun enrichRatings(
+        item: CatalogItem,
+        providers: List<RatingsProvider>,
+    ): CatalogItem {
+        var enriched = normalizeScores(item)
+
+        for (provider in providers) {
+            if (enriched.scores.any { score -> score.provider == provider.integrationId.value }) {
+                continue
+            }
+
+            val resolution = try {
+                val result = provider.resolveRatings(enriched)
+                val error = result.exceptionOrNull()
+                if (error is CancellationException) throw error
+                result.getOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            } ?: continue
+
+            val resolvedScores = resolution.ratings.map { rating ->
+                CatalogScore(
+                    provider = rating.providerId,
+                    value = rating.value,
+                    maxValue = rating.scaleMax,
+                )
+            }
+            val scores = normalizeScores(enriched.scores + resolvedScores)
+            enriched = enriched.copy(
+                externalIds = enriched.externalIds +
+                    (provider.integrationId.value to resolution.externalId),
+                score = scores.firstOrNull(),
+                scores = scores,
+            )
+        }
+
+        return enriched
+    }
+
+    private fun CatalogItem.mergeEnrichment(enriched: CatalogItem): CatalogItem {
+        val scores = normalizeScores(
+            scores.ifEmpty { listOfNotNull(score) } +
+                enriched.scores.ifEmpty { listOfNotNull(enriched.score) },
+        )
+        return copy(
+            externalIds = externalIds + enriched.externalIds,
+            score = scores.firstOrNull(),
+            scores = scores,
+        )
+    }
+
+    private fun normalizeScores(item: CatalogItem): CatalogItem {
+        val scores = normalizeScores(item.scores.ifEmpty { listOfNotNull(item.score) })
+        return item.copy(
+            score = scores.firstOrNull(),
+            scores = scores,
+        )
+    }
+
+    private fun normalizeScores(scores: List<CatalogScore>): List<CatalogScore> =
+        scores
+            .distinctBy(CatalogScore::provider)
+            .sortedWith(
+                compareBy<CatalogScore>(
+                    { score ->
+                        RATING_PROVIDER_PRECEDENCE.indexOf(score.provider)
+                            .takeIf { index -> index >= 0 }
+                            ?: Int.MAX_VALUE
+                    },
+                    CatalogScore::provider,
+                ),
+            )
 
     private fun shareRatingsAcrossBlocks(blocks: List<DiscoverBlock>): List<DiscoverBlock> {
         val scoresByIdentity = mutableMapOf<Pair<String, String>, MutableList<CatalogScore>>()
@@ -316,8 +473,7 @@ class TsuzukiSearchScreenModel(
                     val ownScores = item.scores.ifEmpty { listOfNotNull(item.score) }
                     val sharedScores = item.identityKeysForDiscovery()
                         .flatMap { identity -> scoresByIdentity[identity].orEmpty() }
-                    val scores = (ownScores + sharedScores)
-                        .distinctBy(CatalogScore::provider)
+                    val scores = normalizeScores(ownScores + sharedScores)
                     item.copy(
                         score = scores.firstOrNull(),
                         scores = scores,
@@ -336,12 +492,25 @@ class TsuzukiSearchScreenModel(
         }
     }
 
-    private fun emptyPage() = CatalogPage(
-        items = emptyList(),
-        hasNextPage = false,
-    )
 
     private companion object {
         const val DISCOVER_LIMIT = 20
+        const val RATING_ENRICHMENT_CONCURRENCY = 6
+
+        // A semantic catalog is owned by one provider at a time. Other active providers fill
+        // catalog kinds that the preferred provider does not expose; they never create a second
+        // copy of the same semantic section.
+        val DISCOVERY_PROVIDER_PRECEDENCE = listOf(
+            "kitsu",
+            "mal",
+            "mangaupdates",
+            "bangumi",
+        )
+        val RATING_PROVIDER_PRECEDENCE = listOf(
+            "mal",
+            "kitsu",
+            "mangaupdates",
+            "bangumi",
+        )
     }
 }
