@@ -332,10 +332,12 @@ object SettingsTrackingScreen : SearchableSettings {
     ): Boolean {
         return try {
             tracker.login(username, password)
+            context.appGraph.refreshUserLibraries.refreshForLegacyTracker(tracker.id)
             withUIContext { context.toast(MR.strings.login_success) }
             true
         } catch (e: Throwable) {
             tracker.logout()
+            context.appGraph.refreshUserLibraries.clearForLegacyTracker(tracker.id)
             withUIContext { context.toast(e.message.toString()) }
             false
         }
@@ -347,6 +349,7 @@ object SettingsTrackingScreen : SearchableSettings {
         onDismissRequest: () -> Unit,
     ) {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         AlertDialog(
             onDismissRequest = onDismissRequest,
             title = {
@@ -368,6 +371,9 @@ object SettingsTrackingScreen : SearchableSettings {
                         modifier = Modifier.weight(1f),
                         onClick = {
                             tracker.logout()
+                            scope.launch {
+                                context.appGraph.refreshUserLibraries.clearForLegacyTracker(tracker.id)
+                            }
                             onDismissRequest()
                             context.toast(MR.strings.logout_success)
                         },
