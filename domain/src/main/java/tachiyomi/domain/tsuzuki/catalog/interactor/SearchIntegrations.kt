@@ -65,7 +65,9 @@ class SearchIntegrations(
                         async {
                             try {
                                 semaphore.withPermit {
-                                    provider.resolveExternalIds(item).getOrElse { emptyMap() }
+                                    provider.resolveExternalIds(item)
+                                        .getOrNullPreservingCancellation()
+                                        .orEmpty()
                                 }
                             } catch (error: CancellationException) {
                                 throw error
@@ -92,7 +94,8 @@ class SearchIntegrations(
                         async {
                             try {
                                 semaphore.withPermit {
-                                    provider.ratingFor(identifiedItem).getOrNull()
+                                    provider.ratingFor(identifiedItem)
+                                        .getOrNullPreservingCancellation()
                                 }
                             } catch (error: CancellationException) {
                                 throw error
@@ -136,6 +139,12 @@ class SearchIntegrations(
                 )
             }
         }.awaitAll()
+    }
+
+    private fun <T> Result<T>.getOrNullPreservingCancellation(): T? {
+        val error = exceptionOrNull()
+        if (error is CancellationException) throw error
+        return getOrNull()
     }
 
     private companion object {
