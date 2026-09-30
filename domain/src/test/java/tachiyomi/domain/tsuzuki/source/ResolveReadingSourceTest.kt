@@ -45,7 +45,7 @@ import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
 
 class ResolveReadingSourceTest {
 
-    // Full-CI anchor for the structured source-resolution diagnostics contract.
+    // Full-CI anchor for the final structured source-resolution diagnostics contract.
 
     private lateinit var titles: FakeCanonicalTitleRepository
     private lateinit var mappings: FakeSourceTitleMappingRepository
