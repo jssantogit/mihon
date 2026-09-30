@@ -27,7 +27,6 @@ data class CatalogItem(
     val volumeCount: Int? = null,
 )
 
-
 /**
  * Collapses catalog rows only when they share an exact provider/external-id identity.
  *
