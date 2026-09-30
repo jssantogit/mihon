@@ -37,6 +37,31 @@ class CanonicalLibraryFiltersTest {
         result.map { it.canonicalTitleId } shouldContainExactly listOf("one")
     }
 
+    @Test
+    fun `all origins matches status from any membership while provider filter stays scoped`() {
+        val item = card(
+            id = "one",
+            originStatuses = mapOf(
+                "tsuzuki" to setOf(LibraryStatus.READING),
+                "mal" to setOf(LibraryStatus.PLANNING),
+            ),
+            format = CatalogItemFormat.MANGA,
+        )
+
+        filterCanonicalLibraryCards(
+            items = listOf(item),
+            filters = CanonicalLibraryFilterState(status = LibraryStatus.READING),
+        ).map { it.canonicalTitleId } shouldContainExactly listOf("one")
+
+        filterCanonicalLibraryCards(
+            items = listOf(item),
+            filters = CanonicalLibraryFilterState(
+                status = LibraryStatus.READING,
+                origin = "mal",
+            ),
+        ) shouldContainExactly emptyList()
+    }
+
     private fun card(
         id: String,
         originStatuses: Map<String, Set<LibraryStatus>>,

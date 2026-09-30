@@ -1,3 +1,4 @@
+-- Provider-owned memberships are cached projections and stay separate from the local Tsuzuki library.
 CREATE TABLE tsuzuki_external_library_memberships(
     canonical_title_id TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -19,6 +20,7 @@ ON tsuzuki_external_library_memberships(canonical_title_id);
 CREATE INDEX tsuzuki_external_library_provider_index
 ON tsuzuki_external_library_memberships(provider);
 
+-- Provider-reported formats are persisted independently so unified-library facets do not require network reads.
 CREATE TABLE tsuzuki_title_format_observations(
     canonical_title_id TEXT NOT NULL,
     provider TEXT NOT NULL,
