@@ -30,4 +30,6 @@ interface IntegrationRegistry {
     fun ratingsProviders(): List<RatingsProvider>
 
     fun trackingProviders(): List<TrackingProvider>
+
+    fun userListProviders(): List<UserListProvider> = emptyList()
 }
