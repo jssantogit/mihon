@@ -131,7 +131,8 @@ class RefreshUserLibrariesTest {
     ) : ExternalLibraryRepository {
         val memberships = MutableStateFlow(initial)
 
-        override fun observeAll(): Flow<List<ExternalLibraryMembership>> = memberships
+        override fun observeAll(): Flow<List<ExternalLibraryMembership>> =
+            memberships
 
         override suspend fun replaceProvider(
             provider: String,
