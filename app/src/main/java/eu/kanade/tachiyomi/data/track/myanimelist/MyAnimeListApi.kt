@@ -244,6 +244,7 @@ class MyAnimeListApi(
                         status = entry.listStatus.status,
                         progress = entry.listStatus.numChaptersRead,
                         score = entry.listStatus.score.toDouble(),
+                        updatedAt = entry.listStatus.updatedAt,
                     )
                 }
                 offset += LIST_PAGINATION_AMOUNT
