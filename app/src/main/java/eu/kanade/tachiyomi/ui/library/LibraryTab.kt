@@ -89,6 +89,7 @@ data object LibraryTab : Tab {
             onCategoryFilterChange = screenModel::selectCategory,
             onStatusFilterChange = screenModel::selectStatus,
             onOriginFilterChange = screenModel::selectOrigin,
+            onProviderListFilterChange = screenModel::selectProviderList,
             onToggleFormatFilter = screenModel::toggleFormat,
             onClearAdvancedFilters = screenModel::clearAdvancedFilters,
             onRead = { item ->
