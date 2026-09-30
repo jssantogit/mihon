@@ -113,6 +113,16 @@ class SearchIntegrations(
                 }
                 val scores = (existingScores + resolvedScores)
                     .distinctBy(CatalogScore::provider)
+                    .sortedWith(
+                        compareBy<CatalogScore>(
+                            { score ->
+                                RATING_PROVIDER_ORDER.indexOf(score.provider)
+                                    .takeIf { index -> index >= 0 }
+                                    ?: Int.MAX_VALUE
+                            },
+                            CatalogScore::provider,
+                        ),
+                    )
 
                 identifiedItem.copy(
                     score = scores.firstOrNull(),
@@ -130,5 +140,6 @@ class SearchIntegrations(
 
     private companion object {
         const val RATING_LOOKUP_CONCURRENCY = 4
+        val RATING_PROVIDER_ORDER = listOf("mal", "kitsu", "mangaupdates", "bangumi")
     }
 }
