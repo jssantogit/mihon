@@ -111,11 +111,16 @@ class MangaUpdatesIntegrationProvider private constructor(
 
     private fun MangaUpdatesUserList.toUserListDefinition(): UserListDefinition {
         val normalizedType = type.normalizedListType()
+        val status = normalizedType.toLibraryStatus()
         return UserListDefinition(
             key = listKey(id),
             title = title,
-            status = normalizedType.toLibraryStatus(),
-            selectionGroup = MANGA_UPDATES_LIST_SELECTION_GROUP,
+            status = status,
+            selectionGroup = if (!custom && status != null) {
+                MANGA_UPDATES_STATUS_SELECTION_GROUP
+            } else {
+                MANGA_UPDATES_LIST_SELECTION_GROUP
+            },
         )
     }
 
@@ -166,6 +171,7 @@ class MangaUpdatesIntegrationProvider private constructor(
     companion object {
         private const val MANGA_UPDATES_WEEKLY_RANK = "week_pos"
         private const val MANGA_UPDATES_READING_RANK = "list_reading"
+        private const val MANGA_UPDATES_STATUS_SELECTION_GROUP = "mangaupdates:status"
         private const val MANGA_UPDATES_LIST_SELECTION_GROUP = "mangaupdates:list"
 
         private object EmptyMangaUpdatesUserLibraryApi : MangaUpdatesUserLibraryApi {
