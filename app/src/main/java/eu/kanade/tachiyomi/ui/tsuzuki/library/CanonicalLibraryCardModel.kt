@@ -67,10 +67,12 @@ internal fun UnifiedLibraryTitle.toCardModel(
     val originListOptions = externalMemberships
         .groupBy { it.provider }
         .mapValues { (_, memberships) ->
-            memberships.map { membership ->
+            memberships.mapNotNull { membership ->
+                val title = membership.listTitle?.takeIf(String::isNotBlank)
+                    ?: return@mapNotNull null
                 CanonicalLibraryListFilterOption(
                     key = membership.listKey,
-                    title = membership.listTitle ?: membership.listKey,
+                    title = title,
                     selectionGroup = membership.selectionGroup,
                 )
             }.toSet()
