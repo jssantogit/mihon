@@ -216,6 +216,97 @@ class TsuzukiSearchScreenModelTest {
     }
 
     @Test
+    fun `discover chooses one provider per semantic catalog and lets other providers add different catalogs`() = runTest(
+        dispatcher,
+    ) {
+        val kitsu = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(
+                    CatalogPage(
+                        items = listOf(
+                            CatalogItem(
+                                provider = "kitsu",
+                                providerId = "kitsu-popular",
+                                title = "Kitsu Popular",
+                            ),
+                        ),
+                        hasNextPage = false,
+                    ),
+                )
+
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+        }
+        val mal = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(
+                    CatalogPage(
+                        items = listOf(
+                            CatalogItem(
+                                provider = "mal",
+                                providerId = "mal-popular",
+                                title = "MAL Popular",
+                            ),
+                        ),
+                        hasNextPage = false,
+                    ),
+                )
+
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun topRated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(
+                    CatalogPage(
+                        items = listOf(
+                            CatalogItem(
+                                provider = "mal",
+                                providerId = "mal-top",
+                                title = "MAL Top Rated",
+                            ),
+                        ),
+                        hasNextPage = false,
+                    ),
+                )
+        }
+        val registry = object : IntegrationRegistry {
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(mal, kitsu)
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+
+        advanceUntilIdle()
+
+        val blocks = model.state.value.shouldBeInstanceOf<SearchState.Discover>().blocks
+        blocks.single { it.kind == DiscoverKind.POPULAR }.items.map(CatalogItem::title) shouldBe
+            listOf("Kitsu Popular")
+        blocks.single { it.kind == DiscoverKind.TOP_RATED }.items.map(CatalogItem::title) shouldBe
+            listOf("MAL Top Rated")
+    }
+
+    @Test
     fun `discover enriches a catalog item with every active provider rating even when peers do not list it`() = runTest(
         dispatcher,
     ) {
