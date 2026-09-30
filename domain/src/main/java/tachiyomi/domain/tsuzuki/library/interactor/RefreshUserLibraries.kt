@@ -119,18 +119,23 @@ class RefreshUserLibraries internal constructor(
 
         return try {
             val syncedAt = clock()
-            val entries = snapshot.getOrThrow().entries
+            val librarySnapshot = snapshot.getOrThrow()
+            val entries = librarySnapshot.entries
+            val listsByKey = librarySnapshot.lists.associateBy { it.key }
             val legacyTrackerId = registry.manifests()
                 .firstOrNull { it.integrationId == provider.integrationId }
                 ?.legacyTrackerId
             val memberships = entries.flatMap { entry ->
                 val canonicalTitle = resolveCanonicalTitle(entry.item, legacyTrackerId)
                 entry.listKeys.map { listKey ->
+                    val listDefinition = listsByKey[listKey]
                     ExternalLibraryMembership(
                         canonicalTitleId = canonicalTitle.id,
                         provider = provider.integrationId.value,
                         externalId = entry.item.providerId,
                         listKey = listKey,
+                        listTitle = listDefinition?.title,
+                        selectionGroup = listDefinition?.selectionGroup,
                         status = entry.status,
                         remoteStatus = entry.remoteStatus,
                         progress = entry.progress,
