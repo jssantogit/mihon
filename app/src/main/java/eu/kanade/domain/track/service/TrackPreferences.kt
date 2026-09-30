@@ -49,6 +49,11 @@ class TrackPreferences(
         "",
     )
 
+    fun trackOAuthSession(tracker: Tracker, key: String) = preferenceStore.getString(
+        Preference.privateKey("tsuzuki_oauth_session_${tracker.id}_$key"),
+        "",
+    )
+
     val kitsuScoreType: Preference<String> = preferenceStore.getString("kitsu_score_type", Kitsu.RATING_ADVANCED)
 
     val autoUpdateTrack: Preference<Boolean> = preferenceStore.getBoolean("pref_auto_update_manga_sync_key", true)

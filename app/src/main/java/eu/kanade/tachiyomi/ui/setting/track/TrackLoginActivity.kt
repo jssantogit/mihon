@@ -2,7 +2,10 @@ package eu.kanade.tachiyomi.ui.setting.track
 
 import android.net.Uri
 import androidx.lifecycle.lifecycleScope
+import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import tachiyomi.i18n.MR
 
 class TrackLoginActivity : BaseOAuthLoginActivity() {
 
@@ -21,18 +24,31 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
             .orEmpty()
 
         lifecycleScope.launch {
-            when (uri.host) {
-                "myanimelist-auth" -> handleMyAnimeList(data["code"])
-                "shikimori-auth" -> handleShikimori(data["code"])
-                "hikka-auth" -> handleHikka(data["reference"])
+            try {
+                when (uri.host) {
+                    "myanimelist-auth" -> handleMyAnimeList(
+                        code = data["code"],
+                        state = data["state"],
+                    )
+                    "shikimori-auth" -> handleShikimori(data["code"])
+                    "hikka-auth" -> handleHikka(data["reference"])
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                toast(MR.strings.tsuzuki_tracking_login_failed)
+            } finally {
+                returnToSettings()
             }
-            returnToSettings()
         }
     }
 
-    private suspend fun handleMyAnimeList(code: String?) {
+    private suspend fun handleMyAnimeList(
+        code: String?,
+        state: String?,
+    ) {
         if (code != null) {
-            trackerManager.myAnimeList.login(code)
+            trackerManager.myAnimeList.login(code, state)
             refreshUserLibraries.refreshForLegacyTracker(trackerManager.myAnimeList.id)
         } else {
             trackerManager.myAnimeList.logout()

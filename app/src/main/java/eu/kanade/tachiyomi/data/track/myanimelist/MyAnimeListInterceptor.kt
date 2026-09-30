@@ -78,6 +78,9 @@ class MyAnimeListInterceptor(private val myanimelist: MyAnimeList) : Interceptor
 }
 
 class MALClientIdMissing : IOException("MAL: Configure your own Client ID before using this integration.")
+class MALOAuthSessionInvalid(
+    message: String = "MAL: OAuth session expired or callback state did not match.",
+) : IOException(message)
 class MALTitleNotApproved : IOException("MAL: This title can't be added because it is waiting for approval.")
 class MALTokenRefreshFailed : IOException("MAL: Failed to refresh account token")
 class MALTokenExpired : IOException("MAL: Login has expired")

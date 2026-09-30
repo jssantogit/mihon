@@ -19,7 +19,6 @@ import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.parseAs
-import eu.kanade.tachiyomi.util.PkceUtil
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
 import okhttp3.Headers
@@ -69,16 +68,19 @@ class MyAnimeListApi(
         .build()
     private val authClient = client.newBuilder().addInterceptor(interceptor).build()
 
-    suspend fun getAccessToken(authCode: String): MALOAuth {
+    suspend fun getAccessToken(
+        authCode: String,
+        codeVerifier: String,
+    ): MALOAuth {
         return withIOContext {
-            val formBody: RequestBody = FormBody.Builder()
-                .add("client_id", requireClientId())
-                .add("code", authCode)
-                .add("code_verifier", codeVerifier)
-                .add("grant_type", "authorization_code")
-                .build()
             with(json) {
-                client.newCall(POST("$BASE_OAUTH_URL/token", body = formBody))
+                client.newCall(
+                    accessTokenRequest(
+                        authCode = authCode,
+                        clientId = requireClientId(),
+                        codeVerifier = codeVerifier,
+                    ),
+                )
                     .awaitSuccess()
                     .parseAs()
             }
@@ -321,15 +323,35 @@ class MyAnimeListApi(
 
         private const val LIST_PAGINATION_AMOUNT = 250
 
-        private var codeVerifier: String = ""
-
-        fun authUrl(clientId: String): String = "$BASE_OAUTH_URL/authorize".toHttpUrl()
+        fun authUrl(
+            clientId: String,
+            codeVerifier: String,
+            state: String,
+        ): String = "$BASE_OAUTH_URL/authorize".toHttpUrl()
             .newBuilder()
             .addQueryParameter("client_id", requireClientId(clientId))
-            .addQueryParameter("code_challenge", getPkceChallengeCode())
+            .addQueryParameter("redirect_uri", CALLBACK_URL)
             .addQueryParameter("response_type", "code")
+            .addQueryParameter("state", state.requireOAuthValue("state"))
+            .addQueryParameter("code_challenge", codeVerifier.requireOAuthValue("code_verifier"))
+            .addQueryParameter("code_challenge_method", "plain")
             .build()
             .toString()
+
+        internal fun accessTokenRequest(
+            authCode: String,
+            clientId: String,
+            codeVerifier: String,
+        ): Request = POST(
+            "$BASE_OAUTH_URL/token",
+            body = FormBody.Builder()
+                .add("client_id", requireClientId(clientId))
+                .add("code", authCode.requireOAuthValue("code"))
+                .add("redirect_uri", CALLBACK_URL)
+                .add("code_verifier", codeVerifier.requireOAuthValue("code_verifier"))
+                .add("grant_type", "authorization_code")
+                .build(),
+        )
 
         fun mangaUrl(id: Long): Uri = "$BASE_API_URL/manga".toUri().buildUpon()
             .appendPath(id.toString())
@@ -368,9 +390,7 @@ class MyAnimeListApi(
         private fun requireClientId(clientId: String): String =
             clientId.trim().ifBlank { throw MALClientIdMissing() }
 
-        private fun getPkceChallengeCode(): String {
-            codeVerifier = PkceUtil.generateCodeVerifier()
-            return codeVerifier
-        }
+        private fun String.requireOAuthValue(name: String): String =
+            trim().ifBlank { throw MALOAuthSessionInvalid("MAL: Missing OAuth $name") }
     }
 }

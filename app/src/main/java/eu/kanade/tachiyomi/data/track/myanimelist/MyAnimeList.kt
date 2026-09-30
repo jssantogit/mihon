@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.data.track.DeletableTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import eu.kanade.tachiyomi.data.track.userOwnedCredentialSessionActive
+import eu.kanade.tachiyomi.util.PkceUtil
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
@@ -29,6 +30,8 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
         private const val SEARCH_LIST_PREFIX = "my:"
         private const val MAL_INTEGRATION_ID = "mal"
         private const val MAL_CLIENT_ID_KEY = "client_id"
+        private const val MAL_OAUTH_VERIFIER_KEY = "oauth_code_verifier"
+        private const val MAL_OAUTH_STATE_KEY = "oauth_state"
 
         private val SCORE_LIST = IntRange(0, 10)
             .map(Int::toString)
@@ -74,7 +77,17 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
             .set(normalized)
     }
 
-    fun authUrl() = MyAnimeListApi.authUrl(requireClientId())
+    fun authUrl(): String {
+        val codeVerifier = PkceUtil.generateCodeVerifier()
+        val state = PkceUtil.generateCodeVerifier()
+        trackPreferences.trackOAuthSession(this, MAL_OAUTH_VERIFIER_KEY).set(codeVerifier)
+        trackPreferences.trackOAuthSession(this, MAL_OAUTH_STATE_KEY).set(state)
+        return MyAnimeListApi.authUrl(
+            clientId = requireClientId(),
+            codeVerifier = codeVerifier,
+            state = state,
+        )
+    }
 
     internal fun requireClientId(): String =
         getClientId().ifBlank { throw MALClientIdMissing() }
@@ -175,24 +188,54 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
         return api.findListItem(track) ?: add(track)
     }
 
-    override suspend fun login(username: String, password: String) = login(password)
+    override suspend fun login(username: String, password: String) =
+        login(password, expectedOAuthState())
 
-    suspend fun login(authCode: String) {
+    suspend fun login(authCode: String, state: String?) {
+        val codeVerifier = trackPreferences
+            .trackOAuthSession(this, MAL_OAUTH_VERIFIER_KEY)
+            .get()
+        val expectedState = expectedOAuthState()
+
         try {
-            val oauth = api.getAccessToken(authCode)
+            if (
+                codeVerifier.isBlank() ||
+                expectedState.isBlank() ||
+                state.isNullOrBlank() ||
+                state != expectedState
+            ) {
+                throw MALOAuthSessionInvalid()
+            }
+
+            val oauth = api.getAccessToken(
+                authCode = authCode,
+                codeVerifier = codeVerifier,
+            )
             interceptor.setAuth(oauth)
             val username = api.getCurrentUser()
             saveDisplayUsername(username)
             saveCredentials(username, oauth.accessToken)
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             logout()
+            throw error
+        } finally {
+            clearOAuthSession()
         }
     }
 
     override fun logout() {
         super.logout()
         trackPreferences.trackToken(this).delete()
+        clearOAuthSession()
         interceptor.setAuth(null)
+    }
+
+    private fun expectedOAuthState(): String =
+        trackPreferences.trackOAuthSession(this, MAL_OAUTH_STATE_KEY).get()
+
+    private fun clearOAuthSession() {
+        trackPreferences.trackOAuthSession(this, MAL_OAUTH_VERIFIER_KEY).delete()
+        trackPreferences.trackOAuthSession(this, MAL_OAUTH_STATE_KEY).delete()
     }
 
     fun getIfAuthExpired(): Boolean {

@@ -205,8 +205,9 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
             val user = api.getCurrentUser()
             saveDisplayUsername(user.username)
             saveCredentials(user.reference, oauth.accessToken)
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             logout()
+            throw error
         }
     }
 

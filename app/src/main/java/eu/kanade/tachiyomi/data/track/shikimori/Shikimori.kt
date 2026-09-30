@@ -189,8 +189,9 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
             val user = api.getCurrentUser()
             saveDisplayUsername(user.nickname)
             saveCredentials(user.id, oauth.accessToken)
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             logout()
+            throw error
         }
     }
 
