@@ -313,8 +313,10 @@ class TsuzukiSearchScreenModel(
         return blocks.map { block ->
             block.copy(
                 items = block.items.map { item ->
-                    val scores = item.identityKeysForDiscovery()
+                    val ownScores = item.scores.ifEmpty { listOfNotNull(item.score) }
+                    val sharedScores = item.identityKeysForDiscovery()
                         .flatMap { identity -> scoresByIdentity[identity].orEmpty() }
+                    val scores = (ownScores + sharedScores)
                         .distinctBy(CatalogScore::provider)
                     item.copy(
                         score = scores.firstOrNull(),
