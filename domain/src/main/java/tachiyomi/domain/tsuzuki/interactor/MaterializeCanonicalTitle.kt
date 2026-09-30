@@ -27,25 +27,93 @@ class MaterializeCanonicalTitle internal constructor(
         displayTitle: String,
         provider: String,
         externalId: String,
+        externalIds: Map<String, String> = emptyMap(),
     ): CanonicalTitle {
-        repository.getByExternalIdentity(provider, externalId)?.let { return it }
+        val mappedExisting = externalIds
+            .asSequence()
+            .filter { (mappedProvider, mappedExternalId) ->
+                mappedProvider.isNotBlank() &&
+                    mappedExternalId.isNotBlank() &&
+                    !(mappedProvider == provider && mappedExternalId == externalId)
+            }
+            .mapNotNull { (mappedProvider, mappedExternalId) ->
+                repository.getByExternalIdentity(mappedProvider, mappedExternalId)
+            }
+            .distinctBy(CanonicalTitle::id)
+            .toList()
 
-        val now = clock()
-        val title = CanonicalTitle(
-            id = idFactory(),
-            displayTitle = displayTitle,
-            identityState = CanonicalIdentityState.RESOLVED,
-            createdAt = now,
-            updatedAt = now,
-        )
+        val primaryExisting = repository.getByExternalIdentity(provider, externalId)
+        val resolved = when {
+            primaryExisting != null -> primaryExisting
+            mappedExisting.size == 1 -> {
+                mappedExisting.single().also { existing ->
+                    attachIdentityIfSafe(
+                        title = existing,
+                        provider = provider,
+                        externalId = externalId,
+                    )
+                }
+            }
+            else -> {
+                val now = clock()
+                val title = CanonicalTitle(
+                    id = idFactory(),
+                    displayTitle = displayTitle,
+                    identityState = CanonicalIdentityState.RESOLVED,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+                val identity = ExternalIdentity(
+                    canonicalTitleId = title.id,
+                    provider = provider,
+                    externalId = externalId,
+                    verified = true,
+                    createdAt = now,
+                )
+                repository.getOrCreateByExternalIdentity(title, identity)
+            }
+        }
+
+        externalIds.forEach { (mappedProvider, mappedExternalId) ->
+            if (
+                mappedProvider.isNotBlank() &&
+                mappedExternalId.isNotBlank() &&
+                !(mappedProvider == provider && mappedExternalId == externalId)
+            ) {
+                attachIdentityIfSafe(
+                    title = resolved,
+                    provider = mappedProvider,
+                    externalId = mappedExternalId,
+                )
+            }
+        }
+
+        return resolved
+    }
+
+    private suspend fun attachIdentityIfSafe(
+        title: CanonicalTitle,
+        provider: String,
+        externalId: String,
+    ) {
+        val existing = repository.getByExternalIdentity(provider, externalId)
+        if (existing != null) {
+            return
+        }
+
         val identity = ExternalIdentity(
             canonicalTitleId = title.id,
             provider = provider,
             externalId = externalId,
             verified = true,
-            createdAt = now,
+            createdAt = clock(),
         )
-        return repository.getOrCreateByExternalIdentity(title, identity)
+        try {
+            repository.addExternalIdentity(identity)
+        } catch (error: Exception) {
+            val raced = repository.getByExternalIdentity(provider, externalId)
+            if (raced == null) throw error
+        }
     }
 
     suspend fun fromSource(displayTitle: String): CanonicalTitle {
