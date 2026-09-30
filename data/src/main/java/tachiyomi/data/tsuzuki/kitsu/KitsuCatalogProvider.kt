@@ -172,6 +172,9 @@ class KitsuCatalogProvider(
                         mapping.id in mappingIds ||
                             mapping.relationships.item.data?.let { item ->
                                 item.type == "manga" && item.id == resource.id
+                            } == true ||
+                            mapping.relationships.media.data?.let { media ->
+                                media.type == "manga" && media.id == resource.id
                             } == true
                         )
             }
