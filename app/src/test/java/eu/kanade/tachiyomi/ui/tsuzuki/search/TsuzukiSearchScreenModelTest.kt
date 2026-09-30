@@ -29,6 +29,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -129,7 +130,7 @@ class TsuzukiSearchScreenModelTest {
     }
 
     @Test
-    fun `discover shares provider ratings across exact mapped identities`() = runTest(dispatcher) {
+    fun `discover enriches Kitsu catalog with enabled MAL rating without MAL catalog row`() = runTest(dispatcher) {
         val kitsu = object : DiscoveryProvider {
             override val integrationId = IntegrationId("kitsu")
 
@@ -159,40 +160,37 @@ class TsuzukiSearchScreenModelTest {
             override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
                 Result.success(CatalogPage(emptyList(), hasNextPage = false))
         }
-        val mal = object : DiscoveryProvider {
+        val kitsuRatings = object : RatingsProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val malRatings = object : RatingsProvider {
             override val integrationId = IntegrationId("mal")
 
-            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
-
-            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
                 Result.success(
-                    CatalogPage(
-                        items = listOf(
-                            CatalogItem(
-                                provider = "mal",
-                                providerId = "13",
-                                title = "One Piece",
-                                score = CatalogScore(
-                                    provider = "mal",
-                                    value = 9.21,
-                                    maxValue = 10.0,
-                                ),
+                    if (externalId == "13") {
+                        listOf(
+                            ExternalRating(
+                                providerId = "mal",
+                                label = "MAL",
+                                value = 9.21,
+                                scaleMax = 10.0,
                             ),
-                        ),
-                        hasNextPage = false,
-                    ),
+                        )
+                    } else {
+                        emptyList()
+                    },
                 )
-
-            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
-                Result.success(CatalogPage(emptyList(), hasNextPage = false))
         }
         val registry = object : IntegrationRegistry {
             override fun searchProviders(): List<SearchProvider> = emptyList()
-            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(kitsu, mal)
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(kitsu)
             override fun metadataProviders(): List<MetadataProvider> = emptyList()
             override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
-            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = listOf(kitsuRatings, malRatings)
             override fun trackingProviders(): List<TrackingProvider> = emptyList()
         }
         val model = TsuzukiSearchScreenModel(
@@ -209,9 +207,8 @@ class TsuzukiSearchScreenModelTest {
 
         val discover = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
         val trending = discover.blocks.first { it.kind == DiscoverKind.TRENDING }.items.single()
-        val popular = discover.blocks.first { it.kind == DiscoverKind.POPULAR }.items.single()
         trending.scores.map(CatalogScore::provider) shouldBe listOf("kitsu", "mal")
-        popular.scores.map(CatalogScore::provider) shouldBe listOf("mal", "kitsu")
+        trending.scores.map(CatalogScore::value) shouldBe listOf(85.08, 9.21)
     }
 
     @Test
