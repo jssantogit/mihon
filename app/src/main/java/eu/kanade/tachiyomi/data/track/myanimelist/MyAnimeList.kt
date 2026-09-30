@@ -50,7 +50,7 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
 
     override val isLoggedIn: Boolean
         get() = userOwnedCredentialSessionActive(
-            baseLoggedIn = super.isLoggedIn,
+            super.isLoggedIn,
             getClientId(),
         )
 

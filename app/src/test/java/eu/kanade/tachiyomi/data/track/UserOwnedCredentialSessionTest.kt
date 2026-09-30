@@ -8,7 +8,7 @@ class UserOwnedCredentialSessionTest {
     @Test
     fun `legacy oauth session is inactive without user owned application credentials`() {
         userOwnedCredentialSessionActive(
-            baseLoggedIn = true,
+            true,
             "",
         ) shouldBe false
     }

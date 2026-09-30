@@ -53,7 +53,7 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
 
     override val isLoggedIn: Boolean
         get() = userOwnedCredentialSessionActive(
-            baseLoggedIn = super.isLoggedIn,
+            super.isLoggedIn,
             getClientReference(),
             getClientSecret(),
         )

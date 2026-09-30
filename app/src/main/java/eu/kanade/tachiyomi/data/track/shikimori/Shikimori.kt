@@ -58,7 +58,7 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
 
     override val isLoggedIn: Boolean
         get() = userOwnedCredentialSessionActive(
-            baseLoggedIn = super.isLoggedIn,
+            super.isLoggedIn,
             getClientId(),
             getClientSecret(),
         )
