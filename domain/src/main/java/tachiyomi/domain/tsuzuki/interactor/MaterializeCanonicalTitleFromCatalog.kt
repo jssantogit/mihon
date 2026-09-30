@@ -29,7 +29,7 @@ class MaterializeCanonicalTitleFromCatalog internal constructor(
         titleFormatObservationRepository = titleFormatObservationRepository,
     )
 
-    internal constructor(
+    constructor(
         materializeCanonicalTitle: MaterializeCanonicalTitle,
         reportedChapterCountRepository: ReportedChapterCountRepository,
     ) : this(
