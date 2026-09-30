@@ -19,6 +19,7 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 
 class SearchIntegrationsTest {
@@ -81,6 +82,59 @@ class SearchIntegrationsTest {
                                     value = 9.21,
                                     maxValue = 10.0,
                                 ),
+                            ),
+                        ),
+                    ),
+                ),
+                ratingProviders = listOf(
+                    FakeRatingsProvider("kitsu", emptyMap()),
+                    FakeRatingsProvider("mal", emptyMap()),
+                ),
+            ),
+        )
+
+        val results = search.execute(CatalogQuery(query = "One Piece"))
+
+        results.size shouldBe 1
+        results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mal")
+        results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(85.08, 9.21)
+    }
+
+    @Test
+    fun `catalog work is enriched with enabled provider ratings even without another catalog row`() = runTest {
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider(
+                    id = "kitsu",
+                    result = Result.success(
+                        page(
+                            CatalogItem(
+                                provider = "kitsu",
+                                providerId = "one-piece",
+                                title = "One Piece",
+                                score = CatalogScore(
+                                    provider = "kitsu",
+                                    value = 85.08,
+                                    maxValue = 100.0,
+                                ),
+                                externalIds = mapOf("mal" to "13"),
+                            ),
+                        ),
+                    ),
+                ),
+                ratingProviders = listOf(
+                    FakeRatingsProvider(
+                        id = "kitsu",
+                        ratingsByExternalId = emptyMap(),
+                    ),
+                    FakeRatingsProvider(
+                        id = "mal",
+                        ratingsByExternalId = mapOf(
+                            "13" to ExternalRating(
+                                providerId = "mal",
+                                label = "MAL",
+                                value = 9.21,
+                                scaleMax = 10.0,
                             ),
                         ),
                     ),
@@ -212,13 +266,26 @@ class SearchIntegrationsTest {
         hasNextPage = false,
     )
 
-    private fun registry(vararg providers: SearchProvider) = object : IntegrationRegistry {
+    private fun registry(
+        vararg providers: SearchProvider,
+        ratingProviders: List<RatingsProvider> = emptyList(),
+    ) = object : IntegrationRegistry {
         override fun searchProviders(): List<SearchProvider> = providers.toList()
         override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
-        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
+    }
+
+    private class FakeRatingsProvider(
+        id: String,
+        private val ratingsByExternalId: Map<String, ExternalRating>,
+    ) : RatingsProvider {
+        override val integrationId = IntegrationId(id)
+
+        override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+            Result.success(listOfNotNull(ratingsByExternalId[externalId]))
     }
 
     private class FakeSearchProvider(
