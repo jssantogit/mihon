@@ -6,14 +6,16 @@ import kotlinx.coroutines.flow.first
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
 import tachiyomi.domain.tsuzuki.repository.ExternalLibraryRepository
 import kotlin.time.Clock
 
 class RefreshUserLibraries internal constructor(
     private val registry: IntegrationRegistry,
-    private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
+    private val resolveCanonicalTitle: suspend (CatalogItem, Long?) -> CanonicalTitle,
     private val externalLibraryRepository: ExternalLibraryRepository,
     private val clock: () -> Long,
 ) {
@@ -21,13 +23,27 @@ class RefreshUserLibraries internal constructor(
     @Inject
     constructor(
         registry: IntegrationRegistry,
-        materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
+        resolveUserLibraryCanonicalTitle: ResolveUserLibraryCanonicalTitle,
         externalLibraryRepository: ExternalLibraryRepository,
     ) : this(
         registry = registry,
-        materializeCanonicalTitleFromCatalog = materializeCanonicalTitleFromCatalog,
+        resolveCanonicalTitle = resolveUserLibraryCanonicalTitle::execute,
         externalLibraryRepository = externalLibraryRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
+    )
+
+    internal constructor(
+        registry: IntegrationRegistry,
+        materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
+        externalLibraryRepository: ExternalLibraryRepository,
+        clock: () -> Long,
+    ) : this(
+        registry = registry,
+        resolveCanonicalTitle = { item, _ ->
+            materializeCanonicalTitleFromCatalog.execute(item)
+        },
+        externalLibraryRepository = externalLibraryRepository,
+        clock = clock,
     )
 
     suspend fun refreshConnected(): Map<IntegrationId, Result<Int>> {
@@ -83,8 +99,11 @@ class RefreshUserLibraries internal constructor(
         return try {
             val syncedAt = clock()
             val entries = snapshot.getOrThrow().entries
+            val legacyTrackerId = registry.manifests()
+                .firstOrNull { it.integrationId == provider.integrationId }
+                ?.legacyTrackerId
             val memberships = entries.flatMap { entry ->
-                val canonicalTitle = materializeCanonicalTitleFromCatalog.execute(entry.item)
+                val canonicalTitle = resolveCanonicalTitle(entry.item, legacyTrackerId)
                 entry.listKeys.map { listKey ->
                     ExternalLibraryMembership(
                         canonicalTitleId = canonicalTitle.id,
