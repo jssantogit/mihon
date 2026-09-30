@@ -492,7 +492,6 @@ class TsuzukiSearchScreenModel(
         }
     }
 
-
     private companion object {
         const val DISCOVER_LIMIT = 20
         const val RATING_ENRICHMENT_CONCURRENCY = 6
