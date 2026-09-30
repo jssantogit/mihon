@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
@@ -40,6 +41,7 @@ import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReadingStart
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveCanonicalSourceManga
 
 @Immutable
 sealed interface CanonicalLibraryScreenState {
@@ -72,6 +74,7 @@ class CanonicalLibraryScreenModel private constructor(
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val refreshUserLibrariesAction: (suspend () -> Unit)?,
     private val mangaRepository: MangaRepository? = null,
+    private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga? = null,
 ) : ViewModel() {
 
     @Inject
@@ -84,6 +87,7 @@ class CanonicalLibraryScreenModel private constructor(
         canonicalReadingRepository: CanonicalReadingRepository,
         refreshUserLibraries: RefreshUserLibraries,
         mangaRepository: MangaRepository,
+        resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
     ) : this(
         observeLibrary = observeUnifiedLibrary::subscribe,
         setCanonicalLibraryStatus = setCanonicalLibraryStatus,
@@ -93,6 +97,7 @@ class CanonicalLibraryScreenModel private constructor(
         canonicalReadingRepository = canonicalReadingRepository,
         refreshUserLibrariesAction = { refreshUserLibraries.refreshConnected() },
         mangaRepository = mangaRepository,
+        resolveCanonicalSourceManga = resolveCanonicalSourceManga,
     )
 
     internal constructor(
@@ -169,9 +174,23 @@ class CanonicalLibraryScreenModel private constructor(
                         canonicalReadingRepository
                             .observeProgressByCanonicalTitleId(item.id)
                             .map { progress ->
+                                val sourceCover = if (item.preferredExternalCoverUrl().isNullOrBlank()) {
+                                    try {
+                                        resolveCanonicalSourceManga
+                                            ?.execute(item.id)
+                                            ?.asMangaCover()
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (_: Throwable) {
+                                        null
+                                    }
+                                } else {
+                                    null
+                                }
                                 item.toCardModel(
                                     progress = progress,
                                     localCoverUrl = item.localCoverUrl(covers),
+                                    sourceCover = sourceCover,
                                 )
                             }
                     },
