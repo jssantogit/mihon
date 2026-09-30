@@ -21,8 +21,6 @@ import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
