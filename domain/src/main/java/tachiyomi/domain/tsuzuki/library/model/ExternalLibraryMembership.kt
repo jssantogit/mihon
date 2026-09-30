@@ -15,6 +15,7 @@ data class ExternalLibraryMembership(
     val score: Double?,
     val listedAt: Long? = null,
     val syncedAt: Long,
+    val coverUrl: String? = null,
 ) {
     init {
         require(canonicalTitleId.isNotBlank()) { "Canonical title id cannot be blank" }

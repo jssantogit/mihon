@@ -50,6 +50,7 @@ class ExternalLibraryRepositoryImpl(
                         score = membership.score,
                         listedAt = membership.listedAt,
                         syncedAt = membership.syncedAt,
+                        coverUrl = membership.coverUrl,
                     )
             }
         }
@@ -79,6 +80,7 @@ class ExternalLibraryRepositoryImpl(
         score: Double?,
         listedAt: Long?,
         syncedAt: Long,
+        coverUrl: String?,
     ) = ExternalLibraryMembership(
         canonicalTitleId = canonicalTitleId,
         provider = provider,
@@ -92,5 +94,6 @@ class ExternalLibraryRepositoryImpl(
         score = score,
         listedAt = listedAt,
         syncedAt = syncedAt,
+        coverUrl = coverUrl,
     )
 }
