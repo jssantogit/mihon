@@ -123,12 +123,14 @@ class MalIntegrationProvider private constructor(
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
         UserLibrarySnapshot(
             lists = MAL_USER_LISTS,
-            entries = api.getUserMangaList().map { it.toUserLibraryEntry() },
+            entries = api.getUserMangaList()
+                .filter { entry -> entry.status.normalizedMalStatus() in MAL_IMPORTED_STATUSES }
+                .map { it.toUserLibraryEntry() },
         )
     }
 
     private fun MalUserListEntry.toUserLibraryEntry(): UserLibraryEntry {
-        val normalizedStatus = status.lowercase().trim()
+        val normalizedStatus = status.normalizedMalStatus()
         return UserLibraryEntry(
             item = manga.toCatalogItem(),
             listKeys = setOf("mal:status:$normalizedStatus"),
@@ -182,6 +184,8 @@ class MalIntegrationProvider private constructor(
             scaleMax = MAL_SCORE_MAX,
         )
     }
+
+    private fun String.normalizedMalStatus(): String = lowercase().trim()
 
     private fun String.toCatalogStatus(): CatalogItemStatus = when (normalizedMalValue()) {
         "currently publishing", "publishing" -> CatalogItemStatus.ONGOING
@@ -239,6 +243,12 @@ class MalIntegrationProvider private constructor(
         private const val MAL_RANKING_TOP = "all"
         private const val MAL_RANKING_FAVORITE = "favorite"
         private const val MAL_STATUS_SELECTION_GROUP = "mal:status"
+        private val MAL_IMPORTED_STATUSES = setOf(
+            "reading",
+            "plan_to_read",
+            "on_hold",
+            "dropped",
+        )
         private val WHITESPACE_REGEX = Regex("""\s+""")
         private val MAL_USER_LISTS = listOf(
             UserListDefinition(
@@ -251,12 +261,6 @@ class MalIntegrationProvider private constructor(
                 key = "mal:status:plan_to_read",
                 title = "Plan to Read",
                 status = LibraryStatus.PLANNING,
-                selectionGroup = MAL_STATUS_SELECTION_GROUP,
-            ),
-            UserListDefinition(
-                key = "mal:status:completed",
-                title = "Completed",
-                status = LibraryStatus.COMPLETED,
                 selectionGroup = MAL_STATUS_SELECTION_GROUP,
             ),
             UserListDefinition(

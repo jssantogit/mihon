@@ -24,6 +24,17 @@ class MyAnimeListApiTest {
     }
 
     @Test
+    fun `user manga list explicitly requests list status for library import`() {
+        val url = MyAnimeListApi.userMangaListUrl(offset = 250).toHttpUrl()
+
+        url.queryParameter("fields")
+            ?.split(",")
+            ?.contains("list_status") shouldBe true
+        url.queryParameter("limit") shouldBe "250"
+        url.queryParameter("offset") shouldBe "250"
+    }
+
+    @Test
     fun `access token request reuses redirect uri and persisted verifier`() {
         val request = MyAnimeListApi.accessTokenRequest(
             authCode = "authorization-code",

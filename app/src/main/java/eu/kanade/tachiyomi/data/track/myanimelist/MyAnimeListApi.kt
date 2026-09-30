@@ -253,15 +253,8 @@ class MyAnimeListApi(
     }
 
     private suspend fun getUserListPage(offset: Int): MALUserListPage {
-        val urlBuilder = "$BASE_API_URL/users/@me/mangalist".toUri().buildUpon()
-            .appendQueryParameter("fields", SEARCH_FIELDS)
-            .appendQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
-        if (offset > 0) {
-            urlBuilder.appendQueryParameter("offset", offset.toString())
-        }
-
         val request = Request.Builder()
-            .url(urlBuilder.build().toString())
+            .url(userMangaListUrl(offset))
             .get()
             .build()
         return with(json) {
@@ -318,6 +311,7 @@ class MyAnimeListApi(
         private const val SEARCH_FIELDS =
             "id,title,synopsis,num_chapters,num_volumes,mean,num_scoring_users,main_picture,status,media_type,start_date,end_date,authors{first_name,last_name},genres"
 
+        private const val USER_LIBRARY_FIELDS = "$SEARCH_FIELDS,list_status"
         private const val LIST_PAGINATION_AMOUNT = 250
 
         fun authUrl(clientId: String, codeVerifier: String): String = "$BASE_OAUTH_URL/authorize".toHttpUrl()
@@ -329,6 +323,20 @@ class MyAnimeListApi(
             .addQueryParameter("response_type", "code")
             .build()
             .toString()
+
+        internal fun userMangaListUrl(offset: Int): String {
+            return "$BASE_API_URL/users/@me/mangalist".toHttpUrl()
+                .newBuilder()
+                .addQueryParameter("fields", USER_LIBRARY_FIELDS)
+                .addQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
+                .apply {
+                    if (offset > 0) {
+                        addQueryParameter("offset", offset.toString())
+                    }
+                }
+                .build()
+                .toString()
+        }
 
         internal fun accessTokenRequest(
             authCode: String,
