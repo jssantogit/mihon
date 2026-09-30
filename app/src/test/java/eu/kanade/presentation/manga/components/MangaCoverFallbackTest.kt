@@ -6,6 +6,8 @@ import tachiyomi.domain.manga.model.MangaCover
 
 class MangaCoverFallbackTest {
 
+    // Keep this regression in the full cover-validation lane.
+
     @Test
     fun `cover candidates keep ordered unique fallbacks`() {
         val sourceCover = MangaCover(
