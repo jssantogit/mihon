@@ -7,6 +7,7 @@ CREATE TABLE tsuzuki_external_library_memberships(
     remote_status TEXT,
     progress REAL,
     score REAL,
+    listed_at INTEGER,
     synced_at INTEGER NOT NULL,
     PRIMARY KEY(provider, external_id, list_key),
     FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
