@@ -176,8 +176,10 @@ class BangumiApi(
                 page.data.mapNotNullTo(entries) { collection ->
                     val subjectId = collection.subjectId ?: collection.subject?.id
                         ?: return@mapNotNullTo null
-                    val manga = collection.subject?.toTrackSearch(trackerId, subjectId)
-                        ?: getMangaDetails(subjectId.toInt())
+                    // The collection endpoint only exposes SlimSubject for the broad "Book" type.
+                    // Resolve full details so novels/art books are filtered consistently with the
+                    // rest of the Bangumi manga integration and the canonical format is retained.
+                    val manga = getMangaDetails(subjectId.toInt())
                         ?: return@mapNotNullTo null
                     val collectionType = collection.type ?: return@mapNotNullTo null
 
