@@ -275,7 +275,12 @@ class KitsuIntegrationProviderTest {
                             chapterCount = 200,
                             staff = KitsuMangaStaffData(nodes = emptyList()),
                             posterImage = KitsuMangaPosters(
-                                views = emptyList(),
+                                views = listOf(
+                                    KitsuMangaPoster(
+                                        name = "small",
+                                        url = "",
+                                    ),
+                                ),
                                 original = KitsuMangaPoster(
                                     name = "original",
                                     url = "https://example.com/solo.jpg",
