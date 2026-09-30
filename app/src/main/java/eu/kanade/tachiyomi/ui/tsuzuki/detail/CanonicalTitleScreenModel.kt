@@ -698,10 +698,11 @@ class CanonicalTitleScreenModel(
             }
         }
 
+        val resolvedProviderCover = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl
         logcat {
             "TsuzukiCover detail title=${canonicalTitleId.take(8)} " +
                 "integrationRequested=$includeIntegrationMetadata " +
-                "provider=${!((integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl)).isNullOrBlank()} " +
+                "provider=${!resolvedProviderCover.isNullOrBlank()} " +
                 "source=${metadata != null && !metadata.thumbnailUrl.isNullOrBlank()}"
         }
 
