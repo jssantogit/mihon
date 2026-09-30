@@ -1,0 +1,36 @@
+# Tsuzuki diagnostics v1
+
+Tsuzuki records a small, local structured trace for supported operations. It augments Mihon's existing Logcat and crash handling; it does not upload diagnostics or replace the reading and crash pipeline.
+
+## Structured event schema
+
+The JSONL schema is version `1`. Each event record requires `schemaVersion`, `recordType`, `timestampMillis`, `severity`, `subsystem`, `name`, `sessionId`, `stage`, `outcome`, and `attributes`; `operationId`, `durationMillis`, and `attempt` are optional. `severity` and `subsystem` use uppercase enum names. Event name, stage, and outcome use lowercase underscore form, such as `source_resolve_started`, `preferred_sources`, and `not_found_with_source_failures`. Safe-code attributes retain their uppercase enum code names. Overflow records use `recordType: "dropped_events"` and a count.
+
+The current event names cover source resolution: start, mapping reuse, preferred-source selection, search start/completion/failure, match evaluation, mapping-confirmation failure, and resolution completion. Outcomes distinguish successful resolution, reuse, confirmation, empty results, source failures, typed failures, thrown failures, and cancellation. The resolver's user-facing result semantics remain unchanged.
+
+Attributes are allowlisted: numeric source IDs and bounded counts, booleans for broaden/reuse/auto-confirm/ambiguity, language tags, pseudonymous canonical/Mihon references, confidence values/buckets, fixed error categories, and HTTP status. The sanitizer rejects an invalid schema, UUID, timestamp, duration, or attempt and drops unknown or invalid attributes. It accepts no exception text or arbitrary message. The same sanitized JSON encoding is used for structured Logcat lines and persisted history.
+
+Each process gets a random UUID session ID and a private random salt. Canonical-title and Mihon references use separate salted SHA-256 inputs; they are stable within that recorder process and change after restart. They do not expose the original IDs and are not intended to correlate records across app launches.
+
+## Storage, loss, and incognito
+
+Structured history is stored in the app's private `noBackupFilesDir`. The writer is best effort, uses a bounded queue, and retains at most 5 MiB for up to 3 days. Old records are evicted first. Queue saturation is counted when possible. A crash, full queue, storage error, or bounded export flush can lose recent events; diagnostics must never block or fail the operation being observed.
+
+Incognito mode disables persistent structured history. If reading the preference fails, persistence is disabled. Incognito does not suppress the sanitized Logcat line, which follows Android's normal Logcat retention behavior. The export omits stored structured history while incognito is enabled.
+
+## HTTP and export privacy
+
+Verbose HTTP logging emits only recognized request methods, response status/duration, a fixed allowlist of header names with all values redacted, and bounded body byte counts. URLs, body contents, unrecognized headers, and failure details are suppressed.
+
+The existing Advanced settings export remains one shareable text file. It includes app/device debug information, problematic extension information, an explicit exception when supplied, structured history, and supplemental Logcat. Logcat capture has a 10-second timeout, a 4,000-line request limit, and a 512 KiB output cap. Timeout, nonzero exit, start failure, stuck process, truncation, and incomplete reads are marked; partial output is retained where available. A Logcat failure does not prevent report composition.
+
+The structured section and HTTP logger have the guarantees above. The legacy explicit exception remains verbatim, and supplemental Mihon Logcat can still contain third-party free text or other sensitive content. The export is not wholly sanitized. Review the report before sharing it.
+
+## Physical export smoke
+
+Before merge, validate on a physical device with the tested APK and record its commit SHA, device/Android version, steps, and result:
+
+1. Record a resolver operation and export from the existing Advanced settings flow; verify debug/device data, extensions when applicable, structured history, and supplemental Logcat appear in one shareable text file.
+2. Exercise an unavailable Logcat command or equivalent test condition and confirm the report still opens with a fixed partial/unavailable marker.
+3. Enable incognito, record an event, export, and confirm the structured history section contains no persisted event from that period.
+4. Inspect the structured and verbose HTTP sections for absence of a known test title, URL, credential, cookie, or token. Treat the legacy exception and Logcat sections according to their separate privacy limits above.
