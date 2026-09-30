@@ -62,10 +62,39 @@ class CanonicalLibraryFiltersTest {
         ) shouldContainExactly emptyList()
     }
 
+    @Test
+    fun `provider list filter is scoped to the selected origin`() {
+        val items = listOf(
+            card(
+                id = "custom",
+                originStatuses = mapOf("mangaupdates" to emptySet()),
+                originListKeys = mapOf("mangaupdates" to setOf("mangaupdates:list:99")),
+                format = CatalogItemFormat.MANGA,
+            ),
+            card(
+                id = "other",
+                originStatuses = mapOf("mangaupdates" to setOf(LibraryStatus.READING)),
+                originListKeys = mapOf("mangaupdates" to setOf("mangaupdates:list:1")),
+                format = CatalogItemFormat.MANGA,
+            ),
+        )
+
+        val result = filterCanonicalLibraryCards(
+            items = items,
+            filters = CanonicalLibraryFilterState(
+                origin = "mangaupdates",
+                listKey = "mangaupdates:list:99",
+            ),
+        )
+
+        result.map { it.canonicalTitleId } shouldContainExactly listOf("custom")
+    }
+
     private fun card(
         id: String,
         originStatuses: Map<String, Set<LibraryStatus>>,
         format: CatalogItemFormat,
+        originListKeys: Map<String, Set<String>> = emptyMap(),
     ) = CanonicalLibraryCardModel(
         canonicalTitleId = id,
         title = id,
@@ -73,6 +102,7 @@ class CanonicalLibraryFiltersTest {
         categories = emptyList(),
         readingState = CanonicalLibraryReadingState.NOT_STARTED,
         originStatuses = originStatuses,
+        originListKeys = originListKeys,
         format = format,
         hasLocalMembership = "tsuzuki" in originStatuses,
     )
