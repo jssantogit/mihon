@@ -7,6 +7,7 @@ CREATE TABLE tsuzuki_external_library_memberships(
     remote_status TEXT,
     progress REAL,
     score REAL,
+    listed_at INTEGER,
     synced_at INTEGER NOT NULL,
     PRIMARY KEY(provider, external_id, list_key),
     FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
@@ -38,6 +39,7 @@ INSERT INTO tsuzuki_external_library_memberships(
     remote_status,
     progress,
     score,
+    listed_at,
     synced_at
 )
 VALUES (
@@ -49,6 +51,7 @@ VALUES (
     :remoteStatus,
     :progress,
     :score,
+    :listedAt,
     :syncedAt
 )
 ON CONFLICT(provider, external_id, list_key) DO UPDATE SET
@@ -57,6 +60,7 @@ ON CONFLICT(provider, external_id, list_key) DO UPDATE SET
     remote_status = excluded.remote_status,
     progress = excluded.progress,
     score = excluded.score,
+    listed_at = excluded.listed_at,
     synced_at = excluded.synced_at;
 
 deleteTsuzukiExternalLibraryMembershipsByProvider:
