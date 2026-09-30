@@ -12,7 +12,6 @@ import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
 import kotlin.time.Clock
 
-@Inject
 class ResolveUserLibraryCanonicalTitle internal constructor(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository,
