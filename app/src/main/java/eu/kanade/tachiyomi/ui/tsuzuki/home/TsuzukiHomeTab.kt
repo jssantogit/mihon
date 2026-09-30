@@ -48,7 +48,6 @@ data object TsuzukiHomeTab : Tab {
                     ),
                 )
             },
-            onRemoveFromContinueReading = screenModel::removeFromContinueReading,
             onFolder = { collectionId, folderId ->
                 navigator.push(CollectionsScreen(collectionId, folderId))
             },
