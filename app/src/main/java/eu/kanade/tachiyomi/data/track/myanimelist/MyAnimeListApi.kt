@@ -325,13 +325,17 @@ class MyAnimeListApi(
             .toString()
 
         internal fun userMangaListUrl(offset: Int): String {
-            val urlBuilder = "$BASE_API_URL/users/@me/mangalist".toUri().buildUpon()
-                .appendQueryParameter("fields", USER_LIBRARY_FIELDS)
-                .appendQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
-            if (offset > 0) {
-                urlBuilder.appendQueryParameter("offset", offset.toString())
-            }
-            return urlBuilder.build().toString()
+            return "$BASE_API_URL/users/@me/mangalist".toHttpUrl()
+                .newBuilder()
+                .addQueryParameter("fields", USER_LIBRARY_FIELDS)
+                .addQueryParameter("limit", LIST_PAGINATION_AMOUNT.toString())
+                .apply {
+                    if (offset > 0) {
+                        addQueryParameter("offset", offset.toString())
+                    }
+                }
+                .build()
+                .toString()
         }
 
         internal fun accessTokenRequest(
