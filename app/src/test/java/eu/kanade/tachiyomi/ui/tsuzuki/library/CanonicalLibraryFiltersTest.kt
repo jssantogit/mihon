@@ -90,7 +90,6 @@ class CanonicalLibraryFiltersTest {
         result.map { it.canonicalTitleId } shouldContainExactly listOf("custom")
     }
 
-
     @Test
     fun `provider list options expose named custom lists but hide status mirrors`() {
         val items = listOf(
