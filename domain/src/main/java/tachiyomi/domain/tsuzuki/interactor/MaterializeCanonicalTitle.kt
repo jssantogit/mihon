@@ -6,6 +6,7 @@ import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 class MaterializeCanonicalTitle internal constructor(
@@ -110,6 +111,8 @@ class MaterializeCanonicalTitle internal constructor(
         )
         try {
             repository.addExternalIdentity(identity)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             val raced = repository.getByExternalIdentity(provider, externalId)
             if (raced == null) throw error
