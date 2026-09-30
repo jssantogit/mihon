@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
-import io.kotest.matchers.shouldBe
 import eu.kanade.tachiyomi.data.track.kitsu.KitsuUserLibraryApi
 import eu.kanade.tachiyomi.data.track.kitsu.KitsuUserListEntry
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuManga
@@ -8,6 +7,7 @@ import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaPoster
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaPosters
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaStaffData
 import eu.kanade.tachiyomi.data.track.kitsu.dto.KitsuMangaTitles
+import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
