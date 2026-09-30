@@ -2,6 +2,8 @@ package tachiyomi.domain.tsuzuki.source.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -22,7 +24,12 @@ class ResolveCanonicalSourceManga(
 ) {
 
     suspend fun execute(canonicalTitleId: String): Manga? {
-        val title = canonicalTitleRepository.getById(canonicalTitleId) ?: return null
+        val diagnosticId = canonicalTitleId.take(8)
+        val title = canonicalTitleRepository.getById(canonicalTitleId)
+        if (title == null) {
+            logcat(LogPriority.WARN) { "TsuzukiCover sourceResolve title=$diagnosticId missingCanonicalTitle=true" }
+            return null
+        }
         val mappings = sourceTitleMappingRepository
             .getByCanonicalTitleId(canonicalTitleId)
             .filter { it.availability != SourceMappingAvailability.UNAVAILABLE }
@@ -31,10 +38,18 @@ class ResolveCanonicalSourceManga(
                     .thenByDescending { it.updatedAt },
             )
 
+        logcat { "TsuzukiCover sourceResolve title=$diagnosticId mappings=${mappings.size}" }
+
         var fallback: Manga? = null
         for (mapping in mappings) {
             val persisted = findPersistedManga(mapping)
+            logcat {
+                "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} " +
+                    "persisted=${persisted != null} initialized=${persisted?.initialized == true} " +
+                    "thumbnail=${!persisted?.thumbnailUrl.isNullOrBlank()} mappedMihonId=${mapping.mihonMangaId != null}"
+            }
             if (!persisted?.thumbnailUrl.isNullOrBlank() && persisted.initialized) {
+                logcat { "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} selected=persisted" }
                 return persisted
             }
             if (fallback == null && persisted != null) {
@@ -54,13 +69,22 @@ class ResolveCanonicalSourceManga(
                 genres = persisted?.genre,
                 status = persisted?.status ?: 0L,
             )
-            val details = try {
-                readingSourceGateway.getDetails(candidate).getOrNull()
+            val detailsResult = try {
+                readingSourceGateway.getDetails(candidate)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                logcat(LogPriority.WARN, error) {
+                    "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} detailsThrown=true"
+                }
                 null
-            } ?: continue
+            }
+            val details = detailsResult?.getOrNull()
+            logcat {
+                "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} " +
+                    "details=${details != null} detailsThumbnail=${!details?.thumbnailUrl.isNullOrBlank()}"
+            }
+            if (details == null) continue
 
             val enriched = (persisted ?: Manga.create()).copy(
                 source = mapping.sourceId,
@@ -88,11 +112,18 @@ class ResolveCanonicalSourceManga(
             if (repaired != null) {
                 if (fallback == null) fallback = repaired
                 if (!repaired.thumbnailUrl.isNullOrBlank()) {
+                    logcat {
+                        "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} selected=repaired"
+                    }
                     return repaired
                 }
             }
         }
 
+        logcat {
+            "TsuzukiCover sourceResolve title=$diagnosticId selected=fallback " +
+                "fallbackPresent=${fallback != null} fallbackThumbnail=${!fallback?.thumbnailUrl.isNullOrBlank()}"
+        }
         return fallback
     }
 
