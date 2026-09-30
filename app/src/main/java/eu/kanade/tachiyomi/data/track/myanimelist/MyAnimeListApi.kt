@@ -395,3 +395,8 @@ class MyAnimeListApi(
             codeVerifier.trim().ifBlank { throw MALPkceVerifierMissing() }
     }
 }
+
+
+class MALPkceVerifierMissing : IllegalStateException(
+    "MyAnimeList: OAuth PKCE verifier is missing; restart the connection flow.",
+)
