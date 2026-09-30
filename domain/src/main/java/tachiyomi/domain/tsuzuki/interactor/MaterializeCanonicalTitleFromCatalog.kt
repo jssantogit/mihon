@@ -31,6 +31,16 @@ class MaterializeCanonicalTitleFromCatalog internal constructor(
 
     internal constructor(
         materializeCanonicalTitle: MaterializeCanonicalTitle,
+        reportedChapterCountRepository: ReportedChapterCountRepository,
+    ) : this(
+        materializeCanonicalTitle = materializeCanonicalTitle,
+        reportedChapterCountRepository = reportedChapterCountRepository,
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        titleFormatObservationRepository = null,
+    )
+
+    internal constructor(
+        materializeCanonicalTitle: MaterializeCanonicalTitle,
     ) : this(
         materializeCanonicalTitle = materializeCanonicalTitle,
         reportedChapterCountRepository = null,
