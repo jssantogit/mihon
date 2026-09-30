@@ -2,9 +2,9 @@ package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
+import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
-import dev.zacsweers.metro.Inject
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.track.kitsu.KitsuUserLibraryApi
 import eu.kanade.tachiyomi.data.track.kitsu.KitsuUserListEntry
@@ -195,7 +195,7 @@ class KitsuIntegrationProvider private constructor(
         }
     }
 
-    private companion object {
+    companion object {
         private const val KITSU_SCORE_MAX = 100.0
         private const val KITSU_STATUS_SELECTION_GROUP = "kitsu:status"
 
