@@ -77,7 +77,9 @@ fun projectUnifiedLibrary(
         .sortedByDescending { item ->
             maxOf(
                 item.localEntry?.addedAt ?: Long.MIN_VALUE,
-                item.externalMemberships.maxOfOrNull(ExternalLibraryMembership::syncedAt) ?: Long.MIN_VALUE,
+                item.externalMemberships.maxOfOrNull { membership ->
+                    membership.listedAt ?: membership.syncedAt
+                } ?: Long.MIN_VALUE,
             )
         }
         .toList()
