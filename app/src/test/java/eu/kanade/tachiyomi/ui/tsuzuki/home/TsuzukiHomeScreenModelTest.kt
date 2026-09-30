@@ -98,8 +98,10 @@ class TsuzukiHomeScreenModelTest {
 
         advanceUntilIdle()
 
-        model.state.value.continueReading.single().coverUrl shouldBe
-            "https://cdn.example/dandadan.jpg"
+        val item = model.state.value.continueReading.single()
+        item.coverUrl shouldBe "https://cdn.example/dandadan.jpg"
+        item.sourceCover?.sourceId shouldBe 10L
+        item.sourceCover?.url shouldBe "https://cdn.example/dandadan.jpg"
     }
 
     @Test
