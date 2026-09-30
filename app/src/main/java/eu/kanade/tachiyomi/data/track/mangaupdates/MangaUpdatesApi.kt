@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUSearchResult
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUUserList
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUUserListSearchResponse
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUUserListSearchResult
+import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
@@ -53,15 +54,15 @@ class MangaUpdatesApi(
             val detailsById = mutableMapOf<Long, TrackSearch?>()
             val entries = mutableListOf<MangaUpdatesUserListEntry>()
 
-            lists.forEach { list ->
-                getUserListEntries(list.listId).forEach { result ->
+            for (list in lists) {
+                for (result in getUserListEntries(list.listId)) {
                     val manga = if (result.seriesId in detailsById) {
                         detailsById[result.seriesId]
                     } else {
                         getSeriesDetails(result.seriesId)
                             ?.toTrackSearch(trackerId)
                             .also { detailsById[result.seriesId] = it }
-                    } ?: return@forEach
+                    } ?: continue
 
                     val membership = result.metadata.userList
                     entries += MangaUpdatesUserListEntry(
