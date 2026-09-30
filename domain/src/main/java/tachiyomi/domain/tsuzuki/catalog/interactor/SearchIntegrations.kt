@@ -13,10 +13,16 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 @Inject
 class SearchIntegrations(
     private val registry: IntegrationRegistry,
+    private val enrichCatalogRatings: EnrichCatalogRatings,
 ) {
 
+    constructor(registry: IntegrationRegistry) : this(
+        registry = registry,
+        enrichCatalogRatings = EnrichCatalogRatings(registry),
+    )
+
     suspend fun execute(query: CatalogQuery): List<CatalogItem> = coroutineScope {
-        registry.searchProviders()
+        val merged = registry.searchProviders()
             .map { provider ->
                 async {
                     provider.search(query)
@@ -29,5 +35,10 @@ class SearchIntegrations(
             // Exact provider ids and provider-published cross-provider mappings are safe.
             // Title similarity alone remains intentionally insufficient.
             .let(::mergeCatalogItemsByVerifiedIdentity)
+
+        enrichCatalogRatings.execute(merged)
     }
+
+    suspend fun enrichRatings(items: List<CatalogItem>): List<CatalogItem> =
+        enrichCatalogRatings.execute(items)
 }

@@ -5,4 +5,5 @@ data class ExternalRating(
     val label: String,
     val value: Double,
     val scaleMax: Double,
+    val externalId: String? = null,
 )

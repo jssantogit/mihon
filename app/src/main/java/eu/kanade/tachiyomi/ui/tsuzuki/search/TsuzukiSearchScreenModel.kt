@@ -254,6 +254,7 @@ class TsuzukiSearchScreenModel(
                     },
                 ).awaitAll()
                     .filter { block -> block.items.isNotEmpty() }
+                    .let { discovered -> enrichRatingsAcrossBlocks(discovered) }
                     .let(::shareRatingsAcrossBlocks)
             }
             _state.value = SearchState.Discover(
@@ -296,6 +297,25 @@ class TsuzukiSearchScreenModel(
             kind = kind,
             items = items,
         )
+    }
+
+    private suspend fun enrichRatingsAcrossBlocks(
+        blocks: List<DiscoverBlock>,
+    ): List<DiscoverBlock> {
+        val uniqueItems = blocks
+            .flatMap(DiscoverBlock::items)
+            .distinctBy { item -> item.provider to item.providerId }
+        val enrichedByPrimaryIdentity = searchIntegrations
+            .enrichRatings(uniqueItems)
+            .associateBy { item -> item.provider to item.providerId }
+
+        return blocks.map { block ->
+            block.copy(
+                items = block.items.map { item ->
+                    enrichedByPrimaryIdentity[item.provider to item.providerId] ?: item
+                },
+            )
+        }
     }
 
     private fun shareRatingsAcrossBlocks(blocks: List<DiscoverBlock>): List<DiscoverBlock> {

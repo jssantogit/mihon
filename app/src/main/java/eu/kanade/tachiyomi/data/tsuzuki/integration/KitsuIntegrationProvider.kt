@@ -99,10 +99,24 @@ class KitsuIntegrationProvider private constructor(
                         label = "Kitsu",
                         value = score.value,
                         scaleMax = score.maxValue,
+                        externalId = externalId,
                     )
                 },
             )
         }
+
+    override suspend fun ratingsFor(identities: Map<String, String>): Result<List<ExternalRating>> {
+        val kitsuId = identities[integrationId.value] ?: run {
+            val malId = identities[MAL_INTEGRATION_ID]
+                ?: return Result.success(emptyList())
+            val mapping = delegate.getMangaIdByMalId(malId)
+            val error = mapping.exceptionOrNull()
+            if (error != null) return Result.failure(error)
+            mapping.getOrNull()
+        } ?: return Result.success(emptyList())
+
+        return ratings(kitsuId)
+    }
 
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
         UserLibrarySnapshot(
@@ -197,6 +211,7 @@ class KitsuIntegrationProvider private constructor(
 
     companion object {
         private const val KITSU_SCORE_MAX = 100.0
+        private const val MAL_INTEGRATION_ID = "mal"
         private const val KITSU_STATUS_SELECTION_GROUP = "kitsu:status"
 
         private val KITSU_USER_LISTS = listOf(

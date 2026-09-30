@@ -32,4 +32,6 @@ interface KitsuClient {
     suspend fun getMangaDetails(kitsuId: String): Result<KitsuSingleMangaResponse>
 
     suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse> = getMangaDetails(id)
+
+    suspend fun getMangaIdByMalId(malId: String): Result<String?> = Result.success(null)
 }

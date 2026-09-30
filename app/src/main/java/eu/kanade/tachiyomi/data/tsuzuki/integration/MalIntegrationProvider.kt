@@ -180,6 +180,7 @@ class MalIntegrationProvider private constructor(
             label = "MAL",
             value = value,
             scaleMax = MAL_SCORE_MAX,
+            externalId = remote_id.toString(),
         )
     }
 

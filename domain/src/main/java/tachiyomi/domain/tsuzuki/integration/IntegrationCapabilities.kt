@@ -49,6 +49,12 @@ interface RatingsProvider {
     val integrationId: IntegrationId
 
     suspend fun ratings(externalId: String): Result<List<ExternalRating>>
+
+    suspend fun ratingsFor(identities: Map<String, String>): Result<List<ExternalRating>> {
+        val externalId = identities[integrationId.value]
+            ?: return Result.success(emptyList())
+        return ratings(externalId)
+    }
 }
 
 interface TrackingProvider {

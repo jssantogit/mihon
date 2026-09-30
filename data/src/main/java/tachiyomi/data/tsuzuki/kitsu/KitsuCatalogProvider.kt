@@ -96,6 +96,9 @@ class KitsuCatalogProvider(
         }
     }
 
+    suspend fun getMangaIdByMalId(malId: String): Result<String?> =
+        client.getMangaIdByMalId(malId)
+
     private fun mapResourceToItem(
         resource: KitsuMangaResource,
         included: List<KitsuMappingResource> = emptyList(),
