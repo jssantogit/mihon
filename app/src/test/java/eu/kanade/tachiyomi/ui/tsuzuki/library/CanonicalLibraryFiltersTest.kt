@@ -1,8 +1,14 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.library
 
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
+import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
+import tachiyomi.domain.tsuzuki.library.model.UnifiedLibraryTitle
+import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
+import tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 
 class CanonicalLibraryFiltersTest {
@@ -128,6 +134,55 @@ class CanonicalLibraryFiltersTest {
         availableProviderListFilters(items, "mal") shouldContainExactly emptyList()
         availableProviderListFilters(items, "mangaupdates")
             .map { it.key to it.title } shouldContainExactly listOf("mangaupdates:list:99" to "Favorites")
+    }
+
+    @Test
+    fun `library card uses provider artwork and falls back to local manga cover`() {
+        val title = CanonicalTitle(
+            id = "work",
+            displayTitle = "Monster",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val external = UnifiedLibraryTitle(
+            title = title,
+            localEntry = null,
+            externalMemberships = listOf(
+                ExternalLibraryMembership(
+                    canonicalTitleId = "work",
+                    provider = "mal",
+                    externalId = "42",
+                    listKey = "mal:status:reading",
+                    status = LibraryStatus.READING,
+                    remoteStatus = "reading",
+                    progress = 1.0,
+                    score = null,
+                    syncedAt = 1L,
+                    coverUrl = "https://cdn.example/monster.jpg",
+                ),
+            ),
+        )
+        external.toCardModel(
+            progress = emptyList(),
+            localCoverUrl = "file://local-cover.jpg",
+        ).coverUrl shouldBe "https://cdn.example/monster.jpg"
+
+        val local = UnifiedLibraryTitle(
+            title = title,
+            localEntry = CanonicalLibraryEntry(
+                canonicalTitleId = "work",
+                status = LibraryStatus.READING,
+                favorite = true,
+                addedAt = 1L,
+                updatedAt = 1L,
+            ),
+            externalMemberships = emptyList(),
+        )
+        local.toCardModel(
+            progress = emptyList(),
+            localCoverUrl = "file://local-cover.jpg",
+        ).coverUrl shouldBe "file://local-cover.jpg"
     }
 
     private fun card(
