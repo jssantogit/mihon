@@ -96,6 +96,17 @@ class KitsuCatalogProvider(
         }
     }
 
+    suspend fun getByMalId(malId: String): Result<CatalogItem?> {
+        return client.getMangaByMalId(malId).mapCatalog { response ->
+            response?.let {
+                val item = mapResourceToItem(it.data, it.included)
+                item.copy(
+                    externalIds = item.externalIds + ("mal" to malId.trim()),
+                )
+            }
+        }
+    }
+
     private fun mapResourceToItem(
         resource: KitsuMangaResource,
         included: List<KitsuMappingResource> = emptyList(),
@@ -163,10 +174,17 @@ class KitsuCatalogProvider(
             externalIds = included
                 .asSequence()
                 .filter { mapping ->
+                    val mappingIds = resource.relationships.mappings.data
+                        .asSequence()
+                        .map { it.id }
+                        .toSet()
                     mapping.type == "mappings" &&
-                        mapping.relationships.item.data?.let { item ->
-                            item.type == "manga" && item.id == resource.id
-                        } == true &&
+                        (
+                            mapping.id in mappingIds ||
+                                mapping.relationships.item.data?.let { item ->
+                                    item.type == "manga" && item.id == resource.id
+                                } == true
+                            ) &&
                         mapping.attributes.externalSite == "myanimelist/manga"
                 }
                 .mapNotNull { mapping ->
