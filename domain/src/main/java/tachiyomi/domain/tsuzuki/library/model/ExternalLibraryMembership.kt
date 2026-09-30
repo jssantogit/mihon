@@ -11,6 +11,7 @@ data class ExternalLibraryMembership(
     val remoteStatus: String?,
     val progress: Double?,
     val score: Double?,
+    val listedAt: Long?,
     val syncedAt: Long,
 ) {
     init {
