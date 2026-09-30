@@ -13,13 +13,13 @@ import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaAttributes
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaRelationships
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingAttributes
-import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingItemRelationship
-import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingRelationships
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuResourceIdentifier
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuResourceIdentifiersRelationship
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -47,6 +47,16 @@ class KitsuIntegrationProviderTest {
                                         canonicalTitle = "Dandadan",
                                         chapterCount = 205,
                                     ),
+                                    relationships = KitsuMangaRelationships(
+                                        mappings = KitsuResourceIdentifiersRelationship(
+                                            data = listOf(
+                                                KitsuResourceIdentifier(
+                                                    type = "mappings",
+                                                    id = "mapping-1",
+                                                ),
+                                            ),
+                                        ),
+                                    ),
                                 ),
                             ),
                             included = listOf(
@@ -56,14 +66,6 @@ class KitsuIntegrationProviderTest {
                                     attributes = KitsuMappingAttributes(
                                         externalSite = "myanimelist/manga",
                                         externalId = "57325",
-                                    ),
-                                    relationships = KitsuMappingRelationships(
-                                        item = KitsuMappingItemRelationship(
-                                            data = KitsuResourceIdentifier(
-                                                type = "manga",
-                                                id = "kitsu-1",
-                                            ),
-                                        ),
                                     ),
                                 ),
                             ),
@@ -187,6 +189,41 @@ class KitsuIntegrationProviderTest {
         rating.scaleMax shouldBe 100.0
     }
 
+    @Test
+    fun `kitsu resolves its rating from a MAL catalog identity without title matching`() = runTest {
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(KitsuMangaResponse()),
+                    malLookupResult = Result.success(
+                        KitsuSingleMangaResponse(
+                            data = KitsuMangaResource(
+                                id = "kitsu-12",
+                                type = "manga",
+                                attributes = KitsuMangaAttributes(
+                                    canonicalTitle = "One Piece",
+                                    averageRating = "85.08",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val resolution = (provider as RatingsProvider).resolveRatings(
+            CatalogItem(
+                provider = "mal",
+                providerId = "13",
+                title = "One Piece",
+            ),
+        ).getOrThrow()
+
+        resolution?.externalId shouldBe "kitsu-12"
+        resolution?.ratings?.single()?.providerId shouldBe "kitsu"
+        resolution?.ratings?.single()?.value shouldBe 85.08
+    }
+
     private class FakeKitsuUserLibraryApi(
         private val entries: List<KitsuUserListEntry>,
     ) : KitsuUserLibraryApi {
@@ -197,6 +234,8 @@ class KitsuIntegrationProviderTest {
         private val searchResult: Result<KitsuMangaResponse>,
         private val detailResult: Result<KitsuSingleMangaResponse> =
             Result.failure(CatalogError.ItemNotFound("missing")),
+        private val malLookupResult: Result<KitsuSingleMangaResponse?> =
+            Result.success(null),
     ) : KitsuClient {
 
         override suspend fun searchManga(
@@ -215,5 +254,8 @@ class KitsuIntegrationProviderTest {
 
         override suspend fun getMangaDetails(kitsuId: String): Result<KitsuSingleMangaResponse> =
             detailResult
+
+        override suspend fun getMangaByMalId(malId: String): Result<KitsuSingleMangaResponse?> =
+            malLookupResult
     }
 }
