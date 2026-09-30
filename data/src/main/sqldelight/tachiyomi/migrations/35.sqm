@@ -1,0 +1,6 @@
+-- Preserve provider-owned list labels and grouping metadata for unified-library filtering.
+ALTER TABLE tsuzuki_external_library_memberships
+ADD COLUMN list_title TEXT;
+
+ALTER TABLE tsuzuki_external_library_memberships
+ADD COLUMN selection_group TEXT;
