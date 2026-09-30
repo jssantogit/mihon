@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.data.track.DeletableTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
 import eu.kanade.tachiyomi.data.track.userOwnedCredentialSessionActive
+import eu.kanade.tachiyomi.util.PkceUtil
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
@@ -29,6 +30,7 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
         private const val SEARCH_LIST_PREFIX = "my:"
         private const val MAL_INTEGRATION_ID = "mal"
         private const val MAL_CLIENT_ID_KEY = "client_id"
+        private const val MAL_PKCE_VERIFIER_KEY = "pkce_verifier"
 
         private val SCORE_LIST = IntRange(0, 10)
             .map(Int::toString)
@@ -74,7 +76,16 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
             .set(normalized)
     }
 
-    fun authUrl() = MyAnimeListApi.authUrl(requireClientId())
+    fun authUrl(): String {
+        val verifier = PkceUtil.generateCodeVerifier()
+        trackPreferences
+            .integrationCredential(MAL_INTEGRATION_ID, MAL_PKCE_VERIFIER_KEY)
+            .set(verifier)
+        return MyAnimeListApi.authUrl(
+            clientId = requireClientId(),
+            codeVerifier = verifier,
+        )
+    }
 
     internal fun requireClientId(): String =
         getClientId().ifBlank { throw MALClientIdMissing() }
@@ -178,20 +189,31 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
     override suspend fun login(username: String, password: String) = login(password)
 
     suspend fun login(authCode: String) {
+        val verifierPreference = trackPreferences
+            .integrationCredential(MAL_INTEGRATION_ID, MAL_PKCE_VERIFIER_KEY)
+        val verifier = verifierPreference.get()
         try {
-            val oauth = api.getAccessToken(authCode)
+            val oauth = api.getAccessToken(
+                authCode = authCode,
+                codeVerifier = verifier,
+            )
             interceptor.setAuth(oauth)
             val username = api.getCurrentUser()
             saveDisplayUsername(username)
             saveCredentials(username, oauth.accessToken)
         } catch (_: Throwable) {
             logout()
+        } finally {
+            verifierPreference.delete()
         }
     }
 
     override fun logout() {
         super.logout()
         trackPreferences.trackToken(this).delete()
+        trackPreferences
+            .integrationCredential(MAL_INTEGRATION_ID, MAL_PKCE_VERIFIER_KEY)
+            .delete()
         interceptor.setAuth(null)
     }
 
