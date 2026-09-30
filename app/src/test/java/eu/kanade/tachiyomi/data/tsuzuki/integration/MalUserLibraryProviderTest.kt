@@ -37,7 +37,6 @@ class MalUserLibraryProviderTest {
         snapshot.lists.map { it.key } shouldContainExactly listOf(
             "mal:status:reading",
             "mal:status:plan_to_read",
-            "mal:status:completed",
             "mal:status:on_hold",
             "mal:status:dropped",
         )
