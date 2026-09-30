@@ -1,4 +1,5 @@
 -- Preserve provider-owned list labels and grouping metadata for unified-library filtering.
+-- Columns stay nullable so cached memberships from migration 34 remain readable until the next provider refresh.
 ALTER TABLE tsuzuki_external_library_memberships
 ADD COLUMN list_title TEXT;
 
