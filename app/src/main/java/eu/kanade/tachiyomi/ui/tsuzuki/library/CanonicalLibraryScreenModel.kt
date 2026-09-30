@@ -325,7 +325,6 @@ private fun LibraryTitle.toLocalUnifiedTitle() = UnifiedLibraryTitle(
     format = CatalogItemFormat.UNKNOWN,
 )
 
-
 private fun UnifiedLibraryTitle.localCoverUrl(
     covers: Map<Long, String?>,
 ): String? = sources
