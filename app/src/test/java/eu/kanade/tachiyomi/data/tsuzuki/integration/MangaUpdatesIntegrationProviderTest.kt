@@ -40,6 +40,12 @@ class MangaUpdatesIntegrationProviderTest {
                             custom = false,
                         ),
                         MangaUpdatesUserList(
+                            id = 3,
+                            title = "Unfinished List",
+                            type = "unfinished",
+                            custom = false,
+                        ),
+                        MangaUpdatesUserList(
                             id = 12,
                             title = "Favorites",
                             type = "read",
@@ -65,11 +71,17 @@ class MangaUpdatesIntegrationProviderTest {
 
         snapshot.lists.map { it.key } shouldBe listOf(
             "mangaupdates:list:1",
+            "mangaupdates:list:3",
             "mangaupdates:list:12",
         )
-        snapshot.lists.map { it.title } shouldBe listOf("Wish List", "Favorites")
+        snapshot.lists.map { it.title } shouldBe listOf(
+            "Wish List",
+            "Unfinished List",
+            "Favorites",
+        )
         snapshot.lists.map { it.status } shouldBe listOf(
             LibraryStatus.PLANNING,
+            LibraryStatus.DROPPED,
             LibraryStatus.READING,
         )
 
