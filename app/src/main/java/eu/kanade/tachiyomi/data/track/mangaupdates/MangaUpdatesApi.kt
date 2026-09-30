@@ -10,6 +10,10 @@ import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MULoginResponse
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MURating
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MURecord
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUSearchResult
+import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUUserList
+import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUUserListSearchResponse
+import eu.kanade.tachiyomi.data.track.mangaupdates.dto.MUUserListSearchResult
+import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
@@ -32,15 +36,114 @@ import uy.kohesive.injekt.injectLazy
 import tachiyomi.domain.track.model.Track as DomainTrack
 
 class MangaUpdatesApi(
+    private val trackerId: Long,
     private val client: OkHttpClient,
     interceptor: MangaUpdatesInterceptor,
-) {
+) : MangaUpdatesUserLibraryApi {
     private val json: Json by injectLazy()
 
     private val authClient by lazy {
         client.newBuilder()
             .addInterceptor(interceptor)
             .build()
+    }
+
+    override suspend fun getUserLibrary(): MangaUpdatesUserLibrarySnapshot {
+        return withIOContext {
+            val lists = getUserLists()
+            val detailsById = mutableMapOf<Long, TrackSearch?>()
+            val entries = mutableListOf<MangaUpdatesUserListEntry>()
+
+            for (list in lists) {
+                for (result in getUserListEntries(list.listId)) {
+                    val manga = if (result.seriesId in detailsById) {
+                        detailsById[result.seriesId]
+                    } else {
+                        getSeriesDetails(result.seriesId)
+                            ?.toTrackSearch(trackerId)
+                            .also { detailsById[result.seriesId] = it }
+                    } ?: continue
+
+                    val membership = result.metadata.userList
+                    entries += MangaUpdatesUserListEntry(
+                        manga = manga,
+                        listId = list.listId,
+                        progress = (
+                            membership?.status?.chapter
+                                ?: result.chapter
+                                ?: 0
+                            ).toDouble(),
+                        score = result.metadata.userRating ?: 0.0,
+                        addedAt = membership?.timeAdded?.asRfc3339,
+                    )
+                }
+            }
+
+            MangaUpdatesUserLibrarySnapshot(
+                lists = lists.map { list ->
+                    MangaUpdatesUserList(
+                        id = list.listId,
+                        title = list.title,
+                        type = list.type,
+                        custom = list.custom,
+                    )
+                },
+                entries = entries,
+            )
+        }
+    }
+
+    private suspend fun getUserLists(): List<MUUserList> {
+        return with(json) {
+            authClient.newCall(GET("$BASE_URL/v1/lists"))
+                .awaitSuccess()
+                .parseAs()
+        }
+    }
+
+    private suspend fun getUserListEntries(listId: Long): List<MUUserListSearchResult> {
+        val entries = mutableListOf<MUUserListSearchResult>()
+        var requestedPage: Int? = null
+
+        while (true) {
+            val body = buildJsonObject {
+                requestedPage?.let { put("page", it) }
+                put("perpage", USER_LIST_PAGE_SIZE)
+            }
+            val response = with(json) {
+                authClient.newCall(
+                    POST(
+                        url = "$BASE_URL/v1/lists/$listId/search",
+                        body = body.toString().toRequestBody(CONTENT_TYPE),
+                    ),
+                )
+                    .awaitSuccess()
+                    .parseAs<MUUserListSearchResponse>()
+            }
+
+            entries += response.results
+            val responsePageSize = response.perPage
+                .takeIf { it > 0 }
+                ?: USER_LIST_PAGE_SIZE
+            if (
+                !shouldFetchNextUserListPage(
+                    totalHits = response.totalHits,
+                    accumulatedCount = entries.size,
+                    resultCount = response.results.size,
+                    responsePageSize = responsePageSize,
+                )
+            ) {
+                break
+            }
+
+            val nextPage = response.page + 1
+            check(requestedPage == null || nextPage > requestedPage) {
+                "MangaUpdates list pagination did not advance for list $listId"
+            }
+            requestedPage = nextPage
+        }
+
+        return entries
     }
 
     suspend fun getSeriesListItem(track: Track): Pair<MUListItem, MURating?> {
@@ -257,6 +360,18 @@ class MangaUpdatesApi(
 
     companion object {
         private const val BASE_URL = "https://api.mangaupdates.com"
+        private const val USER_LIST_PAGE_SIZE = 100
+
+        internal fun shouldFetchNextUserListPage(
+            totalHits: Int,
+            accumulatedCount: Int,
+            resultCount: Int,
+            responsePageSize: Int,
+        ): Boolean {
+            if (resultCount <= 0) return false
+            if (totalHits > 0) return accumulatedCount < totalHits
+            return responsePageSize > 0 && resultCount >= responsePageSize
+        }
 
         private val CONTENT_TYPE = "application/json".toMediaType()
     }

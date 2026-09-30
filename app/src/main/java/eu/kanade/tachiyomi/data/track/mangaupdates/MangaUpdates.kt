@@ -48,7 +48,10 @@ class MangaUpdates(id: Long) : BaseTracker(id, "MangaUpdates"), DeletableTracker
 
     private val interceptor by lazy { MangaUpdatesInterceptor(this) }
 
-    private val api by lazy { MangaUpdatesApi(client, interceptor) }
+    private val api by lazy { MangaUpdatesApi(id, client, interceptor) }
+
+    internal val userLibraryApi: MangaUpdatesUserLibraryApi
+        get() = api
 
     internal val integrationApi: MangaUpdatesIntegrationApi = object : MangaUpdatesIntegrationApi {
         override suspend fun search(query: String): List<TrackSearch> =
