@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.setting.track
 import android.net.Uri
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
 
 class TrackLoginActivity : BaseOAuthLoginActivity() {
 
@@ -31,10 +32,13 @@ class TrackLoginActivity : BaseOAuthLoginActivity() {
     }
 
     private suspend fun handleMyAnimeList(code: String?) {
+        val integrationId = IntegrationId("mal")
         if (code != null) {
             trackerManager.myAnimeList.login(code)
+            refreshUserLibraries.refreshProvider(integrationId)
         } else {
             trackerManager.myAnimeList.logout()
+            refreshUserLibraries.clearProvider(integrationId)
         }
     }
 
