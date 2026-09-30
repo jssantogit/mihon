@@ -34,14 +34,7 @@ enum class MangaCover(val ratio: Float) {
         onClick: (() -> Unit)? = null,
     ) {
         val candidates = remember(data, fallbackData) {
-            buildList {
-                if (data != null) add(data)
-                fallbackData.forEach { candidate ->
-                    if (candidate != null && none { it == candidate }) {
-                        add(candidate)
-                    }
-                }
-            }
+            coverCandidates(data, fallbackData)
         }
         var candidateIndex by remember(candidates) { mutableIntStateOf(0) }
         val errorPainter = rememberResourceBitmapPainter(id = R.drawable.cover_error)
@@ -76,3 +69,16 @@ enum class MangaCover(val ratio: Float) {
 }
 
 private val CoverPlaceholderColor = Color(0x1F888888)
+
+
+internal fun coverCandidates(
+    primary: Any?,
+    fallbacks: List<Any?>,
+): List<Any> = buildList {
+    if (primary != null) add(primary)
+    fallbacks.forEach { candidate ->
+        if (candidate != null && none { it == candidate }) {
+            add(candidate)
+        }
+    }
+}
