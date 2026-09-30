@@ -22,6 +22,12 @@ data class CanonicalLibraryFilterState(
     val categoryId: Long? = null,
 )
 
+data class CanonicalLibraryListFilterOption(
+    val key: String,
+    val title: String,
+    val selectionGroup: String? = null,
+)
+
 data class CanonicalLibraryCardModel(
     val canonicalTitleId: String,
     val title: String,
@@ -30,6 +36,7 @@ data class CanonicalLibraryCardModel(
     val readingState: CanonicalLibraryReadingState,
     val originStatuses: Map<String, Set<LibraryStatus>> = emptyMap(),
     val originListKeys: Map<String, Set<String>> = emptyMap(),
+    val originListOptions: Map<String, Set<CanonicalLibraryListFilterOption>> = emptyMap(),
     val format: CatalogItemFormat = CatalogItemFormat.UNKNOWN,
     val hasLocalMembership: Boolean = true,
 ) {
@@ -57,6 +64,17 @@ internal fun UnifiedLibraryTitle.toCardModel(
         .mapValues { (_, memberships) ->
             memberships.map { it.listKey }.toSet()
         }
+    val originListOptions = externalMemberships
+        .groupBy { it.provider }
+        .mapValues { (_, memberships) ->
+            memberships.map { membership ->
+                CanonicalLibraryListFilterOption(
+                    key = membership.listKey,
+                    title = membership.listTitle ?: membership.listKey,
+                    selectionGroup = membership.selectionGroup,
+                )
+            }.toSet()
+        }
     val primaryStatus = localEntry?.status
         ?: externalMemberships.firstNotNullOfOrNull { it.status }
         ?: LibraryStatus.PLANNING
@@ -69,6 +87,7 @@ internal fun UnifiedLibraryTitle.toCardModel(
         readingState = readingState,
         originStatuses = originStatuses,
         originListKeys = originListKeys,
+        originListOptions = originListOptions,
         format = format,
         hasLocalMembership = localEntry != null,
     )
@@ -116,4 +135,25 @@ private fun List<CanonicalChapterProgress>.toReadingState(): CanonicalLibraryRea
     any { !it.read && it.lastPageRead > 0L } -> CanonicalLibraryReadingState.IN_PROGRESS
     any(CanonicalChapterProgress::read) -> CanonicalLibraryReadingState.READ
     else -> CanonicalLibraryReadingState.NOT_STARTED
+}
+
+
+internal fun availableProviderListFilters(
+    items: List<CanonicalLibraryCardModel>,
+    origin: String?,
+): List<CanonicalLibraryListFilterOption> {
+    if (origin == null || origin == LOCAL_LIBRARY_ORIGIN) return emptyList()
+
+    return items
+        .asSequence()
+        .flatMap { item -> item.originListOptions[origin].orEmpty().asSequence() }
+        .filterNot { option -> option.selectionGroup?.endsWith(":status") == true }
+        .distinctBy(CanonicalLibraryListFilterOption::key)
+        .sortedWith(
+            compareBy(
+                { it.title.lowercase() },
+                CanonicalLibraryListFilterOption::key,
+            ),
+        )
+        .toList()
 }
