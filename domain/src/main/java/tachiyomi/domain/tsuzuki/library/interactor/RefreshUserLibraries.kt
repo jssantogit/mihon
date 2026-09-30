@@ -95,6 +95,7 @@ class RefreshUserLibraries internal constructor(
                         remoteStatus = entry.remoteStatus,
                         progress = entry.progress,
                         score = entry.score,
+                        listedAt = entry.listedAt,
                         syncedAt = syncedAt,
                     )
                 }
