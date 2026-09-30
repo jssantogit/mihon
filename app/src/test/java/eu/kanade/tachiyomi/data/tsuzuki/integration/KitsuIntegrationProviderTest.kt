@@ -15,6 +15,11 @@ import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaAttributes
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingAttributes
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingItemRelationship
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingRelationships
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingResource
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuResourceIdentifier
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -44,6 +49,24 @@ class KitsuIntegrationProviderTest {
                                     ),
                                 ),
                             ),
+                            included = listOf(
+                                KitsuMappingResource(
+                                    id = "mapping-1",
+                                    type = "mappings",
+                                    attributes = KitsuMappingAttributes(
+                                        externalSite = "myanimelist/manga",
+                                        externalId = "57325",
+                                    ),
+                                    relationships = KitsuMappingRelationships(
+                                        item = KitsuMappingItemRelationship(
+                                            data = KitsuResourceIdentifier(
+                                                type = "manga",
+                                                id = "kitsu-1",
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
                         ),
                     ),
                 ),
@@ -53,6 +76,7 @@ class KitsuIntegrationProviderTest {
         val page = provider.search(CatalogQuery(query = "Dandadan")).getOrThrow()
 
         page.items.single().chapterCount shouldBe 205
+        page.items.single().externalIds shouldBe mapOf("mal" to "57325")
         (provider as Any is ChapterEvidenceProvider) shouldBe false
     }
 

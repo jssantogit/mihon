@@ -76,10 +76,26 @@ class MalIntegrationProvider private constructor(
     override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
         Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
 
-    override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> {
+    override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+        rankingPage(MAL_RANKING_BY_POPULARITY, offset, limit)
+
+    override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
+
+    override suspend fun topRated(offset: Int, limit: Int): Result<CatalogPage> =
+        rankingPage(MAL_RANKING_TOP, offset, limit)
+
+    override suspend fun favorites(offset: Int, limit: Int): Result<CatalogPage> =
+        rankingPage(MAL_RANKING_FAVORITE, offset, limit)
+
+    private suspend fun rankingPage(
+        rankingType: String,
+        offset: Int,
+        limit: Int,
+    ): Result<CatalogPage> {
         return captureResult {
             val items = api.getRanking(
-                rankingType = MAL_RANKING_BY_POPULARITY,
+                rankingType = rankingType,
                 offset = offset,
                 limit = limit,
             ).map { it.toCatalogItem() }
@@ -90,9 +106,6 @@ class MalIntegrationProvider private constructor(
             )
         }
     }
-
-    override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
-        Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
 
     override suspend fun getDetails(externalId: String): Result<CatalogItem> {
         return captureResult {
@@ -219,7 +232,12 @@ class MalIntegrationProvider private constructor(
 
     companion object {
         private const val MAL_SCORE_MAX = 10.0
+
+        // MAL's manga ranking API has no trending/recently-updated mode. Keep those empty rather
+        // than relabeling a different ranking, and expose only the documented ranking semantics.
         private const val MAL_RANKING_BY_POPULARITY = "bypopularity"
+        private const val MAL_RANKING_TOP = "all"
+        private const val MAL_RANKING_FAVORITE = "favorite"
         private const val MAL_STATUS_SELECTION_GROUP = "mal:status"
         private val WHITESPACE_REGEX = Regex("""\s+""")
         private val MAL_USER_LISTS = listOf(

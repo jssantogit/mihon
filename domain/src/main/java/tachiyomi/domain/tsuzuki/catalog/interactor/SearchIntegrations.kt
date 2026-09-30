@@ -7,6 +7,7 @@ import kotlinx.coroutines.coroutineScope
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
+import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 
 @Inject
@@ -25,8 +26,8 @@ class SearchIntegrations(
             }
             .awaitAll()
             .flatten()
-            // Provider + external id is the only safe automatic identity-level
-            // dedupe. Never collapse distinct works merely because titles match.
-            .distinctBy { item -> item.provider to item.providerId }
+            // Exact provider ids and provider-published cross-provider mappings are safe.
+            // Title similarity alone remains intentionally insufficient.
+            .let(::mergeCatalogItemsByVerifiedIdentity)
     }
 }

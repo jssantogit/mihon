@@ -38,6 +38,46 @@ class MaterializeCanonicalTitleTest {
     }
 
     @Test
+    fun `verified mapped identity reuses existing canonical title and links primary provider`() = runTest {
+        val repository = FakeCanonicalTitleRepository()
+        val existing = CanonicalTitle(
+            id = "existing-mal",
+            displayTitle = "One Piece",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 50L,
+            updatedAt = 50L,
+        )
+        repository.insert(existing)
+        repository.addExternalIdentity(
+            ExternalIdentity(
+                canonicalTitleId = existing.id,
+                provider = "mal",
+                externalId = "13",
+                verified = true,
+                createdAt = 50L,
+            ),
+        )
+        val interactor = MaterializeCanonicalTitle(
+            repository = repository,
+            idFactory = { "should-not-be-used" },
+            clock = { 100L },
+        )
+
+        val result = interactor.fromCatalog(
+            displayTitle = "One Piece",
+            provider = "kitsu",
+            externalId = "12",
+            externalIds = mapOf("mal" to "13"),
+        )
+
+        result.id shouldBe "existing-mal"
+        repository.titles.size shouldBe 1
+        repository.identities
+            .map { it.provider to it.externalId }
+            .toSet() shouldBe setOf("mal" to "13", "kitsu" to "12")
+    }
+
+    @Test
     fun `catalog materialization recovers when external identity is claimed concurrently`() = runTest {
         val winner = CanonicalTitle(
             id = "winner-id",

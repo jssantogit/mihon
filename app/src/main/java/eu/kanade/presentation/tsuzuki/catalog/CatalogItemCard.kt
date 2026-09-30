@@ -72,12 +72,10 @@ fun CatalogItemCard(
                     )
                 }
 
-                item.score?.let { score ->
-                    CatalogRatingBadge(
-                        score = score,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
+                CatalogRatingBadges(
+                    scores = item.scores.ifEmpty { listOfNotNull(item.score) },
+                    modifier = Modifier.padding(top = 2.dp),
+                )
 
                 item.synopsis?.let { synopsis ->
                     Text(
@@ -118,11 +116,26 @@ fun CatalogCompactCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp),
         )
-        item.score?.let { score ->
-            CatalogRatingBadge(
-                score = score,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+        CatalogRatingBadges(
+            scores = item.scores.ifEmpty { listOfNotNull(item.score) },
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun CatalogRatingBadges(
+    scores: List<CatalogScore>,
+    modifier: Modifier = Modifier,
+) {
+    if (scores.isEmpty()) return
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+    ) {
+        scores.forEach { score ->
+            CatalogRatingBadge(score = score)
         }
     }
 }

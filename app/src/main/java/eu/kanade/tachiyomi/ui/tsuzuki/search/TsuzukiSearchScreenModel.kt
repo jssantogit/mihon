@@ -24,6 +24,8 @@ import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
+import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
@@ -65,6 +67,8 @@ data class DiscoverBlock(
 enum class DiscoverKind {
     TRENDING,
     POPULAR,
+    TOP_RATED,
+    FAVORITES,
     RECENTLY_UPDATED,
 }
 
@@ -217,6 +221,28 @@ class TsuzukiSearchScreenModel(
                     },
                     async {
                         discoverBlock(
+                            kind = DiscoverKind.TOP_RATED,
+                            providers = providers,
+                        ) { provider ->
+                            provider.topRated(
+                                offset = 0,
+                                limit = DISCOVER_LIMIT,
+                            )
+                        }
+                    },
+                    async {
+                        discoverBlock(
+                            kind = DiscoverKind.FAVORITES,
+                            providers = providers,
+                        ) { provider ->
+                            provider.favorites(
+                                offset = 0,
+                                limit = DISCOVER_LIMIT,
+                            )
+                        }
+                    },
+                    async {
+                        discoverBlock(
                             kind = DiscoverKind.RECENTLY_UPDATED,
                             providers = providers,
                         ) { provider ->
@@ -228,6 +254,7 @@ class TsuzukiSearchScreenModel(
                     },
                 ).awaitAll()
                     .filter { block -> block.items.isNotEmpty() }
+                    .let(::shareRatingsAcrossBlocks)
             }
             _state.value = SearchState.Discover(
                 recentSearches = recentSearches,
@@ -263,14 +290,50 @@ class TsuzukiSearchScreenModel(
                     }
                 }
             }.awaitAll().flatten()
-        }.distinctBy { item ->
-            item.provider to item.providerId
-        }
+        }.let(::mergeCatalogItemsByVerifiedIdentity)
 
         return DiscoverBlock(
             kind = kind,
             items = items,
         )
+    }
+
+    private fun shareRatingsAcrossBlocks(blocks: List<DiscoverBlock>): List<DiscoverBlock> {
+        val scoresByIdentity = mutableMapOf<Pair<String, String>, MutableList<CatalogScore>>()
+
+        blocks.asSequence()
+            .flatMap { it.items.asSequence() }
+            .forEach { item ->
+                val scores = item.scores.ifEmpty { listOfNotNull(item.score) }
+                item.identityKeysForDiscovery().forEach { identity ->
+                    scoresByIdentity.getOrPut(identity) { mutableListOf() } += scores
+                }
+            }
+
+        return blocks.map { block ->
+            block.copy(
+                items = block.items.map { item ->
+                    val ownScores = item.scores.ifEmpty { listOfNotNull(item.score) }
+                    val sharedScores = item.identityKeysForDiscovery()
+                        .flatMap { identity -> scoresByIdentity[identity].orEmpty() }
+                    val scores = (ownScores + sharedScores)
+                        .distinctBy(CatalogScore::provider)
+                    item.copy(
+                        score = scores.firstOrNull(),
+                        scores = scores,
+                    )
+                },
+            )
+        }
+    }
+
+    private fun CatalogItem.identityKeysForDiscovery(): Set<Pair<String, String>> = buildSet {
+        add(provider to providerId)
+        externalIds.forEach { (providerId, externalId) ->
+            if (providerId.isNotBlank() && externalId.isNotBlank()) {
+                add(providerId to externalId)
+            }
+        }
     }
 
     private fun emptyPage() = CatalogPage(

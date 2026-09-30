@@ -25,6 +25,12 @@ interface DiscoveryProvider {
     suspend fun popular(offset: Int, limit: Int): Result<CatalogPage>
 
     suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage>
+
+    suspend fun topRated(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
+
+    suspend fun favorites(offset: Int, limit: Int): Result<CatalogPage> =
+        Result.success(CatalogPage(items = emptyList(), hasNextPage = false))
 }
 
 interface MetadataProvider {

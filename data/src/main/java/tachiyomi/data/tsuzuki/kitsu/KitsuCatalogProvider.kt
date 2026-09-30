@@ -6,6 +6,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMappingResource
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -52,7 +53,7 @@ class KitsuCatalogProvider(
             sort = sortParam,
             status = statusParam,
         ).mapCatalog { response ->
-            val items = response.data.map(::mapResourceToItem)
+            val items = response.data.map { resource -> mapResourceToItem(resource, response.included) }
             val hasNext =
                 response.links?.next != null ||
                     (response.meta?.count != null && query.offset + items.size < response.meta.count)
@@ -66,7 +67,7 @@ class KitsuCatalogProvider(
 
     override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> {
         return client.getTrendingManga(limit).mapCatalog { response ->
-            val items = response.data.map(::mapResourceToItem)
+            val items = response.data.map { resource -> mapResourceToItem(resource, response.included) }
             CatalogPage(
                 items = items,
                 hasNextPage = false,
@@ -77,7 +78,7 @@ class KitsuCatalogProvider(
 
     override suspend fun getPopular(offset: Int, limit: Int): Result<CatalogPage> {
         return client.getPopularManga(offset, limit).mapCatalog { response ->
-            val items = response.data.map(::mapResourceToItem)
+            val items = response.data.map { resource -> mapResourceToItem(resource, response.included) }
             val hasNext =
                 response.links?.next != null ||
                     (response.meta?.count != null && offset + items.size < response.meta.count)
@@ -91,11 +92,14 @@ class KitsuCatalogProvider(
 
     override suspend fun getDetails(providerId: String): Result<CatalogItem> {
         return client.getMangaById(providerId).mapCatalog { response ->
-            mapResourceToItem(response.data)
+            mapResourceToItem(response.data, response.included)
         }
     }
 
-    private fun mapResourceToItem(resource: KitsuMangaResource): CatalogItem {
+    private fun mapResourceToItem(
+        resource: KitsuMangaResource,
+        included: List<KitsuMappingResource> = emptyList(),
+    ): CatalogItem {
         val attr = resource.attributes
         val bestTitle = attr.canonicalTitle?.takeIf { it.isNotBlank() }
             ?: attr.titles?.en?.takeIf { it.isNotBlank() }
@@ -156,6 +160,21 @@ class KitsuCatalogProvider(
             status = mappedStatus,
             format = mappedFormat,
             score = score,
+            externalIds = included
+                .asSequence()
+                .filter { mapping ->
+                    mapping.type == "mappings" &&
+                        mapping.relationships.item.data?.let { item ->
+                            item.type == "manga" && item.id == resource.id
+                        } == true &&
+                        mapping.attributes.externalSite == "myanimelist/manga"
+                }
+                .mapNotNull { mapping ->
+                    mapping.attributes.externalId
+                        .takeIf(String::isNotBlank)
+                        ?.let { "mal" to it }
+                }
+                .toMap(),
             genres = emptyList(),
             tags = emptyList(),
             startDate = attr.startDate,
