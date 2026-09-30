@@ -19,10 +19,10 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.tsuzuki.artwork.resolveCanonicalArtwork
-import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.manga.model.asMangaCover
+import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
+import tachiyomi.domain.tsuzuki.artwork.resolveCanonicalArtwork
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
