@@ -17,6 +17,7 @@ import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationPolicy
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
+import tachiyomi.domain.tsuzuki.integration.model.UserListDefinition
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
@@ -36,7 +37,14 @@ class RefreshUserLibrariesTest {
         val provider = FakeUserListProvider(
             result = Result.success(
                 UserLibrarySnapshot(
-                    lists = emptyList(),
+                    lists = listOf(
+                        UserListDefinition(
+                            key = "mal:status:plan_to_read",
+                            title = "Plan to Read",
+                            status = LibraryStatus.PLANNING,
+                            selectionGroup = "mal:status",
+                        ),
+                    ),
                     entries = listOf(
                         UserLibraryEntry(
                             item = CatalogItem(provider = "mal", providerId = "42", title = "Monster"),
@@ -69,6 +77,8 @@ class RefreshUserLibrariesTest {
             provider = "mal",
             externalId = "42",
             listKey = "mal:status:plan_to_read",
+            listTitle = "Plan to Read",
+            selectionGroup = "mal:status",
             status = LibraryStatus.PLANNING,
             remoteStatus = "plan_to_read",
             progress = null,

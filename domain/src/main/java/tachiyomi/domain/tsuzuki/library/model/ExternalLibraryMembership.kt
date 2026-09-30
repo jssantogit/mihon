@@ -7,6 +7,8 @@ data class ExternalLibraryMembership(
     val provider: String,
     val externalId: String,
     val listKey: String,
+    val listTitle: String? = null,
+    val selectionGroup: String? = null,
     val status: LibraryStatus?,
     val remoteStatus: String?,
     val progress: Double?,

@@ -62,17 +62,89 @@ class CanonicalLibraryFiltersTest {
         ) shouldContainExactly emptyList()
     }
 
+    @Test
+    fun `provider list filter is scoped to the selected origin`() {
+        val items = listOf(
+            card(
+                id = "custom",
+                originStatuses = mapOf("mangaupdates" to emptySet()),
+                originListKeys = mapOf("mangaupdates" to setOf("mangaupdates:list:99")),
+                format = CatalogItemFormat.MANGA,
+            ),
+            card(
+                id = "other",
+                originStatuses = mapOf("mangaupdates" to setOf(LibraryStatus.READING)),
+                originListKeys = mapOf("mangaupdates" to setOf("mangaupdates:list:1")),
+                format = CatalogItemFormat.MANGA,
+            ),
+        )
+
+        val result = filterCanonicalLibraryCards(
+            items = items,
+            filters = CanonicalLibraryFilterState(
+                origin = "mangaupdates",
+                listKey = "mangaupdates:list:99",
+            ),
+        )
+
+        result.map { it.canonicalTitleId } shouldContainExactly listOf("custom")
+    }
+
+    @Test
+    fun `provider list options expose named custom lists but hide status mirrors`() {
+        val items = listOf(
+            card(
+                id = "mal",
+                originStatuses = mapOf("mal" to setOf(LibraryStatus.PLANNING)),
+                originListKeys = mapOf("mal" to setOf("mal:status:plan_to_read")),
+                originListOptions = mapOf(
+                    "mal" to setOf(
+                        CanonicalLibraryListFilterOption(
+                            key = "mal:status:plan_to_read",
+                            title = "Plan to Read",
+                            selectionGroup = "mal:status",
+                        ),
+                    ),
+                ),
+                format = CatalogItemFormat.MANGA,
+            ),
+            card(
+                id = "mu",
+                originStatuses = mapOf("mangaupdates" to emptySet()),
+                originListKeys = mapOf("mangaupdates" to setOf("mangaupdates:list:99")),
+                originListOptions = mapOf(
+                    "mangaupdates" to setOf(
+                        CanonicalLibraryListFilterOption(
+                            key = "mangaupdates:list:99",
+                            title = "Favorites",
+                            selectionGroup = "mangaupdates:list",
+                        ),
+                    ),
+                ),
+                format = CatalogItemFormat.MANGA,
+            ),
+        )
+
+        availableProviderListFilters(items, "mal") shouldContainExactly emptyList()
+        availableProviderListFilters(items, "mangaupdates")
+            .map { it.key to it.title } shouldContainExactly listOf("mangaupdates:list:99" to "Favorites")
+    }
+
     private fun card(
         id: String,
         originStatuses: Map<String, Set<LibraryStatus>>,
         format: CatalogItemFormat,
+        originListKeys: Map<String, Set<String>> = emptyMap(),
+        originListOptions: Map<String, Set<CanonicalLibraryListFilterOption>> = emptyMap(),
     ) = CanonicalLibraryCardModel(
         canonicalTitleId = id,
         title = id,
-        status = originStatuses.values.flatten().first(),
+        status = originStatuses.values.flatten().firstOrNull() ?: LibraryStatus.PLANNING,
         categories = emptyList(),
         readingState = CanonicalLibraryReadingState.NOT_STARTED,
         originStatuses = originStatuses,
+        originListKeys = originListKeys,
+        originListOptions = originListOptions,
         format = format,
         hasLocalMembership = "tsuzuki" in originStatuses,
     )

@@ -74,6 +74,7 @@ fun CanonicalLibraryScreen(
     onCategoryFilterChange: (Long?) -> Unit = {},
     onStatusFilterChange: (LibraryStatus?) -> Unit = {},
     onOriginFilterChange: (String?) -> Unit = {},
+    onProviderListFilterChange: (String?) -> Unit = {},
     onToggleFormatFilter: (CatalogItemFormat) -> Unit = {},
     onClearAdvancedFilters: () -> Unit = {},
     onRead: (CanonicalLibraryCardModel) -> Unit = {},
@@ -88,6 +89,7 @@ fun CanonicalLibraryScreen(
     val successState = state as? CanonicalLibraryScreenState.Success
     val advancedFilterCount = successState?.filters?.let { filters ->
         (if (filters.origin != null) 1 else 0) +
+            (if (filters.listKey != null) 1 else 0) +
             filters.formats.size +
             (if (filters.categoryId != null) 1 else 0)
     } ?: 0
@@ -136,6 +138,7 @@ fun CanonicalLibraryScreen(
                             state = state,
                             categories = categories,
                             onClearOrigin = { onOriginFilterChange(null) },
+                            onClearProviderList = { onProviderListFilterChange(null) },
                             onToggleFormat = onToggleFormatFilter,
                             onClearCategory = { onCategoryFilterChange(null) },
                             onShowAll = { filterSheetVisible = true },
@@ -172,6 +175,7 @@ fun CanonicalLibraryScreen(
             categories = categories,
             onDismiss = { filterSheetVisible = false },
             onOriginFilterChange = onOriginFilterChange,
+            onProviderListFilterChange = onProviderListFilterChange,
             onToggleFormatFilter = onToggleFormatFilter,
             onCategoryFilterChange = onCategoryFilterChange,
             onClearAdvancedFilters = onClearAdvancedFilters,
@@ -239,6 +243,7 @@ private fun CanonicalLibraryActiveFilters(
     state: CanonicalLibraryScreenState.Success,
     categories: List<Category>,
     onClearOrigin: () -> Unit,
+    onClearProviderList: () -> Unit,
     onToggleFormat: (CatalogItemFormat) -> Unit,
     onClearCategory: () -> Unit,
     onShowAll: () -> Unit,
@@ -247,6 +252,13 @@ private fun CanonicalLibraryActiveFilters(
     val active = buildList {
         filters.origin?.let { origin ->
             add(ActiveFilter(origin.libraryOriginLabel(), onClearOrigin))
+        }
+        filters.listKey?.let { listKey ->
+            val title = state.availableProviderLists
+                .firstOrNull { it.key == listKey }
+                ?.title
+                ?: listKey
+            add(ActiveFilter(title, onClearProviderList))
         }
         filters.formats
             .sortedBy(CatalogItemFormat::ordinal)
@@ -295,6 +307,7 @@ private fun CanonicalLibraryFilterSheet(
     categories: List<Category>,
     onDismiss: () -> Unit,
     onOriginFilterChange: (String?) -> Unit,
+    onProviderListFilterChange: (String?) -> Unit,
     onToggleFormatFilter: (CatalogItemFormat) -> Unit,
     onCategoryFilterChange: (Long?) -> Unit,
     onClearAdvancedFilters: () -> Unit,
@@ -324,6 +337,23 @@ private fun CanonicalLibraryFilterSheet(
                             label = { Text(origin.libraryOriginLabel()) },
                         )
                     }
+            }
+
+            if (state.availableProviderLists.isNotEmpty()) {
+                FilterSection("List") {
+                    FilterChip(
+                        selected = state.filters.listKey == null,
+                        onClick = { onProviderListFilterChange(null) },
+                        label = { Text("All") },
+                    )
+                    state.availableProviderLists.forEach { list ->
+                        FilterChip(
+                            selected = state.filters.listKey == list.key,
+                            onClick = { onProviderListFilterChange(list.key) },
+                            label = { Text(list.title) },
+                        )
+                    }
+                }
             }
 
             FilterSection("Format") {

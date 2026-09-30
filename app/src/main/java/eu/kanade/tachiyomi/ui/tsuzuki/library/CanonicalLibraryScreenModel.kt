@@ -51,6 +51,7 @@ sealed interface CanonicalLibraryScreenState {
         val filters: CanonicalLibraryFilterState = CanonicalLibraryFilterState(),
         val availableOrigins: Set<String> = emptySet(),
         val availableFormats: Set<CatalogItemFormat> = emptySet(),
+        val availableProviderLists: List<CanonicalLibraryListFilterOption> = emptyList(),
     ) : CanonicalLibraryScreenState
 }
 
@@ -182,6 +183,10 @@ class CanonicalLibraryScreenModel private constructor(
                     availableFormats = items.mapNotNullTo(linkedSetOf()) { item ->
                         item.format.takeUnless { it == CatalogItemFormat.UNKNOWN }
                     },
+                    availableProviderLists = availableProviderListFilters(
+                        items = items,
+                        origin = filterState.origin,
+                    ),
                 )
             },
         )
@@ -204,7 +209,16 @@ class CanonicalLibraryScreenModel private constructor(
     }
 
     fun selectOrigin(origin: String?) {
-        filters.update { it.copy(origin = origin) }
+        filters.update { current ->
+            current.copy(
+                origin = origin,
+                listKey = current.listKey.takeIf { origin == current.origin },
+            )
+        }
+    }
+
+    fun selectProviderList(listKey: String?) {
+        filters.update { it.copy(listKey = listKey) }
     }
 
     fun toggleFormat(format: CatalogItemFormat) {
@@ -221,6 +235,7 @@ class CanonicalLibraryScreenModel private constructor(
         filters.update {
             it.copy(
                 origin = null,
+                listKey = null,
                 formats = emptySet(),
                 categoryId = null,
             )

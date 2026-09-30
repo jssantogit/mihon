@@ -84,6 +84,11 @@ class MangaUpdatesIntegrationProviderTest {
             LibraryStatus.DROPPED,
             LibraryStatus.READING,
         )
+        snapshot.lists.map { it.selectionGroup } shouldBe listOf(
+            "mangaupdates:status",
+            "mangaupdates:status",
+            "mangaupdates:list",
+        )
 
         val entry = snapshot.entries.single()
         entry.item.provider shouldBe "mangaupdates"
