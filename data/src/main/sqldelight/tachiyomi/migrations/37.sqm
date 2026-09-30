@@ -1,0 +1,14 @@
+-- Persist provider-neutral canonical artwork so catalog/search artwork survives
+-- materialization and can be reused by Home, Library, and canonical detail.
+CREATE TABLE tsuzuki_title_artwork_observations(
+    canonical_title_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    cover_url TEXT,
+    banner_url TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, provider),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_title_artwork_provider_index
+ON tsuzuki_title_artwork_observations(provider);
