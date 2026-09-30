@@ -7,6 +7,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -84,8 +85,28 @@ class RefreshUserLibraries internal constructor(
         return refresh(provider)
     }
 
+    suspend fun refreshForLegacyTracker(trackerId: Long): Result<Int>? {
+        val integrationId = integrationIdForLegacyTracker(trackerId) ?: return null
+        return refreshProvider(integrationId)
+    }
+
+    suspend fun clearForLegacyTracker(trackerId: Long) {
+        integrationIdForLegacyTracker(trackerId)?.let { integrationId ->
+            clearProvider(integrationId)
+        }
+    }
+
     suspend fun clearProvider(integrationId: IntegrationId) {
         externalLibraryRepository.clearProvider(integrationId.value)
+    }
+
+    private fun integrationIdForLegacyTracker(trackerId: Long): IntegrationId? {
+        return registry.manifests()
+            .firstOrNull { manifest ->
+                manifest.legacyTrackerId == trackerId &&
+                    manifest.declares(IntegrationCapability.USER_LISTS)
+            }
+            ?.integrationId
     }
 
     private suspend fun refresh(provider: UserListProvider): Result<Int> {
