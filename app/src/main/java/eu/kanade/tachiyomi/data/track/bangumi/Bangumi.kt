@@ -29,6 +29,11 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
 
     private val api by lazy { BangumiApi(id, client, interceptor) }
 
+    internal val userLibraryApi: BangumiUserLibraryApi = object : BangumiUserLibraryApi {
+        override suspend fun getUserLibrary(): List<BangumiUserListEntry> =
+            api.getUserBookCollections(getUsername())
+    }
+
     internal val integrationApi: BangumiIntegrationApi = object : BangumiIntegrationApi {
         override suspend fun search(query: String): List<TrackSearch> =
             this@Bangumi.search(query)

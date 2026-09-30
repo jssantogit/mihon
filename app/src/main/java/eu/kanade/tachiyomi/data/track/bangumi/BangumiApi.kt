@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.track.bangumi
 
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
+import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMCollectionPage
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMCollectionResponse
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMSearchResult
 import eu.kanade.tachiyomi.data.track.bangumi.dto.BGMSubject
@@ -148,6 +149,59 @@ class BangumiApi(
         }
     }
 
+    suspend fun getUserBookCollections(username: String): List<BangumiUserListEntry> {
+        return withIOContext {
+            val entries = mutableListOf<BangumiUserListEntry>()
+            var offset = 0
+
+            while (true) {
+                val url = "$API_URL/v0/users/$username/collections".toUri().buildUpon()
+                    .appendQueryParameter("subject_type", BANGUMI_BOOK_SUBJECT_TYPE.toString())
+                    .appendQueryParameter("limit", COLLECTION_PAGE_SIZE.toString())
+                    .appendQueryParameter("offset", offset.toString())
+                    .build()
+
+                val page = with(json) {
+                    authClient.newCall(
+                        GET(
+                            url.toString(),
+                            cache = CacheControl.FORCE_NETWORK,
+                            headers = headersOf("Content-Type", APP_JSON),
+                        ),
+                    )
+                        .awaitSuccess()
+                        .parseAs<BGMCollectionPage>()
+                }
+
+                page.data.mapNotNullTo(entries) { collection ->
+                    val subjectId = collection.subjectId ?: collection.subject?.id
+                        ?: return@mapNotNullTo null
+                    // The collection endpoint only exposes SlimSubject for the broad "Book" type.
+                    // Resolve full details so novels/art books are filtered consistently with the
+                    // rest of the Bangumi manga integration and the canonical format is retained.
+                    val manga = getMangaDetails(subjectId.toInt())
+                        ?: return@mapNotNullTo null
+                    val collectionType = collection.type ?: return@mapNotNullTo null
+
+                    BangumiUserListEntry(
+                        manga = manga,
+                        collectionType = collectionType,
+                        progress = collection.epStatus?.toDouble() ?: 0.0,
+                        score = collection.rate?.toDouble() ?: 0.0,
+                        updatedAt = collection.updatedAt,
+                    )
+                }
+
+                if (page.data.isEmpty() || offset + page.data.size >= page.total) break
+                val nextOffset = offset + page.data.size
+                check(nextOffset > offset) { "Bangumi collection pagination did not advance" }
+                offset = nextOffset
+            }
+
+            entries
+        }
+    }
+
     suspend fun statusLibManga(track: Track, username: String): Track? {
         return withIOContext {
             val url = "$API_URL/v0/users/$username/collections/${track.remote_id}"
@@ -187,6 +241,8 @@ class BangumiApi(
     companion object {
         private const val API_URL = "https://api.bgm.tv"
         private const val APP_JSON = "application/json"
+        private const val BANGUMI_BOOK_SUBJECT_TYPE = 1
+        private const val COLLECTION_PAGE_SIZE = 50
 
         internal fun authorizeRequest(
             request: Request,
