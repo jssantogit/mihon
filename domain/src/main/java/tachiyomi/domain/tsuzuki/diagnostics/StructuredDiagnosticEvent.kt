@@ -62,6 +62,8 @@ enum class DiagnosticOutcome {
     REUSED,
     CANDIDATES,
     NEEDS_CONFIRMATION,
+    TYPED_FAILURE,
+    THREW,
     NOT_FOUND_NO_CANDIDATES,
     NOT_FOUND_WITH_SOURCE_FAILURES,
     NO_PREFERRED_SOURCES,
@@ -82,6 +84,8 @@ enum class DiagnosticAttribute {
     MIHON_MANGA_REF,
     CONFIDENCE_SCORE,
     CONFIDENCE_BUCKET,
+    AUTO_CONFIRM_ATTEMPTED,
+    AMBIGUOUS,
     ERROR_CATEGORY,
     HTTP_STATUS,
 }
@@ -146,7 +150,7 @@ object StructuredDiagnosticSanitizer {
         if (!event.sessionId.isSafeUuid() || event.operationId?.isSafeUuid() == false) return null
         if (event.timestampMillis < 0) return null
         if (event.durationMillis?.let { it !in 0..MAX_DURATION_MILLIS } == true) return null
-        if (event.attempt?.let { it !in 1..MAX_ATTEMPTS } == true) return null
+        if (event.attempt?.let { it !in 1..MAX_COUNT.toInt() } == true) return null
 
         val attributes = event.attributes.mapNotNull { (key, value) ->
             val attribute = DiagnosticAttribute.entries.firstOrNull { it.name.toAttributeKey() == key }
@@ -182,6 +186,8 @@ object StructuredDiagnosticSanitizer {
         -> (value as? DiagnosticAttributeValue.Number)?.takeIf { it.value in 0..MAX_COUNT }
         DiagnosticAttribute.BROADENED,
         DiagnosticAttribute.MAPPING_REUSED,
+        DiagnosticAttribute.AUTO_CONFIRM_ATTEMPTED,
+        DiagnosticAttribute.AMBIGUOUS,
         -> value as? DiagnosticAttributeValue.Flag
         DiagnosticAttribute.LANGUAGE -> (value as? DiagnosticAttributeValue.Text)
             ?.takeIf { languageTagPattern.matches(it.value) }
@@ -204,6 +210,5 @@ object StructuredDiagnosticSanitizer {
     private fun String.isSafeUuid(): Boolean = uuidPattern.matches(this)
 
     private const val MAX_DURATION_MILLIS = 24 * 60 * 60 * 1_000L
-    private const val MAX_ATTEMPTS = 100
     private const val MAX_COUNT = 1_000_000L
 }
