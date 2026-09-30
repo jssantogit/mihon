@@ -13,6 +13,8 @@ class HikkaInterceptor(private val hikka: Hikka) : Interceptor {
     private var oauth: HKOAuth? = hikka.loadOAuth()
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        hikka.requireClientReference()
+        hikka.requireClientSecret()
         val originalRequest = chain.request()
 
         val currAuth = oauth ?: throw Exception("Hikka: You are not authorized")

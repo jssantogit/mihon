@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.track.hikka
 
-import android.net.Uri
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKManga
@@ -24,6 +23,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -35,6 +35,7 @@ class HikkaApi(
     private val trackerId: Long,
     private val client: OkHttpClient,
     interceptor: HikkaInterceptor,
+    private val clientSecretProvider: () -> String,
 ) {
     suspend fun getCurrentUser(): HKUser {
         return withIOContext {
@@ -53,7 +54,12 @@ class HikkaApi(
     suspend fun accessToken(reference: String): HKOAuth {
         return withIOContext {
             with(json) {
-                client.newCall(authTokenCreate(reference))
+                client.newCall(
+                    authTokenCreate(
+                        requestReference = reference,
+                        clientSecret = requireClientSecret(),
+                    ),
+                )
                     .awaitSuccess()
                     .parseAs<HKOAuth>()
             }
@@ -203,19 +209,23 @@ class HikkaApi(
     private val json: Json by injectLazy()
     private val authClient = client.newBuilder().addInterceptor(interceptor).build()
 
+    private fun requireClientSecret(): String =
+        clientSecretProvider().trim().ifBlank { throw HikkaCredentialsMissing() }
+
     companion object {
         const val BASE_API_URL = "https://api.hikka.io"
         const val BASE_URL = "https://hikka.io"
         private const val SCOPE = "readlist,read:user-details"
-        private const val CLIENT_REFERENCE = "598ef1f5-b9d2-4e66-8b65-06949d5e14fc"
-        private const val CLIENT_SECRET = "OKwzrNOZxq40psFgfcCUYddnvaeZWDnd34rt7fdcB5GmHoBBQuNTWX" +
-            "61sZs8KECEWVXtMUDtq8QC4t9WX4DwWWYLXEVlgnlUXGT1fWCb-18c" +
-            "Zd2m8Co-8HN6JQcjoP-B"
 
-        fun authUrl(): Uri = "$BASE_URL/oauth".toUri().buildUpon()
-            .appendQueryParameter("reference", CLIENT_REFERENCE)
-            .appendQueryParameter("scope", SCOPE)
+        fun authUrl(clientReference: String): String = "$BASE_URL/oauth".toHttpUrl()
+            .newBuilder()
+            .addQueryParameter(
+                "reference",
+                clientReference.trim().ifBlank { throw HikkaCredentialsMissing() },
+            )
+            .addQueryParameter("scope", SCOPE)
             .build()
+            .toString()
 
         fun refreshTokenRequest(accessToken: String): Request {
             val headers = Headers.Builder()
@@ -225,10 +235,16 @@ class HikkaApi(
             return GET("$BASE_API_URL/user/me", headers = headers) // Any request with auth
         }
 
-        fun authTokenCreate(reference: String): Request {
+        fun authTokenCreate(
+            requestReference: String,
+            clientSecret: String,
+        ): Request {
             val payload = buildJsonObject {
-                put("request_reference", reference)
-                put("client_secret", CLIENT_SECRET)
+                put("request_reference", requestReference)
+                put(
+                    "client_secret",
+                    clientSecret.trim().ifBlank { throw HikkaCredentialsMissing() },
+                )
             }
             return POST("$BASE_API_URL/auth/token", body = payload.toString().toRequestBody(jsonMime))
         }
@@ -242,3 +258,7 @@ class HikkaApi(
         }
     }
 }
+
+class HikkaCredentialsMissing : IllegalStateException(
+    "Hikka: configure your own application Reference and Client Secret before connecting.",
+)

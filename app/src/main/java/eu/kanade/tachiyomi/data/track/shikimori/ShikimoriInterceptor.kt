@@ -18,13 +18,21 @@ class ShikimoriInterceptor(private val shikimori: Shikimori) : Interceptor {
     private var oauth: SMOAuth? = shikimori.restoreToken()
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        shikimori.requireClientId()
+        shikimori.requireClientSecret()
         val originalRequest = chain.request()
 
         var currAuth = oauth ?: throw Exception("Not authenticated with Shikimori")
 
         // Refresh access token if expired.
         if (currAuth.isExpired()) {
-            val response = chain.proceed(ShikimoriApi.refreshTokenRequest(currAuth.refreshToken!!))
+            val response = chain.proceed(
+                ShikimoriApi.refreshTokenRequest(
+                    token = currAuth.refreshToken!!,
+                    clientId = shikimori.requireClientId(),
+                    clientSecret = shikimori.requireClientSecret(),
+                ),
+            )
             if (response.isSuccessful) {
                 currAuth = with(json) {
                     response.parseAs<SMOAuth>()
@@ -48,3 +56,7 @@ class ShikimoriInterceptor(private val shikimori: Shikimori) : Interceptor {
         shikimori.saveToken(oauth)
     }
 }
+
+class ShikimoriCredentialsMissing : IllegalStateException(
+    "Shikimori: configure your own Client ID and Client Secret before connecting.",
+)

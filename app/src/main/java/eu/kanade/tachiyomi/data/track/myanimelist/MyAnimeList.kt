@@ -7,6 +7,9 @@ import eu.kanade.tachiyomi.data.track.BaseTracker
 import eu.kanade.tachiyomi.data.track.DeletableTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.myanimelist.dto.MALOAuth
+import eu.kanade.tachiyomi.data.track.userOwnedCredentialSessionActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.json.Json
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.injectLazy
@@ -24,6 +27,8 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
 
         private const val SEARCH_ID_PREFIX = "id:"
         private const val SEARCH_LIST_PREFIX = "my:"
+        private const val MAL_INTEGRATION_ID = "mal"
+        private const val MAL_CLIENT_ID_KEY = "client_id"
 
         private val SCORE_LIST = IntRange(0, 10)
             .map(Int::toString)
@@ -32,10 +37,47 @@ class MyAnimeList(id: Long) : BaseTracker(id, "MyAnimeList"), DeletableTracker {
     private val json: Json by injectLazy()
 
     private val interceptor by lazy { MyAnimeListInterceptor(this) }
-    private val api by lazy { MyAnimeListApi(id, client, interceptor) }
+    private val api by lazy { MyAnimeListApi(id, client, interceptor, ::requireClientId) }
 
     internal val integrationApi: MalIntegrationApi
         get() = api
+
+    fun getClientId(): String = trackPreferences
+        .integrationCredential(MAL_INTEGRATION_ID, MAL_CLIENT_ID_KEY)
+        .get()
+        .trim()
+
+    fun hasClientId(): Boolean = getClientId().isNotBlank()
+
+    override val isLoggedIn: Boolean
+        get() = userOwnedCredentialSessionActive(
+            super.isLoggedIn,
+            getClientId(),
+        )
+
+    override val isLoggedInFlow: Flow<Boolean> by lazy {
+        combine(
+            super.isLoggedInFlow,
+            trackPreferences.integrationCredential(MAL_INTEGRATION_ID, MAL_CLIENT_ID_KEY).changes(),
+        ) { baseLoggedIn, clientId ->
+            userOwnedCredentialSessionActive(baseLoggedIn, clientId)
+        }
+    }
+
+    fun setClientId(clientId: String) {
+        val normalized = clientId.trim()
+        if (normalized == getClientId()) return
+
+        logout()
+        trackPreferences
+            .integrationCredential(MAL_INTEGRATION_ID, MAL_CLIENT_ID_KEY)
+            .set(normalized)
+    }
+
+    fun authUrl() = MyAnimeListApi.authUrl(requireClientId())
+
+    internal fun requireClientId(): String =
+        getClientId().ifBlank { throw MALClientIdMissing() }
 
     override val supportsReadingDates: Boolean = true
 

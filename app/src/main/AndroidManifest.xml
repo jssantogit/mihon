@@ -207,6 +207,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:scheme="mihon" />
+                <data android:scheme="tsuzuki" />
 
                 <data android:host="bangumi-auth" />
                 <data android:host="myanimelist-auth" />

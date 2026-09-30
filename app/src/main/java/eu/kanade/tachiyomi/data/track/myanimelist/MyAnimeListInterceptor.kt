@@ -16,7 +16,7 @@ class MyAnimeListInterceptor(private val myanimelist: MyAnimeList) : Interceptor
     private val tokenExpired get() = myanimelist.getIfAuthExpired()
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        if (tokenExpired) {
+        if (oauth != null && tokenExpired) {
             throw MALTokenExpired()
         }
         val originalRequest = chain.request()
@@ -25,16 +25,11 @@ class MyAnimeListInterceptor(private val myanimelist: MyAnimeList) : Interceptor
             refreshToken(chain)
         }
 
-        if (oauth == null) {
-            throw IOException("MAL: User is not authenticated")
-        }
-
-        // Add the authorization header to the original request
-        val authRequest = originalRequest.newBuilder()
-            .addHeader("Authorization", "Bearer ${oauth!!.accessToken}")
-            // TODO(antsy): Add back custom user agent when they stop blocking us for no apparent reason
-            // .header("User-Agent", "Mihon v${BuildConfig.VERSION_NAME} (${BuildConfig.APPLICATION_ID})")
-            .build()
+        val authRequest = MyAnimeListApi.authorizeRequest(
+            request = originalRequest,
+            clientId = myanimelist.requireClientId(),
+            accessToken = oauth?.accessToken,
+        )
 
         return chain.proceed(authRequest)
     }
@@ -53,7 +48,12 @@ class MyAnimeListInterceptor(private val myanimelist: MyAnimeList) : Interceptor
         oauth?.takeUnless { it.isExpired() }?.let { return@synchronized it }
 
         val response = try {
-            chain.proceed(MyAnimeListApi.refreshTokenRequest(oauth!!))
+            chain.proceed(
+                MyAnimeListApi.refreshTokenRequest(
+                    oauth = oauth!!,
+                    clientId = myanimelist.requireClientId(),
+                ),
+            )
         } catch (_: Throwable) {
             throw MALTokenRefreshFailed()
         }
@@ -77,6 +77,7 @@ class MyAnimeListInterceptor(private val myanimelist: MyAnimeList) : Interceptor
     }
 }
 
+class MALClientIdMissing : IOException("MAL: Configure your own Client ID before using this integration.")
 class MALTitleNotApproved : IOException("MAL: This title can't be added because it is waiting for approval.")
 class MALTokenRefreshFailed : IOException("MAL: Failed to refresh account token")
 class MALTokenExpired : IOException("MAL: Login has expired")

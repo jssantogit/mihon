@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.data.track.shikimori
 
-import android.net.Uri
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
@@ -21,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import tachiyomi.core.common.util.lang.withIOContext
@@ -31,6 +31,8 @@ class ShikimoriApi(
     private val trackerId: Long,
     private val client: OkHttpClient,
     interceptor: ShikimoriInterceptor,
+    private val clientIdProvider: () -> String,
+    private val clientSecretProvider: () -> String,
 ) {
 
     private val json: Json by injectLazy()
@@ -279,50 +281,72 @@ class ShikimoriApi(
     suspend fun accessToken(code: String): SMOAuth {
         return withIOContext {
             with(json) {
-                client.newCall(accessTokenRequest(code))
+                client.newCall(
+                    accessTokenRequest(
+                        code = code,
+                        clientId = requireClientId(),
+                        clientSecret = requireClientSecret(),
+                    ),
+                )
                     .awaitSuccess()
                     .parseAs()
             }
         }
     }
 
-    private fun accessTokenRequest(code: String) = POST(
-        OAUTH_URL,
-        body = FormBody.Builder()
-            .add("grant_type", "authorization_code")
-            .add("client_id", CLIENT_ID)
-            .add("client_secret", CLIENT_SECRET)
-            .add("code", code)
-            .add("redirect_uri", REDIRECT_URL)
-            .build(),
-    )
+    private fun requireClientId(): String =
+        clientIdProvider().trim().ifBlank { throw ShikimoriCredentialsMissing() }
+
+    private fun requireClientSecret(): String =
+        clientSecretProvider().trim().ifBlank { throw ShikimoriCredentialsMissing() }
 
     companion object {
+        const val CALLBACK_URL = "tsuzuki://shikimori-auth"
+
         private const val BASE_URL = "https://shikimori.io"
         private const val API_URL = "$BASE_URL/api"
         private const val GRAPHQL_API_URL = "$BASE_URL/api/graphql"
         private const val OAUTH_URL = "$BASE_URL/oauth/token"
         private const val LOGIN_URL = "$BASE_URL/oauth/authorize"
 
-        private const val REDIRECT_URL = "mihon://shikimori-auth"
-
-        private const val CLIENT_ID = "PB9dq8DzI405s7wdtwTdirYqHiyVMh--djnP7lBUqSA"
-        private const val CLIENT_SECRET = "NajpZcOBKB9sJtgNcejf8OB9jBN1OYYoo-k4h2WWZus"
-
-        fun authUrl(): Uri = LOGIN_URL.toUri().buildUpon()
-            .appendQueryParameter("client_id", CLIENT_ID)
-            .appendQueryParameter("redirect_uri", REDIRECT_URL)
-            .appendQueryParameter("response_type", "code")
+        fun authUrl(clientId: String): String = LOGIN_URL.toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("client_id", requireCredential(clientId))
+            .addQueryParameter("redirect_uri", CALLBACK_URL)
+            .addQueryParameter("response_type", "code")
             .build()
+            .toString()
 
-        fun refreshTokenRequest(token: String) = POST(
+        internal fun accessTokenRequest(
+            code: String,
+            clientId: String,
+            clientSecret: String,
+        ) = POST(
+            OAUTH_URL,
+            body = FormBody.Builder()
+                .add("grant_type", "authorization_code")
+                .add("client_id", requireCredential(clientId))
+                .add("client_secret", requireCredential(clientSecret))
+                .add("code", code)
+                .add("redirect_uri", CALLBACK_URL)
+                .build(),
+        )
+
+        fun refreshTokenRequest(
+            token: String,
+            clientId: String,
+            clientSecret: String,
+        ) = POST(
             OAUTH_URL,
             body = FormBody.Builder()
                 .add("grant_type", "refresh_token")
-                .add("client_id", CLIENT_ID)
-                .add("client_secret", CLIENT_SECRET)
+                .add("client_id", requireCredential(clientId))
+                .add("client_secret", requireCredential(clientSecret))
                 .add("refresh_token", token)
                 .build(),
         )
+
+        private fun requireCredential(value: String): String =
+            value.trim().ifBlank { throw ShikimoriCredentialsMissing() }
     }
 }

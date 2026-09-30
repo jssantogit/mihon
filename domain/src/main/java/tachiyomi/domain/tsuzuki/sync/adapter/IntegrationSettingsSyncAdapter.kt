@@ -171,6 +171,8 @@ class IntegrationSettingsSyncAdapter(
             "secret",
             "password",
             "credential",
+            "clientid",
+            "clientreference",
             "apikey",
             "authorization",
             "cookie",

@@ -22,6 +22,7 @@ import eu.kanade.tachiyomi.util.PkceUtil
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -47,16 +48,28 @@ class MyAnimeListApi(
     private val trackerId: Long,
     private val client: OkHttpClient,
     interceptor: MyAnimeListInterceptor,
+    private val clientIdProvider: () -> String,
 ) : MalIntegrationApi {
 
     private val json: Json by injectLazy()
 
+    private val publicClient = client.newBuilder()
+        .addInterceptor { chain ->
+            chain.proceed(
+                authorizeRequest(
+                    request = chain.request(),
+                    clientId = requireClientId(),
+                    accessToken = null,
+                ),
+            )
+        }
+        .build()
     private val authClient = client.newBuilder().addInterceptor(interceptor).build()
 
     suspend fun getAccessToken(authCode: String): MALOAuth {
         return withIOContext {
             val formBody: RequestBody = FormBody.Builder()
-                .add("client_id", CLIENT_ID)
+                .add("client_id", requireClientId())
                 .add("code", authCode)
                 .add("code_verifier", codeVerifier)
                 .add("grant_type", "authorization_code")
@@ -93,7 +106,7 @@ class MyAnimeListApi(
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()
             with(json) {
-                authClient.newCall(GET(url.toString()))
+                publicClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALSearchResult>()
                     .data
@@ -117,7 +130,7 @@ class MyAnimeListApi(
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()
             with(json) {
-                authClient.newCall(GET(url.toString()))
+                publicClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALSearchResult>()
                     .data
@@ -134,7 +147,7 @@ class MyAnimeListApi(
                 .appendQueryParameter("fields", SEARCH_FIELDS)
                 .build()
             with(json) {
-                authClient.newCall(GET(url.toString()))
+                publicClient.newCall(GET(url.toString()))
                     .awaitSuccess()
                     .parseAs<MALManga>()
                     .let { it.toTrackSearch(trackerId) }
@@ -269,6 +282,10 @@ class MyAnimeListApi(
         return SimpleDateFormat(pattern, Locale.US).parse(isoDate)?.time ?: 0L
     }
 
+    private fun requireClientId(): String = clientIdProvider()
+        .trim()
+        .ifBlank { throw MALClientIdMissing() }
+
     private fun convertToIsoDate(epochTime: Long): String? {
         if (epochTime == 0L) {
             return ""
@@ -282,10 +299,11 @@ class MyAnimeListApi(
     }
 
     companion object {
-        private const val CLIENT_ID = "c46c9e24640a64dad5be5ca7a1a53a0f"
+        const val CALLBACK_URL = "tsuzuki://myanimelist-auth"
 
         private const val BASE_OAUTH_URL = "https://myanimelist.net/v1/oauth2"
         private const val BASE_API_URL = "https://api.myanimelist.net/v2"
+        private const val CLIENT_ID_HEADER = "X-MAL-CLIENT-ID"
 
         private const val SEARCH_FIELDS =
             "id,title,synopsis,num_chapters,num_volumes,mean,num_scoring_users,main_picture,status,media_type,start_date,end_date,authors{first_name,last_name},genres"
@@ -294,33 +312,50 @@ class MyAnimeListApi(
 
         private var codeVerifier: String = ""
 
-        fun authUrl(): Uri = "$BASE_OAUTH_URL/authorize".toUri().buildUpon()
-            .appendQueryParameter("client_id", CLIENT_ID)
-            .appendQueryParameter("code_challenge", getPkceChallengeCode())
-            .appendQueryParameter("response_type", "code")
+        fun authUrl(clientId: String): String = "$BASE_OAUTH_URL/authorize".toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("client_id", requireClientId(clientId))
+            .addQueryParameter("code_challenge", getPkceChallengeCode())
+            .addQueryParameter("response_type", "code")
             .build()
+            .toString()
 
         fun mangaUrl(id: Long): Uri = "$BASE_API_URL/manga".toUri().buildUpon()
             .appendPath(id.toString())
             .appendPath("my_list_status")
             .build()
 
-        fun refreshTokenRequest(oauth: MALOAuth): Request {
+        fun refreshTokenRequest(oauth: MALOAuth, clientId: String): Request {
             val formBody: RequestBody = FormBody.Builder()
-                .add("client_id", CLIENT_ID)
+                .add("client_id", requireClientId(clientId))
                 .add("refresh_token", oauth.refreshToken)
                 .add("grant_type", "refresh_token")
                 .build()
 
-            // Add the Authorization header manually as this particular
-            // request is called by the interceptor itself so it doesn't reach
-            // the part where the token is added automatically.
             val headers = Headers.Builder()
                 .add("Authorization", "Bearer ${oauth.accessToken}")
                 .build()
 
             return POST("$BASE_OAUTH_URL/token", body = formBody, headers = headers)
         }
+
+        internal fun authorizeRequest(
+            request: Request,
+            clientId: String,
+            accessToken: String?,
+        ): Request {
+            val builder = request.newBuilder()
+                .header(CLIENT_ID_HEADER, requireClientId(clientId))
+
+            accessToken
+                ?.takeIf(String::isNotBlank)
+                ?.let { builder.header("Authorization", "Bearer $it") }
+
+            return builder.build()
+        }
+
+        private fun requireClientId(clientId: String): String =
+            clientId.trim().ifBlank { throw MALClientIdMissing() }
 
         private fun getPkceChallengeCode(): String {
             codeVerifier = PkceUtil.generateCodeVerifier()
