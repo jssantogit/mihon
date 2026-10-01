@@ -15,7 +15,7 @@ fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
     when (event) {
         is MangaCoverLoadEvent.Attempt -> {
             if (event.candidateCount > 0 && !event.requestDataPresent) {
-                event(
+                this.event(
                     subsystem = DiagnosticSubsystem.IMAGE,
                     name = DiagnosticEventName.INVARIANT_VIOLATION,
                     stage = DiagnosticStage.RENDER,
@@ -31,7 +31,7 @@ fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
                 )
             }
             if (event.candidateIndex == 0) {
-                event(
+                this.event(
                     subsystem = DiagnosticSubsystem.ARTWORK,
                     name = DiagnosticEventName.ARTWORK_CANDIDATES_BUILT,
                     stage = DiagnosticStage.RENDER,
@@ -44,7 +44,7 @@ fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
                     ),
                 )
             }
-            event(
+            this.event(
             subsystem = DiagnosticSubsystem.IMAGE,
             name = DiagnosticEventName.ARTWORK_LOAD_ATTEMPT,
             stage = DiagnosticStage.IMAGE_LOAD,
