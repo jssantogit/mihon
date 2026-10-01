@@ -150,6 +150,7 @@ class MalIntegrationProvider private constructor(
                 label = "MAL",
                 value = score.value,
                 scaleMax = score.maxValue,
+                voteCount = score.voteCount,
             ),
             verifiedIdentity = verifiedIdentity,
         )
@@ -217,6 +218,7 @@ class MalIntegrationProvider private constructor(
             label = "MAL",
             value = value,
             scaleMax = MAL_SCORE_MAX,
+            voteCount = score_votes,
         )
     }
 
