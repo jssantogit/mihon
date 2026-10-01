@@ -116,12 +116,11 @@ class ResolveCanonicalMetadata(
                 trace = trace,
             )
 
-            val tsuzukiRating = if (
-                registry.isGlobalCapabilityActive(
-                    TSUZUKI_INTEGRATION_ID,
-                    IntegrationCapability.RATINGS,
-                )
-            ) {
+            val tsuzukiRatingsEnabled = registry.isGlobalCapabilityActive(
+                TSUZUKI_INTEGRATION_ID,
+                IntegrationCapability.RATINGS,
+            )
+            val tsuzukiRating = if (tsuzukiRatingsEnabled) {
                 ComputeTsuzukiRating(
                     ratings.map { rating ->
                         TsuzukiRatingSource(
@@ -152,6 +151,8 @@ class ResolveCanonicalMetadata(
                         DiagnosticAttributeValue.Number(verifiedRatingSources.toLong()),
                     DiagnosticAttribute.RATING_CORROBORATED_SOURCE_COUNT to
                         DiagnosticAttributeValue.Number((ratings.size - verifiedRatingSources).toLong()),
+                    DiagnosticAttribute.TSUZUKI_RATING_ENABLED to
+                        DiagnosticAttributeValue.Flag(tsuzukiRatingsEnabled),
                     DiagnosticAttribute.TSUZUKI_RATING_PRESENT to
                         DiagnosticAttributeValue.Flag(tsuzukiRating != null),
                 ),
