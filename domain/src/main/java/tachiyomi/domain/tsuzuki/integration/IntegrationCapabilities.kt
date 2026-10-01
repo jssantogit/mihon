@@ -12,6 +12,8 @@ import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 
 typealias IntegrationId = tachiyomi.domain.tsuzuki.capability.IntegrationId
 
+val TSUZUKI_INTEGRATION_ID = IntegrationId("tsuzuki")
+
 interface SearchProvider {
     val integrationId: IntegrationId
 
