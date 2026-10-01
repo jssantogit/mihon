@@ -24,6 +24,8 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.model.InstalledAddon
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.artwork.ResolveCanonicalArtwork
+import tachiyomi.domain.tsuzuki.artwork.model.ResolvedCanonicalArtwork
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticStage
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
@@ -118,6 +120,9 @@ class CanonicalTitleScreenModelTest {
             addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
         model.start("title")
         advanceUntilIdle()
@@ -143,6 +148,7 @@ class CanonicalTitleScreenModelTest {
         coVerify(exactly = 1) { refresh.execute("title") }
     }
 
+    // Physical regression guard: production DI must deliver canonical artwork to Detail.
     @Test
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
         val sourceResolver = mockk<ResolveCanonicalSourceManga>()
@@ -152,6 +158,13 @@ class CanonicalTitleScreenModelTest {
             url = "/dandadan",
             title = "Dandadan",
             thumbnailUrl = "https://cdn.example/dandadan.jpg",
+        )
+        val artworkResolver = mockk<ResolveCanonicalArtwork>()
+        coEvery { artworkResolver.execute("title") } returns ResolvedCanonicalArtwork(
+            coverUrl = "https://kitsu.example/dandadan.jpg",
+            coverProvider = "kitsu",
+            bannerUrl = null,
+            bannerProvider = null,
         )
         val resolver = mockk<ResolveCanonicalMetadata>()
         coEvery { resolver.execute("title") } returns Result.success(
@@ -245,13 +258,14 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalMetadata = resolver,
             resolveCanonicalSourceManga = sourceResolver,
+            resolveCanonicalArtwork = artworkResolver,
         )
 
         model.start("title")
         advanceUntilIdle()
 
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
-        state.coverUrl shouldBe null
+        state.coverUrl shouldBe "https://kitsu.example/dandadan.jpg"
         state.sourceCover?.sourceId shouldBe 10L
         state.sourceCover?.url shouldBe "https://cdn.example/dandadan.jpg"
         state.tags shouldBe listOf("Psychological", "Crime")
@@ -298,6 +312,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
@@ -384,6 +401,9 @@ class CanonicalTitleScreenModelTest {
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
             diagnostics = diagnostics,
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
@@ -455,6 +475,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
@@ -523,6 +546,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
@@ -602,6 +628,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
@@ -662,6 +691,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
@@ -710,6 +742,9 @@ class CanonicalTitleScreenModelTest {
                     ),
                 ),
                 diagnostics = diagnostics,
+                resolveCanonicalMetadata = mockk(relaxed = true),
+                resolveCanonicalSourceManga = mockk(relaxed = true),
+                resolveCanonicalArtwork = mockk(relaxed = true),
             )
             model.start("title")
             advanceUntilIdle()

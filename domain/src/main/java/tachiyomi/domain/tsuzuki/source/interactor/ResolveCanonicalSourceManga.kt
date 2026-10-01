@@ -24,7 +24,7 @@ class ResolveCanonicalSourceManga(
     private val mangaRepository: MangaRepository,
     private val networkToLocalManga: NetworkToLocalManga,
     private val readingSourceGateway: ReadingSourceGateway,
-    private val contentBindingRepository: ContentBindingRepository? = null,
+    private val contentBindingRepository: ContentBindingRepository,
 ) {
 
     suspend fun execute(canonicalTitleId: String): Manga? {
@@ -150,7 +150,7 @@ class ResolveCanonicalSourceManga(
         fallbackTitle: String,
         diagnosticId: String,
     ): Manga? {
-        val repository = contentBindingRepository ?: return null
+        val repository = contentBindingRepository
         val bindings = try {
             repository.getByTitle(canonicalTitleId)
         } catch (error: CancellationException) {

@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
@@ -268,6 +269,7 @@ class SourceResolverScreenModelTest {
             readingSourceGateway = gateway,
             scoreSourceTitleMatch = ScoreSourceTitleMatch(),
             confirmSourceMapping = ConfirmSourceMapping(mappings, gateway),
+            diagnosticRecorder = NoOpStructuredDiagnosticRecorder,
         ),
         confirmSourceMapping = ConfirmSourceMapping(mappings, gateway),
         setTitleSourceOverride = SetTitleSourceOverride(mappings),

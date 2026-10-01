@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.integration.interactor
 
 import io.kotest.matchers.shouldBe
+import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
@@ -63,7 +64,7 @@ class ResolveCanonicalMetadataTest {
         )
         val registry = FakeRegistry(listOf(kitsu, mal))
 
-        val resolved = ResolveCanonicalMetadata(repository, registry)
+        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true))
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -130,7 +131,7 @@ class ResolveCanonicalMetadataTest {
             ),
         )
 
-        val resolved = ResolveCanonicalMetadata(repository, registry)
+        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true))
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -183,7 +184,7 @@ class ResolveCanonicalMetadataTest {
         )
         val registry = FakeRegistry(listOf(mangaUpdates, mal))
 
-        val resolved = ResolveCanonicalMetadata(repository, registry)
+        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true))
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -229,7 +230,7 @@ class ResolveCanonicalMetadataTest {
             disabled = setOf(IntegrationId("kitsu") to IntegrationCapability.METADATA_ARTWORK),
         )
 
-        val resolved = ResolveCanonicalMetadata(repository, registry)
+        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true))
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -258,7 +259,7 @@ class ResolveCanonicalMetadataTest {
             ),
         )
 
-        val resolved = ResolveCanonicalMetadata(repository, registry)
+        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true))
             .execute(TITLE_ID)
             .getOrThrow()
 

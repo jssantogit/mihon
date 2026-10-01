@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -57,7 +56,7 @@ class TsuzukiHomeScreenModel(
     private val importLegacyCanonicalProgress: ImportLegacyCanonicalProgress,
     private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
     private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
-    private val titleArtworkRepository: TitleArtworkRepository? = null,
+    private val titleArtworkRepository: TitleArtworkRepository,
 ) : ViewModel() {
 
     private val eventChannel = Channel<TsuzukiHomeEvent>(Channel.BUFFERED)
@@ -66,7 +65,7 @@ class TsuzukiHomeScreenModel(
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
-        titleArtworkRepository?.observeAll() ?: flowOf(emptyList()),
+        titleArtworkRepository.observeAll(),
     ) { continueReading, sections, artworkObservations ->
         val artworkByTitle = artworkObservations.groupBy { it.canonicalTitleId }
         val enriched = continueReading.map { item ->

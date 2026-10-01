@@ -25,7 +25,7 @@ import kotlin.time.Clock
 class ResolveCanonicalMetadata(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val registry: IntegrationRegistry,
-    private val titleArtworkRepository: TitleArtworkRepository? = null,
+    private val titleArtworkRepository: TitleArtworkRepository,
 ) {
 
     suspend fun execute(canonicalTitleId: String): Result<ResolvedMetadata> {

@@ -198,7 +198,7 @@ class TsuzukiHomeScreenModelTest {
             mockk(relaxed = true),
         sourceMangaResolver: ResolveCanonicalSourceManga =
             mockk(relaxed = true),
-        artworkRepository: TitleArtworkRepository? = null,
+        artworkRepository: TitleArtworkRepository = FakeTitleArtworkRepository(emptyList()),
     ): TsuzukiHomeScreenModel {
         val observeHome = mockk<ObserveHomeContinueReading>()
         every { observeHome.subscribe() } returns continueReading

@@ -10,7 +10,6 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
-import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticEvent
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
@@ -33,7 +32,7 @@ class ResolveReadingSource(
     private val readingSourceGateway: ReadingSourceGateway,
     private val scoreSourceTitleMatch: ScoreSourceTitleMatch,
     private val confirmSourceMapping: ConfirmSourceMapping,
-    private val diagnosticRecorder: StructuredDiagnosticRecorder = NoOpStructuredDiagnosticRecorder,
+    private val diagnosticRecorder: StructuredDiagnosticRecorder,
 ) {
 
     suspend fun execute(
