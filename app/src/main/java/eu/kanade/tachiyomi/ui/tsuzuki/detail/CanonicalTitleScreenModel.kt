@@ -143,8 +143,8 @@ class CanonicalTitleScreenModel(
     private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
     private val mangaRepository: MangaRepository? = null,
     private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
-    private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga? = null,
-    private val resolveCanonicalArtwork: ResolveCanonicalArtwork? = null,
+    private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
+    private val resolveCanonicalArtwork: ResolveCanonicalArtwork,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -553,14 +553,14 @@ class CanonicalTitleScreenModel(
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
         val canonicalArtwork = try {
-            resolveCanonicalArtwork?.execute(canonicalTitleId)
+            resolveCanonicalArtwork.execute(canonicalTitleId)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
             null
         }
         var metadata = try {
-            resolveCanonicalSourceManga?.execute(canonicalTitleId)
+            resolveCanonicalSourceManga.execute(canonicalTitleId)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
