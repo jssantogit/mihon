@@ -565,9 +565,11 @@ class MainActivity : BaseActivity() {
             }
             // Compatibility-only legacy actions: redirect into current Tsuzuki surfaces.
             Constants.SHORTCUT_UPDATES,
-            Constants.SHORTCUT_HISTORY -> HomeScreen.Tab.Library()
+            Constants.SHORTCUT_HISTORY,
+            -> HomeScreen.Tab.Library()
             Constants.SHORTCUT_SOURCES,
-            Constants.SHORTCUT_EXTENSIONS -> {
+            Constants.SHORTCUT_EXTENSIONS,
+            -> {
                 navigator.popUntilRoot()
                 navigator.push(SettingsScreen(SettingsScreen.Destination.TsuzukiAddons))
                 null
