@@ -228,3 +228,13 @@ The visible launcher shortcut set is now Library-only.
 ### Regression guard
 
 The identity contract now fails if any retired route file or retired launcher shortcut is reintroduced. This prevents a later upstream sync from silently restoring the removed Mihon shells.
+
+### Cleanup-wave validation
+
+- no local Gradle;
+- full GitHub Actions CI required;
+- verify Android launcher exposes only the Library shortcut;
+- verify old search/share intents open Tsuzuki Search;
+- verify old Sources/Extensions intents open Settings → Add-ons;
+- verify Downloads opens directly;
+- verify no hidden History/Updates/Browse/More tab can be navigated to.
