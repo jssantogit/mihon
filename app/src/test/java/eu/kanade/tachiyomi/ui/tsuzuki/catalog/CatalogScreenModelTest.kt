@@ -35,6 +35,8 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.interactor.AddCatalogItemToLibrary
@@ -187,9 +189,9 @@ class CatalogScreenModelTest {
         val blockingRatingsProvider = object : RatingsProvider {
             override val integrationId = IntegrationId("mal")
 
-            override suspend fun ratings(externalId: String) = Result.success(emptyList<tachiyomi.domain.tsuzuki.integration.model.ExternalRating>())
+            override suspend fun ratings(externalId: String) = Result.success(emptyList<ExternalRating>())
 
-            override suspend fun ratingFor(item: CatalogItem): Result<tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch?> {
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
                 enrichmentGate.await()
                 return Result.success(null)
             }
