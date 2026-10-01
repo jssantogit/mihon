@@ -50,7 +50,7 @@ class HikkaIntegrationProvider private constructor(
 
         val candidates = api.searchPublic(item.title)
             .take(RATING_IDENTITY_SEARCH_LIMIT)
-            .map(HKManga::toCatalogItem)
+            .map { candidate -> candidate.toCatalogItem() }
 
         val knownMalId = when {
             item.provider == "mal" -> item.providerId
