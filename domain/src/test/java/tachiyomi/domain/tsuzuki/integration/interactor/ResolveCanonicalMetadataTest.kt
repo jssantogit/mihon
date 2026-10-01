@@ -11,7 +11,11 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
 import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticEvent
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
@@ -275,6 +279,55 @@ class ResolveCanonicalMetadataTest {
     }
 
     @Test
+    fun `Tsuzuki Rating diagnostics record bounded composition counts`() = runTest {
+        val repository = FakeCanonicalTitleRepository(
+            identities = listOf(
+                identity("kitsu", "k1"),
+                identity("mal", "m1"),
+            ),
+        )
+        val recorder = CapturingDiagnosticRecorder()
+        val registry = FakeRegistry(
+            providers = listOf(
+                FakeMetadataProvider(
+                    "kitsu",
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = "k1",
+                        title = "Kitsu title",
+                        score = CatalogScore("kitsu", 80.0, 100.0),
+                    ),
+                ),
+                FakeMetadataProvider(
+                    "mal",
+                    CatalogItem(
+                        provider = "mal",
+                        providerId = "m1",
+                        title = "MAL title",
+                        score = CatalogScore("mal", 8.4, 10.0),
+                    ),
+                ),
+            ),
+        )
+
+        ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            recorder,
+        )
+            .execute(TITLE_ID)
+            .getOrThrow()
+
+        val event = recorder.events.single { it.name == DiagnosticEventName.TSUZUKI_RATING_COMPUTED }
+        event.attributes["rating_source_count"] shouldBe DiagnosticAttributeValue.Number(2)
+        event.attributes["rating_verified_source_count"] shouldBe DiagnosticAttributeValue.Number(2)
+        event.attributes["rating_corroborated_source_count"] shouldBe DiagnosticAttributeValue.Number(0)
+        event.attributes["tsuzuki_rating_enabled"] shouldBe DiagnosticAttributeValue.Flag(true)
+        event.attributes["tsuzuki_rating_present"] shouldBe DiagnosticAttributeValue.Flag(true)
+    }
+
+    @Test
     fun `staff and editorial fields keep deterministic provenance`() = runTest {
         val repository = FakeCanonicalTitleRepository(
             identities = listOf(
@@ -514,6 +567,19 @@ class ResolveCanonicalMetadataTest {
         override suspend fun insert(title: CanonicalTitle) = error("Not used")
 
         override suspend fun addExternalIdentity(identity: ExternalIdentity) = error("Not used")
+    }
+
+    private class CapturingDiagnosticRecorder : StructuredDiagnosticRecorder {
+        override val sessionId: String = "d2719c3b-4518-4d6b-9b09-2834381a322c"
+        val events = mutableListOf<StructuredDiagnosticEvent>()
+
+        override fun canonicalTitleReference(canonicalTitleId: String): String? = "0123456789abcdef"
+
+        override fun mihonMangaReference(mihonMangaId: Long): String? = "fedcba9876543210"
+
+        override fun record(event: StructuredDiagnosticEvent) {
+            events += event
+        }
     }
 
     private companion object {
