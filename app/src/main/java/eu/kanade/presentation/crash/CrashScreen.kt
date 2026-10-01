@@ -41,7 +41,7 @@ fun CrashScreen(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             Text(
-                text = exception?.toString() ?: "Crash details were persisted locally.",
+                text = exception?.toString() ?: stringResource(MR.strings.tsuzuki_crash_persisted_locally),
                 modifier = Modifier
                     .padding(all = MaterialTheme.padding.small),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
