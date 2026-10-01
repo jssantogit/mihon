@@ -332,6 +332,16 @@ class IdentityContractTest(unittest.TestCase):
             check_contract(root),
         )
 
+    def test_retired_manga_detail_surface_remains_absent(self):
+        root = self.make_repo()
+        retired = root / "app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt"
+        retired.parent.mkdir(parents=True, exist_ok=True)
+        retired.write_text("class MangaScreen", encoding="utf-8")
+        self.assertIn(
+            "retired legacy UI surface must remain absent: app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt",
+            check_contract(root),
+        )
+
     def test_retired_legacy_ui_packages_remain_absent(self):
         root = self.make_repo()
         retired = root / "app/src/main/java/mihon/feature/migration/config/Legacy.kt"
