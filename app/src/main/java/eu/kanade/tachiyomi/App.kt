@@ -72,6 +72,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addSingleton
+import java.io.File
 import java.security.Security
 
 class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factory, GraphProvider<AppGraph> {
@@ -347,6 +348,14 @@ private fun currentProcessName(context: Context): String {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         return Application.getProcessName()
     }
+
+    val procName = runCatching {
+        File("/proc/self/cmdline")
+            .readText()
+            .trim('\u0000', '\n', ' ')
+            .takeIf(String::isNotBlank)
+    }.getOrNull()
+    if (procName != null) return procName
 
     val pid = Process.myPid()
     val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
