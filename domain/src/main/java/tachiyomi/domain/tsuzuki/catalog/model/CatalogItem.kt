@@ -1,5 +1,7 @@
 package tachiyomi.domain.tsuzuki.catalog.model
 
+import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRating
+
 data class CatalogItem(
     val provider: String,
     val providerId: String,
@@ -17,6 +19,7 @@ data class CatalogItem(
      */
     val externalIds: Map<String, String> = emptyMap(),
     val scores: List<CatalogScore> = score?.let { listOf(it) }.orEmpty(),
+    val tsuzukiRating: TsuzukiRating? = null,
     val authors: List<String> = emptyList(),
     val artists: List<String> = emptyList(),
     val genres: List<String> = emptyList(),
