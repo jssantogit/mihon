@@ -135,6 +135,31 @@ class RefreshChapterEvidence private constructor(
     constructor(
         registry: IntegrationRegistry,
         reconcileChapterEvidence: ReconcileChapterEvidence,
+        addonRegistry: AddonRegistry,
+        resolveContentBinding: ResolveContentBinding,
+        contentOptionCache: ContentOptionCache,
+        inFlightContentResolution: InFlightContentResolution,
+        diagnostics: ChapterInventoryDiagnostics,
+        discoverReadableTitle: DiscoverReadableTitle,
+        structuredDiagnostics: StructuredDiagnosticRecorder,
+    ) : this(
+        registry = registry,
+        reconcileChapterEvidence = reconcileChapterEvidence,
+        addonRegistry = addonRegistry,
+        resolveContentBinding = resolveContentBinding,
+        contentOptionCache = contentOptionCache,
+        inFlightContentResolution = inFlightContentResolution,
+        diagnostics = diagnostics,
+        discoverReadableTitle = discoverReadableTitle,
+        structuredDiagnostics = structuredDiagnostics,
+        refreshSnapshots = null,
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        constructorMarker = Unit,
+    )
+
+    constructor(
+        registry: IntegrationRegistry,
+        reconcileChapterEvidence: ReconcileChapterEvidence,
         refreshSnapshots: ChapterRefreshSnapshotRepository,
         clock: () -> Long,
     ) : this(

@@ -175,8 +175,9 @@ class MihonChapterProbeProvider internal constructor(
                     null
                 }
                 if (fingerprint != null) {
+                    val repository = checkNotNull(refreshSnapshots)
                     val scopeKey = ChapterRefreshSnapshot.bindingScope(binding.id)
-                    val existing = refreshSnapshots.get(canonicalTitleId, scopeKey)
+                    val existing = repository.get(canonicalTitleId, scopeKey)
                     if (existing?.fingerprint == fingerprint) {
                         unchangedBindingCount++
                         continue
