@@ -53,3 +53,19 @@ Wave 1 turns artwork and metadata debugging into correlated traces without widen
 - App tests scan critical production source for the exact optional/NoOp DI defaults that caused the post-PR #55 artwork/diagnostics wiring regression.
 
 Wave 1 does not add free-form diagnostic messages and does not log manga titles, URLs, credentials, cookies, provider responses, or image request payloads.
+
+
+## Diagnostics v2 — Wave 2
+
+Wave 2 extends the same correlated, allowlisted diagnostics contract across the reading runtime.
+
+- provider Library refreshes record provider-safe start/fetch/completion events, projected item counts, and duration;
+- ContentBinding resolution records bounded Add-on identifiers, persisted-binding hits/misses, resolved binding counts, and duration;
+- source-artwork recovery reports a closed invariant when persisted ContentBindings exist but none can be restored into a materialized reading candidate;
+- chapter refresh records start, reconciled evidence count, completion, timeout/cancellation, and duration;
+- canonical Reader preparation records download-cache hit/miss, selected Add-on, selection-required counts, ready/unavailable/failure outcomes, and duration;
+- the actual Reader chapter loader records page-ready count and load duration, including cancellation and failure;
+- Reader progress emits bounded checkpoints instead of one event per page, plus completion/history timing;
+- canonical downloads record cache reuse, content-option selection requirements, completion/failure, and duration.
+
+Wave 2 deliberately records operational counts and closed identifiers only. Chapter labels, manga titles, source URLs, page URLs, local file paths, provider response content, and exception messages remain outside the structured event schema.
