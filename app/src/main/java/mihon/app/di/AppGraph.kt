@@ -27,6 +27,7 @@ import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCaptureSession
 import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncJob
 import eu.kanade.tachiyomi.data.tsuzuki.supabase.SupabaseSyncRuntime
 import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
@@ -108,6 +109,7 @@ interface AppGraph : ViewModelGraph {
 
     val crashLogUtil: CrashLogUtil
     val structuredDiagnosticRecorder: StructuredDiagnosticRecorder
+    val diagnosticCaptureSession: DiagnosticCaptureSession
 
     val downloadManager: DownloadManager
 
