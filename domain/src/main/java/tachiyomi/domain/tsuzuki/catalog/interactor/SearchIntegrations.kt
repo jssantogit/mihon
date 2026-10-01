@@ -184,6 +184,6 @@ class SearchIntegrations(
 
     private companion object {
         const val RATING_LOOKUP_CONCURRENCY = 4
-        val RATING_PROVIDER_ORDER = listOf("mal", "kitsu", "mangaupdates", "bangumi")
+        val RATING_PROVIDER_ORDER = listOf("mal", "kitsu", "mangaupdates", "bangumi", "shikimori", "hikka")
     }
 }

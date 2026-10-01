@@ -515,6 +515,6 @@ class ResolveCanonicalMetadata(
         val ARTWORK_PRECEDENCE = listOf("kitsu", "mal", "mangaupdates", "bangumi")
         val EDITORIAL_PRECEDENCE = listOf("mangaupdates", "mal", "kitsu", "bangumi")
         val STAFF_PRECEDENCE = listOf("mangaupdates", "mal", "kitsu", "bangumi")
-        val RATINGS_PRECEDENCE = listOf("mal", "kitsu", "mangaupdates", "bangumi")
+        val RATINGS_PRECEDENCE = listOf("mal", "kitsu", "mangaupdates", "bangumi", "shikimori", "hikka")
     }
 }

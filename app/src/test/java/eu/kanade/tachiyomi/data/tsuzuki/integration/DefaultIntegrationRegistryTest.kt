@@ -202,6 +202,36 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
+    fun `verified shikimori and hikka ratings are globally scoped without unlocking catalog`() = runTest {
+        val shikimori = FakeRatingsProvider("shikimori")
+        val hikka = FakeRatingsProvider("hikka")
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = MutableStateFlow(fakeSettings("shikimori" to true, "hikka" to true)),
+            ratingsProviders = setOf(shikimori, hikka),
+            searchProviders = setOf(FakeSearchProvider("shikimori"), FakeSearchProvider("hikka")),
+            metadataProviders = setOf(FakeMetadataProvider("shikimori"), FakeMetadataProvider("hikka")),
+        )
+
+        registry.ratingsProviders().map { it.integrationId.value }.toSet() shouldBe setOf("shikimori", "hikka")
+
+        listOf("shikimori", "hikka").forEach { id ->
+            registry.isGlobalCapabilityActive(
+                IntegrationId(id),
+                IntegrationCapability.RATINGS,
+            ) shouldBe true
+            registry.isGlobalCapabilityActive(
+                IntegrationId(id),
+                IntegrationCapability.SEARCH,
+            ) shouldBe false
+            registry.isGlobalCapabilityActive(
+                IntegrationId(id),
+                IntegrationCapability.METADATA_BASIC,
+            ) shouldBe false
+        }
+    }
+
+    @Test
     fun `registry reflects settings changes without being reconstructed`() = runTest {
         val kitsuSearch = FakeSearchProvider("kitsu")
         val settings = MutableStateFlow(fakeSettings("kitsu" to false))

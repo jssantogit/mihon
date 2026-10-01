@@ -5,6 +5,7 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.BaseTracker
 import eu.kanade.tachiyomi.data.track.DeletableTracker
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKManga
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKOAuth
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.userOwnedCredentialSessionActive
@@ -42,6 +43,9 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
     private val interceptor by lazy { HikkaInterceptor(this) }
 
     private val api by lazy { HikkaApi(id, client, interceptor, ::requireClientSecret) }
+
+    internal val integrationApi: HikkaIntegrationApi
+        get() = api
 
     fun getClientReference(): String =
         trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_REFERENCE_KEY).get().trim()
@@ -230,4 +234,10 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
             null
         }
     }
+}
+
+interface HikkaIntegrationApi {
+    suspend fun searchPublic(query: String): List<HKManga>
+
+    suspend fun getMangaDetailsPublic(slug: String): HKManga?
 }

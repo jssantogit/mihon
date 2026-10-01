@@ -36,7 +36,7 @@ class HikkaApi(
     private val client: OkHttpClient,
     interceptor: HikkaInterceptor,
     private val clientSecretProvider: () -> String,
-) {
+) : HikkaIntegrationApi {
     suspend fun getCurrentUser(): HKUser {
         return withIOContext {
             val request = Request.Builder()
@@ -66,7 +66,10 @@ class HikkaApi(
         }
     }
 
-    suspend fun searchManga(query: String): List<TrackSearch> {
+    suspend fun searchManga(query: String): List<TrackSearch> =
+        searchPublic(query).map { it.toTrack(trackerId) }
+
+    override suspend fun searchPublic(query: String): List<HKManga> {
         return withIOContext {
             val url = "$BASE_API_URL/manga".toUri().buildUpon()
                 .appendQueryParameter("page", "1")
@@ -97,29 +100,29 @@ class HikkaApi(
             }
 
             with(json) {
-                authClient.newCall(POST(url.toString(), body = payload.toString().toRequestBody(jsonMime)))
+                client.newCall(POST(url.toString(), body = payload.toString().toRequestBody(jsonMime)))
                     .awaitSuccess()
                     .parseAs<HKMangaPagination>()
                     .list
-                    .map { it.toTrack(trackerId) }
             }
         }
     }
 
-    suspend fun getMangaDetails(slug: String): TrackSearch? {
+    suspend fun getMangaDetails(slug: String): TrackSearch? =
+        getMangaDetailsPublic(slug)?.toTrack(trackerId)
+
+    override suspend fun getMangaDetailsPublic(slug: String): HKManga? {
         return withIOContext {
             val url = "$BASE_API_URL/manga/$slug"
 
             with(json) {
-                val response = authClient.newCall(GET(url))
+                val response = client.newCall(GET(url))
                     .await()
 
                 if (response.code == 404) {
                     null
                 } else {
-                    response
-                        .parseAs<HKManga>()
-                        .toTrack(trackerId)
+                    response.parseAs<HKManga>()
                 }
             }
         }

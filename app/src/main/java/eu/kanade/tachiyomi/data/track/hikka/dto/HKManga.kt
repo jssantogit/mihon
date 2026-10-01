@@ -28,9 +28,15 @@ data class HKManga(
     val status: String,
     val image: String,
     val year: Int? = null,
+    @SerialName("native_scored_by")
+    val nativeScoredBy: Int = 0,
+    @SerialName("native_score")
+    val nativeScore: Double = 0.0,
     @SerialName("scored_by")
     val scoredBy: Int,
     val score: Double,
+    @SerialName("mal_id")
+    val malId: Int? = null,
     val slug: String,
     @SerialName("start_date")
     val startDate: Long? = null,
@@ -40,9 +46,17 @@ data class HKManga(
         return TrackSearch.create(trackerId).apply {
             remote_id = stringToNumber(this@HKManga.slug)
             title = this@HKManga.titleUa ?: this@HKManga.titleEn ?: this@HKManga.titleOriginal
+            alternate_titles = listOfNotNull(
+                this@HKManga.titleOriginal,
+                this@HKManga.titleEn,
+                this@HKManga.titleUa,
+            )
+                .filter(String::isNotBlank)
+                .distinct()
             total_chapters = this@HKManga.chapters?.toLong() ?: 0
             cover_url = this@HKManga.image
-            score = this@HKManga.score
+            score = this@HKManga.nativeScore.takeIf { it > 0.0 } ?: -1.0
+            score_votes = this@HKManga.nativeScoredBy.takeIf { it > 0 }
             tracking_url = "${HikkaApi.BASE_URL}/manga/${this@HKManga.slug}"
             publishing_status = this@HKManga.status
             publishing_type = this@HKManga.mediaType?.replace("_", " ").orEmpty()
@@ -54,6 +68,8 @@ data class HKManga(
                 } catch (_: Exception) {
                     ""
                 }
+            } ?: run {
+                start_date = year?.toString().orEmpty()
             }
 
             val userProgress = read?.firstOrNull()

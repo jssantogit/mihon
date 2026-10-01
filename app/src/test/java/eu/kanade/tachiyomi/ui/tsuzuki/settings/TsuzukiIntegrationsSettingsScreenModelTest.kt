@@ -128,7 +128,7 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
-    fun `unverified catalog providers keep tracking without global capability toggles`() = runTest(dispatcher) {
+    fun `unverified catalog providers expose only verified ratings globally`() = runTest(dispatcher) {
         val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
         advanceUntilIdle()
 
@@ -140,8 +140,11 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             val item = items.single { it.id.value == integrationId }
 
             item.supportsTracking shouldBe true
-            item.configurableCapabilities.isEmpty() shouldBe true
+            item.configurableCapabilities shouldBe setOf(IntegrationCapability.RATINGS)
+            item.capabilities shouldContainExactly listOf(IntegrationCapability.RATINGS)
             item.restrictedCapabilities.isNotEmpty() shouldBe true
+            (IntegrationCapability.SEARCH in item.restrictedCapabilities) shouldBe true
+            (IntegrationCapability.METADATA_BASIC in item.restrictedCapabilities) shouldBe true
         }
     }
 
