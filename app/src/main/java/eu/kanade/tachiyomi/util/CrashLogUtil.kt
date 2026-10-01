@@ -5,6 +5,7 @@ import android.os.Build
 import dev.zacsweers.metro.Inject
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.BuildConfig
+import eu.kanade.tachiyomi.crash.PersistentCrashLogStore
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.BoundedLogcatCollector
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.CrashLogReportComposer
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCaptureState
@@ -15,7 +16,6 @@ import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LocalStructuredDiagnosticHis
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatCapture
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatFailure
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.StructuredDiagnosticSummary
-import eu.kanade.tachiyomi.crash.PersistentCrashLogStore
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.util.storage.getUriCompat
@@ -93,7 +93,7 @@ class CrashLogUtil(
                     crashContext = crashContext,
                     persistentCrash = persistentCrash,
                 )
-                context.createFileInCacheDir("mihon_crash_logs.txt").apply { writeText(report) }
+                context.createFileInCacheDir("tsuzuki_logs.txt").apply { writeText(report) }
             }
 
             val uri = reportFile.getUriCompat(context)
