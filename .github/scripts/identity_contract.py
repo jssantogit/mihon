@@ -98,6 +98,10 @@ def check_contract(root: Path) -> list[str]:
         application_id = re.search(r'\bapplicationId\s*=\s*"([^"]+)"', build)
         if application_id is None or application_id.group(1) != "app.tsuzuki":
             errors.append("applicationId must be app.tsuzuki")
+        if '"app.mihon"' in build:
+            errors.append("build configuration must not retain app.mihon as an application ID")
+        if 'applicationIdSuffix = ".tsuzuki.' in build:
+            errors.append("Tsuzuki application ID suffixes must not duplicate the tsuzuki segment")
 
         namespace = re.search(r'\bnamespace\s*=\s*"([^"]+)"', build)
         if namespace is None or namespace.group(1) != "eu.kanade.tachiyomi":
