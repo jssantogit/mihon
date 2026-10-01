@@ -53,6 +53,7 @@ class DiagnosticCrashContextStoreTest {
                 subsystem = DiagnosticSubsystem.ARTWORK,
                 name = DiagnosticEventName.INVARIANT_VIOLATION,
                 sessionId = "00000000-0000-0000-0000-000000000001",
+                operationId = null,
                 stage = DiagnosticStage.RENDER,
                 outcome = DiagnosticOutcome.FAILED,
             ),

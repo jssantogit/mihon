@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.interactor.GetDiscoverFeed
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchCatalog
+import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -151,6 +152,16 @@ class KitsuErrorResilienceTest {
         discoverFeed.popular.isSuccess shouldBe true
         persistenceTriggered shouldBe false
     }
+    private fun searchCatalog(provider: CatalogCapabilityProvider): SearchCatalog {
+        val integrationRegistry = registry(provider)
+        return SearchCatalog(integrationRegistry, SearchIntegrations(integrationRegistry))
+    }
+
+    private fun discoverFeed(provider: CatalogCapabilityProvider): GetDiscoverFeed {
+        val integrationRegistry = registry(provider)
+        return GetDiscoverFeed(integrationRegistry, SearchIntegrations(integrationRegistry))
+    }
+
     private interface CatalogCapabilityProvider : SearchProvider, DiscoveryProvider, MetadataProvider
 
     private fun registry(provider: CatalogCapabilityProvider) = object : IntegrationRegistry {
