@@ -7,7 +7,9 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.BoundedLogcatCollector
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.CrashLogReportComposer
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticRecorderHealth
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LocalStructuredDiagnosticHistory
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.StructuredDiagnosticSummary
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatCapture
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatFailure
 import eu.kanade.tachiyomi.extension.ExtensionManager
@@ -34,6 +36,7 @@ class CrashLogUtil(
     private val preferences: BasePreferences,
     private val networkPreferences: NetworkPreferences,
     private val structuredHistory: LocalStructuredDiagnosticHistory,
+    private val diagnosticRecorderHealth: DiagnosticRecorderHealth,
     private val logcatCollector: BoundedLogcatCollector,
 ) {
 
@@ -43,7 +46,13 @@ class CrashLogUtil(
             val extensionsInfo = getExtensionsInfo()
             val exceptionText = exception?.toString()
             val reportFile = withContext(Dispatchers.IO) {
-                val history = structuredHistory.snapshot(flushTimeoutMillis = 500)
+                val flushed = structuredHistory.flush(timeoutMillis = 500)
+                if (!flushed) diagnosticRecorderHealth.exportFlushTimedOut()
+                val history = structuredHistory.snapshot(flushTimeoutMillis = 0)
+                val diagnosticSummary = StructuredDiagnosticSummary.build(
+                    structuredHistory = history,
+                    health = diagnosticRecorderHealth.snapshot(),
+                )
                 val logPriority = if (networkPreferences.verboseLogging.get()) "V" else "E"
                 val logcat = try {
                     logcatCollector.collect(logPriority)
@@ -56,6 +65,7 @@ class CrashLogUtil(
                     debugInfo = debugInfo,
                     extensionsInfo = extensionsInfo,
                     exception = exceptionText,
+                    diagnosticSummary = diagnosticSummary,
                     structuredHistory = history,
                     logcat = logcat,
                 )
