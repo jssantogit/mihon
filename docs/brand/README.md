@@ -1,12 +1,18 @@
 # Tsuzuki visual identity
 
-The canonical Tsuzuki mark is the approved B1 continuous-page monogram.
+The canonical Tsuzuki mark is the three-form negative-space **T** in [`tsuzuki-mark.svg`](./tsuzuki-mark.svg).
 
-## Brand v2 — monochrome core
+## Brand v3 — current mark
 
-Tsuzuki uses a manga-first monochrome identity. The mark is the identity; chromatic color is not required for recognition.
+The current mark is built from three independent organic masses: one upper arch, one lower-left mass, and one lower-right mass. The negative space between them creates a stylized **T**; the T is never drawn as a separate object.
 
-Primary palette:
+The geometry is intentionally slightly organic rather than perfectly mathematical. All official variants preserve the exact master paths; only scale, color, background and framing may change.
+
+The former B1 continuous-page mark is historical and remains in the repository only as legacy design evidence. It is no longer the current Tsuzuki master mark.
+
+## Monochrome core
+
+Tsuzuki remains monochrome-first.
 
 - Tsuzuki Ink: `#0B0C0D`
 - Tsuzuki Paper: `#F5F3EC`
@@ -16,16 +22,26 @@ Primary palette:
 
 The primary signature is Paper on Ink. The inverse signature is Ink on Paper.
 
-The former Jade/Midnight palette is no longer the public brand signature. Legacy color resources may remain temporarily for compatibility with existing implementation surfaces, but new branding must not depend on them.
+## Official SVG variants
 
-## Mark rules
+- `tsuzuki-mark.svg` — canonical Ink master on transparency.
+- `tsuzuki-mark-paper.svg` — Paper master on transparency.
+- `tsuzuki-signature-dark.svg` — Paper on Ink.
+- `tsuzuki-signature-light.svg` — Ink on Paper.
+- `tsuzuki-repo-logo.svg` — repository/README signature.
+- `tsuzuki-adaptive-foreground.svg` — 45% adaptive foreground reference.
+- `tsuzuki-monochrome.svg` — 45% Android themed-icon reference.
+- `tsuzuki-splash.svg` — splash reference.
 
-- Preserve the canonical B1 geometry.
-- Do not add text, shadows, gradients, glow, or outlines to the launcher mark.
-- The `T` is negative space; it is not a separately colored object.
-- Launcher/adaptive foreground target after the final branding smoke refinement: 40%.
-- Android monochrome uses the same B1 geometry and scale as the adaptive foreground.
-- The Android splash uses the B1 mark in Paper on Ink and follows native SplashScreen sizing rules.
-- In-app identity surfaces may scale the same master geometry independently when they need different optical weight; the About header uses a larger presentation than the launcher.
+## Surface rules
 
-`tsuzuki-mark-b1.svg` is the canonical repository vector source for the symbol.
+- Do not add text, strokes, shadows, gradients, glow or decorative outlines to the main mark.
+- Preserve the three master paths and the negative-space T across every variant.
+- Android adaptive/monochrome starts at **45% visible width**. This remains an optical calibration target until physical-device smoke; if it changes, adjust only surface scale.
+- The Android splash uses Paper on Ink and follows native SplashScreen sizing rules.
+- In-app surfaces may use a different container size while preserving the master paths.
+- The mark has been checked at 16, 20, 24, 32, 48, 96 and 144 px; no separate small-size geometry is currently required.
+
+## Tsuzuki Rating relationship
+
+Tsuzuki Rating is the chromatic extension of the main mark: the same core concept may appear in RGB with the radial rating halo. The main application mark itself remains monochrome and halo-free.
