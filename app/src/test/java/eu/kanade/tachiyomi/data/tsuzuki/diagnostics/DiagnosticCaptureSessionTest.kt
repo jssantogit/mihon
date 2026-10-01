@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.tsuzuki.diagnostics
 import io.mockk.every
 import io.mockk.firstArg
 import io.mockk.mockk
+import io.mockk.verifyOrder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
@@ -40,6 +41,11 @@ class DiagnosticCaptureSessionTest {
         session.start()
         session.stop()
 
+        verifyOrder {
+            state.current()
+            recorder.record(any())
+            state.stop()
+        }
         assertEquals(
             listOf(
                 DiagnosticEventName.CAPTURE_SESSION_STARTED,
@@ -52,5 +58,21 @@ class DiagnosticCaptureSessionTest {
             listOf(DiagnosticWorkflow.DIAGNOSTIC_CAPTURE, DiagnosticWorkflow.DIAGNOSTIC_CAPTURE),
             events.map { it.workflow },
         )
+    }
+
+    @Test
+    fun `stopping without an active capture does not emit a duplicate stop event`() {
+        val state = mockk<DiagnosticCaptureState>()
+        every { state.current() } returns null
+        every { state.stop() } returns DiagnosticCaptureWindow(
+            id = "00000000-0000-0000-0000-000000000002",
+            startedAtMillis = 10,
+            endedAtMillis = 80,
+        )
+        val recorder = mockk<StructuredDiagnosticRecorder>(relaxed = true)
+
+        DiagnosticCaptureSession(state, recorder).stop()
+
+        io.mockk.verify(exactly = 0) { recorder.record(any()) }
     }
 }
