@@ -25,6 +25,7 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
@@ -55,6 +56,7 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
         val state = model.state.value
             .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
         state.items.map { it.id.value } shouldContainExactly listOf(
+            "tsuzuki",
             "kitsu",
             "mal",
             "mangaupdates",
@@ -66,6 +68,49 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             "suwayomi",
         )
         state.items.all { !it.enabled } shouldBe true
+    }
+
+    @Test
+    fun `Tsuzuki is a first-party General integration with only ratings configurable`() = runTest(dispatcher) {
+        val repository = FakeIntegrationSettingsRepository()
+        val model = TsuzukiIntegrationsSettingsScreenModel(repository, registry)
+        advanceUntilIdle()
+
+        val item = model.state.value
+            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
+            .items
+            .first()
+
+        item.id.value shouldBe "tsuzuki"
+        item.label shouldBe "Tsuzuki"
+        item.category shouldBe IntegrationCategory.GENERAL
+        item.configurableCapabilities shouldBe setOf(IntegrationCapability.RATINGS)
+        item.capabilityEnabled[IntegrationCapability.RATINGS] shouldBe true
+        item.supportsTracking shouldBe false
+    }
+
+    @Test
+    fun `Tsuzuki global and ratings switches persist independently`() = runTest(dispatcher) {
+        val repository = FakeIntegrationSettingsRepository()
+        val model = TsuzukiIntegrationsSettingsScreenModel(repository, registry)
+        advanceUntilIdle()
+
+        model.setEnabled(IntegrationId("tsuzuki"), true)
+        model.setCapabilityEnabled(
+            IntegrationId("tsuzuki"),
+            IntegrationCapability.RATINGS,
+            false,
+        )
+        advanceUntilIdle()
+
+        val persisted = repository.get(IntegrationId("tsuzuki"))
+        persisted?.enabled shouldBe true
+        val item = model.state.value
+            .shouldBeInstanceOf<TsuzukiIntegrationsSettingsState.Loaded>()
+            .items
+            .single { it.id.value == "tsuzuki" }
+        item.enabled shouldBe true
+        item.capabilityEnabled[IntegrationCapability.RATINGS] shouldBe false
     }
 
     @Test
