@@ -156,7 +156,7 @@ class SearchIntegrations(
         candidates: List<CatalogItem>,
     ): CatalogRatingMatch? {
         val providerCandidates = candidates.filter { candidate ->
-            candidate.provider == providerId && candidate.providerId != item.providerId
+            candidate.provider == providerId
         }
         val candidate = matchRatingOnlyCandidate(item, providerCandidates) ?: return null
         val score = candidate.scores
