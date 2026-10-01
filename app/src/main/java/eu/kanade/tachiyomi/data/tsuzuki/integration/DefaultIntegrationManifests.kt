@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki.integration
 
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
+import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
 import tachiyomi.domain.tsuzuki.integration.model.CapabilityPolicy
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
@@ -15,6 +16,15 @@ internal object DefaultIntegrationManifests {
     ) = capabilities.associateWith { CapabilityPolicy(policy, attribution = attribution) }
 
     val all = listOf(
+        IntegrationManifest(
+            integrationId = TSUZUKI_INTEGRATION_ID,
+            displayName = "Tsuzuki",
+            category = IntegrationCategory.GENERAL,
+            capabilities = policies(
+                IntegrationPolicy.ALLOWED,
+                IntegrationCapability.RATINGS,
+            ),
+        ),
         IntegrationManifest(
             integrationId = IntegrationId("kitsu"),
             displayName = "Kitsu",
