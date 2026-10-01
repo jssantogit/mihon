@@ -275,7 +275,12 @@ class KitsuIntegrationProviderTest {
                             chapterCount = 200,
                             staff = KitsuMangaStaffData(nodes = emptyList()),
                             posterImage = KitsuMangaPosters(
-                                views = emptyList(),
+                                views = listOf(
+                                    KitsuMangaPoster(
+                                        name = "small",
+                                        url = "",
+                                    ),
+                                ),
                                 original = KitsuMangaPoster(
                                     name = "original",
                                     url = "https://example.com/solo.jpg",
@@ -313,6 +318,7 @@ class KitsuIntegrationProviderTest {
         entry.item.format shouldBe CatalogItemFormat.MANHWA
         entry.item.score?.value shouldBe 84.5
         entry.item.score?.maxValue shouldBe 100.0
+        entry.item.coverUrl shouldBe "https://example.com/solo.jpg"
         entry.listKeys shouldBe setOf("kitsu:status:planned")
         entry.status shouldBe LibraryStatus.PLANNING
         entry.remoteStatus shouldBe "planned"

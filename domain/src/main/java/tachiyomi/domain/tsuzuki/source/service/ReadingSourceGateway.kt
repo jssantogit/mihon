@@ -9,5 +9,13 @@ interface ReadingSourceGateway {
     suspend fun search(sourceId: Long, query: String): Result<List<ReadingSourceCandidate>>
     suspend fun getDetails(candidate: ReadingSourceCandidate): Result<ReadingSourceCandidate> =
         Result.success(candidate)
+
+    suspend fun restoreMaterializedCandidate(
+        runtimePayload: ByteArray,
+        fallbackTitle: String,
+    ): Result<ReadingSourceCandidate> = Result.failure(
+        UnsupportedOperationException("Materialized reading source restoration is unavailable"),
+    )
+
     suspend fun materialize(candidate: ReadingSourceCandidate): Result<MaterializedReadingSource>
 }

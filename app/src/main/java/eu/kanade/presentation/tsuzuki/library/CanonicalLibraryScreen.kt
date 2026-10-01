@@ -452,7 +452,8 @@ private fun CanonicalLibraryList(
             key = CanonicalLibraryCardModel::canonicalTitleId,
         ) { item ->
             MangaCover.Book(
-                data = item.coverUrl,
+                data = item.coverUrl ?: item.sourceCover ?: item.localCoverUrl,
+                fallbackData = listOf(item.sourceCover, item.sourceCover?.url, item.localCoverUrl),
                 contentDescription = item.title,
                 modifier = Modifier
                     .fillMaxWidth()

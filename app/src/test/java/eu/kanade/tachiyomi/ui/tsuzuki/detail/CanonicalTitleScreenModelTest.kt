@@ -251,7 +251,9 @@ class CanonicalTitleScreenModelTest {
         advanceUntilIdle()
 
         val state = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
-        state.coverUrl shouldBe "https://cdn.example/dandadan.jpg"
+        state.coverUrl shouldBe null
+        state.sourceCover?.sourceId shouldBe 10L
+        state.sourceCover?.url shouldBe "https://cdn.example/dandadan.jpg"
         state.tags shouldBe listOf("Psychological", "Crime")
         state.editorialStatus shouldBe "COMPLETED"
         state.editorialFormat shouldBe "MANGA"

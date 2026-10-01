@@ -19,6 +19,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
+import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
@@ -98,8 +100,45 @@ class TsuzukiHomeScreenModelTest {
 
         advanceUntilIdle()
 
-        model.state.value.continueReading.single().coverUrl shouldBe
-            "https://cdn.example/dandadan.jpg"
+        val item = model.state.value.continueReading.single()
+        item.coverUrl shouldBe null
+        item.sourceCover?.sourceId shouldBe 10L
+        item.sourceCover?.url shouldBe "https://cdn.example/dandadan.jpg"
+    }
+
+    // Provider artwork must survive the transient Search -> canonical boundary.
+    @Test
+    fun `continue reading prefers persisted canonical provider artwork over source fallback`() = runTest(dispatcher) {
+        val resolver = mockk<ResolveCanonicalSourceManga>()
+        coEvery { resolver.execute("title-1") } returns Manga.create().copy(
+            id = 77L,
+            source = 10L,
+            url = "/dandadan",
+            title = "Dandadan",
+            thumbnailUrl = "https://source.example/dandadan.jpg",
+        )
+        val artwork = FakeTitleArtworkRepository(
+            listOf(
+                TitleArtworkObservation(
+                    canonicalTitleId = "title-1",
+                    provider = "kitsu",
+                    coverUrl = "https://kitsu.example/dandadan.jpg",
+                    updatedAt = 1L,
+                ),
+            ),
+        )
+        val model = createModel(
+            continueReading = MutableStateFlow(listOf(item(updatedAt = 500))),
+            sections = MutableStateFlow(emptyList()),
+            sourceMangaResolver = resolver,
+            artworkRepository = artwork,
+        )
+
+        advanceUntilIdle()
+
+        val item = model.state.value.continueReading.single()
+        item.coverUrl shouldBe "https://kitsu.example/dandadan.jpg"
+        item.sourceCover?.url shouldBe "https://source.example/dandadan.jpg"
     }
 
     @Test
@@ -159,6 +198,7 @@ class TsuzukiHomeScreenModelTest {
             mockk(relaxed = true),
         sourceMangaResolver: ResolveCanonicalSourceManga =
             mockk(relaxed = true),
+        artworkRepository: TitleArtworkRepository? = null,
     ): TsuzukiHomeScreenModel {
         val observeHome = mockk<ObserveHomeContinueReading>()
         every { observeHome.subscribe() } returns continueReading
@@ -185,7 +225,27 @@ class TsuzukiHomeScreenModelTest {
             importLegacyCanonicalProgress = importLegacy,
             materializeCanonicalTitleFromCatalog = materializer,
             resolveCanonicalSourceManga = sourceMangaResolver,
+            titleArtworkRepository = artworkRepository,
         )
+    }
+
+    private class FakeTitleArtworkRepository(
+        initial: List<TitleArtworkObservation>,
+    ) : TitleArtworkRepository {
+        private val values = MutableStateFlow(initial)
+
+        override fun observeAll() = values
+
+        override suspend fun getByTitle(canonicalTitleId: String): List<TitleArtworkObservation> =
+            values.value.filter { it.canonicalTitleId == canonicalTitleId }
+
+        override suspend fun upsert(observation: TitleArtworkObservation) {
+            values.value = values.value
+                .filterNot {
+                    it.canonicalTitleId == observation.canonicalTitleId &&
+                        it.provider == observation.provider
+                } + observation
+        }
     }
 
     private fun item(

@@ -2,9 +2,14 @@ package tachiyomi.domain.tsuzuki.source.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.tsuzuki.content.ContentBinding
+import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
+import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceRepresentation
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -19,10 +24,16 @@ class ResolveCanonicalSourceManga(
     private val mangaRepository: MangaRepository,
     private val networkToLocalManga: NetworkToLocalManga,
     private val readingSourceGateway: ReadingSourceGateway,
+    private val contentBindingRepository: ContentBindingRepository? = null,
 ) {
 
     suspend fun execute(canonicalTitleId: String): Manga? {
-        val title = canonicalTitleRepository.getById(canonicalTitleId) ?: return null
+        val diagnosticId = canonicalTitleId.take(8)
+        val title = canonicalTitleRepository.getById(canonicalTitleId)
+        if (title == null) {
+            logcat(LogPriority.WARN) { "TsuzukiCover sourceResolve title=$diagnosticId missingCanonicalTitle=true" }
+            return null
+        }
         val mappings = sourceTitleMappingRepository
             .getByCanonicalTitleId(canonicalTitleId)
             .filter { it.availability != SourceMappingAvailability.UNAVAILABLE }
@@ -31,10 +42,20 @@ class ResolveCanonicalSourceManga(
                     .thenByDescending { it.updatedAt },
             )
 
+        logcat { "TsuzukiCover sourceResolve title=$diagnosticId mappings=${mappings.size}" }
+
         var fallback: Manga? = null
         for (mapping in mappings) {
             val persisted = findPersistedManga(mapping)
-            if (!persisted?.thumbnailUrl.isNullOrBlank()) {
+            logcat {
+                "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} " +
+                    "persisted=${persisted != null} initialized=${persisted?.initialized == true} " +
+                    "thumbnail=${!persisted?.thumbnailUrl.isNullOrBlank()} mappedMihonId=${mapping.mihonMangaId != null}"
+            }
+            if (!persisted?.thumbnailUrl.isNullOrBlank() && persisted.initialized) {
+                logcat {
+                    "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} selected=persisted"
+                }
                 return persisted
             }
             if (fallback == null && persisted != null) {
@@ -54,13 +75,22 @@ class ResolveCanonicalSourceManga(
                 genres = persisted?.genre,
                 status = persisted?.status ?: 0L,
             )
-            val details = try {
-                readingSourceGateway.getDetails(candidate).getOrNull()
+            val detailsResult = try {
+                readingSourceGateway.getDetails(candidate)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                logcat(LogPriority.WARN, error) {
+                    "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} detailsThrown=true"
+                }
                 null
-            } ?: continue
+            }
+            val details = detailsResult?.getOrNull()
+            logcat {
+                "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} " +
+                    "details=${details != null} detailsThumbnail=${!details?.thumbnailUrl.isNullOrBlank()}"
+            }
+            if (details == null) continue
 
             val enriched = (persisted ?: Manga.create()).copy(
                 source = mapping.sourceId,
@@ -88,11 +118,111 @@ class ResolveCanonicalSourceManga(
             if (repaired != null) {
                 if (fallback == null) fallback = repaired
                 if (!repaired.thumbnailUrl.isNullOrBlank()) {
+                    logcat {
+                        "TsuzukiCover sourceResolve title=$diagnosticId source=${mapping.sourceId} selected=repaired"
+                    }
                     return repaired
                 }
             }
         }
 
+        val bindingManga = resolveFromContentBindings(
+            canonicalTitleId = canonicalTitleId,
+            fallbackTitle = title.displayTitle,
+            diagnosticId = diagnosticId,
+        )
+        if (!bindingManga?.thumbnailUrl.isNullOrBlank()) {
+            return bindingManga
+        }
+        if (fallback == null) {
+            fallback = bindingManga
+        }
+
+        logcat {
+            "TsuzukiCover sourceResolve title=$diagnosticId selected=fallback " +
+                "fallbackPresent=${fallback != null} fallbackThumbnail=${!fallback?.thumbnailUrl.isNullOrBlank()}"
+        }
+        return fallback
+    }
+
+    private suspend fun resolveFromContentBindings(
+        canonicalTitleId: String,
+        fallbackTitle: String,
+        diagnosticId: String,
+    ): Manga? {
+        val repository = contentBindingRepository ?: return null
+        val bindings = try {
+            repository.getByTitle(canonicalTitleId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logcat(LogPriority.WARN, error) {
+                "TsuzukiCover sourceResolve title=$diagnosticId contentBindingsThrown=true"
+            }
+            return null
+        }
+            .filter {
+                it.availability != ContentBindingAvailability.UNAVAILABLE &&
+                    it.runtimePayload.isNotEmpty()
+            }
+            .sortedWith(
+                compareByDescending<ContentBinding> { it.verifiedByUser }
+                    .thenByDescending { it.matchConfidence }
+                    .thenByDescending { it.updatedAt },
+            )
+
+        logcat {
+            "TsuzukiCover sourceResolve title=$diagnosticId contentBindings=${bindings.size}"
+        }
+
+        var fallback: Manga? = null
+        for (binding in bindings) {
+            val candidate = try {
+                readingSourceGateway
+                    .restoreMaterializedCandidate(binding.runtimePayload, fallbackTitle)
+                    .getOrNull()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            } ?: continue
+
+            val details = try {
+                readingSourceGateway.getDetails(candidate).getOrElse { candidate }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                candidate
+            }
+            val enriched = Manga.create().copy(
+                source = details.sourceId,
+                url = details.sourceUrl,
+                title = details.title.takeIf(String::isNotBlank) ?: fallbackTitle,
+                thumbnailUrl = details.thumbnailUrl?.takeIf(String::isNotBlank),
+                author = details.author,
+                artist = details.artist,
+                description = details.description,
+                genre = details.genres,
+                status = details.status,
+                initialized = true,
+            )
+            val repaired = try {
+                networkToLocalManga(enriched)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            } ?: continue
+
+            if (fallback == null) fallback = repaired
+            if (!repaired.thumbnailUrl.isNullOrBlank()) {
+                logcat {
+                    "TsuzukiCover sourceResolve title=$diagnosticId source=${repaired.source} " +
+                        "selected=contentBinding"
+                }
+                return repaired
+            }
+        }
         return fallback
     }
 

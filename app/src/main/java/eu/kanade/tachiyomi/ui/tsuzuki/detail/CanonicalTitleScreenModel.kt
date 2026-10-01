@@ -20,8 +20,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
+import tachiyomi.domain.tsuzuki.artwork.ResolveCanonicalArtwork
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticLabels
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
@@ -69,6 +72,7 @@ sealed interface CanonicalTitleScreenState {
         val reportedChapterCounts: List<ReportedChapterCount> = emptyList(),
         val addonCoverage: List<ObservedAddonCoverage> = emptyList(),
         val coverUrl: String? = null,
+        val sourceCover: MangaCover? = null,
         val author: String? = null,
         val description: String? = null,
         val genres: List<String> = emptyList(),
@@ -140,6 +144,7 @@ class CanonicalTitleScreenModel(
     private val mangaRepository: MangaRepository? = null,
     private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
     private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga? = null,
+    private val resolveCanonicalArtwork: ResolveCanonicalArtwork? = null,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
 ) : ViewModel() {
 
@@ -547,6 +552,13 @@ class CanonicalTitleScreenModel(
             .map { it.canonicalChapterId }
             .toSet()
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
+        val canonicalArtwork = try {
+            resolveCanonicalArtwork?.execute(canonicalTitleId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
         var metadata = try {
             resolveCanonicalSourceManga?.execute(canonicalTitleId)
         } catch (error: CancellationException) {
@@ -686,13 +698,22 @@ class CanonicalTitleScreenModel(
             }
         }
 
+        val resolvedProviderCover = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl
+        logcat {
+            "TsuzukiCover detail title=${canonicalTitleId.take(8)} " +
+                "integrationRequested=$includeIntegrationMetadata " +
+                "provider=${!resolvedProviderCover.isNullOrBlank()} " +
+                "source=${metadata != null && !metadata.thumbnailUrl.isNullOrBlank()}"
+        }
+
         val loaded = CanonicalTitleScreenState.Loaded(
             title = title,
             libraryEntry = libraryEntry,
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
-            coverUrl = integrationMetadata?.artworkUrl?.value ?: metadata?.thumbnailUrl,
+            coverUrl = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl,
+            sourceCover = metadata?.asMangaCover(),
             author = integrationMetadata
                 ?.authors
                 ?.value

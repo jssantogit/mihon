@@ -5,6 +5,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
+import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
@@ -17,11 +19,13 @@ import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
+import kotlin.time.Clock
 
 @Inject
 class ResolveCanonicalMetadata(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val registry: IntegrationRegistry,
+    private val titleArtworkRepository: TitleArtworkRepository? = null,
 ) {
 
     suspend fun execute(canonicalTitleId: String): Result<ResolvedMetadata> {
@@ -54,6 +58,8 @@ class ResolveCanonicalMetadata(
                     }
                 }.awaitAll().filterNotNull()
             }
+
+            persistArtwork(canonicalTitleId, candidates)
 
             val ratings = selectRatings(candidates)
 
@@ -151,6 +157,43 @@ class ResolveCanonicalMetadata(
             throw error
         } catch (error: Throwable) {
             Result.failure(error)
+        }
+    }
+
+    private suspend fun persistArtwork(
+        canonicalTitleId: String,
+        candidates: List<Candidate>,
+    ) {
+        val repository = titleArtworkRepository ?: return
+        val now = Clock.System.now().toEpochMilliseconds()
+        candidates.forEach { candidate ->
+            if (
+                !registry.isGlobalCapabilityActive(
+                    candidate.providerId,
+                    IntegrationCapability.METADATA_ARTWORK,
+                )
+            ) {
+                return@forEach
+            }
+            val coverUrl = candidate.item.coverUrl?.takeIf(String::isNotBlank)
+            val bannerUrl = candidate.item.bannerUrl?.takeIf(String::isNotBlank)
+            if (coverUrl == null && bannerUrl == null) return@forEach
+
+            try {
+                repository.upsert(
+                    TitleArtworkObservation(
+                        canonicalTitleId = canonicalTitleId,
+                        provider = candidate.providerId.value,
+                        coverUrl = coverUrl,
+                        bannerUrl = bannerUrl,
+                        updatedAt = now,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Artwork persistence is a cache and must never block metadata resolution.
+            }
         }
     }
 

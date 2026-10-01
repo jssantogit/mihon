@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.tsuzuki.library
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
 import tachiyomi.domain.tsuzuki.library.model.UnifiedLibraryTitle
@@ -137,7 +138,7 @@ class CanonicalLibraryFiltersTest {
     }
 
     @Test
-    fun `library card uses provider artwork and falls back to local manga cover`() {
+    fun `library card prefers provider artwork then source aware cover then legacy local cover`() {
         val title = CanonicalTitle(
             id = "work",
             displayTitle = "Monster",
@@ -166,7 +167,7 @@ class CanonicalLibraryFiltersTest {
         external.toCardModel(
             progress = emptyList(),
             localCoverUrl = "file://local-cover.jpg",
-        ).coverUrl shouldBe "https://cdn.example/monster.jpg"
+        ).coverData shouldBe "https://cdn.example/monster.jpg"
 
         val local = UnifiedLibraryTitle(
             title = title,
@@ -179,10 +180,23 @@ class CanonicalLibraryFiltersTest {
             ),
             externalMemberships = emptyList(),
         )
+        val sourceCover = MangaCover(
+            mangaId = 77L,
+            sourceId = 10L,
+            isMangaFavorite = false,
+            url = "https://cdn.example/source.jpg",
+            lastModified = 0L,
+        )
         local.toCardModel(
             progress = emptyList(),
             localCoverUrl = "file://local-cover.jpg",
-        ).coverUrl shouldBe "file://local-cover.jpg"
+            sourceCover = sourceCover,
+        ).coverData shouldBe sourceCover
+
+        local.toCardModel(
+            progress = emptyList(),
+            localCoverUrl = "file://local-cover.jpg",
+        ).coverData shouldBe "file://local-cover.jpg"
     }
 
     private fun card(

@@ -5,6 +5,11 @@ import android.os.Build
 import dev.zacsweers.metro.Inject
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.BuildConfig
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.BoundedLogcatCollector
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.CrashLogReportComposer
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LocalStructuredDiagnosticHistory
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatCapture
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatFailure
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.util.storage.getUriCompat
@@ -12,6 +17,9 @@ import eu.kanade.tachiyomi.util.system.WebViewUtil
 import eu.kanade.tachiyomi.util.system.createFileInCacheDir
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
@@ -25,21 +33,39 @@ class CrashLogUtil(
     private val extensionManager: ExtensionManager,
     private val preferences: BasePreferences,
     private val networkPreferences: NetworkPreferences,
+    private val structuredHistory: LocalStructuredDiagnosticHistory,
+    private val logcatCollector: BoundedLogcatCollector,
 ) {
 
     suspend fun dumpLogs(exception: Throwable? = null) = withNonCancellableContext {
         try {
-            val file = context.createFileInCacheDir("mihon_crash_logs.txt")
+            val debugInfo = getDebugInfo()
+            val extensionsInfo = getExtensionsInfo()
+            val exceptionText = exception?.toString()
+            val reportFile = withContext(Dispatchers.IO) {
+                val history = structuredHistory.snapshot(flushTimeoutMillis = 500)
+                val logPriority = if (networkPreferences.verboseLogging.get()) "V" else "E"
+                val logcat = try {
+                    logcatCollector.collect(logPriority)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    LogcatCapture.unavailable(LogcatFailure.START_FAILED)
+                }
+                val report = CrashLogReportComposer.compose(
+                    debugInfo = debugInfo,
+                    extensionsInfo = extensionsInfo,
+                    exception = exceptionText,
+                    structuredHistory = history,
+                    logcat = logcat,
+                )
+                context.createFileInCacheDir("mihon_crash_logs.txt").apply { writeText(report) }
+            }
 
-            file.appendText(getDebugInfo() + "\n\n")
-            getExtensionsInfo()?.let { file.appendText("$it\n\n") }
-            exception?.let { file.appendText("$it\n\n") }
-
-            val logPriority = if (networkPreferences.verboseLogging.get()) "V" else "E"
-            Runtime.getRuntime().exec("logcat *:$logPriority -d -v year -v zone -f ${file.absolutePath}").waitFor()
-
-            val uri = file.getUriCompat(context)
+            val uri = reportFile.getUriCompat(context)
             context.startActivity(uri.toShareIntent(context, "text/plain"))
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Throwable) {
             withUIContext { context.toast("Failed to get logs") }
         }

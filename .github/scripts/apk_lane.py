@@ -49,6 +49,7 @@ RULES = (
             "tsuzuki/bootstrap",
             "tsuzuki/diagnostic-chapter-inventory",
             "tsuzuki/fix-mangafire-binding",
+            "tsuzuki/fix-cover-rendering",
             "tsuzuki/runtime-v2-integration*",
             "tsuzuki/runtime-v2-torrent*",
         ),

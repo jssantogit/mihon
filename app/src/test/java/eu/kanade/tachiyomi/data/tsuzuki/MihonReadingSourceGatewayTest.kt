@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.tsuzuki
 
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayload
 import eu.kanade.tachiyomi.data.tsuzuki.addon.MihonContentBindingPayloadCodec
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
@@ -160,6 +161,39 @@ class MihonReadingSourceGatewayTest {
         shouldThrow<CancellationException> {
             gateway.search(11L, "query")
         }
+    }
+
+    // Exact binding restoration is the source fallback for canonical artwork.
+    @Test
+    fun `materialized binding payload restores exact source candidate without title search`() = runTest {
+        val source = TestCatalogueSource(
+            id = 10L,
+            name = "Bound Source",
+            lang = "pt-BR",
+        )
+        sourceManager.sourcesList += source
+        val payload = MihonContentBindingPayloadCodec.encode(
+            MihonContentBindingPayload(
+                sourceId = 10L,
+                mihonMangaId = 42L,
+                sourceUrl = "/manga/dandadan",
+                language = "pt-BR",
+            ),
+        )
+
+        val restored = gateway.restoreMaterializedCandidate(
+            runtimePayload = payload,
+            fallbackTitle = "Dandadan",
+        ).getOrThrow()
+
+        restored.sourceId shouldBe 10L
+        restored.sourceName shouldBe "Bound Source"
+        restored.language shouldBe "pt-BR"
+        restored.sourceUrl shouldBe "/manga/dandadan"
+        restored.title shouldBe "Dandadan"
+        restored.thumbnailUrl shouldBe null
+        source.lastQuerySearched shouldBe null
+        mangaRepository.insertedCount shouldBe 0
     }
 
     @Test
