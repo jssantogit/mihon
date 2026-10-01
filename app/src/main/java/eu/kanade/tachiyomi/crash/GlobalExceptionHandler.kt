@@ -11,11 +11,13 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import kotlin.system.exitProcess
 
 class GlobalExceptionHandler private constructor(
     private val applicationContext: Context,
-    private val defaultHandler: Thread.UncaughtExceptionHandler,
+    private val defaultHandler: Thread.UncaughtExceptionHandler?,
     private val activityToBeLaunched: Class<*>,
+    private val crashLogStore: PersistentCrashLogStore,
 ) : Thread.UncaughtExceptionHandler {
 
     object ThrowableSerializer : KSerializer<Throwable> {
@@ -30,9 +32,15 @@ class GlobalExceptionHandler private constructor(
     }
 
     override fun uncaughtException(thread: Thread, exception: Throwable) {
-        logcat(priority = LogPriority.ERROR, throwable = exception)
-        launchActivity(applicationContext, activityToBeLaunched, exception)
-        defaultHandler.uncaughtException(thread, exception)
+        crashLogStore.record(thread, exception)
+        runCatching {
+            logcat(priority = LogPriority.ERROR, throwable = exception)
+        }
+        runCatching {
+            launchActivity(applicationContext, activityToBeLaunched, exception)
+        }
+
+        defaultHandler?.uncaughtException(thread, exception) ?: exitProcess(10)
     }
 
     private fun launchActivity(
@@ -55,10 +63,13 @@ class GlobalExceptionHandler private constructor(
             applicationContext: Context,
             activityToBeLaunched: Class<*>,
         ) {
+            if (Thread.getDefaultUncaughtExceptionHandler() is GlobalExceptionHandler) return
+
             val handler = GlobalExceptionHandler(
-                applicationContext,
-                Thread.getDefaultUncaughtExceptionHandler() as Thread.UncaughtExceptionHandler,
-                activityToBeLaunched,
+                applicationContext = applicationContext,
+                defaultHandler = Thread.getDefaultUncaughtExceptionHandler(),
+                activityToBeLaunched = activityToBeLaunched,
+                crashLogStore = PersistentCrashLogStore(applicationContext),
             )
             Thread.setDefaultUncaughtExceptionHandler(handler)
         }
