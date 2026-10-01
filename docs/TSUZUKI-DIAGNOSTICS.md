@@ -69,3 +69,17 @@ Wave 2 extends the same correlated, allowlisted diagnostics contract across the 
 - canonical downloads record cache reuse, content-option selection requirements, completion/failure, and duration.
 
 Wave 2 deliberately records operational counts and closed identifiers only. Chapter labels, manga titles, source URLs, page URLs, local file paths, provider response content, and exception messages remain outside the structured event schema.
+
+## Diagnostics v2 — Wave 3
+
+Wave 3 adds an explicit reproduction workflow around the structured diagnostics from Waves 1 and 2.
+
+- Advanced settings can start or stop a user-controlled detailed capture. A capture lasts at most 15 minutes by default and expires automatically; its small control state survives process recreation.
+- while a detailed capture is active, Reader progress diagnostics can record each progress checkpoint instead of the normal sampled cadence;
+- the structured-history section of the next export is scoped to the active or most recently completed capture window. Supplemental Logcat remains independently bounded by line/byte limits and is not time-filtered by the capture window;
+- exports include a safe local runtime snapshot with counts for installed/enabled Add-ons, registered integrations, connected account providers, canonical titles, and external Library memberships, plus existing verbose/incognito/extension state;
+- the recorder retains only the most recent sanitized structured event as process-local crash context, exposing closed subsystem/event/stage/outcome values and short workflow/operation references;
+- the human-readable summary groups events by correlated workflow, reports per-workflow event/operation/failure counts and maximum observed duration, and keeps the global failure/invariant/slow-operation summary from Wave 1;
+- a completed capture remains the structured export scope until a newer capture starts, allowing the user to stop reproduction first and export immediately afterward.
+
+The capture feature does not enable remote telemetry and does not relax the structured-event allowlist. It does not persist raw titles, queries, URLs, page content, local file paths, credentials, cookies, tokens, provider bodies, or arbitrary exception text.
