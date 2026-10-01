@@ -5,6 +5,10 @@ interface StructuredDiagnosticRecorder {
     /** Stable UUID for the current process session. */
     val sessionId: String
 
+    /** True only while the user-controlled bounded detailed capture window is active. */
+    val detailedCaptureActive: Boolean
+        get() = false
+
     /** Returns a session-scoped pseudonymous reference, or null for an empty identity. */
     fun canonicalTitleReference(canonicalTitleId: String): String?
 
