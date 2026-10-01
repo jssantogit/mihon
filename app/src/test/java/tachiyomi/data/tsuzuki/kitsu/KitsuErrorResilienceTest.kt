@@ -40,7 +40,7 @@ class KitsuErrorResilienceTest {
                 Result.failure(CatalogError.RateLimitExceeded(retryAfterSeconds = 120))
         }
 
-        val search = SearchCatalog(registry(failingProvider))
+        val search = searchCatalog(failingProvider)
         val result = search.execute("Guts")
 
         result.isFailure shouldBe true
@@ -66,7 +66,7 @@ class KitsuErrorResilienceTest {
                 Result.failure(CatalogError.ProviderUnavailable("Kitsu is down"))
         }
 
-        val discover = GetDiscoverFeed(registry(outageProvider))
+        val discover = discoverFeed(outageProvider)
         val feed = discover.execute()
 
         feed.trending.isFailure shouldBe true
@@ -93,7 +93,7 @@ class KitsuErrorResilienceTest {
             ): Result<CatalogItem> = Result.failure(NotImplementedError())
         }
 
-        val discover = GetDiscoverFeed(registry(partiallyDegradedProvider))
+        val discover = discoverFeed(partiallyDegradedProvider)
         val feed = discover.execute()
 
         feed.trending.isFailure shouldBe true
@@ -141,8 +141,8 @@ class KitsuErrorResilienceTest {
             }
         }
 
-        val search = SearchCatalog(registry(nonPersistingProvider))
-        val discover = GetDiscoverFeed(registry(nonPersistingProvider))
+        val search = searchCatalog(nonPersistingProvider)
+        val discover = discoverFeed(nonPersistingProvider)
 
         val searchResult = search.await("Ephemeral")
         val discoverFeed = discover.await()
@@ -152,6 +152,7 @@ class KitsuErrorResilienceTest {
         discoverFeed.popular.isSuccess shouldBe true
         persistenceTriggered shouldBe false
     }
+
     private fun searchCatalog(provider: CatalogCapabilityProvider): SearchCatalog {
         val integrationRegistry = registry(provider)
         return SearchCatalog(integrationRegistry, SearchIntegrations(integrationRegistry))
