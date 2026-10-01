@@ -10,13 +10,6 @@ import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
-import tachiyomi.domain.tsuzuki.integration.IntegrationId
-import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
-import tachiyomi.domain.tsuzuki.integration.MetadataProvider
-import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
-import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
-import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
-import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
@@ -27,6 +20,13 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import kotlin.time.Clock
