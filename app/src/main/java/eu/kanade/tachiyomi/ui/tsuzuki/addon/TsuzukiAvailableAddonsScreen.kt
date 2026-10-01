@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -31,7 +32,6 @@ import mihon.app.di.appGraph
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
-import androidx.compose.ui.platform.LocalContext
 
 class TsuzukiAvailableAddonsScreen : Screen() {
 
@@ -42,7 +42,9 @@ class TsuzukiAvailableAddonsScreen : Screen() {
         val scope = rememberCoroutineScope()
         val extensionManager = remember { context.appGraph.extensionManager }
         val available by extensionManager.availableExtensionsFlow.collectAsStateWithLifecycle()
-        val installed by extensionManager.installedExtensionsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+        val installed by extensionManager.installedExtensionsFlow.collectAsStateWithLifecycle(
+            initialValue = emptyList(),
+        )
         var refreshing by remember { mutableStateOf(false) }
         var installingPackages by remember { mutableStateOf(emptySet<String>()) }
 
@@ -112,7 +114,7 @@ class TsuzukiAvailableAddonsScreen : Screen() {
                                             scope.launch {
                                                 installingPackages += extension.pkgName
                                                 try {
-                                                    extensionManager.installExtension(extension).collect()
+                                                    extensionManager.installExtension(extension).collect { }
                                                 } finally {
                                                     installingPackages -= extension.pkgName
                                                 }
