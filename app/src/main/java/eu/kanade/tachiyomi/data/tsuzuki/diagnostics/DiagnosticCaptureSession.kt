@@ -32,17 +32,13 @@ class DiagnosticCaptureSession(
     }
 
     fun stop(): DiagnosticCaptureWindow? {
-        val active = state.current()
-        val window = state.stop()
-        val captureId = active?.id ?: window?.id
-        if (captureId != null) {
-            record(
-                captureId = captureId,
-                name = DiagnosticEventName.CAPTURE_SESSION_STOPPED,
-                outcome = DiagnosticOutcome.SUCCEEDED,
-            )
-        }
-        return window
+        val active = state.current() ?: return state.stop()
+        record(
+            captureId = active.id,
+            name = DiagnosticEventName.CAPTURE_SESSION_STOPPED,
+            outcome = DiagnosticOutcome.SUCCEEDED,
+        )
+        return state.stop()
     }
 
     private fun record(
