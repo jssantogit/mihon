@@ -19,7 +19,7 @@ object ComputeTsuzukiRating {
     ): TsuzukiRating? {
         val usable = sources
             .asSequence()
-            .filter(TsuzukiRatingSource::isValid)
+            .filter { it.isValid() }
             .distinctBy(TsuzukiRatingSource::providerId)
             .toList()
 
