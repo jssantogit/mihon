@@ -77,6 +77,20 @@ class ComputeTsuzukiRatingTest {
     }
 
     @Test
+    fun `supports every expected aggregate source count from two through six`() {
+        (2..6).forEach { count ->
+            val sources = (1..count).map { index ->
+                source("provider-$index", 8.0, 10.0)
+            }
+
+            val rating = ComputeTsuzukiRating(sources)
+
+            rating?.sourceCount shouldBe count
+            rating?.value shouldBe 8.0
+        }
+    }
+
+    @Test
     fun `invalid scale or out-of-range scores fail closed`() {
         ComputeTsuzukiRating(
             listOf(
