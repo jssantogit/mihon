@@ -185,5 +185,4 @@ internal fun catalogRatingLabel(score: CatalogScore): String =
         maxValue = score.maxValue,
     )
 
-
 private const val MAX_VISIBLE_CATALOG_RATINGS = 2
