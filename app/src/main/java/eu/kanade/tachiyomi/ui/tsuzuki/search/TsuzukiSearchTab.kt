@@ -18,6 +18,9 @@ import eu.kanade.presentation.tsuzuki.search.TsuzukiSearchScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 
 data object TsuzukiSearchTab : Tab {
 
@@ -50,6 +53,13 @@ data object TsuzukiSearchTab : Tab {
             }
         }
 
+        LaunchedEffect(screenModel) {
+            queryEvent.receiveAsFlow().collectLatest { requestedQuery ->
+                query = requestedQuery
+                screenModel.search(requestedQuery)
+            }
+        }
+
         TsuzukiSearchScreen(
             state = state,
             query = query,
@@ -67,4 +77,12 @@ data object TsuzukiSearchTab : Tab {
             },
         )
     }
+
+    suspend fun search(query: String) {
+        if (query.isNotBlank()) {
+            queryEvent.send(query)
+        }
+    }
+
+    private val queryEvent = Channel<String>(capacity = Channel.CONFLATED)
 }
