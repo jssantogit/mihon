@@ -80,7 +80,6 @@
     <string name="tsuzuki_logs_stopped">Captura de logs encerrada</string>
     <string name="tsuzuki_logs_cleared">Logs limpos</string>
     <string name="tsuzuki_logs_clear_failed">Alguns logs não puderam ser limpos</string>
-    <string name="tsuzuki_logs_options">Opções</string>
     <string name="tsuzuki_crash_persisted_locally">Os detalhes do crash foram salvos localmente.</string>
     <string name="pref_category_about">Sobre</string>
     <string name="pref_library_columns">Itens por linha</string>
