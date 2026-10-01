@@ -68,7 +68,6 @@ object SettingsAdvancedScreen : SearchableSettings {
 
     @Composable
     override fun getPreferences(): List<Preference> {
-        val scope = rememberCoroutineScope()
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
 
@@ -76,54 +75,7 @@ object SettingsAdvancedScreen : SearchableSettings {
         val basePreferences = remember { graph.basePreferences }
         val networkPreferences = remember { graph.networkPreferences }
         val libraryPreferences = remember { graph.libraryPreferences }
-        val crashLogUtil = remember { graph.crashLogUtil }
-        val diagnosticCaptureSession = remember { graph.diagnosticCaptureSession }
-        var diagnosticCaptureActive by remember {
-            mutableStateOf(diagnosticCaptureSession.current() != null)
-        }
-
         return listOf(
-            Preference.PreferenceItem.TextPreference(
-                title = if (diagnosticCaptureActive) {
-                    "Encerrar sessão de diagnóstico"
-                } else {
-                    "Iniciar sessão de diagnóstico"
-                },
-                subtitle = if (diagnosticCaptureActive) {
-                    "A captura detalhada está ativa e expira automaticamente em até 15 minutos."
-                } else {
-                    "Isola uma janela de até 15 minutos para reproduzir e exportar um problema."
-                },
-                onClick = {
-                    if (diagnosticCaptureActive) {
-                        diagnosticCaptureSession.stop()
-                        diagnosticCaptureActive = false
-                        context.toast("Sessão de diagnóstico encerrada")
-                    } else {
-                        diagnosticCaptureSession.start()
-                        diagnosticCaptureActive = true
-                        context.toast("Sessão de diagnóstico iniciada por até 15 minutos")
-                    }
-                },
-            ),
-            Preference.PreferenceItem.TextPreference(
-                title = stringResource(MR.strings.pref_dump_crash_logs),
-                subtitle = stringResource(MR.strings.pref_dump_crash_logs_summary),
-                onClick = {
-                    scope.launch {
-                        crashLogUtil.dumpLogs()
-                    }
-                },
-            ),
-            Preference.PreferenceItem.SwitchPreference(
-                preference = networkPreferences.verboseLogging,
-                title = stringResource(MR.strings.pref_verbose_logging),
-                subtitle = stringResource(MR.strings.pref_verbose_logging_summary),
-                onValueChanged = {
-                    context.toast(MR.strings.requires_app_restart)
-                    true
-                },
-            ),
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(MR.strings.pref_debug_info),
                 onClick = { navigator.push(DebugInfoScreen()) },
