@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.crash
 
 import android.content.Context
+import android.os.Build
+import eu.kanade.tachiyomi.BuildConfig
 import java.io.File
 import kotlin.time.Clock
 
@@ -13,10 +15,12 @@ import kotlin.time.Clock
 class PersistentCrashLogStore internal constructor(
     private val directory: File,
     private val clockMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    private val environment: String = "",
 ) {
 
     constructor(context: Context) : this(
         directory = File(context.noBackupFilesDir, CRASH_DIRECTORY),
+        environment = buildEnvironment(),
     )
 
     fun record(thread: Thread, exception: Throwable) {
@@ -26,6 +30,9 @@ class PersistentCrashLogStore internal constructor(
                 appendLine("Tsuzuki persistent crash record")
                 appendLine("timestamp_ms=${clockMillis().coerceAtLeast(0)}")
                 appendLine("thread=${thread.name.take(MAX_THREAD_NAME_CHARS)}")
+                if (environment.isNotBlank()) {
+                    appendLine(environment)
+                }
                 appendLine()
                 append(exception.stackTraceToString().take(MAX_REPORT_CHARS))
             }
@@ -61,6 +68,16 @@ class PersistentCrashLogStore internal constructor(
     }
 
     private companion object {
+        fun buildEnvironment(): String = buildString {
+            appendLine("app_id=${BuildConfig.APPLICATION_ID}")
+            appendLine(
+                "app_version=${BuildConfig.VERSION_NAME} " +
+                    "(${BuildConfig.COMMIT_SHA}, ${BuildConfig.VERSION_CODE})",
+            )
+            appendLine("android=${Build.VERSION.RELEASE} sdk=${Build.VERSION.SDK_INT}")
+            append("device=${Build.MANUFACTURER} ${Build.MODEL}")
+        }
+
         const val CRASH_DIRECTORY = "tsuzuki/crash"
         const val CRASH_FILE = "last_uncaught_crash.txt"
         const val MAX_REPORT_CHARS = 256 * 1024
