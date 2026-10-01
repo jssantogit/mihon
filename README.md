@@ -1,72 +1,76 @@
 # Tsuzuki
 
-<p align="center">
+<div align="center">
+
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/tsuzuki-lockup-paper.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/brand/tsuzuki-lockup.svg">
     <img src="docs/brand/tsuzuki-lockup.svg" alt="Tsuzuki" width="460">
   </picture>
-</p>
 
-Tsuzuki is an Android manga reader focused on a unified library, source-agnostic reading, and a cleaner separation between metadata, reading sources, and transport.
+  <p>
+    A free, open-source Android manga reader built around one unified library.
+    <br />
+    Bring your own sources. Tsuzuki keeps works, metadata, chapters, ratings and reading progress coherent across them.
+  </p>
 
-The project is under active development. There is not yet a stable public Tsuzuki release channel or official website, so development builds and repository workflows should be treated as pre-release infrastructure.
+  [Source code](https://github.com/jssantogit/tsuzuki) · [Development builds](https://github.com/jssantogit/tsuzuki/actions/workflows/apk.yml) · [Issues](https://github.com/jssantogit/tsuzuki/issues)
 
-## Current direction
+</div>
 
-Tsuzuki is evolving beyond a traditional source-bound manga reader. The current codebase includes work around:
+## Get Tsuzuki
 
-- canonical title identity across metadata and reading sources;
-- automatic discovery of configured reading sources;
-- a unified library and source-resolution flow;
-- a configurable Reader inherited from the Mihon/Tachiyomi lineage;
-- metadata and tracking integrations;
-- local downloads, backups, and synchronization work;
-- compatibility with the Mihon/Tachiyomi extension ecosystem where that compatibility remains useful.
+Tsuzuki is still under active development and does not yet have a stable public release channel.
 
-The architecture intentionally keeps metadata providers, reading/content providers, and transport as separate concerns.
+Development APKs are produced by the repository's signed **APK Build** workflow. They should be treated as pre-release builds.
+
+Current Android identity:
+
+- application ID: `app.tsuzuki`
+- minimum Android version: Android 8.0 (API 26)
+- package-private data lives under the Android-managed `app.tsuzuki` directories
+
+Historical development builds used `app.mihon`. Android treats the new package as a separate application, so data from those builds does not migrate automatically. Use Tsuzuki's backup/restore flow when moving from an older package.
+
+## What Tsuzuki does
+
+- **Unified library** — works are represented independently of any single source.
+- **Source-agnostic reading** — reading sources can change without redefining the work itself.
+- **Provider enrichment** — metadata, tracking and native provider ratings can coexist on the same title.
+- **Reader continuity** — chapters, progress, downloads and fallback behavior remain tied to canonical work identity.
+- **Extension compatibility** — Tsuzuki preserves the useful Mihon/Tachiyomi extension-facing contracts while maintaining its own product identity.
+
+The architecture deliberately separates metadata providers, reading/content providers and transport.
+
+## Development
+
+```bash
+git clone https://github.com/jssantogit/tsuzuki.git
+cd tsuzuki
+```
+
+GitHub Actions is the authoritative project validation environment. The repository's CI covers formatting, tests, compile checks, SQLDelight migrations, backend checks, native packaging and release compilation as applicable.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and the plans under `docs/superpowers/` before making architectural changes.
 
 ## Project status
 
 The current development baseline is `main`.
 
-Major completed work includes the canonical title/chapter model, Reader integration, automatic source discovery, and chapter-content integrity protections. Current roadmap work is focused on establishing Tsuzuki's own project identity, reorganizing the application UI, improving Collections/catalogs, and later expanding the content runtime.
+Major completed foundations include canonical work/chapter identity, Reader integration, automatic reading-source discovery, unified Library work, provider integrations, structured diagnostics and Tsuzuki's Brand v3 identity.
 
-Development plans and design documents live under:
-
-- `docs/superpowers/specs/`
-- `docs/superpowers/plans/`
-
-## Android support
-
-The current build configuration targets a minimum Android SDK level of 26 (Android 8.0).
-
-## Development
-
-Tsuzuki uses GitHub Actions as the authoritative Gradle validation environment.
-
-Project-specific engineering constraints include:
-
-- do not run Gradle locally for project validation;
-- prefer regression tests before behavioral fixes;
-- preserve canonical identity rather than merging titles by name;
-- fail closed when chapter/content identity is ambiguous;
-- preserve compatibility contracts deliberately instead of performing global renames.
-
-See `CONTRIBUTING.md` and the current project specs/plans before making architectural changes.
+Current work continues around UI restructuring, provider enrichment, Collections/catalogs and the next content-runtime layers.
 
 ## Upstream and attribution
 
 Tsuzuki is an independent project derived from [Mihon](https://github.com/mihonapp/mihon).
 
-Mihon remains an important technical upstream and compatibility reference. Tsuzuki selectively consumes upstream improvements where they fit the project, while maintaining its own product and architecture decisions.
-
-Mihon itself continues the lineage of Tachiyomi. Existing upstream copyrights, attribution, and third-party license obligations are preserved.
+Mihon remains a selective technical upstream for Android/Compose, Reader behavior, extension compatibility, security/dependency updates and other reusable fixes. Existing upstream copyrights, attribution and third-party license obligations are preserved.
 
 ## Disclaimer
 
-Tsuzuki does not host manga, comics, or other third-party content. Content availability depends on the providers, sources, and integrations configured by the user.
+Tsuzuki does not host manga, comics or other third-party content. Content availability depends on the providers, sources and integrations configured by the user.
 
 ## License
 
-This project is distributed under the Apache License 2.0. See [LICENSE](./LICENSE) for the full license text and inherited copyright notices.
+[Apache License 2.0](./LICENSE)
