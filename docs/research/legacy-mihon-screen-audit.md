@@ -188,3 +188,43 @@ This branch changes only the Reader → details navigation plus the audit/tests.
 - full GitHub Actions CI required;
 - post-CI smoke: open a canonical chapter, tap the Reader title, verify canonical Tsuzuki Detail opens instead of Mihon's `MangaScreen`;
 - compatibility smoke: a genuinely unmapped legacy Reader session may still fall back to `MangaScreen`.
+
+
+## Cleanup wave implemented after the audit
+
+A stacked cleanup branch removes the first set of surfaces that no longer serve Tsuzuki and redirects their public callers before deletion.
+
+### Deleted
+
+- `HistoryTab` — hidden Mihon history tab shell;
+- `UpdatesTab` — hidden Mihon updates tab shell;
+- `BrowseTab` — hidden Mihon Sources/Extensions/Migration tab shell;
+- `MoreTab` and `MoreScreen` — replaced by the Tsuzuki Settings tab and direct utility routes;
+- `DeepLinkScreen` and `DeepLinkViewModel` — source-centric Android search/share resolver;
+- `GlobalSearchScreen` and `GlobalSearchViewModel` — source-global search surface superseded by Tsuzuki Search;
+- `MigrateSourceTab` — old source-migration entry tab;
+- launcher shortcuts for Recently Updated, Recently Read and Browse/catalogues;
+- shortcut-only drawable resources for those removed launcher entries.
+
+### Redirected compatibility entry points
+
+Old actions are retained only so existing notifications/system callers do not crash:
+
+- legacy **Updates** and **History** actions now land in the unified Library;
+- legacy **Sources** and **Extensions** actions now open **Settings → Add-ons**;
+- legacy **Downloads** opens `DownloadQueueScreen` directly, without a hidden More tab;
+- Android search/share and the old internal search action now hand the query to **Tsuzuki Search**.
+
+The visible launcher shortcut set is now Library-only.
+
+### Deliberately not deleted yet
+
+- `MangaScreen`: still needed as a compatibility fallback for genuinely unmapped legacy manga IDs and low-level source tooling. It remains a retirement target, not a normal Tsuzuki destination.
+- `BrowseSourceScreen`: retained as low-level source/extension tooling until its remaining useful controls have a Tsuzuki-native host.
+- shared `SearchViewModel`: retained because source-migration internals still subclass it even though `GlobalSearchScreen` is gone.
+- migration internals reachable from remaining compatibility/source-detail flows: remove only after the last Manga/source callers are redirected.
+- legacy history/update domain and ViewModel infrastructure: the user-facing tabs are removed; data/update services are left intact until replacement canonical surfaces are finalized.
+
+### Regression guard
+
+The identity contract now fails if any retired route file or retired launcher shortcut is reintroduced. This prevents a later upstream sync from silently restoring the removed Mihon shells.
