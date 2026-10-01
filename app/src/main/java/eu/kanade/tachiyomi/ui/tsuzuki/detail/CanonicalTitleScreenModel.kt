@@ -142,7 +142,7 @@ class CanonicalTitleScreenModel(
     private val refreshChapterEvidence: RefreshChapterEvidence,
     private val sourceTitleMappingRepository: SourceTitleMappingRepository? = null,
     private val mangaRepository: MangaRepository? = null,
-    private val resolveCanonicalMetadata: ResolveCanonicalMetadata? = null,
+    private val resolveCanonicalMetadata: ResolveCanonicalMetadata,
     private val resolveCanonicalSourceManga: ResolveCanonicalSourceManga,
     private val resolveCanonicalArtwork: ResolveCanonicalArtwork,
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
@@ -598,8 +598,8 @@ class CanonicalTitleScreenModel(
         val integrationMetadata = if (includeIntegrationMetadata) {
             try {
                 resolveCanonicalMetadata
-                    ?.execute(canonicalTitleId)
-                    ?.getOrNull()
+                    .execute(canonicalTitleId)
+                    .getOrNull()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
