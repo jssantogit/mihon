@@ -24,12 +24,12 @@ fun LogoHeader(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_mihon),
+            painter = painterResource(R.drawable.ic_tsuzuki_lockup),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .padding(iconPadding)
-                .size(144.dp),
+                .size(width = 260.dp, height = 57.dp),
         )
 
         HorizontalDivider()

@@ -22,6 +22,22 @@ Tsuzuki remains monochrome-first.
 
 The primary signature is Paper on Ink. The inverse signature is Ink on Paper.
 
+## A2 wordmark and horizontal lockup
+
+The approved wordmark direction is **A2 — Organic T**.
+
+Its lowercase forms start from Roboto Medium proportions, keeping the familiar Android/Google sans language. The initial **T** is custom: its crossbar is softly curved and the stem is slightly organic/tapered. The wordmark is committed as vector paths, so runtime or browser font availability does not affect rendering.
+
+The official horizontal lockup combines the unchanged Brand v3 master mark with this A2 wordmark. The lockup is the preferred signature for repository/README identity and for the in-app About header; launcher and splash continue to use the symbol alone.
+
+- `tsuzuki-wordmark.svg` — Ink wordmark on transparency.
+- `tsuzuki-wordmark-paper.svg` — Paper wordmark on transparency.
+- `tsuzuki-lockup.svg` — Ink horizontal mark + wordmark.
+- `tsuzuki-lockup-paper.svg` — Paper horizontal mark + wordmark.
+- Android About drawable: `ic_tsuzuki_lockup.xml`.
+
+Do not replace the A2 T with a stock Roboto T. Do not apply the custom T treatment to the remaining letters.
+
 ## Official SVG variants
 
 - `tsuzuki-mark.svg` — canonical Ink master on transparency.

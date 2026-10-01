@@ -84,6 +84,11 @@ def check_contract(root: Path) -> list[str]:
         errors,
     )
     brand_mark = _read(root, "app/src/main/res/drawable/ic_mihon.xml", errors)
+    brand_lockup = _read(
+        root,
+        "app/src/main/res/drawable/ic_tsuzuki_lockup.xml",
+        errors,
+    )
     brand_doc = _read(root, "docs/brand/README.md", errors)
     master_mark = _read(root, "docs/brand/tsuzuki-mark.svg", errors)
     repo_logo = _read(root, "docs/brand/tsuzuki-repo-logo.svg", errors)
@@ -188,8 +193,11 @@ def check_contract(root: Path) -> list[str]:
         if project_name is None or project_name.group(1) != "Tsuzuki":
             errors.append("rootProject.name must be Tsuzuki")
 
-    if readme and not readme.lstrip().startswith("# Tsuzuki"):
-        errors.append("README must identify Tsuzuki as the project")
+    if readme:
+        if not readme.lstrip().startswith("# Tsuzuki"):
+            errors.append("README must identify Tsuzuki as the project")
+        if "docs/brand/tsuzuki-lockup.svg" not in readme or "docs/brand/tsuzuki-lockup-paper.svg" not in readme:
+            errors.append("README must use the Brand v3 A2 repository lockup")
 
     if brand_colors:
         required_colors = {
@@ -231,6 +239,12 @@ def check_contract(root: Path) -> list[str]:
         if brand_mark.count("android:pathData=") != 3:
             errors.append("primary in-app Brand v3 mark must contain exactly three masses")
 
+    if brand_lockup:
+        if brand_lockup.count("android:pathData=") != 10:
+            errors.append("Brand v3 A2 About lockup must contain three mark masses plus seven wordmark glyphs")
+        if "@color/tsuzuki_paper" not in brand_lockup:
+            errors.append("Brand v3 A2 About lockup must use Tsuzuki Paper before Compose tinting")
+
     if master_mark:
         for part in ("top", "left", "right"):
             if f'<path id="{part}"' not in master_mark:
@@ -243,6 +257,8 @@ def check_contract(root: Path) -> list[str]:
     if brand_doc:
         if "Brand v3" not in brand_doc or "tsuzuki-mark.svg" not in brand_doc:
             errors.append("brand documentation must identify the current Brand v3 master")
+        if "A2 — Organic T" not in brand_doc or "tsuzuki-lockup.svg" not in brand_doc:
+            errors.append("brand documentation must identify the approved A2 wordmark lockup")
         if "Tsuzuki Ink: `#0B0C0D`" not in brand_doc or "Tsuzuki Paper: `#F5F3EC`" not in brand_doc:
             errors.append("brand documentation must define the monochrome signature")
 

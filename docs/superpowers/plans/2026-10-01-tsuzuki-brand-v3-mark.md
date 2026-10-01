@@ -63,3 +63,18 @@ Historical Brand v2 plans and records should be read as evidence of the previous
 - do not run Gradle locally;
 - full CI is explicitly required before merge;
 - after CI is green, produce a signed APK only when physical launcher/splash/About smoke is requested.
+
+## A2 wordmark / repository lockup
+
+The approved repository/About wordmark direction is **A2 — Organic T**.
+
+- lowercase forms remain close to Roboto Medium / Android typography;
+- only the initial T is custom, with a softly curved crossbar and organic/tapered stem;
+- the wordmark is stored as vector paths, not runtime text;
+- repository README uses the horizontal mark + wordmark lockup with Ink/Paper theme variants;
+- the in-app About header uses the same lockup geometry through `ic_tsuzuki_lockup.xml` and Compose tinting;
+- launcher and splash remain symbol-only.
+
+This creates a deliberate hierarchy: symbol alone for compact/system identity, horizontal lockup for institutional/repository identity, and RGB + halo for Tsuzuki Rating.
+
+Full CI is required before merge; no local Gradle validation.

@@ -95,6 +95,11 @@ rootProject.name = "Tsuzuki"
 VALID_README = """
 # Tsuzuki
 
+<picture>
+docs/brand/tsuzuki-lockup-paper.svg
+docs/brand/tsuzuki-lockup.svg
+</picture>
+
 Independent Android manga reader derived from Mihon.
 """
 
@@ -131,6 +136,19 @@ VALID_BRAND_MARK = """
 <path android:fillColor="@color/tsuzuki_paper" android:pathData="right" />
 """
 
+VALID_BRAND_LOCKUP = """
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="1" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="2" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="3" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="4" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="5" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="6" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="7" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="8" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="9" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="10" />
+"""
+
 VALID_MASTER_MARK = """
 <svg>
   <g fill="#0B0C0D">
@@ -144,6 +162,8 @@ VALID_MASTER_MARK = """
 VALID_BRAND_DOC = """
 # Brand v3
 Canonical asset: tsuzuki-mark.svg
+A2 — Organic T
+Canonical lockup: tsuzuki-lockup.svg
 - Tsuzuki Ink: `#0B0C0D`
 - Tsuzuki Paper: `#F5F3EC`
 """
@@ -173,6 +193,7 @@ class IdentityContractTest(unittest.TestCase):
         launcher_foreground=VALID_LAUNCHER_FOREGROUND,
         launcher_monochrome=VALID_LAUNCHER_MONOCHROME,
         brand_mark=VALID_BRAND_MARK,
+        brand_lockup=VALID_BRAND_LOCKUP,
         master_mark=VALID_MASTER_MARK,
         brand_doc=VALID_BRAND_DOC,
         repo_logo=VALID_REPO_LOGO,
@@ -195,6 +216,7 @@ class IdentityContractTest(unittest.TestCase):
             "app/src/main/res/drawable/ic_launcher_foreground.xml": launcher_foreground,
             "app/src/main/res/drawable/ic_launcher_monochrome.xml": launcher_monochrome,
             "app/src/main/res/drawable/ic_mihon.xml": brand_mark,
+            "app/src/main/res/drawable/ic_tsuzuki_lockup.xml": brand_lockup,
             "docs/brand/tsuzuki-mark.svg": master_mark,
             "docs/brand/README.md": brand_doc,
             "docs/brand/tsuzuki-repo-logo.svg": repo_logo,
@@ -322,6 +344,15 @@ class IdentityContractTest(unittest.TestCase):
         errors = check_contract(root)
         self.assertIn("Brand v3 master mark is missing right mass", errors)
         self.assertIn("Brand v3 master mark must remain true vector geometry", errors)
+
+    def test_brand_v3_a2_lockup_is_required(self):
+        root = self.make_repo(
+            readme=VALID_README.replace("docs/brand/tsuzuki-lockup.svg", "docs/brand/old-logo.svg"),
+            brand_lockup=VALID_BRAND_LOCKUP.replace(' android:pathData="10"', ""),
+        )
+        errors = check_contract(root)
+        self.assertIn("README must use the Brand v3 A2 repository lockup", errors)
+        self.assertIn("Brand v3 A2 About lockup must contain three mark masses plus seven wordmark glyphs", errors)
 
     def test_brand_v3_launcher_calibration_is_required(self):
         root = self.make_repo(
