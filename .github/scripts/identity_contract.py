@@ -78,8 +78,14 @@ def check_contract(root: Path) -> list[str]:
         "app/src/main/res/drawable/ic_launcher_foreground.xml",
         errors,
     )
+    launcher_monochrome = _read(
+        root,
+        "app/src/main/res/drawable/ic_launcher_monochrome.xml",
+        errors,
+    )
     brand_mark = _read(root, "app/src/main/res/drawable/ic_mihon.xml", errors)
     brand_doc = _read(root, "docs/brand/README.md", errors)
+    master_mark = _read(root, "docs/brand/tsuzuki-mark.svg", errors)
     repo_logo = _read(root, "docs/brand/tsuzuki-repo-logo.svg", errors)
 
     if build:
@@ -208,16 +214,37 @@ def check_contract(root: Path) -> list[str]:
             errors.append("launcher foreground must use Tsuzuki Paper")
         if "@color/tsuzuki_jade" in launcher_foreground:
             errors.append("launcher foreground still uses legacy Tsuzuki Jade")
+        if 'android:scaleX="0.661765"' not in launcher_foreground or 'android:scaleY="0.661765"' not in launcher_foreground:
+            errors.append("launcher foreground must use the Brand v3 45% calibration")
+
+    if launcher_monochrome:
+        if "#FFFFFFFF" not in launcher_monochrome:
+            errors.append("launcher monochrome mark must be white")
+        if 'android:scaleX="0.661765"' not in launcher_monochrome or 'android:scaleY="0.661765"' not in launcher_monochrome:
+            errors.append("launcher monochrome must use the Brand v3 45% calibration")
 
     if brand_mark:
         if "@color/tsuzuki_paper" not in brand_mark:
             errors.append("primary in-app brand mark must use Tsuzuki Paper")
         if "@color/tsuzuki_jade" in brand_mark:
             errors.append("primary in-app brand mark still uses legacy Tsuzuki Jade")
+        if brand_mark.count("android:pathData=") != 3:
+            errors.append("primary in-app Brand v3 mark must contain exactly three masses")
+
+    if master_mark:
+        for part in ("top", "left", "right"):
+            if f'<path id="{part}"' not in master_mark:
+                errors.append(f"Brand v3 master mark is missing {part} mass")
+        if 'fill="#0B0C0D"' not in master_mark:
+            errors.append("Brand v3 master mark must use Tsuzuki Ink")
+        if "<image" in master_mark:
+            errors.append("Brand v3 master mark must remain true vector geometry")
 
     if brand_doc:
+        if "Brand v3" not in brand_doc or "tsuzuki-mark.svg" not in brand_doc:
+            errors.append("brand documentation must identify the current Brand v3 master")
         if "Tsuzuki Ink: `#0B0C0D`" not in brand_doc or "Tsuzuki Paper: `#F5F3EC`" not in brand_doc:
-            errors.append("brand documentation must define the monochrome Brand v2 signature")
+            errors.append("brand documentation must define the monochrome signature")
 
     if repo_logo:
         if '#0B0C0D' not in repo_logo or '#F5F3EC' not in repo_logo:
