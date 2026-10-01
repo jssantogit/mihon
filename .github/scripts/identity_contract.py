@@ -32,6 +32,31 @@ RETIRED_UI_PATHS = (
     "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/GlobalSearchScreen.kt",
     "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/GlobalSearchViewModel.kt",
     "app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration/sources/MigrateSourceTab.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/SourcesTab.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/SourcesViewModel.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/SourcesFilterScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/SourcesFilterViewModel.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/extension/ExtensionsTab.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/extension/ExtensionsViewModel.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/extension/ExtensionFilterScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/extension/ExtensionFilterViewModel.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/SourcesScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/SourcesFilterScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/ExtensionsScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/ExtensionFilterScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/GlobalSearchScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/components/GlobalSearchCardRow.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/components/GlobalSearchResultItems.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/components/GlobalSearchToolbar.kt",
+)
+
+RETIRED_UI_PREFIXES = (
+    "app/src/main/java/eu/kanade/tachiyomi/ui/history",
+    "app/src/main/java/eu/kanade/presentation/history",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/updates",
+    "app/src/main/java/eu/kanade/presentation/updates",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration",
+    "app/src/main/java/mihon/feature/migration",
 )
 
 RETIRED_SHORTCUT_IDS = (
@@ -174,6 +199,11 @@ def check_contract(root: Path) -> list[str]:
     for relative in RETIRED_UI_PATHS:
         if (root / relative).is_file():
             errors.append(f"retired legacy UI surface must remain absent: {relative}")
+
+    for relative in RETIRED_UI_PREFIXES:
+        base = root / relative
+        if base.is_dir() and any(path.is_file() for path in base.rglob("*.kt")):
+            errors.append(f"retired legacy UI package must remain absent: {relative}")
 
     shortcuts_path = root / "app/src/main/shortcuts.xml"
     if shortcuts_path.is_file():
