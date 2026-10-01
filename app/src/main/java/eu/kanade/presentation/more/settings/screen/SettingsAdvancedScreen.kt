@@ -47,7 +47,6 @@ import eu.kanade.tachiyomi.util.system.powerManager
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.system.workManager
-import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.app.di.appGraph
 import okhttp3.Headers
