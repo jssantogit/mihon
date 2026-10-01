@@ -58,6 +58,21 @@ class ShikimoriIntegrationProviderTest {
         rating.scaleMax shouldBe 10.0
     }
 
+    @Test
+    fun `shikimori rating gate enforces second and minute budgets`() = runTest {
+        var now = 0L
+        val gate = ShikimoriRatingRequestGate(
+            nowMillis = { now },
+            pause = { delayMillis -> now += delayMillis },
+        )
+
+        repeat(91) {
+            gate.withPermit { Unit }
+        }
+
+        now shouldBe 60_000L
+    }
+
     private class FakeShikimoriIntegrationApi(
         private val searchResults: List<TrackSearch> = emptyList(),
         private val detailsById: Map<Int, TrackSearch> = emptyMap(),
