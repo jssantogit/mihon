@@ -250,7 +250,7 @@
         </provider>
 
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".crash.CrashFileProvider"
             android:authorities="${applicationId}.crash-provider"
             android:exported="false"
             android:grantUriPermissions="true"
