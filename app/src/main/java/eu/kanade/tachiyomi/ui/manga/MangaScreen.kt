@@ -40,7 +40,6 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.isLocalOrStub
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
-import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.notes.MangaNotesScreen
@@ -53,8 +52,6 @@ import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.launch
 import logcat.LogPriority
-import mihon.feature.migration.config.MigrationConfigScreen
-import mihon.feature.migration.dialog.MigrateMangaDialog
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
@@ -150,9 +147,7 @@ class MangaScreen(
             onEditFetchIntervalClicked = viewModel::showSetFetchIntervalDialog.takeIf {
                 successState.manga.favorite
             },
-            onMigrateClicked = {
-                navigator.push(MigrationConfigScreen(successState.manga.id))
-            }.takeIf { successState.manga.favorite },
+            onMigrateClicked = null,
             onEditNotesClicked = { navigator.push(MangaNotesScreen(manga = successState.manga)) },
             onMultiBookmarkClicked = viewModel::bookmarkChapters,
             onMultiMarkAsReadClicked = viewModel::markChaptersRead,
@@ -195,19 +190,9 @@ class MangaScreen(
                     onDismissRequest = onDismissRequest,
                     onConfirm = { viewModel.toggleFavorite(onRemoved = {}, checkDuplicate = false) },
                     onOpenManga = { navigator.push(MangaScreen(it.id)) },
-                    onMigrate = { viewModel.showMigrateDialog(it) },
                 )
             }
 
-            is MangaViewModel.Dialog.Migrate -> {
-                MigrateMangaDialog(
-                    current = dialog.current,
-                    target = dialog.target,
-                    // Initiated from the context of [dialog.target] so we show [dialog.current].
-                    onClickTitle = { navigator.push(MangaScreen(dialog.current.id)) },
-                    onDismissRequest = onDismissRequest,
-                )
-            }
             MangaViewModel.Dialog.SettingsSheet -> ChapterSettingsDialog(
                 onDismissRequest = onDismissRequest,
                 manga = successState.manga,
@@ -331,7 +316,8 @@ class MangaScreen(
      */
     private suspend fun performSearch(navigator: Navigator, query: String, global: Boolean) {
         if (global) {
-            navigator.push(GlobalSearchScreen(query))
+            navigator.popUntilRoot()
+            HomeScreen.openSearch(query)
             return
         }
 
