@@ -17,6 +17,7 @@ import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
 import tachiyomi.domain.tsuzuki.integration.interactor.ComputeTsuzukiRating
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRatingSource
 import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 
@@ -147,7 +148,7 @@ class SearchIntegrations(
                     tsuzukiRating = if (
                         registry.isGlobalCapabilityActive(
                             TSUZUKI_INTEGRATION_ID,
-                            tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability.RATINGS,
+                            IntegrationCapability.RATINGS,
                         )
                     ) {
                         ComputeTsuzukiRating(
