@@ -108,19 +108,25 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     override fun onCreate() {
         super<Application>.onCreate()
 
+        val process = getProcessName()
+        if (process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
+            // CrashActivity must remain usable even when application-graph creation itself is what crashed.
+            return
+        }
+
+        // Install before graph creation so dependency-injection and early bootstrap crashes are persisted.
+        GlobalExceptionHandler.initialize(applicationContext, CrashActivity::class.java)
+
         // Must run before the graph is built, since injecting dependencies initializes WebView and the
         // suffix can't be set once a provider exists in the process. Secondary processes die otherwise.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val process = getProcessName()
-            if (packageName != process) WebView.setDataDirectorySuffix(process)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && packageName != process) {
+            WebView.setDataDirectorySuffix(process)
         }
 
         graph.inject(this)
         setupInjekt()
 
         TelemetryConfig.init(applicationContext)
-
-        GlobalExceptionHandler.initialize(applicationContext, CrashActivity::class.java)
 
         // TLS 1.3 support for Android < 10
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -329,3 +335,4 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 }
 
 private const val ACTION_DISABLE_INCOGNITO_MODE = "tachi.action.DISABLE_INCOGNITO_MODE"
+private const val ERROR_HANDLER_PROCESS_SUFFIX = ":error_handler"
