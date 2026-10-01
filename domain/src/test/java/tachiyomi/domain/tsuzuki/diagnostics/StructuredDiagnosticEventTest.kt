@@ -88,6 +88,7 @@ class StructuredDiagnosticEventTest {
             StructuredDiagnosticSanitizer.sanitize(event)?.attributes shouldBe emptyMap()
         }
     }
+
     @Test
     fun `sanitizer preserves safe workflow correlation and rejects unsafe provider ids`() {
         val event = StructuredDiagnosticEvent(
@@ -118,5 +119,4 @@ class StructuredDiagnosticEventTest {
         sanitized?.workflow shouldBe DiagnosticWorkflow.ARTWORK_RESOLUTION
         sanitized?.attributes?.get(DiagnosticAttribute.PROVIDER_ID) shouldBe DiagnosticAttributeValue.Text("kitsu")
     }
-
 }
