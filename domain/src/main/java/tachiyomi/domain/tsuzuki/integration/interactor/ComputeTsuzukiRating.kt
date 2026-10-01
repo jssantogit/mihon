@@ -17,6 +17,7 @@ object ComputeTsuzukiRating {
         sources: List<TsuzukiRatingSource>,
         minimumSources: Int = TSUZUKI_RATING_MIN_SOURCES,
     ): TsuzukiRating? {
+        // Keep this call inline: isValid is a member extension, which Kotlin cannot reference directly.
         val usable = sources
             .asSequence()
             .filter { it.isValid() }
