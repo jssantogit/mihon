@@ -42,9 +42,10 @@ class SearchIntegrations(
     /**
      * Ratings describe the canonical work, not the catalog that happened to list it.
      *
-     * Every enabled ratings provider may contribute when it can resolve an exact external
-     * identity. Provider-specific lookup implementations may use search as discovery, but must
-     * still prove identity through explicit IDs/mappings before returning a match.
+     * Every enabled ratings provider may contribute. Exact provider IDs and provider-published
+     * mappings remain the only identities persisted into the canonical graph. Providers may also
+     * contribute a non-persistent rating-only match when title/alias is corroborated by publication
+     * year or creator identity and the candidate is unambiguous.
      */
     suspend fun enrichRatings(items: List<CatalogItem>): List<CatalogItem> = coroutineScope {
         val providers = registry.ratingsProviders()
