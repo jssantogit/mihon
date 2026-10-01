@@ -114,14 +114,36 @@ VALID_LAUNCHER_BACKGROUND = """
 """
 
 VALID_LAUNCHER_FOREGROUND = """
-<path android:fillColor="@color/tsuzuki_paper" />
+<group android:scaleX="0.661765" android:scaleY="0.661765">
+    <path android:fillColor="@color/tsuzuki_paper" />
+</group>
+"""
+
+VALID_LAUNCHER_MONOCHROME = """
+<group android:scaleX="0.661765" android:scaleY="0.661765">
+    <path android:fillColor="#FFFFFFFF" />
+</group>
 """
 
 VALID_BRAND_MARK = """
-<path android:fillColor="@color/tsuzuki_paper" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="top" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="left" />
+<path android:fillColor="@color/tsuzuki_paper" android:pathData="right" />
+"""
+
+VALID_MASTER_MARK = """
+<svg>
+  <g fill="#0B0C0D">
+    <path id="top" />
+    <path id="left" />
+    <path id="right" />
+  </g>
+</svg>
 """
 
 VALID_BRAND_DOC = """
+# Brand v3
+Canonical asset: tsuzuki-mark.svg
 - Tsuzuki Ink: `#0B0C0D`
 - Tsuzuki Paper: `#F5F3EC`
 """
@@ -149,7 +171,9 @@ class IdentityContractTest(unittest.TestCase):
         brand_colors=VALID_BRAND_COLORS,
         launcher_background=VALID_LAUNCHER_BACKGROUND,
         launcher_foreground=VALID_LAUNCHER_FOREGROUND,
+        launcher_monochrome=VALID_LAUNCHER_MONOCHROME,
         brand_mark=VALID_BRAND_MARK,
+        master_mark=VALID_MASTER_MARK,
         brand_doc=VALID_BRAND_DOC,
         repo_logo=VALID_REPO_LOGO,
     ):
@@ -169,7 +193,9 @@ class IdentityContractTest(unittest.TestCase):
             "app/src/main/res/values/colors.xml": brand_colors,
             "app/src/main/res/drawable/ic_launcher_background.xml": launcher_background,
             "app/src/main/res/drawable/ic_launcher_foreground.xml": launcher_foreground,
+            "app/src/main/res/drawable/ic_launcher_monochrome.xml": launcher_monochrome,
             "app/src/main/res/drawable/ic_mihon.xml": brand_mark,
+            "docs/brand/tsuzuki-mark.svg": master_mark,
             "docs/brand/README.md": brand_doc,
             "docs/brand/tsuzuki-repo-logo.svg": repo_logo,
         }
@@ -290,6 +316,21 @@ class IdentityContractTest(unittest.TestCase):
         self.assertIn("primary in-app brand mark still uses legacy Tsuzuki Jade", errors)
         self.assertIn("repository logo must use Paper on Ink", errors)
         self.assertIn("repository logo still uses the legacy Jade/Midnight signature", errors)
+
+    def test_brand_v3_master_must_be_three_path_true_vector(self):
+        root = self.make_repo(master_mark=VALID_MASTER_MARK.replace('<path id="right" />', '<image href="mark.png" />'))
+        errors = check_contract(root)
+        self.assertIn("Brand v3 master mark is missing right mass", errors)
+        self.assertIn("Brand v3 master mark must remain true vector geometry", errors)
+
+    def test_brand_v3_launcher_calibration_is_required(self):
+        root = self.make_repo(
+            launcher_foreground=VALID_LAUNCHER_FOREGROUND.replace("0.661765", "0.625"),
+            launcher_monochrome=VALID_LAUNCHER_MONOCHROME.replace("0.661765", "0.625"),
+        )
+        errors = check_contract(root)
+        self.assertIn("launcher foreground must use the Brand v3 45% calibration", errors)
+        self.assertIn("launcher monochrome must use the Brand v3 45% calibration", errors)
 
     def test_inherited_mihon_release_workflows_are_rejected(self):
         root = self.make_repo()
