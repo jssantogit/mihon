@@ -250,6 +250,17 @@
         </provider>
 
         <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.crash-provider"
+            android:exported="false"
+            android:grantUriPermissions="true"
+            android:process=":error_handler">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
+
+        <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
             android:enabled="true"
