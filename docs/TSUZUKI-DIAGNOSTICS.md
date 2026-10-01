@@ -99,15 +99,15 @@ The primary workflow is explicit:
 3. **Clear logs** clears Tsuzuki's persisted structured history, capture-window state, in-process crash context, recorder health counters, the last persisted uncaught crash, and stale shared report files.
 4. **Share logs** creates the normal bounded `tsuzuki_logs.txt` report.
 
-Verbose system logging remains available as a secondary option on the Logs screen because changing that preference still requires an application restart.
+The Logs screen intentionally keeps this four-action workflow focused; the old standalone verbose-logging switch is not part of the new Logs UI.
 
 Clearing Tsuzuki logs does **not** claim to erase Android's system Logcat buffers. Logcat is collected on demand during export using the existing bounded collector.
 
 ### Crashes during application startup
 
-The uncaught-exception handler is installed before application-graph creation. The handler synchronously writes one bounded latest-crash record under the private no-backup application directory before delegating to Android's previous uncaught-exception handler.
+The uncaught-exception handler is installed from `Application.attachBaseContext`, before normal application graph creation. Process detection keeps this bootstrap path compatible with Android 8 and explicitly excludes the `:error_handler` process. The handler synchronously writes one bounded latest-crash record under the private no-backup application directory before delegating to Android's previous uncaught-exception handler.
 
-The emergency `CrashActivity` runs in the existing `:error_handler` process but no longer extends `BaseActivity`, calls `appGraph`, or uses the normal graph-backed Compose setup. The application process explicitly skips graph initialization for `:error_handler`. This keeps the crash screen usable when dependency injection or another early bootstrap step is itself the failure.
+The emergency `CrashActivity` runs in the existing `:error_handler` process but no longer extends `BaseActivity`, calls `appGraph`, or uses the normal graph-backed Compose setup. Its emergency share file is served by a dedicated `CrashFileProvider` in that same process, so sharing does not need to start the broken main process. The application process explicitly skips graph initialization for `:error_handler`. This keeps the crash screen usable when dependency injection or another early bootstrap step is itself the failure.
 
 The emergency crash screen can share the persisted stack trace without requiring the main application graph. After a later successful launch, the regular **Share logs** report also includes that latest persisted uncaught-crash record until the user clears it or a newer uncaught crash replaces it.
 
