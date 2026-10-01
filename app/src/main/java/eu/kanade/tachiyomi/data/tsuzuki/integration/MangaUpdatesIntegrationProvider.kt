@@ -137,6 +137,7 @@ class MangaUpdatesIntegrationProvider private constructor(
             label = "MangaUpdates",
             value = score.value,
             scaleMax = score.maxValue,
+            voteCount = score.voteCount,
         )
     }
 
