@@ -211,6 +211,23 @@
     <string name="pref_category_downloads">Downloads</string>
     <string name="pref_category_tracking">Tracking</string>
     <string name="pref_category_advanced">Advanced</string>
+    <string name="tsuzuki_logs_title">Logs</string>
+    <string name="tsuzuki_logs_summary">Capture, clear, and share diagnostic logs</string>
+    <string name="tsuzuki_logs_status_recording">Status: recording</string>
+    <string name="tsuzuki_logs_status_stopped">Status: stopped</string>
+    <string name="tsuzuki_logs_start">Start logs</string>
+    <string name="tsuzuki_logs_start_summary">Starts a detailed diagnostic capture for up to 15 minutes</string>
+    <string name="tsuzuki_logs_stop">Stop logs</string>
+    <string name="tsuzuki_logs_stop_summary">Stops the current capture and keeps it ready to share</string>
+    <string name="tsuzuki_logs_clear">Clear logs</string>
+    <string name="tsuzuki_logs_clear_summary">Clears Tsuzuki diagnostic history and the last persisted crash</string>
+    <string name="tsuzuki_logs_share">Share logs</string>
+    <string name="tsuzuki_logs_share_summary">Creates one report with diagnostics, crash data, and bounded system logs</string>
+    <string name="tsuzuki_logs_started">Log capture started</string>
+    <string name="tsuzuki_logs_stopped">Log capture stopped</string>
+    <string name="tsuzuki_logs_cleared">Logs cleared</string>
+    <string name="tsuzuki_logs_clear_failed">Some logs could not be cleared</string>
+    <string name="tsuzuki_logs_options">Options</string>
     <string name="pref_category_about">About</string>
 
     <string name="pref_appearance_summary">Theme, date &amp; time format</string>
