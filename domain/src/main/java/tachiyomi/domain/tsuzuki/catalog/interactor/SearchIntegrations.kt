@@ -13,6 +13,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 
 @Inject
 class SearchIntegrations(
@@ -132,9 +133,11 @@ class SearchIntegrations(
                     scores = scores,
                     externalIds = buildMap {
                         putAll(identifiedItem.externalIds)
-                        matches.forEach { match ->
-                            put(match.rating.providerId, match.externalId)
-                        }
+                        matches
+                            .filter(CatalogRatingMatch::verifiedIdentity)
+                            .forEach { match ->
+                                put(match.rating.providerId, match.externalId)
+                            }
                     },
                 )
             }
