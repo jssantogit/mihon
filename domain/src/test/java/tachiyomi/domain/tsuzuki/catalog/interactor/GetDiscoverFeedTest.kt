@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
@@ -47,7 +48,7 @@ class GetDiscoverFeedTest {
             provider = "kitsu",
             providerId = "k1",
             title = "Work",
-            score = tachiyomi.domain.tsuzuki.catalog.model.CatalogScore("kitsu", 80.0, 100.0),
+            score = CatalogScore("kitsu", 80.0, 100.0),
             externalIds = mapOf("mal" to "m1"),
         )
         val fakeProvider = FakeDiscoveryProvider(
