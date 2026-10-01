@@ -1130,7 +1130,6 @@ class ReaderActivity : BaseActivity() {
     }
 }
 
-
 internal sealed interface ReaderTitleDetailsRoute {
     data class Canonical(val canonicalTitleId: String) : ReaderTitleDetailsRoute
 
