@@ -11,10 +11,16 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import java.text.Normalizer
 import kotlin.coroutines.cancellation.CancellationException
 
-@Inject
-class SearchCatalog(
+class SearchCatalog private constructor(
     private val integrationRegistry: IntegrationRegistry,
+    private val searchIntegrations: SearchIntegrations,
 ) {
+
+    @Inject
+    constructor(integrationRegistry: IntegrationRegistry) : this(
+        integrationRegistry = integrationRegistry,
+        searchIntegrations = SearchIntegrations(integrationRegistry),
+    )
 
     suspend fun await(
         query: String? = null,
@@ -28,7 +34,7 @@ class SearchCatalog(
         if (provider == null) {
             Result.failure(CatalogError.ProviderUnavailable("No search Integration is enabled"))
         } else {
-            provider.search(
+            val providerResult = provider.search(
                 CatalogQuery(
                     query = query,
                     sort = sort,
@@ -37,9 +43,17 @@ class SearchCatalog(
                     offset = offset,
                     limit = limit,
                 ),
-            ).map { page ->
-                page.filterByTitleRelevance(query)
-            }
+            )
+            val error = providerResult.exceptionOrNull()
+            if (error is CancellationException) throw error
+            if (error != null) return Result.failure(error)
+
+            val page = providerResult.getOrThrow().filterByTitleRelevance(query)
+            Result.success(
+                page.copy(
+                    items = searchIntegrations.enrichRatings(page.items),
+                ),
+            )
         }
     } catch (e: CancellationException) {
         throw e
