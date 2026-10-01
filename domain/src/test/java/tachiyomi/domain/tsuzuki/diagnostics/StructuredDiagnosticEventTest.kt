@@ -88,4 +88,35 @@ class StructuredDiagnosticEventTest {
             StructuredDiagnosticSanitizer.sanitize(event)?.attributes shouldBe emptyMap()
         }
     }
+
+    @Test
+    fun `sanitizer preserves safe workflow correlation and rejects unsafe provider ids`() {
+        val event = StructuredDiagnosticEvent(
+            timestampMillis = 1_790_755_200_000,
+            severity = DiagnosticSeverity.INFO,
+            subsystem = DiagnosticSubsystem.ARTWORK,
+            name = DiagnosticEventName.ARTWORK_RESOLVE_STARTED,
+            sessionId = "d2719c3b-4518-4d6b-9b09-2834381a322c",
+            operationId = "865624e0-50f1-41c9-81eb-9a68fc9e50a4",
+            workflowId = "e1bf2346-14d8-4ef6-9f16-c03551f16013",
+            parentOperationId = "6a024bea-3d20-4035-9a4f-969237ee67da",
+            workflow = DiagnosticWorkflow.ARTWORK_RESOLUTION,
+            stage = DiagnosticStage.RESOLVE,
+            outcome = DiagnosticOutcome.STARTED,
+            attributes = mapOf(
+                "provider_id" to DiagnosticAttributeValue.Text("kitsu"),
+                "request_data_present" to DiagnosticAttributeValue.Flag(true),
+                "invariant_code" to DiagnosticAttributeValue.Code(
+                    DiagnosticInvariantCode.ARTWORK_LOST_AFTER_RESOLUTION,
+                ),
+            ),
+        )
+
+        val sanitized = StructuredDiagnosticSanitizer.sanitize(event)
+
+        sanitized?.workflowId shouldBe "e1bf2346-14d8-4ef6-9f16-c03551f16013"
+        sanitized?.parentOperationId shouldBe "6a024bea-3d20-4035-9a4f-969237ee67da"
+        sanitized?.workflow shouldBe DiagnosticWorkflow.ARTWORK_RESOLUTION
+        sanitized?.attributes?.get(DiagnosticAttribute.PROVIDER_ID) shouldBe DiagnosticAttributeValue.Text("kitsu")
+    }
 }

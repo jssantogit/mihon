@@ -25,6 +25,7 @@ import tachiyomi.domain.tsuzuki.content.cache.InFlightContentResolution
 import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
@@ -231,6 +232,7 @@ class PrepareCanonicalChapterForReaderTest {
             canonicalReadingRepository = reading,
             canonicalDownloadRepository = FakeCanonicalDownloadRepository(downloadArtifact),
             chapterContentPreparer = preparer,
+            structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
         )
         return Fixture(prepare, reading, preparer)
     }

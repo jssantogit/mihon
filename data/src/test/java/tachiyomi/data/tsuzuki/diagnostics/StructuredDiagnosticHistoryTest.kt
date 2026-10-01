@@ -370,14 +370,14 @@ class StructuredDiagnosticHistoryTest {
         val segment = instanceDirectory.resolve("segment-000000-0000000000100-0000.jsonl")
         segment.writeText(
             listOf(
-                """{"schemaVersion":1,"recordType":"event","marker":"supported_event"}""",
-                """{"schemaVersion":1,"recordType":"dropped_events","marker":"supported_drop"}""",
+                """{"schemaVersion":2,"recordType":"event","marker":"supported_event"}""",
+                """{"schemaVersion":2,"recordType":"dropped_events","marker":"supported_drop"}""",
                 """{"schemaVersion":null,"recordType":null,"marker":"null_markers"}""",
-                """{"schemaVersion":2,"recordType":"event","marker":"unknown_version"}""",
-                """{"schemaVersion":1,"recordType":"future_record","marker":"unknown_type"}""",
-                """{"schemaVersion":"1","recordType":"event","marker":"string_version"}""",
-                """{"schemaVersion":1,"recordType":7,"marker":"numeric_type"}""",
-                """{"schemaVersion":1,"recordType":"event","marker":"truncated""",
+                """{"schemaVersion":1,"recordType":"event","marker":"unknown_version"}""",
+                """{"schemaVersion":2,"recordType":"future_record","marker":"unknown_type"}""",
+                """{"schemaVersion":"2","recordType":"event","marker":"string_version"}""",
+                """{"schemaVersion":2,"recordType":7,"marker":"numeric_type"}""",
+                """{"schemaVersion":2,"recordType":"event","marker":"truncated""",
             ).joinToString("\n"),
         )
         val history = history(directory, now = 100L)

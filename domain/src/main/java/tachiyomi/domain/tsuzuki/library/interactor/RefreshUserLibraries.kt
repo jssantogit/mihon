@@ -4,6 +4,17 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
@@ -13,12 +24,14 @@ import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.ExternalLibraryRepository
 import kotlin.time.Clock
+import kotlin.time.TimeSource
 
 class RefreshUserLibraries internal constructor(
     private val registry: IntegrationRegistry,
     private val resolveCanonicalTitle: suspend (CatalogItem, Long?) -> CanonicalTitle,
     private val externalLibraryRepository: ExternalLibraryRepository,
     private val clock: () -> Long,
+    private val diagnosticRecorder: StructuredDiagnosticRecorder,
 ) {
 
     @Inject
@@ -26,11 +39,13 @@ class RefreshUserLibraries internal constructor(
         registry: IntegrationRegistry,
         resolveUserLibraryCanonicalTitle: ResolveUserLibraryCanonicalTitle,
         externalLibraryRepository: ExternalLibraryRepository,
+        diagnosticRecorder: StructuredDiagnosticRecorder,
     ) : this(
         registry = registry,
         resolveCanonicalTitle = resolveUserLibraryCanonicalTitle::execute,
         externalLibraryRepository = externalLibraryRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
+        diagnosticRecorder = diagnosticRecorder,
     )
 
     internal constructor(
@@ -45,6 +60,7 @@ class RefreshUserLibraries internal constructor(
         },
         externalLibraryRepository = externalLibraryRepository,
         clock = clock,
+        diagnosticRecorder = NoOpStructuredDiagnosticRecorder,
     )
 
     suspend fun refreshConnected(): Map<IntegrationId, Result<Int>> {
@@ -110,10 +126,36 @@ class RefreshUserLibraries internal constructor(
     }
 
     private suspend fun refresh(provider: UserListProvider): Result<Int> {
+        val trace = DiagnosticTrace.start(
+            recorder = diagnosticRecorder,
+            workflow = DiagnosticWorkflow.LIBRARY_SYNC,
+            subsystem = DiagnosticSubsystem.LIBRARY,
+        )
+        val started = TimeSource.Monotonic.markNow()
+        val providerAttributes = mapOf(
+            DiagnosticAttribute.PROVIDER_ID to DiagnosticAttributeValue.Text(provider.integrationId.value),
+        )
+        trace.event(
+            subsystem = DiagnosticSubsystem.LIBRARY,
+            name = DiagnosticEventName.LIBRARY_SYNC_STARTED,
+            stage = DiagnosticStage.SYNC,
+            outcome = DiagnosticOutcome.STARTED,
+            attributes = providerAttributes,
+        )
+
         val snapshot = provider.fetchLibrary()
         val error = snapshot.exceptionOrNull()
         if (error != null) {
             if (error is CancellationException) throw error
+            trace.event(
+                subsystem = DiagnosticSubsystem.LIBRARY,
+                name = DiagnosticEventName.LIBRARY_SYNC_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.WARN,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                attributes = providerAttributes,
+            )
             return Result.failure(error)
         }
 
@@ -121,6 +163,15 @@ class RefreshUserLibraries internal constructor(
             val syncedAt = clock()
             val librarySnapshot = snapshot.getOrThrow()
             val entries = librarySnapshot.entries
+            trace.event(
+                subsystem = DiagnosticSubsystem.LIBRARY,
+                name = DiagnosticEventName.LIBRARY_PROVIDER_FETCHED,
+                stage = DiagnosticStage.READ,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                attributes = providerAttributes + mapOf(
+                    DiagnosticAttribute.ITEM_COUNT to DiagnosticAttributeValue.Number(entries.size.toLong()),
+                ),
+            )
             val listsByKey = librarySnapshot.lists.associateBy { it.key }
             val legacyTrackerId = registry.manifests()
                 .firstOrNull { it.integrationId == provider.integrationId }
@@ -151,10 +202,30 @@ class RefreshUserLibraries internal constructor(
                 provider = provider.integrationId.value,
                 memberships = memberships,
             )
+            trace.event(
+                subsystem = DiagnosticSubsystem.LIBRARY,
+                name = DiagnosticEventName.LIBRARY_SYNC_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                attributes = providerAttributes + mapOf(
+                    DiagnosticAttribute.ITEM_COUNT to DiagnosticAttributeValue.Number(entries.size.toLong()),
+                    DiagnosticAttribute.ACCEPTED_COUNT to DiagnosticAttributeValue.Number(memberships.size.toLong()),
+                ),
+            )
             Result.success(entries.size)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            trace.event(
+                subsystem = DiagnosticSubsystem.LIBRARY,
+                name = DiagnosticEventName.LIBRARY_SYNC_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.WARN,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                attributes = providerAttributes,
+            )
             Result.failure(error)
         }
     }

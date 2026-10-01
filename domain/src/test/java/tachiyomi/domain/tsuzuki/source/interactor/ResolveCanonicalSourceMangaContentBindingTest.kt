@@ -12,6 +12,7 @@ import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -103,6 +104,7 @@ class ResolveCanonicalSourceMangaContentBindingTest {
             networkToLocalManga = networkToLocal,
             readingSourceGateway = gateway,
             contentBindingRepository = bindingRepository,
+            structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
         ).execute(TITLE_ID)
 
         resolved?.thumbnailUrl shouldBe "https://source.example/boku.jpg"

@@ -15,13 +15,20 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.tsuzuki.recordArtworkLoad
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
+import mihon.app.di.appGraph
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeRow
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
@@ -84,6 +91,15 @@ private fun HeroCard(
     item: HomeContinueReadingItem,
     onClick: () -> Unit,
 ) {
+    val recorder = LocalContext.current.appGraph.structuredDiagnosticRecorder
+    val trace = remember(item.canonicalTitleId, recorder.sessionId) {
+        DiagnosticTrace.start(
+            recorder = recorder,
+            workflow = DiagnosticWorkflow.CONTINUE_READING,
+            canonicalTitleId = item.canonicalTitleId,
+            subsystem = DiagnosticSubsystem.IMAGE,
+        )
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -99,6 +115,7 @@ private fun HeroCard(
                 fallbackData = listOf(item.sourceCover, item.sourceCover?.url),
                 contentDescription = item.title,
                 modifier = Modifier.width(96.dp),
+                onLoadEvent = { trace.recordArtworkLoad(it) },
             )
             Column(
                 verticalArrangement = Arrangement.spacedBy(6.dp),

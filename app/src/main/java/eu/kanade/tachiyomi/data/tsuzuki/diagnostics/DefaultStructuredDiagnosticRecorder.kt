@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticEvent
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticSanitizer
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
@@ -17,8 +18,14 @@ import java.util.UUID
 @ContributesBinding(AppScope::class)
 class DefaultStructuredDiagnosticRecorder(
     private val history: LocalStructuredDiagnosticHistory,
+    private val health: DiagnosticRecorderHealth,
+    private val captureState: DiagnosticCaptureState,
+    private val crashContextStore: DiagnosticCrashContextStore,
 ) : StructuredDiagnosticRecorder {
     override val sessionId: String = UUID.randomUUID().toString()
+
+    override val detailedCaptureActive: Boolean
+        get() = captureState.isDetailedCaptureActive()
 
     private val pseudonymSalt = ByteArray(PSEUDONYM_SALT_BYTES).also(SecureRandom()::nextBytes)
     private val pipeline by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -26,6 +33,7 @@ class DefaultStructuredDiagnosticRecorder(
             persistenceEnabled = history::persistenceAllowed,
             logcatSink = { priority, encoded -> logcat(priority) { encoded } },
             historySink = history::submit,
+            health = health,
         )
     }
 
@@ -36,6 +44,9 @@ class DefaultStructuredDiagnosticRecorder(
         mihonMangaId.takeIf { it > 0 }?.let { pseudonymousReference("mihon", it.toString()) }
 
     override fun record(event: StructuredDiagnosticEvent) {
+        runCatching { StructuredDiagnosticSanitizer.sanitize(event) }
+            .getOrNull()
+            ?.let(crashContextStore::observe)
         pipeline.record(event)
     }
 

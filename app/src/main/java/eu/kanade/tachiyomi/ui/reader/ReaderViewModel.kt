@@ -99,6 +99,16 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.RepairZeroPlaceholderChapterS
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentOption
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.reader.interactor.GetAdjacentCanonicalChapter
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
@@ -112,6 +122,7 @@ import tachiyomi.source.local.image.LocalCoverManager
 import tachiyomi.source.local.isLocal
 import java.util.Date
 import kotlin.time.Clock
+import kotlin.time.TimeSource
 
 private const val CANONICAL_READER_HISTORY_WRITE_TIMEOUT_MILLIS = 5_000L
 
@@ -153,6 +164,7 @@ class ReaderViewModel(
     private val coverCache: CoverCache,
     private val chapterCache: ChapterCache,
     private val downloadCache: DownloadCache,
+    private val structuredDiagnostics: StructuredDiagnosticRecorder,
 ) : ViewModel() {
 
     @AssistedFactory
@@ -972,7 +984,46 @@ class ReaderViewModel(
         loader: ReaderChapterLoader,
         chapter: ReaderChapter,
     ): ViewerChapters {
-        loader.loadChapter(chapter)
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.READER_OPEN,
+            subsystem = DiagnosticSubsystem.READER,
+        )
+        val started = TimeSource.Monotonic.markNow()
+        try {
+            loader.loadChapter(chapter)
+        } catch (error: CancellationException) {
+            trace.event(
+                subsystem = DiagnosticSubsystem.READER,
+                name = DiagnosticEventName.READER_PAGES_READY,
+                stage = DiagnosticStage.READER,
+                outcome = DiagnosticOutcome.CANCELLED,
+                severity = DiagnosticSeverity.INFO,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+            )
+            throw error
+        } catch (error: Throwable) {
+            trace.event(
+                subsystem = DiagnosticSubsystem.READER,
+                name = DiagnosticEventName.READER_PAGES_READY,
+                stage = DiagnosticStage.READER,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.ERROR,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+            )
+            throw error
+        }
+        trace.event(
+            subsystem = DiagnosticSubsystem.READER,
+            name = DiagnosticEventName.READER_PAGES_READY,
+            stage = DiagnosticStage.READER,
+            outcome = DiagnosticOutcome.READY,
+            durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+            attributes = mapOf(
+                DiagnosticAttribute.PAGE_COUNT to
+                    DiagnosticAttributeValue.Number(chapter.pages.orEmpty().size.toLong()),
+            ),
+        )
 
         val session = canonicalSession
         val canonicalPrevious = session?.let {

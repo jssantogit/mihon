@@ -7,9 +7,14 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.BoundedLogcatCollector
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.CrashLogReportComposer
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCaptureState
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCrashContextStore
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticRecorderHealth
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticRuntimeSnapshot
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LocalStructuredDiagnosticHistory
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatCapture
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatFailure
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.StructuredDiagnosticSummary
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.util.storage.getUriCompat
@@ -34,6 +39,10 @@ class CrashLogUtil(
     private val preferences: BasePreferences,
     private val networkPreferences: NetworkPreferences,
     private val structuredHistory: LocalStructuredDiagnosticHistory,
+    private val diagnosticRecorderHealth: DiagnosticRecorderHealth,
+    private val diagnosticCaptureState: DiagnosticCaptureState,
+    private val diagnosticCrashContextStore: DiagnosticCrashContextStore,
+    private val diagnosticRuntimeSnapshot: DiagnosticRuntimeSnapshot,
     private val logcatCollector: BoundedLogcatCollector,
 ) {
 
@@ -43,7 +52,23 @@ class CrashLogUtil(
             val extensionsInfo = getExtensionsInfo()
             val exceptionText = exception?.toString()
             val reportFile = withContext(Dispatchers.IO) {
-                val history = structuredHistory.snapshot(flushTimeoutMillis = 500)
+                val flushed = structuredHistory.flush(timeoutMillis = 500)
+                if (!flushed) diagnosticRecorderHealth.exportFlushTimedOut()
+                val fullHistory = structuredHistory.snapshot(flushTimeoutMillis = 0)
+                val history = diagnosticCaptureState.filterForExport(fullHistory)
+                val diagnosticSummary = StructuredDiagnosticSummary.build(
+                    structuredHistory = history,
+                    health = diagnosticRecorderHealth.snapshot(),
+                )
+                val captureWindow = diagnosticCaptureState.describeWindow()
+                val runtimeSnapshot = buildString {
+                    appendLine(diagnosticRuntimeSnapshot.build())
+                    appendLine("verbose_logging=${networkPreferences.verboseLogging.get()}")
+                    appendLine("incognito=${preferences.incognitoMode.get()}")
+                    appendLine("installed_extensions=${extensionManager.getInstalledExtensions().size}")
+                    append("detailed_capture_active=${diagnosticCaptureState.isDetailedCaptureActive()}")
+                }
+                val crashContext = diagnosticCrashContextStore.describe()
                 val logPriority = if (networkPreferences.verboseLogging.get()) "V" else "E"
                 val logcat = try {
                     logcatCollector.collect(logPriority)
@@ -56,8 +81,12 @@ class CrashLogUtil(
                     debugInfo = debugInfo,
                     extensionsInfo = extensionsInfo,
                     exception = exceptionText,
+                    diagnosticSummary = diagnosticSummary,
                     structuredHistory = history,
                     logcat = logcat,
+                    runtimeSnapshot = runtimeSnapshot,
+                    captureWindow = captureWindow,
+                    crashContext = crashContext,
                 )
                 context.createFileInCacheDir("mihon_crash_logs.txt").apply { writeText(report) }
             }

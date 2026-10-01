@@ -48,6 +48,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.RankContentOptions
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
@@ -722,6 +723,7 @@ class RefreshChapterEvidenceTest {
             inFlightContentResolution = inFlight,
             diagnostics = NoOpChapterInventoryDiagnostics,
             discoverReadableTitle = titleDiscovery,
+            structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
         )
         val preferenceRepository = object : ContentPreferenceRepository {
             override suspend fun get(canonicalTitleId: String): ContentPreference? = null

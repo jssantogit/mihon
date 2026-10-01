@@ -6,10 +6,22 @@ import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentOption
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.model.ContentResolution
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreparation
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
 import tachiyomi.domain.tsuzuki.reader.service.ChapterContentPreparer
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 @Inject
 class PrepareCanonicalChapterForReader(
@@ -18,25 +30,54 @@ class PrepareCanonicalChapterForReader(
     private val canonicalReadingRepository: CanonicalReadingRepository,
     private val canonicalDownloadRepository: CanonicalDownloadRepository,
     private val chapterContentPreparer: ChapterContentPreparer,
+    private val structuredDiagnostics: StructuredDiagnosticRecorder,
 ) {
 
     suspend fun execute(
         canonicalChapterId: String,
         selectedOption: ContentOption? = null,
     ): CanonicalReaderPreparation {
-        return try {
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.READER_OPEN,
+            subsystem = DiagnosticSubsystem.READER,
+        )
+        val started = TimeSource.Monotonic.markNow()
+        trace.event(
+            subsystem = DiagnosticSubsystem.READER,
+            name = DiagnosticEventName.READER_OPEN_STARTED,
+            stage = DiagnosticStage.READER,
+            outcome = DiagnosticOutcome.STARTED,
+        )
+
+        val result = try {
             val chapter = canonicalChapterRepository.getById(canonicalChapterId)
-                ?: return CanonicalReaderPreparation.Unavailable(canonicalChapterId)
+                ?: return complete(
+                    trace,
+                    started,
+                    CanonicalReaderPreparation.Unavailable(canonicalChapterId),
+                )
 
             if (selectedOption == null) {
-                canonicalDownloadRepository.get(canonicalChapterId)?.let { artifact ->
-                    return CanonicalReaderPreparation.Ready(
-                        canonicalChapterId = canonicalChapterId,
-                        target = tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent.CanonicalDownload(
-                            uri = artifact.localUri,
-                            format = artifact.format,
+                val artifact = canonicalDownloadRepository.get(canonicalChapterId)
+                trace.event(
+                    subsystem = DiagnosticSubsystem.READER,
+                    name = DiagnosticEventName.CACHE_LOOKUP,
+                    stage = DiagnosticStage.LOOKUP,
+                    outcome = if (artifact == null) DiagnosticOutcome.MISS else DiagnosticOutcome.HIT,
+                )
+                if (artifact != null) {
+                    return complete(
+                        trace,
+                        started,
+                        CanonicalReaderPreparation.Ready(
+                            canonicalChapterId = canonicalChapterId,
+                            target = tachiyomi.domain.tsuzuki.reader.model.PreparedChapterContent.CanonicalDownload(
+                                uri = artifact.localUri,
+                                format = artifact.format,
+                            ),
+                            usedFallback = false,
                         ),
-                        usedFallback = false,
                     )
                 }
             }
@@ -78,6 +119,65 @@ class PrepareCanonicalChapterForReader(
         } catch (error: Throwable) {
             CanonicalReaderPreparation.Failed(canonicalChapterId, error)
         }
+
+        return complete(trace, started, result)
+    }
+
+    private fun complete(
+        trace: DiagnosticTrace,
+        started: TimeMark,
+        result: CanonicalReaderPreparation,
+    ): CanonicalReaderPreparation {
+        val duration = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0)
+        when (result) {
+            is CanonicalReaderPreparation.Ready -> {
+                result.selectedOption?.let { option ->
+                    trace.event(
+                        subsystem = DiagnosticSubsystem.READER,
+                        name = DiagnosticEventName.READER_SOURCE_SELECTED,
+                        stage = DiagnosticStage.READER,
+                        outcome = DiagnosticOutcome.SUCCEEDED,
+                        attributes = mapOf(
+                            DiagnosticAttribute.ADDON_ID to DiagnosticAttributeValue.Text(option.addonId.value),
+                        ),
+                    )
+                }
+                trace.event(
+                    subsystem = DiagnosticSubsystem.READER,
+                    name = DiagnosticEventName.READER_OPEN_COMPLETED,
+                    stage = DiagnosticStage.COMPLETE,
+                    outcome = DiagnosticOutcome.READY,
+                    durationMillis = duration,
+                )
+            }
+            is CanonicalReaderPreparation.SelectionRequired -> trace.event(
+                subsystem = DiagnosticSubsystem.READER,
+                name = DiagnosticEventName.READER_OPEN_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.NEEDS_CONFIRMATION,
+                durationMillis = duration,
+                attributes = mapOf(
+                    DiagnosticAttribute.CANDIDATE_COUNT to
+                        DiagnosticAttributeValue.Number(result.options.size.toLong()),
+                ),
+            )
+            is CanonicalReaderPreparation.Unavailable -> trace.event(
+                subsystem = DiagnosticSubsystem.READER,
+                name = DiagnosticEventName.READER_OPEN_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.EMPTY,
+                durationMillis = duration,
+            )
+            is CanonicalReaderPreparation.Failed -> trace.event(
+                subsystem = DiagnosticSubsystem.READER,
+                name = DiagnosticEventName.READER_OPEN_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.ERROR,
+                durationMillis = duration,
+            )
+        }
+        return result
     }
 
     private suspend fun prepare(

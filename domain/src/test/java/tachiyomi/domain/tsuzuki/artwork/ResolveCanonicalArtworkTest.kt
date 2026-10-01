@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
 import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 
 class ResolveCanonicalArtworkTest {
 
@@ -36,7 +37,7 @@ class ResolveCanonicalArtworkTest {
             ),
         )
 
-        val resolved = ResolveCanonicalArtwork(repository).execute(TITLE_ID)
+        val resolved = ResolveCanonicalArtwork(repository, NoOpStructuredDiagnosticRecorder).execute(TITLE_ID)
 
         resolved?.coverUrl shouldBe "https://kitsu/cover.jpg"
         resolved?.coverProvider shouldBe "kitsu"
@@ -56,7 +57,7 @@ class ResolveCanonicalArtworkTest {
             ),
         )
 
-        ResolveCanonicalArtwork(repository).execute(TITLE_ID) shouldBe null
+        ResolveCanonicalArtwork(repository, NoOpStructuredDiagnosticRecorder).execute(TITLE_ID) shouldBe null
     }
 
     private fun observation(

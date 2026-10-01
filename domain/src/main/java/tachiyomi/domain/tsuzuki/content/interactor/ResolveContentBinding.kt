@@ -37,6 +37,17 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -64,6 +75,7 @@ class ResolveContentBinding internal constructor(
     private val titleSearchTerms: suspend (CanonicalTitle) -> List<String> = { title ->
         listOf(title.displayTitle)
     },
+    private val structuredDiagnostics: StructuredDiagnosticRecorder = NoOpStructuredDiagnosticRecorder,
 ) {
 
     @Inject
@@ -76,6 +88,7 @@ class ResolveContentBinding internal constructor(
         addonSourceEligibilityRepository: AddonSourceEligibilityRepository,
         integrationRegistry: IntegrationRegistry,
         diagnostics: ChapterInventoryDiagnostics,
+        structuredDiagnostics: StructuredDiagnosticRecorder,
     ) : this(
         contentBindingRepository = contentBindingRepository,
         canonicalTitleRepository = canonicalTitleRepository,
@@ -86,6 +99,7 @@ class ResolveContentBinding internal constructor(
         clock = { Clock.System.now().toEpochMilliseconds() },
         diagnostics = diagnostics,
         addonSourceEligibilityRepository = addonSourceEligibilityRepository,
+        structuredDiagnostics = structuredDiagnostics,
         titleSearchTerms = { title ->
             val terms = linkedSetOf(title.displayTitle)
             try {
@@ -160,11 +174,49 @@ class ResolveContentBinding internal constructor(
         canonicalTitleId: String,
         addonId: AddonId,
     ): Result<List<ContentBinding>> {
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.CONTENT_RESOLUTION,
+            canonicalTitleId = canonicalTitleId,
+            subsystem = DiagnosticSubsystem.CONTENT,
+        )
+        val started = TimeSource.Monotonic.markNow()
+        val attributes = mapOf(
+            DiagnosticAttribute.ADDON_ID to DiagnosticAttributeValue.Text(addonId.value),
+        )
+        trace.event(
+            subsystem = DiagnosticSubsystem.CONTENT,
+            name = DiagnosticEventName.CONTENT_BINDING_RESOLVE_STARTED,
+            stage = DiagnosticStage.BINDING,
+            outcome = DiagnosticOutcome.STARTED,
+            attributes = attributes,
+        )
         return try {
-            Result.success(resolveAll(canonicalTitleId, addonId))
+            val bindings = resolveAll(canonicalTitleId, addonId)
+            trace.event(
+                subsystem = DiagnosticSubsystem.CONTENT,
+                name = DiagnosticEventName.CONTENT_BINDING_RESOLVE_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = if (bindings.isEmpty()) DiagnosticOutcome.EMPTY else DiagnosticOutcome.SUCCEEDED,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                attributes = attributes + mapOf(
+                    DiagnosticAttribute.BINDING_COUNT to
+                        DiagnosticAttributeValue.Number(bindings.size.toLong()),
+                ),
+            )
+            Result.success(bindings)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
+            trace.event(
+                subsystem = DiagnosticSubsystem.CONTENT,
+                name = DiagnosticEventName.CONTENT_BINDING_RESOLVE_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.WARN,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                attributes = attributes,
+            )
             Result.failure(t)
         }
     }
@@ -176,20 +228,37 @@ class ResolveContentBinding internal constructor(
     suspend fun existingBindingsForRefresh(
         canonicalTitleId: String,
         addonId: AddonId,
-    ): Result<List<ContentBinding>> = try {
-        val addon = addonRepository.snapshot().firstOrNull { it.id == addonId && it.enabled }
-        val enabled = addon?.mihonSourceIds?.toSet().orEmpty()
-        Result.success(
-            contentBindingRepository.getByTitle(canonicalTitleId).filter { binding ->
+    ): Result<List<ContentBinding>> {
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.CONTENT_RESOLUTION,
+            canonicalTitleId = canonicalTitleId,
+            subsystem = DiagnosticSubsystem.CONTENT,
+        )
+        return try {
+            val addon = addonRepository.snapshot().firstOrNull { it.id == addonId && it.enabled }
+            val enabled = addon?.mihonSourceIds?.toSet().orEmpty()
+            val bindings = contentBindingRepository.getByTitle(canonicalTitleId).filter { binding ->
                 binding.addonId == addonId &&
                     binding.availability != ContentBindingAvailability.UNAVAILABLE &&
                     binding.providerTitleKey.substringBefore(':').toLongOrNull()?.let { it in enabled } == true
-            },
-        )
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Throwable) {
-        Result.failure(error)
+            }
+            trace.event(
+                subsystem = DiagnosticSubsystem.CONTENT,
+                name = DiagnosticEventName.CONTENT_BINDING_LOOKUP,
+                stage = DiagnosticStage.LOOKUP,
+                outcome = if (bindings.isEmpty()) DiagnosticOutcome.MISS else DiagnosticOutcome.HIT,
+                attributes = mapOf(
+                    DiagnosticAttribute.ADDON_ID to DiagnosticAttributeValue.Text(addonId.value),
+                    DiagnosticAttribute.BINDING_COUNT to DiagnosticAttributeValue.Number(bindings.size.toLong()),
+                ),
+            )
+            Result.success(bindings)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
     }
 
     /**

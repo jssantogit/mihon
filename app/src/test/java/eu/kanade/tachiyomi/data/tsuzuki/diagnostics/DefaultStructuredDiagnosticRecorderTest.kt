@@ -11,8 +11,20 @@ import java.util.UUID
 class DefaultStructuredDiagnosticRecorderTest {
     @Test
     fun `uses valid stable per-process session and private type-specific references`() {
-        val recorder = DefaultStructuredDiagnosticRecorder(mockk())
-        val otherProcess = DefaultStructuredDiagnosticRecorder(mockk())
+        val captureState = mockk<DiagnosticCaptureState>(relaxed = true)
+        val crashContextStore = mockk<DiagnosticCrashContextStore>(relaxed = true)
+        val recorder = DefaultStructuredDiagnosticRecorder(
+            mockk(),
+            DiagnosticRecorderHealth(),
+            captureState,
+            crashContextStore,
+        )
+        val otherProcess = DefaultStructuredDiagnosticRecorder(
+            mockk(),
+            DiagnosticRecorderHealth(),
+            captureState,
+            crashContextStore,
+        )
 
         assertEquals(UUID.fromString(recorder.sessionId).toString(), recorder.sessionId)
         assertNotEquals(recorder.sessionId, otherProcess.sessionId)
