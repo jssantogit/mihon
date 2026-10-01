@@ -21,6 +21,25 @@ SIGNING_SECRET_NAMES = (
     "TSUZUKI_KEY_PASSWORD",
 )
 
+RETIRED_UI_PATHS = (
+    "app/src/main/java/eu/kanade/tachiyomi/ui/history/HistoryTab.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/updates/UpdatesTab.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/BrowseTab.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/more/MoreTab.kt",
+    "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/deeplink/DeepLinkScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/deeplink/DeepLinkViewModel.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/GlobalSearchScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/GlobalSearchViewModel.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration/sources/MigrateSourceTab.kt",
+)
+
+RETIRED_SHORTCUT_IDS = (
+    "show_recently_updated",
+    "show_recently_read",
+    "show_catalogues",
+)
+
 
 def _read(root: Path, relative: str, errors: list[str]) -> str:
     path = root / relative
@@ -54,11 +73,6 @@ def check_contract(root: Path) -> list[str]:
     about_screen = _read(
         root,
         "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt",
-        errors,
-    )
-    more_screen = _read(
-        root,
-        "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt",
         errors,
     )
     base_strings = _read(
@@ -157,6 +171,17 @@ def check_contract(root: Path) -> list[str]:
     if (root / "app/google-services.json").is_file():
         errors.append("inherited Mihon Firebase configuration must remain absent")
 
+    for relative in RETIRED_UI_PATHS:
+        if (root / relative).is_file():
+            errors.append(f"retired legacy UI surface must remain absent: {relative}")
+
+    shortcuts_path = root / "app/src/main/shortcuts.xml"
+    if shortcuts_path.is_file():
+        shortcuts = shortcuts_path.read_text(encoding="utf-8")
+        for shortcut_id in RETIRED_SHORTCUT_IDS:
+            if f'android:shortcutId="{shortcut_id}"' in shortcuts:
+                errors.append(f"retired launcher shortcut must remain absent: {shortcut_id}")
+
     if about_screen:
         project_source = "https://github.com/jssantogit/tsuzuki"
         if project_source not in about_screen:
@@ -182,16 +207,6 @@ def check_contract(root: Path) -> list[str]:
         )
         if any(marker in about_screen for marker in inherited_release_markers):
             errors.append("About screen still exposes the inherited Mihon release channel")
-
-    if more_screen:
-        inherited_more_markers = (
-            "label_support_us",
-            "Constants.URL_HELP",
-            "onClickSupport",
-            "VolunteerActivism",
-        )
-        if any(marker in more_screen for marker in inherited_more_markers):
-            errors.append("More screen still exposes inherited Mihon support/help entry points")
 
     if base_strings:
         app_name = re.search(
