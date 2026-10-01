@@ -30,7 +30,7 @@ class DiagnosticRuntimeSnapshot(
             integrationRegistry.awaitReady()
             var connected = 0
             integrationRegistry.userListProviders().forEach { provider ->
-                if (bestEffort { provider.connection.first() }.getOrNull() == true) {
+                if (provider.connection.first()) {
                     connected++
                 }
             }
