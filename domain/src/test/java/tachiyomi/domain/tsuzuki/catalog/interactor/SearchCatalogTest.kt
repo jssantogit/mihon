@@ -48,6 +48,41 @@ class SearchCatalogTest {
     }
 
     @Test
+    fun `base search returns provider page before rating enrichment`() = runTest {
+        var ratingCalls = 0
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Work",
+            score = CatalogScore("kitsu", 80.0, 100.0),
+            externalIds = mapOf("mal" to "m1"),
+        )
+        val fakeProvider = FakeSearchProvider(
+            searchResult = Result.success(CatalogPage(items = listOf(item), hasNextPage = false)),
+        )
+        val ratingsProvider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> {
+                ratingCalls++
+                return Result.success(listOf(ExternalRating("mal", "MAL", 8.4, 10.0)))
+            }
+        }
+        val interactor = SearchCatalog(
+            registry(
+                searchProviders = listOf(fakeProvider),
+                ratingProviders = listOf(ratingsProvider),
+            ),
+        )
+
+        val page = interactor.awaitBase("Work").getOrThrow()
+
+        page.items.single().title shouldBe "Work"
+        page.items.single().tsuzukiRating shouldBe null
+        ratingCalls shouldBe 0
+    }
+
+    @Test
     fun `search enriches active results with Tsuzuki Rating`() = runTest {
         val item = CatalogItem(
             provider = "kitsu",

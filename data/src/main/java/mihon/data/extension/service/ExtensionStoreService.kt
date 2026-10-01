@@ -23,6 +23,22 @@ import okio.gzip
 import tachiyomi.core.common.util.system.logcat
 import kotlin.coroutines.cancellation.CancellationException
 
+// Raw GitHub stores commonly expose the legacy index from a branch named "repo".
+private val RAW_GITHUB_REPO_BRANCH = Regex(
+    """^https://raw\.githubusercontent\.com/[^/]+/[^/]+/repo/?$""",
+    RegexOption.IGNORE_CASE,
+)
+
+internal fun normalizeExtensionStoreIndexUrl(indexUrl: String): String {
+    val trimmed = indexUrl.trim()
+    val normalized = trimmed.trimEnd('/')
+    return if (RAW_GITHUB_REPO_BRANCH.matches(normalized)) {
+        "$normalized/index.min.json"
+    } else {
+        trimmed
+    }
+}
+
 @Inject
 @SingleIn(AppScope::class)
 class ExtensionStoreService(
@@ -31,17 +47,17 @@ class ExtensionStoreService(
     private val protoBuf: ProtoBuf,
 ) {
     suspend fun fetch(indexUrl: String): Result<ExtensionStore> {
-        var updatedIndexUrl: String = indexUrl
+        var updatedIndexUrl: String = normalizeExtensionStoreIndexUrl(indexUrl)
         return try {
             val response = network.client.newCall(GET(updatedIndexUrl)).awaitSuccess()
             val store = response.body.source().decompressIfGzipped().use { source ->
                 val networkStore = when (source.peek().readByte()) {
                     // "[..."
                     0x5B.toByte() -> run {
-                        if (!indexUrl.endsWith("/index.min.json")) {
+                        if (!updatedIndexUrl.endsWith("/index.min.json")) {
                             throw IllegalArgumentException("Provided legacy store url is not valid")
                         }
-                        updatedIndexUrl = indexUrl.replace("/index.min.json", "/repo.json")
+                        updatedIndexUrl = updatedIndexUrl.replace("/index.min.json", "/repo.json")
                         network.client.newCall(GET(updatedIndexUrl)).awaitSuccess().body.source().use {
                             json.decodeFromBufferedSource<NetworkLegacyExtensionRepo>(it)
                         }

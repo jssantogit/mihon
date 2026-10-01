@@ -23,6 +23,11 @@ class GetDiscoverFeed(
     suspend fun await(
         trendingLimit: Int = 10,
         popularLimit: Int = 20,
+    ): DiscoverFeed = enrich(awaitBase(trendingLimit, popularLimit))
+
+    suspend fun awaitBase(
+        trendingLimit: Int = 10,
+        popularLimit: Int = 20,
     ): DiscoverFeed = coroutineScope {
         val provider = integrationRegistry.discoveryProviders().firstOrNull()
         if (provider == null) {
@@ -35,9 +40,7 @@ class GetDiscoverFeed(
 
         val trendingDeferred = async {
             try {
-                enrichRatings(
-                    provider.trending(offset = 0, limit = trendingLimit),
-                )
+                provider.trending(offset = 0, limit = trendingLimit)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -46,9 +49,7 @@ class GetDiscoverFeed(
         }
         val popularDeferred = async {
             try {
-                enrichRatings(
-                    provider.popular(offset = 0, limit = popularLimit),
-                )
+                provider.popular(offset = 0, limit = popularLimit)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -56,6 +57,15 @@ class GetDiscoverFeed(
             }
         }
 
+        DiscoverFeed(
+            trending = trendingDeferred.await(),
+            popular = popularDeferred.await(),
+        )
+    }
+
+    suspend fun enrich(feed: DiscoverFeed): DiscoverFeed = coroutineScope {
+        val trendingDeferred = async { enrichRatings(feed.trending) }
+        val popularDeferred = async { enrichRatings(feed.popular) }
         DiscoverFeed(
             trending = trendingDeferred.await(),
             popular = popularDeferred.await(),

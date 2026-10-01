@@ -29,6 +29,35 @@ class SearchCatalog(
         limit: Int = 20,
         genres: List<String> = emptyList(),
         status: CatalogItemStatus? = null,
+    ): Result<CatalogPage> {
+        val base = awaitBase(
+            query = query,
+            sort = sort,
+            offset = offset,
+            limit = limit,
+            genres = genres,
+            status = status,
+        )
+        val error = base.exceptionOrNull()
+        if (error is CancellationException) throw error
+        if (error != null) return base
+
+        return try {
+            Result.success(enrich(base.getOrThrow()))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun awaitBase(
+        query: String? = null,
+        sort: CatalogSort = CatalogSort.POPULARITY_DESC,
+        offset: Int = 0,
+        limit: Int = 20,
+        genres: List<String> = emptyList(),
+        status: CatalogItemStatus? = null,
     ): Result<CatalogPage> = try {
         val provider = integrationRegistry.searchProviders().firstOrNull()
         if (provider == null) {
@@ -48,18 +77,17 @@ class SearchCatalog(
             if (error is CancellationException) throw error
             if (error != null) return Result.failure(error)
 
-            val page = providerResult.getOrThrow().filterByTitleRelevance(query)
-            Result.success(
-                page.copy(
-                    items = searchIntegrations.enrichRatings(page.items),
-                ),
-            )
+            Result.success(providerResult.getOrThrow().filterByTitleRelevance(query))
         }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Throwable) {
         Result.failure(e)
     }
+
+    suspend fun enrich(page: CatalogPage): CatalogPage = page.copy(
+        items = searchIntegrations.enrichRatings(page.items),
+    )
 
     suspend operator fun invoke(
         query: String? = null,
