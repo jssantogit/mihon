@@ -225,12 +225,15 @@ The identity contract now fails if any retired route file or retired launcher sh
 
 ### Cleanup-wave validation
 
-- no local Gradle;
-- full GitHub Actions CI required;
-- verify Android launcher exposes only the Library shortcut;
-- verify old search/share intents open Tsuzuki Search;
-- verify old Sources/Extensions intents open Settings → Add-ons;
-- verify Downloads opens directly;
-- verify no hidden History/Updates/Browse/More tab can be navigated to;
-- verify `SHORTCUT_MANGA` does not open a legacy details screen;
-- verify no source-browse or Mihon manga-details route is reachable.
+Final deletion boundary is now implemented. The branch must pass full GitHub Actions CI before merge.
+
+Post-CI smoke:
+- Reader title opens canonical Tsuzuki Detail;
+- old Manga/Updates/History actions land in the unified Library;
+- old Sources/Extensions actions open Settings → Add-ons;
+- Downloads opens directly;
+- Android/system search opens Tsuzuki Search;
+- launcher exposes only Library;
+- no retired Manga/Browse/History/Updates/More/Migration screen is reachable.
+
+No local Gradle is used.
