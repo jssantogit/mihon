@@ -19,6 +19,7 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 
 class GetDiscoverFeedTest {
 
@@ -190,6 +191,10 @@ class GetDiscoverFeedTest {
         override fun searchProviders(): List<SearchProvider> = emptyList()
         override fun discoveryProviders(): List<DiscoveryProvider> = discoveryProviders
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
+        override fun isGlobalCapabilityActive(
+            integrationId: IntegrationId,
+            capability: IntegrationCapability,
+        ): Boolean = integrationId.value == "tsuzuki" && capability == IntegrationCapability.RATINGS
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
         override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
