@@ -22,9 +22,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
-import eu.kanade.tachiyomi.R
 import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
 import eu.kanade.presentation.tsuzuki.integration.ratingScaleLabel
+import eu.kanade.tachiyomi.R
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
