@@ -4,6 +4,7 @@ import java.util.UUID
 import kotlin.time.Clock
 
 /**
+ * Diagnostics v2 Wave 1 correlation anchor.
  * Small correlation helper for structured diagnostics.
  *
  * The trace carries opaque UUIDs only; callers still provide allowlisted attributes.
