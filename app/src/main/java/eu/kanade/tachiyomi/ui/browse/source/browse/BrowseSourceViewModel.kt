@@ -355,7 +355,6 @@ class BrowseSourceViewModel(
             val manga: Manga,
             val initialSelection: List<CheckboxState.State<Category>>,
         ) : Dialog
-        data class Migrate(val target: Manga, val current: Manga) : Dialog
     }
 
     @Immutable
