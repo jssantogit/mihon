@@ -1,7 +1,7 @@
 package eu.kanade.presentation.manga
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,7 +83,6 @@ fun DuplicateMangaDialog(
     onDismissRequest: () -> Unit,
     onConfirm: () -> Unit,
     onOpenManga: (manga: Manga) -> Unit,
-    onMigrate: (manga: Manga) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -129,7 +128,6 @@ fun DuplicateMangaDialog(
                     DuplicateMangaListItem(
                         duplicate = it,
                         getSource = { sourceManager.getOrStub(it.manga.source) },
-                        onMigrate = { onMigrate(it.manga) },
                         onDismissRequest = onDismissRequest,
                         onOpenManga = { onOpenManga(it.manga) },
                     )
@@ -175,7 +173,6 @@ private fun DuplicateMangaListItem(
     getSource: suspend () -> Source,
     onDismissRequest: () -> Unit,
     onOpenManga: () -> Unit,
-    onMigrate: () -> Unit,
 ) {
     val source by produceState<Source?>(initialValue = null) { value = getSource() }
     val manga = duplicate.manga
@@ -184,13 +181,10 @@ private fun DuplicateMangaListItem(
             .width(MangaCardWidth)
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surface)
-            .combinedClickable(
-                onLongClick = { onOpenManga() },
-                onClick = {
-                    onDismissRequest()
-                    onMigrate()
-                },
-            )
+            .clickable {
+                onDismissRequest()
+                onOpenManga()
+            }
             .padding(MaterialTheme.padding.small),
     ) {
         Box {
