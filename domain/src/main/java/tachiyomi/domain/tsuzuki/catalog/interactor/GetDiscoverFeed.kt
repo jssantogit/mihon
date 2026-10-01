@@ -9,13 +9,13 @@ import tachiyomi.domain.tsuzuki.catalog.model.DiscoverFeed
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import kotlin.coroutines.cancellation.CancellationException
 
-class GetDiscoverFeed private constructor(
+@Inject
+class GetDiscoverFeed(
     private val integrationRegistry: IntegrationRegistry,
     private val searchIntegrations: SearchIntegrations,
 ) {
 
-    @Inject
-    constructor(integrationRegistry: IntegrationRegistry) : this(
+    internal constructor(integrationRegistry: IntegrationRegistry) : this(
         integrationRegistry = integrationRegistry,
         searchIntegrations = SearchIntegrations(integrationRegistry),
     )
