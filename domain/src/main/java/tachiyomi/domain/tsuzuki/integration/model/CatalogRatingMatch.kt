@@ -9,4 +9,11 @@ data class CatalogRatingMatch(
      * canonical cross-provider identity.
      */
     val verifiedIdentity: Boolean = true,
-)
+) {
+    val identityEvidence: RatingIdentityEvidence
+        get() = if (verifiedIdentity) {
+            RatingIdentityEvidence.VERIFIED
+        } else {
+            RatingIdentityEvidence.CORROBORATED_RATING_ONLY
+        }
+}
