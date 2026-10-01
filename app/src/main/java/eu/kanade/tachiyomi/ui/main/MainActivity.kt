@@ -524,6 +524,27 @@ class MainActivity : BaseActivity() {
 
     private fun handleIntentAction(intent: Intent, navigator: Navigator): Boolean {
         when (
+            val canonicalTitle = parseCanonicalTitleOpenRoute(
+                intent.action,
+                intent.getStringExtra(EXTRA_CANONICAL_TITLE_ID),
+            )
+        ) {
+            is MainActivityCanonicalTitleRoute.Open -> {
+                navigator.popUntilRoot()
+                navigator.push(CanonicalTitleScreen(canonicalTitle.canonicalTitleId))
+                ready = true
+                return true
+            }
+
+            MainActivityCanonicalTitleRoute.IgnoreInvalid -> {
+                ready = true
+                return true
+            }
+
+            null -> Unit
+        }
+
+        when (
             val sourceDiscovery = parseCanonicalTitleSourceDiscoveryRoute(
                 intent.action,
                 intent.getStringExtra(EXTRA_CANONICAL_TITLE_ID),
@@ -638,10 +659,28 @@ class MainActivity : BaseActivity() {
         const val INTENT_SEARCH_QUERY = "query"
         const val INTENT_SEARCH_FILTER = "filter"
 
+        internal const val ACTION_OPEN_CANONICAL_TITLE =
+            "eu.kanade.tachiyomi.internal.OPEN_CANONICAL_TITLE"
         internal const val ACTION_FIND_OR_ADD_READING_SOURCE =
             "eu.kanade.tachiyomi.internal.FIND_OR_ADD_READING_SOURCE"
         internal const val EXTRA_CANONICAL_TITLE_ID =
             "eu.kanade.tachiyomi.internal.CANONICAL_TITLE_ID"
+
+        internal fun openCanonicalTitleIntent(
+            context: Context,
+            canonicalTitleId: String,
+        ): Intent? {
+            val route = parseCanonicalTitleOpenRoute(
+                action = ACTION_OPEN_CANONICAL_TITLE,
+                canonicalTitleId = canonicalTitleId,
+            )
+            if (route !is MainActivityCanonicalTitleRoute.Open) return null
+
+            return Intent(context, MainActivity::class.java)
+                .setAction(ACTION_OPEN_CANONICAL_TITLE)
+                .putExtra(EXTRA_CANONICAL_TITLE_ID, route.canonicalTitleId)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
 
         internal fun findOrAddReadingSourceIntent(
             context: Context,
@@ -659,6 +698,24 @@ class MainActivity : BaseActivity() {
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
     }
+}
+
+internal sealed interface MainActivityCanonicalTitleRoute {
+    data class Open(val canonicalTitleId: String) : MainActivityCanonicalTitleRoute
+
+    data object IgnoreInvalid : MainActivityCanonicalTitleRoute
+}
+
+internal fun parseCanonicalTitleOpenRoute(
+    action: String?,
+    canonicalTitleId: String?,
+): MainActivityCanonicalTitleRoute? {
+    if (action != MainActivity.ACTION_OPEN_CANONICAL_TITLE) return null
+
+    return canonicalTitleId
+        ?.takeIf(String::isNotBlank)
+        ?.let { MainActivityCanonicalTitleRoute.Open(it) }
+        ?: MainActivityCanonicalTitleRoute.IgnoreInvalid
 }
 
 internal sealed interface MainActivityIntentRoute {

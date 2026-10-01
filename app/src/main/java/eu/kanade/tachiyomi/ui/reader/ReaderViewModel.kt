@@ -467,6 +467,10 @@ class ReaderViewModel(
                 sourceUrl = manga.url,
             ) ?: return
 
+            mutableState.update { state ->
+                state.copy(canonicalTitleId = mapping.canonicalTitleId)
+            }
+
             val sourceAvailable = source !is StubSource
             if (
                 mapping.mihonMangaId != manga.id ||
@@ -543,6 +547,15 @@ class ReaderViewModel(
         selectedOption: ContentOption? = null,
         recordPreviousHistory: Boolean = false,
     ) {
+        canonicalChapterRepository.getById(canonicalChapterId)
+            ?.canonicalTitleId
+            ?.takeIf(String::isNotBlank)
+            ?.let { canonicalTitleId ->
+                mutableState.update { state ->
+                    state.copy(canonicalTitleId = canonicalTitleId)
+                }
+            }
+
         when (val plan = planCanonicalReaderTarget(canonicalChapterId, target)) {
             is CanonicalReaderTargetPlan.Mihon -> {
                 val manga = getManga.await(plan.mangaId)
@@ -850,6 +863,7 @@ class ReaderViewModel(
         withUIContext {
             mutableState.update {
                 it.copy(
+                    canonicalTitleId = canonicalTitleId,
                     dialog = Dialog.ContentSelector(
                         canonicalTitleId = canonicalTitleId,
                         canonicalChapterId = canonicalChapterId,
@@ -1850,6 +1864,7 @@ class ReaderViewModel(
     data class State(
         val manga: Manga? = null,
         val source: Source? = null,
+        val canonicalTitleId: String? = null,
         val activeContentLabel: String? = null,
         val activeContentOptionKey: String? = null,
         val initError: Throwable? = null,
