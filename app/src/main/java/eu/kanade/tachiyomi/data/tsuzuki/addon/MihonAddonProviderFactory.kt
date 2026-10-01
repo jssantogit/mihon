@@ -13,6 +13,7 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
@@ -28,6 +29,7 @@ class MihonAddonProviderFactory(
     private val chapterInventoryDiagnostics: ChapterInventoryDiagnostics,
     private val sourceEligibilityRepository: AddonSourceEligibilityRepository,
     private val volumeParser: ParseCanonicalChapterVolume,
+    private val chapterRefreshSnapshotRepository: ChapterRefreshSnapshotRepository,
 ) {
 
     fun contentProvider(addonId: AddonId) = MihonContentProvider(
@@ -51,6 +53,7 @@ class MihonAddonProviderFactory(
         diagnostics = chapterInventoryDiagnostics,
         enabledSourceIds = { enabledSources(addonId) },
         volumeParser = volumeParser,
+        refreshSnapshots = chapterRefreshSnapshotRepository,
     )
 
     private suspend fun enabledSources(addonId: AddonId): Set<Long> =

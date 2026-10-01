@@ -12,6 +12,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
+import tachiyomi.domain.tsuzuki.addon.ChapterProbeRefresh
+import tachiyomi.domain.tsuzuki.addon.RefreshAwareChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
@@ -21,6 +23,9 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticSt
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnostics
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.recordIfEnabled
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshConfigurationFingerprint
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshot
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.cache.ContentOptionCache
@@ -41,6 +46,7 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 class RefreshChapterEvidence private constructor(
@@ -53,6 +59,8 @@ class RefreshChapterEvidence private constructor(
     private val diagnostics: ChapterInventoryDiagnostics,
     private val discoverReadableTitle: DiscoverReadableTitle?,
     private val structuredDiagnostics: StructuredDiagnosticRecorder,
+    private val refreshSnapshots: ChapterRefreshSnapshotRepository?,
+    private val clock: () -> Long,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
@@ -67,6 +75,7 @@ class RefreshChapterEvidence private constructor(
         diagnostics: ChapterInventoryDiagnostics,
         discoverReadableTitle: DiscoverReadableTitle,
         structuredDiagnostics: StructuredDiagnosticRecorder,
+        refreshSnapshots: ChapterRefreshSnapshotRepository,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
@@ -77,6 +86,8 @@ class RefreshChapterEvidence private constructor(
         diagnostics = diagnostics,
         discoverReadableTitle = discoverReadableTitle,
         structuredDiagnostics = structuredDiagnostics,
+        refreshSnapshots = refreshSnapshots,
+        clock = { Clock.System.now().toEpochMilliseconds() },
         constructorMarker = Unit,
     )
 
@@ -98,6 +109,8 @@ class RefreshChapterEvidence private constructor(
         diagnostics = diagnostics,
         discoverReadableTitle = discoverReadableTitle,
         structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
+        refreshSnapshots = null,
+        clock = { Clock.System.now().toEpochMilliseconds() },
         constructorMarker = Unit,
     )
 
@@ -114,10 +127,32 @@ class RefreshChapterEvidence private constructor(
         diagnostics = NoOpChapterInventoryDiagnostics,
         discoverReadableTitle = null,
         structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
+        refreshSnapshots = null,
+        clock = { Clock.System.now().toEpochMilliseconds() },
         constructorMarker = Unit,
     )
 
-    suspend fun execute(canonicalTitleId: String): Result<Unit> {
+    constructor(
+        registry: IntegrationRegistry,
+        reconcileChapterEvidence: ReconcileChapterEvidence,
+        refreshSnapshots: ChapterRefreshSnapshotRepository,
+        clock: () -> Long,
+    ) : this(
+        registry = registry,
+        reconcileChapterEvidence = reconcileChapterEvidence,
+        addonRegistry = null,
+        resolveContentBinding = null,
+        contentOptionCache = null,
+        inFlightContentResolution = null,
+        diagnostics = NoOpChapterInventoryDiagnostics,
+        discoverReadableTitle = null,
+        structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
+        refreshSnapshots = refreshSnapshots,
+        clock = clock,
+        constructorMarker = Unit,
+    )
+
+    suspend fun execute(canonicalTitleId: String, forceRefresh: Boolean = false): Result<Unit> {
         val trace = DiagnosticTrace.start(
             recorder = structuredDiagnostics,
             workflow = DiagnosticWorkflow.CHAPTER_REFRESH,
@@ -133,32 +168,41 @@ class RefreshChapterEvidence private constructor(
         )
         return try {
             registry.awaitReady()
-            // Break the zero-binding/zero-chapter deadlock before probing inventories.
-            // Safe, unambiguous matches are persisted; ambiguous matches remain manual.
+            addonRegistry?.awaitReady()
+            val configurationFingerprint = if (refreshSnapshots == null) {
+                ""
+            } else {
+                refreshConfigurationFingerprint()
+            }
+            if (!forceRefresh && isFresh(canonicalTitleId, configurationFingerprint)) {
+                trace.event(
+                    subsystem = DiagnosticSubsystem.CHAPTER,
+                    name = DiagnosticEventName.CHAPTER_REFRESH_COMPLETED,
+                    stage = DiagnosticStage.COMPLETE,
+                    outcome = DiagnosticOutcome.SUCCEEDED,
+                    durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                )
+                return Result.success(Unit)
+            }
+
             val initialBindings = try {
                 discoverReadableTitle?.execute(canonicalTitleId)?.getOrNull().orEmpty()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                // Best effort only: existing bindings/integration evidence must still refresh.
                 emptyList()
             }
-            // Integration metadata and Add-on inventories are independent until
-            // reconciliation. Running the first pass concurrently avoids serial network waits.
-            val evidence = coroutineScope {
+
+            val collections = coroutineScope {
                 val integrations = async { collectIntegrationEvidence(canonicalTitleId) }
                 val initialAddons = async { collectAddonEvidence(canonicalTitleId) }
                 val integrationEvidence = integrations.await()
                 var addonEvidence = initialAddons.await()
 
-                // A safe title binding is not proof that its edition actually exposes chapters.
-                // Keep broadening while each newly bound edition is empty, but only while the
-                // discovery result grows. This prevents both a stale-binding dead end and an
-                // unbounded provider sweep.
                 val knownBindingIds = initialBindings.mapTo(linkedSetOf(), ContentBinding::id)
                 var broadenAttempt = 0
                 while (
-                    addonEvidence.isEmpty() &&
+                    addonEvidence.observedChapterCount == 0 &&
                     broadenAttempt < MAX_EMPTY_BINDING_BROADEN_ATTEMPTS
                 ) {
                     broadenAttempt++
@@ -175,12 +219,38 @@ class RefreshChapterEvidence private constructor(
                     val newBindings = broadened.filter { it.id !in knownBindingIds }
                     if (newBindings.isEmpty()) break
                     knownBindingIds += newBindings.map(ContentBinding::id)
-                    addonEvidence = collectAddonEvidence(canonicalTitleId)
+                    addonEvidence = addonEvidence.merge(collectAddonEvidence(canonicalTitleId))
                 }
-
-                (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id)
+                integrationEvidence to addonEvidence
             }
-            reconcileChapterEvidence.execute(canonicalTitleId, evidence)
+            val integrationEvidence = collections.first
+            val addonEvidence = collections.second
+            val evidence = (integrationEvidence.evidence + addonEvidence.evidence)
+                .distinctBy(ChapterEvidence::id)
+
+            if (evidence.isNotEmpty()) {
+                reconcileChapterEvidence.execute(canonicalTitleId, evidence)
+            }
+            addonEvidence.pendingSnapshots
+                .associateBy(ChapterRefreshSnapshot::scopeKey)
+                .values
+                .forEach { snapshot -> refreshSnapshots?.upsertIfNewer(snapshot) }
+
+            if (integrationEvidence.complete && addonEvidence.complete && refreshSnapshots != null) {
+                val now = clock()
+                refreshSnapshots.upsertIfNewer(
+                    ChapterRefreshSnapshot(
+                        canonicalTitleId = canonicalTitleId,
+                        scopeKey = ChapterRefreshSnapshot.TITLE_SCOPE,
+                        fingerprint = null,
+                        configurationFingerprint = configurationFingerprint,
+                        observedAt = now,
+                        refreshedAt = now,
+                        itemCount = evidence.size,
+                    ),
+                )
+            }
+
             trace.event(
                 subsystem = DiagnosticSubsystem.CHAPTER,
                 name = DiagnosticEventName.CHAPTER_EVIDENCE_RECONCILED,
@@ -190,14 +260,14 @@ class RefreshChapterEvidence private constructor(
                     DiagnosticAttribute.ITEM_COUNT to DiagnosticAttributeValue.Number(evidence.size.toLong()),
                 ),
             )
-            // Chapter mappings may have changed; never serve stale provider
-            // work or cached options that were resolved against an older graph.
-            invalidateContentOptionsAfterChapterRefresh(
-                invalidateInFlight = {
-                    inFlightContentResolution?.invalidateTitle(canonicalTitleId)
-                },
-                invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
-            )
+            if (evidence.isNotEmpty()) {
+                invalidateContentOptionsAfterChapterRefresh(
+                    invalidateInFlight = {
+                        inFlightContentResolution?.invalidateTitle(canonicalTitleId)
+                    },
+                    invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
+                )
+            }
             trace.event(
                 subsystem = DiagnosticSubsystem.CHAPTER,
                 name = DiagnosticEventName.CHAPTER_REFRESH_COMPLETED,
@@ -279,6 +349,7 @@ class RefreshChapterEvidence private constructor(
                 },
             ) { "Targeted inventory belongs to another title or Add-on" }
             reconcileChapterEvidence.execute(binding.canonicalTitleId, observations)
+            refreshSnapshots?.invalidateTitle(binding.canonicalTitleId)
             invalidateContentOptionsAfterChapterRefresh(
                 invalidateInFlight = {
                     inFlightContentResolution?.invalidateTitleAddon(
@@ -306,9 +377,9 @@ class RefreshChapterEvidence private constructor(
 
     private suspend fun collectIntegrationEvidence(
         canonicalTitleId: String,
-    ): List<ChapterEvidence> = coroutineScope {
+    ): EvidenceCollection = coroutineScope {
         val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
-        registry.chapterEvidenceProviders()
+        val results = registry.chapterEvidenceProviders()
             .map { provider ->
                 async {
                     gate.withPermit {
@@ -316,11 +387,15 @@ class RefreshChapterEvidence private constructor(
                             provider.evidenceFor(canonicalTitleId)
                                 .fold(
                                     onSuccess = { observations ->
-                                        observations.takeIf {
+                                        val accepted = observations.takeIf {
                                             it.all { observation ->
                                                 observation.canonicalTitleId == canonicalTitleId
                                             }
                                         }.orEmpty()
+                                        EvidenceCollection(
+                                            evidence = accepted,
+                                            complete = accepted.size == observations.size,
+                                        )
                                     },
                                     onFailure = { error ->
                                         if (error is CancellationException) throw error
@@ -329,7 +404,7 @@ class RefreshChapterEvidence private constructor(
                                             outcome = error.toDiagnosticOutcome(),
                                             received = 0,
                                         )
-                                        emptyList()
+                                        EvidenceCollection(emptyList(), complete = false)
                                     },
                                 )
                         } catch (error: CancellationException) {
@@ -339,20 +414,23 @@ class RefreshChapterEvidence private constructor(
                                 canonicalTitleId = canonicalTitleId,
                                 outcome = error.toDiagnosticOutcome(),
                             )
-                            emptyList()
+                            EvidenceCollection(emptyList(), complete = false)
                         }
                     }
                 }
             }
             .awaitAll()
-            .flatten()
+        EvidenceCollection(
+            evidence = results.flatMap(EvidenceCollection::evidence),
+            complete = results.all(EvidenceCollection::complete),
+        )
     }
 
     private suspend fun collectAddonEvidence(
         canonicalTitleId: String,
-    ): List<ChapterEvidence> {
-        val addonRegistry = addonRegistry ?: return emptyList()
-        val resolver = resolveContentBinding ?: return emptyList()
+    ): AddonEvidenceCollection {
+        val addonRegistry = addonRegistry ?: return AddonEvidenceCollection()
+        val resolver = resolveContentBinding ?: return AddonEvidenceCollection()
         try {
             addonRegistry.awaitReady()
         } catch (error: CancellationException) {
@@ -375,7 +453,7 @@ class RefreshChapterEvidence private constructor(
 
         return coroutineScope {
             val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
-            addonRegistry.chapterProbeProviders()
+            val results = addonRegistry.chapterProbeProviders()
                 .map { provider ->
                     async {
                         gate.withPermit {
@@ -399,7 +477,7 @@ class RefreshChapterEvidence private constructor(
                                             outcome = outcome,
                                             reason = reason,
                                         )
-                                        return@withPermit emptyList()
+                                        return@withPermit AddonEvidenceCollection(complete = false)
                                     }
                                 if (bindings.isEmpty()) {
                                     recordRefreshOutcome(
@@ -408,41 +486,58 @@ class RefreshChapterEvidence private constructor(
                                         outcome = ChapterInventoryDiagnosticOutcome.NO_BINDING,
                                         reason = ChapterInventoryDiagnosticReason.NO_BINDING,
                                     )
-                                    return@withPermit emptyList()
+                                    return@withPermit AddonEvidenceCollection()
                                 }
 
-                                provider.probe(canonicalTitleId)
-                                    .fold(
-                                        onSuccess = { observations ->
-                                            val accepted = observations.takeIf {
-                                                it.all { observation ->
-                                                    observation.canonicalTitleId == canonicalTitleId
-                                                }
-                                            }.orEmpty()
-                                            recordRefreshOutcome(
-                                                canonicalTitleId = canonicalTitleId,
-                                                addonId = provider.addonId.value,
-                                                outcome = if (accepted.isEmpty()) {
-                                                    ChapterInventoryDiagnosticOutcome.EMPTY
-                                                } else {
+                                val refresh = if (provider is RefreshAwareChapterProbeProvider) {
+                                    provider.probeRefresh(canonicalTitleId)
+                                } else {
+                                    provider.probe(canonicalTitleId).map { observations ->
+                                        ChapterProbeRefresh(
+                                            evidence = observations,
+                                            observedBindingCount = bindings.size,
+                                            observedChapterCount = observations.size,
+                                        )
+                                    }
+                                }
+                                refresh.fold(
+                                    onSuccess = { batch ->
+                                        val accepted = batch.evidence.takeIf {
+                                            it.all { observation ->
+                                                observation.canonicalTitleId == canonicalTitleId
+                                            }
+                                        }.orEmpty()
+                                        recordRefreshOutcome(
+                                            canonicalTitleId = canonicalTitleId,
+                                            addonId = provider.addonId.value,
+                                            outcome = when {
+                                                batch.unchangedBindingCount > 0 && accepted.isEmpty() ->
                                                     ChapterInventoryDiagnosticOutcome.SUCCESS
-                                                },
-                                                received = observations.size,
-                                                accepted = accepted.size,
-                                                discarded = observations.size - accepted.size,
-                                            )
-                                            accepted
-                                        },
-                                        onFailure = { error ->
-                                            if (error is CancellationException) throw error
-                                            recordRefreshOutcome(
-                                                canonicalTitleId = canonicalTitleId,
-                                                addonId = provider.addonId.value,
-                                                outcome = error.toDiagnosticOutcome(),
-                                            )
-                                            emptyList()
-                                        },
-                                    )
+                                                accepted.isEmpty() -> ChapterInventoryDiagnosticOutcome.EMPTY
+                                                else -> ChapterInventoryDiagnosticOutcome.SUCCESS
+                                            },
+                                            received = batch.evidence.size,
+                                            accepted = accepted.size,
+                                            discarded = batch.evidence.size - accepted.size,
+                                        )
+                                        AddonEvidenceCollection(
+                                            evidence = accepted,
+                                            observedBindingCount = batch.observedBindingCount,
+                                            observedChapterCount = batch.observedChapterCount,
+                                            pendingSnapshots = batch.pendingSnapshots,
+                                            complete = accepted.size == batch.evidence.size,
+                                        )
+                                    },
+                                    onFailure = { error ->
+                                        if (error is CancellationException) throw error
+                                        recordRefreshOutcome(
+                                            canonicalTitleId = canonicalTitleId,
+                                            addonId = provider.addonId.value,
+                                            outcome = error.toDiagnosticOutcome(),
+                                        )
+                                        AddonEvidenceCollection(complete = false)
+                                    },
+                                )
                             } catch (error: CancellationException) {
                                 if (error is kotlinx.coroutines.TimeoutCancellationException) {
                                     recordRefreshOutcome(
@@ -458,13 +553,13 @@ class RefreshChapterEvidence private constructor(
                                     addonId = provider.addonId.value,
                                     outcome = error.toDiagnosticOutcome(),
                                 )
-                                emptyList()
+                                AddonEvidenceCollection(complete = false)
                             }
                         }
                     }
                 }
                 .awaitAll()
-                .flatten()
+            results.fold(AddonEvidenceCollection()) { accumulated, item -> accumulated.merge(item) }
         }
     }
 
@@ -484,6 +579,56 @@ class RefreshChapterEvidence private constructor(
         } catch (error: Throwable) {
             Result.failure(error)
         }
+    }
+
+    private suspend fun isFresh(
+        canonicalTitleId: String,
+        configurationFingerprint: String,
+    ): Boolean {
+        val repository = refreshSnapshots ?: return false
+        val snapshot = repository.get(canonicalTitleId, ChapterRefreshSnapshot.TITLE_SCOPE) ?: return false
+        if (snapshot.configurationFingerprint != configurationFingerprint) return false
+        val age = clock() - snapshot.refreshedAt
+        return age in 0 until CHAPTER_REFRESH_TTL_MILLIS
+    }
+
+    private suspend fun refreshConfigurationFingerprint(): String {
+        val tokens = mutableListOf<String>()
+        registry.chapterEvidenceProviders()
+            .mapTo(tokens) { provider -> "integration:${provider.producerId}" }
+        addonRegistry?.chapterProbeProviders().orEmpty().forEach { provider ->
+            val providerToken = if (provider is RefreshAwareChapterProbeProvider) {
+                provider.refreshConfigurationFingerprint()
+            } else {
+                provider.addonId.value
+            }
+            tokens += "addon:$providerToken"
+        }
+        return ChapterRefreshConfigurationFingerprint.compute(tokens)
+    }
+
+    private data class EvidenceCollection(
+        val evidence: List<ChapterEvidence>,
+        val complete: Boolean = true,
+    )
+
+    private data class AddonEvidenceCollection(
+        val evidence: List<ChapterEvidence> = emptyList(),
+        val observedBindingCount: Int = 0,
+        val observedChapterCount: Int = 0,
+        val pendingSnapshots: List<ChapterRefreshSnapshot> = emptyList(),
+        val complete: Boolean = true,
+    ) {
+        fun merge(other: AddonEvidenceCollection): AddonEvidenceCollection = AddonEvidenceCollection(
+            evidence = (evidence + other.evidence).distinctBy(ChapterEvidence::id),
+            observedBindingCount = observedBindingCount + other.observedBindingCount,
+            observedChapterCount = observedChapterCount + other.observedChapterCount,
+            pendingSnapshots = (pendingSnapshots + other.pendingSnapshots)
+                .associateBy(ChapterRefreshSnapshot::scopeKey)
+                .values
+                .toList(),
+            complete = complete && other.complete,
+        )
     }
 
     private fun recordRefreshOutcome(
@@ -516,6 +661,7 @@ class RefreshChapterEvidence private constructor(
     private companion object {
         const val MAX_CONCURRENT_EVIDENCE_PROVIDERS = 4
         const val MAX_EMPTY_BINDING_BROADEN_ATTEMPTS = 3
+        const val CHAPTER_REFRESH_TTL_MILLIS = 15 * 60 * 1000L
     }
 }
 
