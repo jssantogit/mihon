@@ -77,8 +77,35 @@ object SettingsAdvancedScreen : SearchableSettings {
         val networkPreferences = remember { graph.networkPreferences }
         val libraryPreferences = remember { graph.libraryPreferences }
         val crashLogUtil = remember { graph.crashLogUtil }
+        val diagnosticCaptureSession = remember { graph.diagnosticCaptureSession }
+        var diagnosticCaptureActive by remember {
+            mutableStateOf(diagnosticCaptureSession.current() != null)
+        }
 
         return listOf(
+            Preference.PreferenceItem.TextPreference(
+                title = if (diagnosticCaptureActive) {
+                    "Encerrar sessão de diagnóstico"
+                } else {
+                    "Iniciar sessão de diagnóstico"
+                },
+                subtitle = if (diagnosticCaptureActive) {
+                    "A captura detalhada está ativa e expira automaticamente em até 15 minutos."
+                } else {
+                    "Isola uma janela de até 15 minutos para reproduzir e exportar um problema."
+                },
+                onClick = {
+                    if (diagnosticCaptureActive) {
+                        diagnosticCaptureSession.stop()
+                        diagnosticCaptureActive = false
+                        context.toast("Sessão de diagnóstico encerrada")
+                    } else {
+                        diagnosticCaptureSession.start()
+                        diagnosticCaptureActive = true
+                        context.toast("Sessão de diagnóstico iniciada por até 15 minutos")
+                    }
+                },
+            ),
             Preference.PreferenceItem.TextPreference(
                 title = stringResource(MR.strings.pref_dump_crash_logs),
                 subtitle = stringResource(MR.strings.pref_dump_crash_logs_summary),
