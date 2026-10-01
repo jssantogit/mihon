@@ -1,7 +1,7 @@
 # Tsuzuki Rating — implementation plan
 
 **Date:** 2026-10-01  
-**Status:** Waves 1–2 implemented; Wave 2 validation re-requested after first-party integration controls
+**Status:** Waves 1–3 implemented; Wave 3 validation requested
 
 ## Product definition
 
@@ -50,11 +50,13 @@ Corroborated rating-only evidence may contribute to Tsuzuki Rating but never bec
 
 ## Wave 3 — diagnostics and acceptance
 
-- record bounded aggregate composition diagnostics: source count, verified/corroborated counts and whether an aggregate was produced;
-- never export raw titles or arbitrary provider payloads;
+- record bounded aggregate composition diagnostics: source count, verified/corroborated counts, Tsuzuki Ratings enabled state and whether an aggregate was produced;
+- never export raw titles, raw score payloads or arbitrary provider payloads;
+- sanitizer tests enforce the bounded diagnostic contract;
+- unit acceptance covers aggregate source counts from 2 through 6;
 - full CI on every wave;
 - final signed APK only after all waves merge;
-- physical smoke with works exposing 1 through 6 ratings.
+- physical smoke with works exposing 1 through 6 ratings and both Tsuzuki switches.
 
 ## Invariants
 
