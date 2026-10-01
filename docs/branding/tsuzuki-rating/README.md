@@ -15,7 +15,7 @@ The approved mark uses:
 - a multicolor radial halo that represents multiple rating signals converging into a Tsuzuki result;
 - no fixed number of halo elements tied to the current number of rating providers.
 
-The mark is a **Tsuzuki Rating sub-brand**, not a replacement for the main Tsuzuki application logo. The core Tsuzuki brand remains monochrome-first.
+The Tsuzuki Rating mark is a **chromatic extension of the main Tsuzuki mark**. Its core concept is shared with the official three-form negative-space T; RGB treatment and the radial halo distinguish the rating identity. The main application mark itself remains monochrome-first and halo-free.
 
 ## Product meaning
 
@@ -38,4 +38,4 @@ Provider-native ratings remain individually identifiable and must not be replace
 
 Treat `tsuzuki-rating.svg` as the visual source of truth for this mark.
 
-Future platform-specific conversions (for example Android VectorDrawable or Compose-native paths) must preserve the approved silhouette, negative-space T, halo density and RGB character rather than reinterpret the symbol.
+Future platform-specific conversions (for example Android VectorDrawable or Compose-native paths) must preserve the approved core silhouette, negative-space T, halo density and RGB character rather than reinterpret the symbol. The core should remain visually related to `docs/brand/tsuzuki-mark.svg`.
