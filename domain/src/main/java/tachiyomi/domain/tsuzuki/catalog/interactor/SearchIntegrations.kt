@@ -14,6 +14,8 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 
 @Inject
 class SearchIntegrations(
@@ -93,7 +95,11 @@ class SearchIntegrations(
                     .filterNot { provider -> provider.integrationId.value in existingProviders }
                     .map { provider ->
                         async {
-                            try {
+                            localRatingMatch(
+                                item = identifiedItem,
+                                providerId = provider.integrationId.value,
+                                candidates = items,
+                            ) ?: try {
                                 semaphore.withPermit {
                                     provider.ratingFor(identifiedItem)
                                         .getOrNullPreservingCancellation()
@@ -142,6 +148,31 @@ class SearchIntegrations(
                 )
             }
         }.awaitAll()
+    }
+
+    private fun localRatingMatch(
+        item: CatalogItem,
+        providerId: String,
+        candidates: List<CatalogItem>,
+    ): CatalogRatingMatch? {
+        val providerCandidates = candidates.filter { candidate ->
+            candidate.provider == providerId && candidate.providerId != item.providerId
+        }
+        val candidate = matchRatingOnlyCandidate(item, providerCandidates) ?: return null
+        val score = candidate.scores
+            .ifEmpty { listOfNotNull(candidate.score) }
+            .firstOrNull { it.provider == providerId }
+            ?: return null
+        return CatalogRatingMatch(
+            externalId = candidate.providerId,
+            rating = ExternalRating(
+                providerId = providerId,
+                label = providerId,
+                value = score.value,
+                scaleMax = score.maxValue,
+            ),
+            verifiedIdentity = false,
+        )
     }
 
     private fun <T> Result<T>.getOrNullPreservingCancellation(): T? {
