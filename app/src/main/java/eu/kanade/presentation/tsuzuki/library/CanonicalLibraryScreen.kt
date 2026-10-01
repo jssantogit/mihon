@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
@@ -46,9 +47,11 @@ import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.tsuzuki.recordArtworkLoad
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryCardModel
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryReadingState
 import eu.kanade.tachiyomi.ui.tsuzuki.library.CanonicalLibraryScreenState
+import mihon.app.di.appGraph
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Delete
 import mihon.icons.materialsymbols.rounded.FilterList
@@ -56,6 +59,9 @@ import mihon.icons.materialsymbols.rounded.MoreVert
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.library.model.LOCAL_LIBRARY_ORIGIN
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -440,6 +446,7 @@ private fun CanonicalLibraryList(
     onOpenItem: (CanonicalLibraryCardModel) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val recorder = LocalContext.current.appGraph.structuredDiagnosticRecorder
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 104.dp),
         modifier = modifier.fillMaxSize(),
@@ -451,6 +458,14 @@ private fun CanonicalLibraryList(
             items = items,
             key = CanonicalLibraryCardModel::canonicalTitleId,
         ) { item ->
+            val trace = remember(item.canonicalTitleId, recorder.sessionId) {
+                DiagnosticTrace.start(
+                    recorder = recorder,
+                    workflow = DiagnosticWorkflow.OPEN_TITLE,
+                    canonicalTitleId = item.canonicalTitleId,
+                    subsystem = DiagnosticSubsystem.IMAGE,
+                )
+            }
             MangaCover.Book(
                 data = item.coverUrl ?: item.sourceCover ?: item.localCoverUrl,
                 fallbackData = listOf(item.sourceCover, item.sourceCover?.url, item.localCoverUrl),
@@ -458,6 +473,7 @@ private fun CanonicalLibraryList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onOpenItem(item) },
+                onLoadEvent = { trace.recordArtworkLoad(it) },
             )
         }
     }
