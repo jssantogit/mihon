@@ -168,7 +168,7 @@ class CanonicalTitleScreenModel(
             if (alreadyLoaded == null) {
                 loadCachedFirst(canonicalTitleId)
             } else {
-                refreshInBackground(canonicalTitleId)
+                refreshInBackground(canonicalTitleId, forceChapterRefresh = false)
             }
         }
         return operation!!
@@ -178,7 +178,7 @@ class CanonicalTitleScreenModel(
         val id = canonicalTitleId ?: return null
         operation?.cancel()
         operation = viewModelScope.launch {
-            refreshInBackground(id)
+            refreshInBackground(id, forceChapterRefresh = true)
         }
         return operation
     }
@@ -433,7 +433,7 @@ class CanonicalTitleScreenModel(
                     "${(_state.value as? CanonicalTitleScreenState.Loaded)?.chapters?.size ?: 0} " +
                     "elapsed=${initialStart.elapsedNow()}"
             }
-            refreshInBackground(canonicalTitleId)
+            refreshInBackground(canonicalTitleId, forceChapterRefresh = false)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -441,7 +441,10 @@ class CanonicalTitleScreenModel(
         }
     }
 
-    private suspend fun refreshInBackground(canonicalTitleId: String) {
+    private suspend fun refreshInBackground(
+        canonicalTitleId: String,
+        forceChapterRefresh: Boolean,
+    ) {
         val refreshStart = TimeSource.Monotonic.markNow()
         val before = _state.value as? CanonicalTitleScreenState.Loaded
         if (before != null) {
@@ -450,7 +453,10 @@ class CanonicalTitleScreenModel(
 
         val errors = coroutineScope {
             val chapterRefresh = async {
-                refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull()
+                refreshChapterEvidence.execute(
+                    canonicalTitleId = canonicalTitleId,
+                    forceRefresh = forceChapterRefresh,
+                ).exceptionOrNull()
             }
             val metadataRefresh = async {
                 refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull()
