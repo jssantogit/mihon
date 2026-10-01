@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 
 class RatingOnlyCandidateMatcherTest {
-    // Full-stack checkpoint for multi-provider rating enrichment.
+    // Final full-stack checkpoint for multi-provider rating enrichment.
 
     @Test
     fun `exact title and publication year can corroborate an ephemeral rating match`() {
