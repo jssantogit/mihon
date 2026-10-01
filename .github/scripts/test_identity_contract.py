@@ -16,7 +16,7 @@ VALID_BUILD = """
 android {
     namespace = "eu.kanade.tachiyomi"
     defaultConfig {
-        applicationId = "app.mihon"
+        applicationId = "app.tsuzuki"
     }
 }
 """
@@ -69,6 +69,11 @@ env:
   TSUZUKI_KEYSTORE_PASSWORD: ${{ secrets.TSUZUKI_KEYSTORE_PASSWORD }}
   TSUZUKI_KEY_ALIAS: ${{ secrets.TSUZUKI_KEY_ALIAS }}
   TSUZUKI_KEY_PASSWORD: ${{ secrets.TSUZUKI_KEY_PASSWORD }}
+flags: -Penable-updater
+"""
+
+VALID_CI_WORKFLOW = """
+run: ./gradlew assembleRelease -Penable-updater
 """
 
 VALID_ABOUT_SCREEN = """
@@ -183,6 +188,7 @@ class IdentityContractTest(unittest.TestCase):
         app_info=VALID_APP_INFO,
         backup_creator=VALID_BACKUP_CREATOR,
         apk_workflow=VALID_APK_WORKFLOW,
+        ci_workflow=VALID_CI_WORKFLOW,
         about_screen=VALID_ABOUT_SCREEN,
         more_screen=VALID_MORE_SCREEN,
         base_strings=VALID_BASE_STRINGS,
@@ -206,6 +212,7 @@ class IdentityContractTest(unittest.TestCase):
             "app/src/main/java/eu/kanade/tachiyomi/AppInfo.kt": app_info,
             "app/src/main/java/eu/kanade/tachiyomi/data/backup/create/BackupCreator.kt": backup_creator,
             ".github/workflows/apk.yml": apk_workflow,
+            ".github/workflows/ci-v2.yml": ci_workflow,
             "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt": about_screen,
             "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt": more_screen,
             "i18n/src/commonMain/moko-resources/base/strings.xml": base_strings,
@@ -232,8 +239,8 @@ class IdentityContractTest(unittest.TestCase):
         self.assertEqual(check_contract(self.make_repo()), [])
 
     def test_application_id_change_is_rejected(self):
-        root = self.make_repo(build=VALID_BUILD.replace('"app.mihon"', '"app.tsuzuki"'))
-        self.assertIn("applicationId must remain app.mihon", check_contract(root))
+        root = self.make_repo(build=VALID_BUILD.replace('"app.tsuzuki"', '"app.mihon"'))
+        self.assertIn("applicationId must be app.tsuzuki", check_contract(root))
 
     def test_android_namespace_change_is_rejected(self):
         root = self.make_repo(build=VALID_BUILD.replace('"eu.kanade.tachiyomi"', '"app.tsuzuki"'))
@@ -279,6 +286,19 @@ class IdentityContractTest(unittest.TestCase):
 
         root = self.make_repo(backup_creator=VALID_BACKUP_CREATOR.replace("BuildConfig.APPLICATION_ID", '"tsuzuki"'))
         self.assertIn("backup filename must continue to derive from BuildConfig.APPLICATION_ID", check_contract(root))
+
+    def test_inherited_mihon_telemetry_is_rejected(self):
+        root = self.make_repo(
+            apk_workflow=VALID_APK_WORKFLOW + "\nflags: -Pinclude-telemetry\n",
+            ci_workflow=VALID_CI_WORKFLOW + "\nrun: ./gradlew assembleRelease -Pinclude-telemetry\n",
+        )
+        google_services = root / "app/google-services.json"
+        google_services.parent.mkdir(parents=True, exist_ok=True)
+        google_services.write_text('{"project_id":"mihonapp"}', encoding="utf-8")
+        errors = check_contract(root)
+        self.assertIn("official APK workflow must not enable inherited Mihon telemetry", errors)
+        self.assertIn("official CI release compile must not enable inherited Mihon telemetry", errors)
+        self.assertIn("inherited Mihon Firebase configuration must remain absent", errors)
 
     def test_persistent_tsuzuki_signing_secret_names_are_required(self):
         root = self.make_repo(apk_workflow=VALID_APK_WORKFLOW.replace("TSUZUKI_KEY_ALIAS", "NEW_KEY_ALIAS"))
