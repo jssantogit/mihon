@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.util.Screen
+import mihon.icons.materialsymbols.MaterialSymbols
+import mihon.icons.materialsymbols.rounded.BugReport
 
 object SettingsTsuzukiAdvancedHubScreen : Screen() {
     @Composable
@@ -34,6 +36,16 @@ object SettingsTsuzukiAdvancedHubScreen : Screen() {
                     .fillMaxSize()
                     .padding(padding),
             ) {
+                ListItem(
+                    headlineContent = { Text("Logs") },
+                    leadingContent = {
+                        androidx.compose.material3.Icon(
+                            imageVector = MaterialSymbols.Rounded.BugReport,
+                            contentDescription = null,
+                        )
+                    },
+                    modifier = Modifier.clickable { navigator.push(SettingsTsuzukiLogsScreen) },
+                )
                 ListItem(
                     headlineContent = { Text("Segurança e Privacidade") },
                     modifier = Modifier.clickable { navigator.push(SettingsSecurityScreen) },
