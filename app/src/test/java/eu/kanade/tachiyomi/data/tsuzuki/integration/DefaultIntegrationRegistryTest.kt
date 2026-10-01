@@ -112,6 +112,7 @@ class DefaultIntegrationRegistryTest {
         )
 
         registry.manifests().map { it.integrationId.value }.toSet() shouldBe setOf(
+            "tsuzuki",
             "kitsu",
             "mal",
             "mangaupdates",
@@ -122,6 +123,46 @@ class DefaultIntegrationRegistryTest {
             "kavita",
             "suwayomi",
         )
+    }
+
+    @Test
+    fun `Tsuzuki ratings capability follows its own global and capability switches`() = runTest {
+        val settings = MutableStateFlow(
+            listOf(
+                IntegrationSettings(
+                    integrationId = IntegrationId("tsuzuki"),
+                    enabled = true,
+                    configJson = """{"ratings":true}""",
+                ),
+            ),
+        )
+        val registry = registry(
+            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            settings = settings,
+        )
+
+        registry.isGlobalCapabilityActive(
+            IntegrationId("tsuzuki"),
+            IntegrationCapability.RATINGS,
+        ) shouldBe true
+
+        settings.value = listOf(
+            IntegrationSettings(
+                integrationId = IntegrationId("tsuzuki"),
+                enabled = true,
+                configJson = """{"ratings":false}""",
+            ),
+        )
+        registry.isGlobalCapabilityActive(
+            IntegrationId("tsuzuki"),
+            IntegrationCapability.RATINGS,
+        ) shouldBe false
+
+        settings.value = fakeSettings("tsuzuki" to false)
+        registry.isGlobalCapabilityActive(
+            IntegrationId("tsuzuki"),
+            IntegrationCapability.RATINGS,
+        ) shouldBe false
     }
 
     @Test
@@ -189,6 +230,7 @@ class DefaultIntegrationRegistryTest {
         )
 
         registry.manifests().associate { it.integrationId.value to it.legacyTrackerId } shouldBe mapOf(
+            "tsuzuki" to null,
             "kitsu" to 3L,
             "mal" to 1L,
             "mangaupdates" to 7L,
