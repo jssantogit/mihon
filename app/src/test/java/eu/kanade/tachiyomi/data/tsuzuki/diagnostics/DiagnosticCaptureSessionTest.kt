@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.data.tsuzuki.diagnostics
 
 import io.mockk.every
-import io.mockk.firstArg
 import io.mockk.mockk
 import io.mockk.verifyOrder
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -34,7 +33,7 @@ class DiagnosticCaptureSessionTest {
         val recorder = mockk<StructuredDiagnosticRecorder>()
         every { recorder.sessionId } returns "00000000-0000-0000-0000-000000000001"
         every { recorder.record(any()) } answers {
-            events += firstArg()
+            events += firstArg<StructuredDiagnosticEvent>()
         }
 
         val session = DiagnosticCaptureSession(state, recorder)
