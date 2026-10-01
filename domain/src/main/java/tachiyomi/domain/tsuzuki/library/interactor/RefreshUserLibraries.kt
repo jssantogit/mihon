@@ -4,11 +4,6 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.integration.IntegrationId
-import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
-import tachiyomi.domain.tsuzuki.integration.UserListProvider
-import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
-import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
@@ -20,6 +15,11 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.integration.IntegrationId
+import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.library.model.ExternalLibraryMembership
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.repository.ExternalLibraryRepository
