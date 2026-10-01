@@ -11,13 +11,13 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import java.text.Normalizer
 import kotlin.coroutines.cancellation.CancellationException
 
-class SearchCatalog private constructor(
+@Inject
+class SearchCatalog(
     private val integrationRegistry: IntegrationRegistry,
     private val searchIntegrations: SearchIntegrations,
 ) {
 
-    @Inject
-    constructor(integrationRegistry: IntegrationRegistry) : this(
+    internal constructor(integrationRegistry: IntegrationRegistry) : this(
         integrationRegistry = integrationRegistry,
         searchIntegrations = SearchIntegrations(integrationRegistry),
     )
