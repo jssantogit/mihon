@@ -332,6 +332,16 @@ class IdentityContractTest(unittest.TestCase):
             check_contract(root),
         )
 
+    def test_retired_legacy_ui_packages_remain_absent(self):
+        root = self.make_repo()
+        retired = root / "app/src/main/java/mihon/feature/migration/config/Legacy.kt"
+        retired.parent.mkdir(parents=True, exist_ok=True)
+        retired.write_text("class Legacy", encoding="utf-8")
+        self.assertIn(
+            "retired legacy UI package must remain absent: app/src/main/java/mihon/feature/migration",
+            check_contract(root),
+        )
+
     def test_retired_launcher_shortcuts_remain_absent(self):
         root = self.make_repo()
         shortcuts = root / "app/src/main/shortcuts.xml"
