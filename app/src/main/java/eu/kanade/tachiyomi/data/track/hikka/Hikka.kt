@@ -236,7 +236,6 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
     }
 }
 
-
 interface HikkaIntegrationApi {
     suspend fun searchPublic(query: String): List<HKManga>
 
