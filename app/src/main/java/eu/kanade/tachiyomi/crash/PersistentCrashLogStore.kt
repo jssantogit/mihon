@@ -14,8 +14,8 @@ import kotlin.time.Clock
  */
 class PersistentCrashLogStore internal constructor(
     private val directory: File,
-    private val clockMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val environment: String = "",
+    private val clockMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
 
     constructor(context: Context) : this(
