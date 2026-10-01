@@ -29,6 +29,7 @@ class DiagnosticCaptureState(
     context: Context,
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
     @Synchronized
     fun start(durationMillis: Long = DEFAULT_CAPTURE_DURATION_MILLIS): ActiveDiagnosticCapture {
         require(durationMillis in MIN_CAPTURE_DURATION_MILLIS..MAX_CAPTURE_DURATION_MILLIS)
@@ -162,7 +163,6 @@ class DiagnosticCaptureState(
         const val MAX_CAPTURE_DURATION_MILLIS = 30L * 60 * 1_000
     }
 }
-
 
 internal fun filterStructuredHistoryForWindow(
     structuredHistory: String,
