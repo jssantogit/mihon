@@ -147,6 +147,48 @@ class CanonicalTitleScreenModelTest {
         coVerify(exactly = 1) { refresh.execute("title") }
     }
 
+    @Test
+    fun `explicit Detail refresh forces chapter revalidation while normal open does not`() = runTest(dispatcher) {
+        val chapters = FakeChapterRepository(emptyList())
+        val refresh = mockk<RefreshChapterEvidence>()
+        coEvery { refresh.execute("title", any()) } returns Result.success(Unit)
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getAll() } returns emptyList()
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = refresh,
+            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { refresh.execute("title", false) }
+        coVerify(exactly = 0) { refresh.execute("title", true) }
+
+        model.refresh()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { refresh.execute("title", true) }
+    }
+
     // Physical regression guard: production DI must deliver canonical artwork to Detail.
     @Test
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
