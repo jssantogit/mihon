@@ -38,7 +38,7 @@ object ChapterInventoryFingerprint {
                         chapter.sourceChapterUrl,
                         chapter.rawName,
                         chapter.language,
-                        chapter.rawNumberHint?.toString().orEmptyToken(),
+                        chapter.rawNumberHint.orEmptyToken(),
                         chapter.mihonMangaId.orEmptyToken(),
                     ).joinToString(separator = "\u0000")
                 }
