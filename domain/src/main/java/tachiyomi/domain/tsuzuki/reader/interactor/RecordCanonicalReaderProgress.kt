@@ -23,7 +23,7 @@ class RecordCanonicalReaderProgress internal constructor(
     private val compatibilityGateway: CanonicalReaderCompatibilityGateway,
     private val chapterUpdateStateRepository: ChapterUpdateStateRepository,
     private val clock: () -> Long,
-    private val structuredDiagnostics: StructuredDiagnosticRecorder,
+    private val structuredDiagnostics: StructuredDiagnosticRecorder = NoOpStructuredDiagnosticRecorder,
 ) {
 
     internal constructor(
