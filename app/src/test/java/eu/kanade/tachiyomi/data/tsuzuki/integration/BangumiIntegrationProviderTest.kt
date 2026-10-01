@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.time.Instant
@@ -21,6 +22,50 @@ class BangumiIntegrationProviderTest {
         val provider = BangumiIntegrationProvider.forTest(FakeBangumiIntegrationApi())
 
         (provider as Any is UserListProvider) shouldBe true
+    }
+
+    @Test
+    fun `bangumi exposes native ratings capability`() = runTest {
+        val provider = BangumiIntegrationProvider.forTest(
+            FakeBangumiIntegrationApi(
+                detailsById = mapOf(
+                    99 to track(99, "Berserk", 8.9),
+                ),
+            ),
+        )
+
+        (provider as Any is RatingsProvider) shouldBe true
+        val rating = (provider as RatingsProvider).ratings("99").getOrThrow().single()
+
+        rating.providerId shouldBe "bangumi"
+        rating.label shouldBe "Bangumi"
+        rating.value shouldBe 8.9
+        rating.scaleMax shouldBe 10.0
+    }
+
+    @Test
+    fun `bangumi can add an ephemeral rating without claiming cross-provider identity`() = runTest {
+        val provider = BangumiIntegrationProvider.forTest(
+            FakeBangumiIntegrationApi(
+                searchResults = listOf(
+                    track(99, "Star Embracing Swordmaster", 8.1).apply {
+                        start_date = "2023"
+                    },
+                ),
+            ),
+        )
+
+        val match = (provider as RatingsProvider).ratingFor(
+            tachiyomi.domain.tsuzuki.catalog.model.CatalogItem(
+                provider = "mal",
+                providerId = "123",
+                title = "Star-Embracing Swordmaster",
+                startDate = "2023-09-19",
+            ),
+        ).getOrThrow()
+
+        match?.rating?.value shouldBe 8.1
+        match?.verifiedIdentity shouldBe false
     }
 
     @Test
@@ -95,10 +140,12 @@ class BangumiIntegrationProviderTest {
 
     private class FakeBangumiIntegrationApi(
         private val browseResults: List<TrackSearch> = emptyList(),
+        private val searchResults: List<TrackSearch> = emptyList(),
+        private val detailsById: Map<Int, TrackSearch> = emptyMap(),
     ) : BangumiIntegrationApi {
         val browseRequests = mutableListOf<Triple<String, Int, Int>>()
 
-        override suspend fun search(query: String): List<TrackSearch> = emptyList()
+        override suspend fun search(query: String): List<TrackSearch> = searchResults
 
         override suspend fun browse(
             sort: String,
@@ -110,7 +157,7 @@ class BangumiIntegrationProviderTest {
         }
 
         override suspend fun getMangaDetails(id: Int): TrackSearch =
-            error("Not used")
+            detailsById[id] ?: error("Missing Bangumi fixture for id=$id")
     }
 
     private fun track(id: Long, title: String, score: Double): TrackSearch =

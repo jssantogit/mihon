@@ -6,11 +6,13 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 
 class MalIntegrationProviderTest {
 
@@ -99,6 +101,33 @@ class MalIntegrationProviderTest {
         ratings.map { it.label } shouldContainExactly listOf("MAL")
         ratings.map { it.value } shouldContainExactly listOf(8.72)
         ratings.map { it.scaleMax } shouldContainExactly listOf(10.0)
+    }
+
+    @Test
+    fun `mal recovers a missing rating through corroborated rating-only search`() = runTest {
+        val api = FakeMalIntegrationApi(
+            searchResults = listOf(
+                malTrack(
+                    id = 42,
+                    title = "Star Embracing Swordmaster",
+                    score = 8.26,
+                    startDate = "2023-09-19",
+                ),
+            ),
+        )
+        val provider = MalIntegrationProvider.forTest(api)
+
+        val match = (provider as RatingsProvider).ratingFor(
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "k1",
+                title = "Star-Embracing Swordmaster",
+                startDate = "2023-09-19",
+            ),
+        ).getOrThrow()
+
+        match?.rating?.value shouldBe 8.26
+        match?.verifiedIdentity shouldBe false
     }
 
     @Test

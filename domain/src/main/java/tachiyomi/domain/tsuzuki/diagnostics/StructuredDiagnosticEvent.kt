@@ -85,6 +85,7 @@ enum class DiagnosticEventName {
 
     METADATA_RESOLVE_STARTED,
     METADATA_PROVIDER_RESULT,
+    RATING_PROVIDER_RESULT,
     METADATA_RESOLVE_COMPLETED,
 
     LIBRARY_SYNC_STARTED,
@@ -204,6 +205,8 @@ enum class DiagnosticAttribute {
     REQUEST_DATA_PRESENT,
     INITIALIZED,
     COMPLETED,
+    IDENTITY_VERIFIED,
+    RATING_PRESENT,
 
     CANDIDATE_TYPE,
     CACHE_STATUS,
@@ -379,6 +382,8 @@ object StructuredDiagnosticSanitizer {
         DiagnosticAttribute.REQUEST_DATA_PRESENT,
         DiagnosticAttribute.INITIALIZED,
         DiagnosticAttribute.COMPLETED,
+        DiagnosticAttribute.IDENTITY_VERIFIED,
+        DiagnosticAttribute.RATING_PRESENT,
         -> value as? DiagnosticAttributeValue.Flag
 
         DiagnosticAttribute.LANGUAGE -> (value as? DiagnosticAttributeValue.Text)

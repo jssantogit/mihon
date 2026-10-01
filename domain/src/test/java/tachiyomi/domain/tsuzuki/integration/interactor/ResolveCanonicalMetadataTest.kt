@@ -21,6 +21,8 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.CapabilityPolicy
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
@@ -158,6 +160,51 @@ class ResolveCanonicalMetadataTest {
 
         resolved.ratingDetails?.providerId?.value shouldBe "mal"
         resolved.ratingDetails?.value?.value shouldBe 8.7
+    }
+
+    @Test
+    fun `detail supplements missing provider ratings without promoting inferred identity`() = runTest {
+        val repository = FakeCanonicalTitleRepository(
+            identities = listOf(
+                identity("kitsu", "k1"),
+            ),
+        )
+        val kitsu = FakeMetadataProvider(
+            "kitsu",
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "k1",
+                title = "Star-Embracing Swordmaster",
+                score = CatalogScore("kitsu", 79.88, 100.0),
+                startDate = "2023-09-19",
+            ),
+        )
+        val registry = FakeRegistry(
+            providers = listOf(kitsu),
+            ratingProviders = listOf(
+                FakeSupplementalRatingsProvider("mal", 8.26),
+                FakeSupplementalRatingsProvider("mangaupdates", 8.7),
+                FakeSupplementalRatingsProvider("bangumi", 8.1),
+            ),
+        )
+
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
+            .execute(TITLE_ID)
+            .getOrThrow()
+
+        resolved.ratings.map { it.providerId.value } shouldBe listOf(
+            "mal",
+            "kitsu",
+            "mangaupdates",
+            "bangumi",
+        )
+        resolved.ratings.map { it.value.value } shouldBe listOf(8.26, 79.88, 8.7, 8.1)
+        resolved.externalIds.keys shouldBe setOf(IntegrationId("kitsu"))
     }
 
     @Test
@@ -318,6 +365,7 @@ class ResolveCanonicalMetadataTest {
     private class FakeRegistry(
         private val providers: List<MetadataProvider>,
         private val disabled: Set<Pair<IntegrationId, IntegrationCapability>> = emptySet(),
+        private val ratingProviders: List<RatingsProvider> = emptyList(),
     ) : IntegrationRegistry {
         private val manifests = providers.map { provider ->
             IntegrationManifest(
@@ -349,9 +397,33 @@ class ResolveCanonicalMetadataTest {
 
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
 
-        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
 
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
+    }
+
+    private class FakeSupplementalRatingsProvider(
+        id: String,
+        private val value: Double,
+    ) : RatingsProvider {
+        override val integrationId = IntegrationId(id)
+
+        override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+            Result.success(emptyList())
+
+        override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> =
+            Result.success(
+                CatalogRatingMatch(
+                    externalId = "${integrationId.value}-rating-only",
+                    rating = ExternalRating(
+                        providerId = integrationId.value,
+                        label = integrationId.value,
+                        value = value,
+                        scaleMax = 10.0,
+                    ),
+                    verifiedIdentity = false,
+                ),
+            )
     }
 
     private class FakeCanonicalTitleRepository(

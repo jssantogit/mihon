@@ -245,6 +245,43 @@ class KitsuIntegrationProviderTest {
     }
 
     @Test
+    fun `kitsu recovers missing MAL bridge only as an ephemeral rating match`() = runTest {
+        val provider = KitsuIntegrationProvider(
+            KitsuCatalogProvider(
+                FakeKitsuClient(
+                    searchResult = Result.success(
+                        KitsuMangaResponse(
+                            data = listOf(
+                                KitsuMangaResource(
+                                    id = "kitsu-star",
+                                    type = "manga",
+                                    attributes = KitsuMangaAttributes(
+                                        canonicalTitle = "Star Embracing Swordmaster",
+                                        averageRating = "79.88",
+                                        startDate = "2023-09-19",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val match = (provider as RatingsProvider).ratingFor(
+            CatalogItem(
+                provider = "mal",
+                providerId = "123",
+                title = "Star-Embracing Swordmaster",
+                startDate = "2023-09-19",
+            ),
+        ).getOrThrow()
+
+        match?.rating?.value shouldBe 79.88
+        match?.verifiedIdentity shouldBe false
+    }
+
+    @Test
     fun `kitsu exposes account library capability`() = runTest {
         val provider = KitsuIntegrationProvider(
             KitsuCatalogProvider(

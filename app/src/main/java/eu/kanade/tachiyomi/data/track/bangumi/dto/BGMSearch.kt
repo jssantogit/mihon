@@ -31,6 +31,9 @@ data class BGMSubject(
     fun toTrackSearch(trackerId: Long): TrackSearch = TrackSearch.create(trackerId).apply {
         remote_id = this@BGMSubject.id
         title = nameCn.ifBlank { name }
+        alternate_titles = listOf(nameCn, name)
+            .filter(String::isNotBlank)
+            .distinct()
         cover_url = images?.common.orEmpty()
         summary = if (nameCn.isNotBlank()) {
             "作品原名：$name" + this@BGMSubject.summary?.let { "\n${it.trim()}" }.orEmpty()

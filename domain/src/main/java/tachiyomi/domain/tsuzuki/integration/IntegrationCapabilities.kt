@@ -68,6 +68,10 @@ interface RatingsProvider {
     /**
      * Resolves this provider's rating for a catalog work without treating the catalog provider as
      * rating authority. The default path only accepts an exact known provider identity.
+     *
+     * Implementations may additionally return a strict corroborated rating-only match with
+     * [CatalogRatingMatch.verifiedIdentity] = false. Such a match may be displayed as rating
+     * provenance but must never be promoted into canonical cross-provider identity.
      */
     suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
         val externalId = when {

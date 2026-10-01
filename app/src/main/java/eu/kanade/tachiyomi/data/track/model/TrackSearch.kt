@@ -39,6 +39,8 @@ class TrackSearch : Track {
 
     var artists: List<String> = emptyList()
 
+    var alternate_titles: List<String> = emptyList()
+
     var genres: List<String> = emptyList()
 
     var tags: List<String> = emptyList()

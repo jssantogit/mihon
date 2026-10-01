@@ -10,6 +10,7 @@ data class MURecord(
     @SerialName("series_id")
     val seriesId: Long? = null,
     val title: String? = null,
+    val associated: List<MUAssociatedTitle> = emptyList(),
     val url: String? = null,
     val description: String? = null,
     val image: MUImage? = null,
@@ -31,6 +32,10 @@ data class MURecord(
         return TrackSearch.create(id).apply {
             remote_id = this@MURecord.seriesId ?: 0L
             title = this@MURecord.title?.decodeHtmlIfNeeded() ?: ""
+            alternate_titles = this@MURecord.associated
+                .map { it.title.decodeHtmlIfNeeded() }
+                .filter(String::isNotBlank)
+                .distinct()
             total_chapters = 0
             cover_url = this@MURecord.image?.url?.original ?: ""
             summary = this@MURecord.description?.decodeHtmlIfNeeded() ?: ""
@@ -54,6 +59,11 @@ data class MURecord(
 private fun String.decodeHtmlIfNeeded(): String {
     return if (contains('<') || contains('&')) htmlDecode() else this
 }
+
+@Serializable
+data class MUAssociatedTitle(
+    val title: String,
+)
 
 @Serializable
 data class MUGenre(

@@ -107,7 +107,11 @@ class ResolveCanonicalMetadata(
 
             persistArtwork(canonicalTitleId, candidates)
 
-            val ratings = selectRatings(candidates)
+            val ratings = resolveRatings(
+                candidates = candidates,
+                identities = identities,
+                trace = trace,
+            )
 
             val resolved = ResolvedMetadata(
                 title = select(
@@ -306,6 +310,145 @@ class ResolveCanonicalMetadata(
             )
         }
         return null
+    }
+
+    private suspend fun resolveRatings(
+        candidates: List<Candidate>,
+        identities: List<ExternalIdentity>,
+        trace: DiagnosticTrace,
+    ): List<ProvenancedMetadata<ResolvedRating>> = coroutineScope {
+        val exactRatings = selectRatings(candidates)
+        exactRatings.forEach { rating ->
+            trace.child().event(
+                subsystem = DiagnosticSubsystem.METADATA,
+                name = DiagnosticEventName.RATING_PROVIDER_RESULT,
+                stage = DiagnosticStage.READ,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                attributes = mapOf(
+                    DiagnosticAttribute.PROVIDER_ID to DiagnosticAttributeValue.Text(rating.providerId.value),
+                    DiagnosticAttribute.IDENTITY_VERIFIED to DiagnosticAttributeValue.Flag(true),
+                    DiagnosticAttribute.RATING_PRESENT to DiagnosticAttributeValue.Flag(true),
+                ),
+            )
+        }
+        val existingProviderIds = exactRatings.map { it.providerId.value }.toSet()
+        val seed = buildRatingSeed(candidates, identities)
+            ?: return@coroutineScope exactRatings
+
+        val supplemental = registry.ratingsProviders()
+            .filterNot { provider -> provider.integrationId.value in existingProviderIds }
+            .map { provider ->
+                async {
+                    val result = provider.ratingFor(seed)
+                    val error = result.exceptionOrNull()
+                    if (error is CancellationException) throw error
+                    val match = result.getOrNull()
+                    trace.child().event(
+                        subsystem = DiagnosticSubsystem.METADATA,
+                        name = DiagnosticEventName.RATING_PROVIDER_RESULT,
+                        stage = DiagnosticStage.MATCH,
+                        outcome = when {
+                            result.isFailure -> DiagnosticOutcome.FAILED
+                            match == null -> DiagnosticOutcome.EMPTY
+                            else -> DiagnosticOutcome.SUCCEEDED
+                        },
+                        severity = if (result.isFailure) {
+                            DiagnosticSeverity.WARN
+                        } else {
+                            DiagnosticSeverity.INFO
+                        },
+                        attributes = mapOf(
+                            DiagnosticAttribute.PROVIDER_ID to
+                                DiagnosticAttributeValue.Text(provider.integrationId.value),
+                            DiagnosticAttribute.IDENTITY_VERIFIED to
+                                DiagnosticAttributeValue.Flag(match?.verifiedIdentity == true),
+                            DiagnosticAttribute.RATING_PRESENT to
+                                DiagnosticAttributeValue.Flag(match != null),
+                        ),
+                    )
+                    match?.let { match ->
+                        val attribution = registry.manifests()
+                            .firstOrNull { it.integrationId == provider.integrationId }
+                            ?.policyFor(IntegrationCapability.RATINGS)
+                            ?.attribution
+                        ProvenancedMetadata(
+                            value = ResolvedRating(
+                                value = match.rating.value,
+                                maxValue = match.rating.scaleMax,
+                            ),
+                            providerId = provider.integrationId,
+                            externalId = match.externalId,
+                            attribution = attribution,
+                        )
+                    }
+                }
+            }
+            .awaitAll()
+            .filterNotNull()
+
+        (exactRatings + supplemental)
+            .distinctBy { it.providerId }
+            .sortedWith(
+                compareBy<ProvenancedMetadata<ResolvedRating>>(
+                    { rating ->
+                        RATINGS_PRECEDENCE.indexOf(rating.providerId.value)
+                            .takeIf { index -> index >= 0 }
+                            ?: Int.MAX_VALUE
+                    },
+                    { rating -> rating.providerId.value },
+                ),
+            )
+    }
+
+    private fun buildRatingSeed(
+        candidates: List<Candidate>,
+        identities: List<ExternalIdentity>,
+    ): CatalogItem? {
+        val ordered = candidates.sortedWith(
+            compareBy<Candidate>(
+                { candidate ->
+                    RATINGS_PRECEDENCE.indexOf(candidate.providerId.value)
+                        .takeIf { index -> index >= 0 }
+                        ?: Int.MAX_VALUE
+                },
+                { candidate -> candidate.providerId.value },
+            ),
+        )
+        val base = ordered.firstOrNull()?.item ?: return null
+        val titles = buildMap {
+            ordered.forEach { candidate ->
+                put("${candidate.providerId.value}:primary", candidate.item.title)
+                candidate.item.titles.forEach { (key, value) ->
+                    put("${candidate.providerId.value}:$key", value)
+                }
+            }
+        }
+        val externalIds = buildMap {
+            ordered.forEach { candidate ->
+                putAll(candidate.item.externalIds)
+            }
+            identities.forEach { identity ->
+                put(identity.provider, identity.externalId)
+            }
+        }
+        val authors = ordered.flatMap { it.item.authors }.filter(String::isNotBlank).distinct()
+        val artists = ordered.flatMap { it.item.artists }.filter(String::isNotBlank).distinct()
+        val startDate = ordered.firstNotNullOfOrNull { it.item.startDate?.takeIf(String::isNotBlank) }
+        val endDate = ordered.firstNotNullOfOrNull { it.item.endDate?.takeIf(String::isNotBlank) }
+        val format = ordered
+            .map { it.item.format }
+            .firstOrNull { it != CatalogItemFormat.UNKNOWN }
+            ?: CatalogItemFormat.UNKNOWN
+
+        return base.copy(
+            titles = titles,
+            externalIds = externalIds,
+            authors = authors,
+            artists = artists,
+            startDate = startDate,
+            endDate = endDate,
+            format = format,
+        )
     }
 
     private fun selectRatings(

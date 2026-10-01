@@ -25,10 +25,12 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 import tachiyomi.domain.tsuzuki.integration.model.UserListDefinition
+import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
@@ -103,6 +105,56 @@ class KitsuIntegrationProvider private constructor(
                 },
             )
         }
+
+    override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+        val knownKitsuId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank)
+
+        if (knownKitsuId != null) {
+            return ratings(knownKitsuId).map { values ->
+                values.firstOrNull()?.let { rating ->
+                    CatalogRatingMatch(
+                        externalId = knownKitsuId,
+                        rating = rating,
+                        verifiedIdentity = true,
+                    )
+                }
+            }
+        }
+
+        return delegate.search(
+            CatalogQuery(
+                query = item.title,
+                limit = RATING_IDENTITY_SEARCH_LIMIT,
+            ),
+        ).map { page ->
+            val knownMalId = when {
+                item.provider == "mal" -> item.providerId
+                else -> item.externalIds["mal"]
+            }?.takeIf(String::isNotBlank)
+
+            val verified = knownMalId?.let { malId ->
+                page.items.firstOrNull { candidate ->
+                    candidate.externalIds["mal"] == malId
+                }
+            }
+            val candidate = verified ?: matchRatingOnlyCandidate(item, page.items)
+                ?: return@map null
+            val score = candidate.score ?: return@map null
+            CatalogRatingMatch(
+                externalId = candidate.providerId,
+                rating = ExternalRating(
+                    providerId = integrationId.value,
+                    label = "Kitsu",
+                    value = score.value,
+                    scaleMax = score.maxValue,
+                ),
+                verifiedIdentity = verified != null,
+            )
+        }
+    }
 
     override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
         val knownKitsuId = when {

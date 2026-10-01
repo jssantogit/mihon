@@ -20,6 +20,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 
 class SearchIntegrationsTest {
@@ -147,6 +148,100 @@ class SearchIntegrationsTest {
         results.size shouldBe 1
         results.single().scores.map(CatalogScore::provider) shouldContainExactly listOf("mal", "kitsu")
         results.single().scores.map(CatalogScore::value) shouldContainExactly listOf(9.21, 85.08)
+    }
+
+    @Test
+    fun `four enabled rating providers are preserved in stable order`() = runTest {
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Four Scores",
+            score = CatalogScore("kitsu", 80.0, 100.0),
+            externalIds = mapOf(
+                "mal" to "m1",
+                "mangaupdates" to "mu1",
+                "bangumi" to "b1",
+            ),
+        )
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("kitsu", Result.success(page(item))),
+                ratingProviders = listOf(
+                    FakeRatingsProvider("kitsu", emptyMap()),
+                    FakeRatingsProvider(
+                        "mal",
+                        mapOf("m1" to ExternalRating("mal", "MAL", 8.0, 10.0)),
+                    ),
+                    FakeRatingsProvider(
+                        "mangaupdates",
+                        mapOf("mu1" to ExternalRating("mangaupdates", "MangaUpdates", 8.4, 10.0)),
+                    ),
+                    FakeRatingsProvider(
+                        "bangumi",
+                        mapOf("b1" to ExternalRating("bangumi", "Bangumi", 7.9, 10.0)),
+                    ),
+                ),
+            ),
+        )
+
+        val result = search.execute(CatalogQuery(query = "Four Scores")).single()
+
+        result.scores.map(CatalogScore::provider) shouldContainExactly listOf(
+            "mal",
+            "kitsu",
+            "mangaupdates",
+            "bangumi",
+        )
+    }
+
+    @Test
+    fun `ephemeral rating match enriches score without becoming canonical identity`() = runTest {
+        val ratingProvider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mangaupdates")
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> =
+                Result.success(
+                    CatalogRatingMatch(
+                        externalId = "42",
+                        rating = ExternalRating(
+                            providerId = "mangaupdates",
+                            label = "MangaUpdates",
+                            value = 9.1,
+                            scaleMax = 10.0,
+                        ),
+                        verifiedIdentity = false,
+                    ),
+                )
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider(
+                    id = "kitsu",
+                    result = Result.success(
+                        page(
+                            CatalogItem(
+                                provider = "kitsu",
+                                providerId = "k1",
+                                title = "Work",
+                                score = CatalogScore("kitsu", 81.0, 100.0),
+                            ),
+                        ),
+                    ),
+                ),
+                ratingProviders = listOf(
+                    FakeRatingsProvider("kitsu", emptyMap()),
+                    ratingProvider,
+                ),
+            ),
+        )
+
+        val result = search.execute(CatalogQuery(query = "Work")).single()
+
+        result.scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mangaupdates")
+        result.externalIds["mangaupdates"] shouldBe null
     }
 
     @Test

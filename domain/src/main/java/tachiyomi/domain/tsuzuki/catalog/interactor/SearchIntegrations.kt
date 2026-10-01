@@ -13,6 +13,9 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 
 @Inject
 class SearchIntegrations(
@@ -39,9 +42,10 @@ class SearchIntegrations(
     /**
      * Ratings describe the canonical work, not the catalog that happened to list it.
      *
-     * Every enabled ratings provider may contribute when it can resolve an exact external
-     * identity. Provider-specific lookup implementations may use search as discovery, but must
-     * still prove identity through explicit IDs/mappings before returning a match.
+     * Every enabled ratings provider may contribute. Exact provider IDs and provider-published
+     * mappings remain the only identities persisted into the canonical graph. Providers may also
+     * contribute a non-persistent rating-only match when title/alias is corroborated by publication
+     * year or creator identity and the candidate is unambiguous.
      */
     suspend fun enrichRatings(items: List<CatalogItem>): List<CatalogItem> = coroutineScope {
         val providers = registry.ratingsProviders()
@@ -92,7 +96,11 @@ class SearchIntegrations(
                     .filterNot { provider -> provider.integrationId.value in existingProviders }
                     .map { provider ->
                         async {
-                            try {
+                            localRatingMatch(
+                                item = identifiedItem,
+                                providerId = provider.integrationId.value,
+                                candidates = items,
+                            ) ?: try {
                                 semaphore.withPermit {
                                     provider.ratingFor(identifiedItem)
                                         .getOrNullPreservingCancellation()
@@ -132,13 +140,40 @@ class SearchIntegrations(
                     scores = scores,
                     externalIds = buildMap {
                         putAll(identifiedItem.externalIds)
-                        matches.forEach { match ->
-                            put(match.rating.providerId, match.externalId)
-                        }
+                        matches
+                            .filter(CatalogRatingMatch::verifiedIdentity)
+                            .forEach { match ->
+                                put(match.rating.providerId, match.externalId)
+                            }
                     },
                 )
             }
         }.awaitAll()
+    }
+
+    private fun localRatingMatch(
+        item: CatalogItem,
+        providerId: String,
+        candidates: List<CatalogItem>,
+    ): CatalogRatingMatch? {
+        val providerCandidates = candidates.filter { candidate ->
+            candidate.provider == providerId
+        }
+        val candidate = matchRatingOnlyCandidate(item, providerCandidates) ?: return null
+        val score = candidate.scores
+            .ifEmpty { listOfNotNull(candidate.score) }
+            .firstOrNull { it.provider == providerId }
+            ?: return null
+        return CatalogRatingMatch(
+            externalId = candidate.providerId,
+            rating = ExternalRating(
+                providerId = providerId,
+                label = providerId,
+                value = score.value,
+                scaleMax = score.maxValue,
+            ),
+            verifiedIdentity = false,
+        )
     }
 
     private fun <T> Result<T>.getOrNullPreservingCancellation(): T? {
