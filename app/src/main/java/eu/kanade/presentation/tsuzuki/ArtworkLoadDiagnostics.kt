@@ -11,11 +11,11 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 
-fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
-    when (event) {
+fun DiagnosticTrace.recordArtworkLoad(loadEvent: MangaCoverLoadEvent) {
+    when (loadEvent) {
         is MangaCoverLoadEvent.Attempt -> {
-            if (event.candidateCount > 0 && !event.requestDataPresent) {
-                this.event(
+            if (loadEvent.candidateCount > 0 && !loadEvent.requestDataPresent) {
+                event(
                     subsystem = DiagnosticSubsystem.IMAGE,
                     name = DiagnosticEventName.INVARIANT_VIOLATION,
                     stage = DiagnosticStage.RENDER,
@@ -26,48 +26,52 @@ fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
                             DiagnosticInvariantCode.ARTWORK_LOST_AFTER_RESOLUTION,
                         ),
                         DiagnosticAttribute.CANDIDATE_COUNT to
-                            DiagnosticAttributeValue.Number(event.candidateCount.toLong()),
+                            DiagnosticAttributeValue.Number(loadEvent.candidateCount.toLong()),
                     ),
                 )
             }
-            if (event.candidateIndex == 0) {
-                this.event(
+            if (loadEvent.candidateIndex == 0) {
+                event(
                     subsystem = DiagnosticSubsystem.ARTWORK,
                     name = DiagnosticEventName.ARTWORK_CANDIDATES_BUILT,
                     stage = DiagnosticStage.RENDER,
-                    outcome = if (event.candidateCount == 0) DiagnosticOutcome.EMPTY else DiagnosticOutcome.CANDIDATES,
+                    outcome = if (loadEvent.candidateCount == 0) {
+                        DiagnosticOutcome.EMPTY
+                    } else {
+                        DiagnosticOutcome.CANDIDATES
+                    },
                     attributes = mapOf(
                         DiagnosticAttribute.CANDIDATE_COUNT to
-                            DiagnosticAttributeValue.Number(event.candidateCount.toLong()),
+                            DiagnosticAttributeValue.Number(loadEvent.candidateCount.toLong()),
                         DiagnosticAttribute.REQUEST_DATA_PRESENT to
-                            DiagnosticAttributeValue.Flag(event.requestDataPresent),
+                            DiagnosticAttributeValue.Flag(loadEvent.requestDataPresent),
                     ),
                 )
             }
-            this.event(
-            subsystem = DiagnosticSubsystem.IMAGE,
-            name = DiagnosticEventName.ARTWORK_LOAD_ATTEMPT,
-            stage = DiagnosticStage.IMAGE_LOAD,
-            outcome = DiagnosticOutcome.STARTED,
-            attributes = mapOf(
-                DiagnosticAttribute.CANDIDATE_INDEX to
-                    DiagnosticAttributeValue.Number(event.candidateIndex.toLong()),
-                DiagnosticAttribute.CANDIDATE_COUNT to
-                    DiagnosticAttributeValue.Number(event.candidateCount.toLong()),
-                DiagnosticAttribute.REQUEST_DATA_PRESENT to
-                    DiagnosticAttributeValue.Flag(event.requestDataPresent),
-            ),
-        )
+            event(
+                subsystem = DiagnosticSubsystem.IMAGE,
+                name = DiagnosticEventName.ARTWORK_LOAD_ATTEMPT,
+                stage = DiagnosticStage.IMAGE_LOAD,
+                outcome = DiagnosticOutcome.STARTED,
+                attributes = mapOf(
+                    DiagnosticAttribute.CANDIDATE_INDEX to
+                        DiagnosticAttributeValue.Number(loadEvent.candidateIndex.toLong()),
+                    DiagnosticAttribute.CANDIDATE_COUNT to
+                        DiagnosticAttributeValue.Number(loadEvent.candidateCount.toLong()),
+                    DiagnosticAttribute.REQUEST_DATA_PRESENT to
+                        DiagnosticAttributeValue.Flag(loadEvent.requestDataPresent),
+                ),
+            )
         }
         is MangaCoverLoadEvent.Failed -> event(
             subsystem = DiagnosticSubsystem.IMAGE,
             name = DiagnosticEventName.ARTWORK_LOAD_COMPLETED,
             stage = DiagnosticStage.IMAGE_LOAD,
-            outcome = if (event.willFallback) DiagnosticOutcome.PARTIAL else DiagnosticOutcome.FAILED,
-            severity = if (event.willFallback) DiagnosticSeverity.WARN else DiagnosticSeverity.ERROR,
+            outcome = if (loadEvent.willFallback) DiagnosticOutcome.PARTIAL else DiagnosticOutcome.FAILED,
+            severity = if (loadEvent.willFallback) DiagnosticSeverity.WARN else DiagnosticSeverity.ERROR,
             attributes = mapOf(
                 DiagnosticAttribute.CANDIDATE_INDEX to
-                    DiagnosticAttributeValue.Number(event.candidateIndex.toLong()),
+                    DiagnosticAttributeValue.Number(loadEvent.candidateIndex.toLong()),
             ),
         )
         is MangaCoverLoadEvent.Succeeded -> event(
@@ -77,7 +81,7 @@ fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
             outcome = DiagnosticOutcome.SUCCEEDED,
             attributes = mapOf(
                 DiagnosticAttribute.CANDIDATE_INDEX to
-                    DiagnosticAttributeValue.Number(event.candidateIndex.toLong()),
+                    DiagnosticAttributeValue.Number(loadEvent.candidateIndex.toLong()),
             ),
         )
     }
