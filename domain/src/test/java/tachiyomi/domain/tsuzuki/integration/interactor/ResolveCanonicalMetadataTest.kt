@@ -27,6 +27,7 @@ import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCategory
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationPolicy
+import tachiyomi.domain.tsuzuki.integration.model.RatingIdentityEvidence
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -157,6 +158,16 @@ class ResolveCanonicalMetadataTest {
         resolved.ratings.map { it.value.value } shouldBe listOf(8.7, 81.0, 9.1, 8.4)
         resolved.ratings.map { it.value.maxValue } shouldBe listOf(10.0, 100.0, 10.0, 10.0)
         resolved.ratings.map { it.value.voteCount } shouldBe listOf(1200, 800, 600, 400)
+        resolved.ratings.map { it.value.identityEvidence } shouldBe listOf(
+            RatingIdentityEvidence.VERIFIED,
+            RatingIdentityEvidence.VERIFIED,
+            RatingIdentityEvidence.VERIFIED,
+            RatingIdentityEvidence.VERIFIED,
+        )
+        resolved.tsuzukiRating?.sourceCount shouldBe 4
+        resolved.tsuzukiRating?.verifiedSourceCount shouldBe 4
+        resolved.tsuzukiRating?.corroboratedSourceCount shouldBe 0
+        resolved.tsuzukiRating?.value shouldBe 8.575
 
         resolved.ratingDetails?.providerId?.value shouldBe "mal"
         resolved.ratingDetails?.value?.value shouldBe 8.7
@@ -204,6 +215,15 @@ class ResolveCanonicalMetadataTest {
             "bangumi",
         )
         resolved.ratings.map { it.value.value } shouldBe listOf(8.26, 79.88, 8.7, 8.1)
+        resolved.ratings.map { it.value.identityEvidence } shouldBe listOf(
+            RatingIdentityEvidence.CORROBORATED_RATING_ONLY,
+            RatingIdentityEvidence.VERIFIED,
+            RatingIdentityEvidence.CORROBORATED_RATING_ONLY,
+            RatingIdentityEvidence.CORROBORATED_RATING_ONLY,
+        )
+        resolved.tsuzukiRating?.sourceCount shouldBe 4
+        resolved.tsuzukiRating?.verifiedSourceCount shouldBe 1
+        resolved.tsuzukiRating?.corroboratedSourceCount shouldBe 3
         resolved.externalIds.keys shouldBe setOf(IntegrationId("kitsu"))
     }
 
@@ -420,6 +440,7 @@ class ResolveCanonicalMetadataTest {
                         label = integrationId.value,
                         value = value,
                         scaleMax = 10.0,
+                        voteCount = 50,
                     ),
                     verifiedIdentity = false,
                 ),
