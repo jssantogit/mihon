@@ -133,13 +133,24 @@ private fun CatalogRatingBadges(
 ) {
     if (scores.isEmpty()) return
 
+    val visibleScores = scores.take(MAX_VISIBLE_CATALOG_RATINGS)
+    val hiddenCount = (scores.size - visibleScores.size).coerceAtLeast(0)
+
     FlowRow(
         modifier = modifier,
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
     ) {
-        scores.forEach { score ->
+        visibleScores.forEach { score ->
             CatalogRatingBadge(score = score)
+        }
+        if (hiddenCount > 0) {
+            Text(
+                text = "+$hiddenCount",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }
@@ -173,3 +184,6 @@ internal fun catalogRatingLabel(score: CatalogScore): String =
         value = score.value,
         maxValue = score.maxValue,
     )
+
+
+private const val MAX_VISIBLE_CATALOG_RATINGS = 2
