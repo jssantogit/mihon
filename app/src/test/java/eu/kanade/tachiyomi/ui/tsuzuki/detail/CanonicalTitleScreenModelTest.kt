@@ -725,9 +725,9 @@ class CanonicalTitleScreenModelTest {
                     ),
                 ),
                 diagnostics = diagnostics,
-            resolveCanonicalSourceManga = mockk(relaxed = true),
-            resolveCanonicalArtwork = mockk(relaxed = true),
-        )
+                resolveCanonicalSourceManga = mockk(relaxed = true),
+                resolveCanonicalArtwork = mockk(relaxed = true),
+            )
             model.start("title")
             advanceUntilIdle()
 
