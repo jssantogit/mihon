@@ -963,10 +963,12 @@ Selecione uma entrada para migrar ou adicionar mesmo assim.</string>
 
     <string name="tsuzuki_integrations_tracking_behavior_title">Comportamento de monitoramento</string>
     <string name="tsuzuki_integrations_tracking_behavior_summary">Atualizações automáticas e sincronização ao marcar capítulos como lidos</string>
+    <string name="tsuzuki_integrations_category_general">Geral</string>
     <string name="tsuzuki_integrations_category_metadata">Metadados e catálogo</string>
     <string name="tsuzuki_integrations_category_servers">Servidores</string>
     <string name="tsuzuki_integrations_category_compatibility">Compatibilidade</string>
     <string name="tsuzuki_integration_enabled">Ativada</string>
+    <string name="tsuzuki_integration_enable_tsuzuki">Ativar Tsuzuki</string>
     <string name="tsuzuki_integration_use_provider">Usar %s no Tsuzuki</string>
     <string name="tsuzuki_integration_type">Tipo</string>
     <string name="tsuzuki_integration_features">Recursos</string>
