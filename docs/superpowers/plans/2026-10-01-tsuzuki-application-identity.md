@@ -60,3 +60,5 @@ The repository README adopts a concise Nuvio-like information hierarchy without 
 - full GitHub Actions CI is required;
 - no local Gradle;
 - physical APK smoke must confirm package name/data directories and normal extension/provider behavior.
+
+Full CI is explicitly requested for the implementation head.
