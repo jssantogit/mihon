@@ -1,6 +1,16 @@
 package tachiyomi.domain.tsuzuki.reader.interactor
 
 import dev.zacsweers.metro.Inject
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterHistoryUpdate
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalChapterProgress
 import tachiyomi.domain.tsuzuki.reader.repository.CanonicalReadingRepository
@@ -13,6 +23,7 @@ class RecordCanonicalReaderProgress internal constructor(
     private val compatibilityGateway: CanonicalReaderCompatibilityGateway,
     private val chapterUpdateStateRepository: ChapterUpdateStateRepository,
     private val clock: () -> Long,
+    private val structuredDiagnostics: StructuredDiagnosticRecorder,
 ) {
 
     internal constructor(
@@ -23,6 +34,7 @@ class RecordCanonicalReaderProgress internal constructor(
         compatibilityGateway = NoopCompatibilityGateway,
         chapterUpdateStateRepository = NoopChapterUpdateStateRepository,
         clock = clock,
+        structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
     )
 
     internal constructor(
@@ -34,6 +46,7 @@ class RecordCanonicalReaderProgress internal constructor(
         compatibilityGateway = compatibilityGateway,
         chapterUpdateStateRepository = NoopChapterUpdateStateRepository,
         clock = clock,
+        structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
     )
 
     @Inject
@@ -41,11 +54,13 @@ class RecordCanonicalReaderProgress internal constructor(
         repository: CanonicalReadingRepository,
         compatibilityGateway: CanonicalReaderCompatibilityGateway,
         chapterUpdateStateRepository: ChapterUpdateStateRepository,
+        structuredDiagnostics: StructuredDiagnosticRecorder,
     ) : this(
         repository = repository,
         compatibilityGateway = compatibilityGateway,
         chapterUpdateStateRepository = chapterUpdateStateRepository,
         clock = { Clock.System.now().toEpochMilliseconds() },
+        structuredDiagnostics = structuredDiagnostics,
     )
 
     suspend fun recordPage(
@@ -110,6 +125,24 @@ class RecordCanonicalReaderProgress internal constructor(
         }
 
         if (mihonChapterId != null) flushDurableProjection()
+
+        if (completed || pageIndex % PROGRESS_DIAGNOSTIC_INTERVAL == 0) {
+            val trace = DiagnosticTrace.start(
+                recorder = structuredDiagnostics,
+                workflow = DiagnosticWorkflow.READER_OPEN,
+                subsystem = DiagnosticSubsystem.READER,
+            )
+            trace.event(
+                subsystem = DiagnosticSubsystem.READER,
+                name = DiagnosticEventName.READER_PROGRESS_RECORDED,
+                stage = DiagnosticStage.WRITE,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                attributes = mapOf(
+                    DiagnosticAttribute.PAGE_INDEX to DiagnosticAttributeValue.Number(pageIndex.toLong()),
+                    DiagnosticAttribute.COMPLETED to DiagnosticAttributeValue.Flag(completed),
+                ),
+            )
+        }
     }
 
     suspend fun recordHistory(
@@ -132,6 +165,18 @@ class RecordCanonicalReaderProgress internal constructor(
             repository.recordHistoryWithProjection(history, mihonChapterId)
             flushDurableProjection()
         }
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.READER_OPEN,
+            subsystem = DiagnosticSubsystem.READER,
+        )
+        trace.event(
+            subsystem = DiagnosticSubsystem.READER,
+            name = DiagnosticEventName.READER_PROGRESS_RECORDED,
+            stage = DiagnosticStage.WRITE,
+            outcome = DiagnosticOutcome.SUCCEEDED,
+            durationMillis = sessionReadDuration.coerceAtMost(MAX_DIAGNOSTIC_DURATION_MILLIS),
+        )
     }
 
     private suspend fun flushDurableProjection() {
@@ -143,6 +188,11 @@ class RecordCanonicalReaderProgress internal constructor(
             // Canonical state and the outbox were committed together. The next
             // Reader checkpoint or application start can safely retry.
         }
+    }
+
+    private companion object {
+        const val PROGRESS_DIAGNOSTIC_INTERVAL = 10
+        const val MAX_DIAGNOSTIC_DURATION_MILLIS = 24L * 60 * 60 * 1_000
     }
 
     private object NoopCompatibilityGateway : CanonicalReaderCompatibilityGateway {
