@@ -30,5 +30,11 @@ class StructuredDiagnosticSummaryTest {
         assertTrue(summary.contains("dropped_history_events: 4"))
         assertTrue(summary.contains("export_flush_timeouts=1"))
         assertTrue(summary.contains("IMAGE/invariant_violation=1200ms"))
+        assertTrue(summary.contains("Workflow breakdown:"))
+        assertTrue(
+            summary.contains(
+                "artwork_resolution ref=00000000 events=2 operations=2 failures=1 max_duration_ms=1200",
+            ),
+        )
     }
 }
