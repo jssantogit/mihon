@@ -46,6 +46,23 @@ class StructuredDiagnosticHistoryTest {
     }
 
     @Test
+    fun `clear removes persisted history across reopened instances`() {
+        val directory = temporaryDirectory.resolve("clear-history").toFile()
+        val history = history(directory)
+        history.submit(safeEvent(timestamp = 1_000L))
+        history.flush() shouldBe true
+        history.snapshot().isNotBlank() shouldBe true
+
+        history.clear() shouldBe true
+        history.snapshot() shouldBe ""
+        history.close()
+
+        history(directory).use { reopened ->
+            reopened.snapshot() shouldBe ""
+        }
+    }
+
+    @Test
     fun `expired segments are removed across reopened instances`() {
         val directory = temporaryDirectory.resolve("history").toFile()
         val maxAgeMillis = 3L * 24 * 60 * 60 * 1_000
