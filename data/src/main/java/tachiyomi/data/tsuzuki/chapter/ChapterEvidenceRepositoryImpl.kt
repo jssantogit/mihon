@@ -77,18 +77,7 @@ class ChapterEvidenceRepositoryImpl(
                 val externalKey = evidence.externalChapterKey?.let {
                     ExternalEvidenceKey(evidence.producerKind, evidence.producerId, it)
                 }
-                val existingByExternalKey = externalKey?.let { key ->
-                    byExternalKey[key] ?: getByProducerExternalKey(
-                        producerKind = evidence.producerKind,
-                        producerId = evidence.producerId,
-                        externalChapterKey = key.externalChapterKey,
-                    )?.also { existing ->
-                        require(existing.evidence.canonicalTitleId == evidence.canonicalTitleId) {
-                            "External chapter evidence identity is already attached to another canonical title"
-                        }
-                        byExternalKey[key] = existing
-                    }
-                }
+                val existingByExternalKey = externalKey?.let(byExternalKey::get)
                 val existing = existingByExternalKey ?: byId[evidence.id]
                 val stableEvidence = if (existing != null) evidence.copy(id = existing.evidence.id) else evidence
                 val rawMetadata = existing?.rawMetadata ?: byteArrayOf()
