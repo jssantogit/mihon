@@ -30,11 +30,14 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
+import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Proxy
 import java.nio.file.Files
 
 class ChapterEvidenceRepositoryImplTest {
 
     private lateinit var driver: SqlDriver
+    private lateinit var queryCounter: SqlDriverQueryCounter
     private lateinit var database: Database
     private lateinit var evidenceRepository: ChapterEvidenceRepositoryImpl
     private lateinit var chapterRepository: CanonicalChapterRepositoryImpl
@@ -51,7 +54,8 @@ class ChapterEvidenceRepositoryImplTest {
             .use { input -> Files.copy(input, nativeLibrary) }
         nativeLibrary.toFile().setExecutable(true)
         System.setProperty("org.sqlite.lib.path", nativeLibraryDirectory.toString())
-        driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        queryCounter = SqlDriverQueryCounter(JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY))
+        driver = queryCounter.driver
         driver.execute(null, "PRAGMA foreign_keys = ON", 0).await()
         Database.Schema.create(driver).await()
         database = Database(
@@ -114,6 +118,26 @@ class ChapterEvidenceRepositoryImplTest {
     }
 
     @Test
+    fun `batch insert uses one title snapshot instead of one external key query per write`() = runBlocking<Unit> {
+        val writes = (1..100).map { index ->
+            ChapterEvidenceWrite(
+                evidence = addonEvidence(
+                    id = "batch-$index",
+                    label = "Chapter $index",
+                    key = "source-$index",
+                ),
+                mappedCanonicalChapterId = null,
+            )
+        }
+
+        queryCounter.reset()
+        evidenceRepository.upsertBatch(writes)
+
+        queryCounter.executeQueryCount shouldBe 1
+        evidenceRepository.getByCanonicalTitleId("title-1") shouldHaveSize 100
+    }
+
+    @Test
     fun `reconciliation rolls back chapter and evidence after injected write failure`() = runBlocking<Unit> {
         val failingEvidenceRepository = object : ChapterEvidenceRepository by evidenceRepository {
             override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>) =
@@ -141,6 +165,29 @@ class ChapterEvidenceRepositoryImplTest {
 
         chapterRepository.getByCanonicalTitleId("title-1") shouldHaveSize 0
         evidenceRepository.getByCanonicalTitleId("title-1") shouldHaveSize 0
+    }
+
+    private class SqlDriverQueryCounter(delegate: SqlDriver) {
+        private var queryCount = 0
+
+        val driver = Proxy.newProxyInstance(
+            SqlDriver::class.java.classLoader,
+            arrayOf(SqlDriver::class.java),
+        ) { _, method, arguments ->
+            if (method.name == "executeQuery") queryCount++
+            try {
+                method.invoke(delegate, *(arguments ?: emptyArray()))
+            } catch (error: InvocationTargetException) {
+                throw error.targetException
+            }
+        } as SqlDriver
+
+        val executeQueryCount: Int
+            get() = queryCount
+
+        fun reset() {
+            queryCount = 0
+        }
     }
 
     private fun nativeLibraryArchitecture(): String = when (System.getProperty("os.arch").orEmpty().lowercase()) {
