@@ -1,5 +1,3 @@
-# Tsuzuki
-
 <div align="center">
 
   <picture>
