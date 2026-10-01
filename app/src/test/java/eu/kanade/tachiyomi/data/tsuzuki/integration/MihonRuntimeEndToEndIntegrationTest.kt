@@ -54,6 +54,7 @@ import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapterType
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.chapter.service.ChapterInventoryGateway
 import tachiyomi.domain.tsuzuki.content.ContentBinding
@@ -846,6 +847,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 volumeParser = ParseCanonicalChapterVolume(),
                 chapterInventoryGateway = chapterGateway,
                 chapterInventoryDiagnostics = diagnostics,
+                chapterRefreshSnapshotRepository = mockk(relaxed = true),
                 sourceEligibilityRepository = AddonSourceEligibilityRepository { requested ->
                     if (requested == addonId) {
                         harness.sources.map { source ->
