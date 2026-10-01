@@ -47,6 +47,38 @@ class HikkaIntegrationProviderTest {
     }
 
     @Test
+    fun `hikka mal mapping verifies identity while preserving hikka native score`() = runTest {
+        val provider = HikkaIntegrationProvider.forTest(
+            FakeHikkaIntegrationApi(
+                searchResults = listOf(
+                    manga(
+                        slug = "dungeon-seeker-ac93e6",
+                        title = "Dungeon Seeker",
+                        year = 2016,
+                        nativeScore = 7.39,
+                        nativeVotes = 13,
+                        importedScore = 6.53,
+                        importedVotes = 16_301,
+                        malId = 98_820,
+                    ),
+                ),
+            ),
+        )
+
+        val match = (provider as RatingsProvider).ratingFor(
+            CatalogItem(
+                provider = "mal",
+                providerId = "98820",
+                title = "Dungeon Seeker",
+            ),
+        ).getOrThrow()
+
+        match?.externalId shouldBe "dungeon-seeker-ac93e6"
+        match?.rating?.value shouldBe 7.39
+        match?.verifiedIdentity shouldBe true
+    }
+
+    @Test
     fun `hikka omits titles without a native community score`() = runTest {
         val provider = HikkaIntegrationProvider.forTest(
             FakeHikkaIntegrationApi(
@@ -84,6 +116,7 @@ class HikkaIntegrationProviderTest {
         nativeVotes: Int,
         importedScore: Double,
         importedVotes: Int,
+        malId: Int? = null,
     ): HKManga =
         Json { ignoreUnknownKeys = true }.decodeFromString(
             """
@@ -99,6 +132,7 @@ class HikkaIntegrationProviderTest {
               "native_score": $nativeScore,
               "scored_by": $importedVotes,
               "score": $importedScore,
+              "mal_id": ${malId ?: "null"},
               "slug": "$slug"
             }
             """.trimIndent(),
