@@ -26,6 +26,7 @@ import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
+import tachiyomi.domain.tsuzuki.integration.model.RatingIdentityEvidence
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRatingSource
@@ -135,6 +136,26 @@ class ResolveCanonicalMetadata(
             } else {
                 null
             }
+
+            val verifiedRatingSources = ratings.count { rating ->
+                rating.value.identityEvidence == RatingIdentityEvidence.VERIFIED
+            }
+            trace.child().event(
+                subsystem = DiagnosticSubsystem.METADATA,
+                name = DiagnosticEventName.TSUZUKI_RATING_COMPUTED,
+                stage = DiagnosticStage.SUMMARY,
+                outcome = if (tsuzukiRating == null) DiagnosticOutcome.EMPTY else DiagnosticOutcome.SUCCEEDED,
+                attributes = mapOf(
+                    DiagnosticAttribute.RATING_SOURCE_COUNT to
+                        DiagnosticAttributeValue.Number(ratings.size.toLong()),
+                    DiagnosticAttribute.RATING_VERIFIED_SOURCE_COUNT to
+                        DiagnosticAttributeValue.Number(verifiedRatingSources.toLong()),
+                    DiagnosticAttribute.RATING_CORROBORATED_SOURCE_COUNT to
+                        DiagnosticAttributeValue.Number((ratings.size - verifiedRatingSources).toLong()),
+                    DiagnosticAttribute.TSUZUKI_RATING_PRESENT to
+                        DiagnosticAttributeValue.Flag(tsuzukiRating != null),
+                ),
+            )
 
             val resolved = ResolvedMetadata(
                 title = select(
