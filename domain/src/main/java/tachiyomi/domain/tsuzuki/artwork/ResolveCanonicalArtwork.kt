@@ -55,7 +55,8 @@ class ResolveCanonicalArtwork(
                 outcome = DiagnosticOutcome.SUCCEEDED,
                 attributes = mapOf(
                     DiagnosticAttribute.PROVIDER_ID to DiagnosticAttributeValue.Text(provider),
-                    DiagnosticAttribute.COVER_PRESENT to DiagnosticAttributeValue.Flag(!resolved.coverUrl.isNullOrBlank()),
+                    DiagnosticAttribute.COVER_PRESENT to
+                        DiagnosticAttributeValue.Flag(!resolved.coverUrl.isNullOrBlank()),
                 ),
             )
         }
