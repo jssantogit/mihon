@@ -23,6 +23,7 @@ import okio.gzip
 import tachiyomi.core.common.util.system.logcat
 import kotlin.coroutines.cancellation.CancellationException
 
+// Raw GitHub stores commonly expose the legacy index from a branch named "repo".
 private val RAW_GITHUB_REPO_BRANCH = Regex(
     """^https://raw\.githubusercontent\.com/[^/]+/[^/]+/repo/?$""",
     RegexOption.IGNORE_CASE,
