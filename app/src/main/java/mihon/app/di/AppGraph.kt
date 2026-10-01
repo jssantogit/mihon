@@ -58,6 +58,7 @@ import tachiyomi.domain.track.interactor.InsertTrack
 import tachiyomi.domain.tsuzuki.account.repository.AccountRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.addon.repository.AddonSyncIntentRepository
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.library.interactor.RefreshUserLibraries
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.source.service.ReadingSourceGateway
@@ -106,6 +107,7 @@ interface AppGraph : ViewModelGraph {
     val canonicalReaderPreferences: CanonicalReaderPreferences
 
     val crashLogUtil: CrashLogUtil
+    val structuredDiagnosticRecorder: StructuredDiagnosticRecorder
 
     val downloadManager: DownloadManager
 
