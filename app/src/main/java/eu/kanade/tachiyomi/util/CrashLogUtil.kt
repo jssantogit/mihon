@@ -31,6 +31,7 @@ import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
 import tachiyomi.core.common.util.lang.withNonCancellableContext
 import tachiyomi.core.common.util.lang.withUIContext
+import java.io.File
 import kotlin.time.Clock
 
 @Inject
