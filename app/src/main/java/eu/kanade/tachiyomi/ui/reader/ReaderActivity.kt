@@ -1145,8 +1145,8 @@ internal fun resolveReaderTitleDetailsRoute(
 ): ReaderTitleDetailsRoute =
     canonicalTitleId
         ?.takeIf(String::isNotBlank)
-        ?.let(ReaderTitleDetailsRoute::Canonical)
+        ?.let { ReaderTitleDetailsRoute.Canonical(it) }
         ?: mangaId
             ?.takeIf { it >= 0L }
-            ?.let(ReaderTitleDetailsRoute::Legacy)
+            ?.let { ReaderTitleDetailsRoute.Legacy(it) }
         ?: ReaderTitleDetailsRoute.Unavailable
