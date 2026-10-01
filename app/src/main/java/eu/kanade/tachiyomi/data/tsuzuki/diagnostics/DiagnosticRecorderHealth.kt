@@ -48,6 +48,15 @@ class DiagnosticRecorderHealth {
         exportFlushTimeouts.incrementAndGet()
     }
 
+    fun reset() {
+        eventsReceived.set(0)
+        eventsSanitized.set(0)
+        eventsRejected.set(0)
+        logcatSinkFailures.set(0)
+        historySinkFailures.set(0)
+        exportFlushTimeouts.set(0)
+    }
+
     fun snapshot() = DiagnosticRecorderHealthSnapshot(
         eventsReceived = eventsReceived.get(),
         eventsSanitized = eventsSanitized.get(),
