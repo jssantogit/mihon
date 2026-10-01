@@ -50,6 +50,7 @@ def check_contract(root: Path) -> list[str]:
         errors,
     )
     apk_workflow = _read(root, ".github/workflows/apk.yml", errors)
+    ci_workflow = _read(root, ".github/workflows/ci-v2.yml", errors)
     about_screen = _read(
         root,
         "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt",
@@ -95,8 +96,12 @@ def check_contract(root: Path) -> list[str]:
 
     if build:
         application_id = re.search(r'\bapplicationId\s*=\s*"([^"]+)"', build)
-        if application_id is None or application_id.group(1) != "app.mihon":
-            errors.append("applicationId must remain app.mihon")
+        if application_id is None or application_id.group(1) != "app.tsuzuki":
+            errors.append("applicationId must be app.tsuzuki")
+        if '"app.mihon"' in build:
+            errors.append("build configuration must not retain app.mihon as an application ID")
+        if 'applicationIdSuffix = ".tsuzuki.' in build:
+            errors.append("Tsuzuki application ID suffixes must not duplicate the tsuzuki segment")
 
         namespace = re.search(r'\bnamespace\s*=\s*"([^"]+)"', build)
         if namespace is None or namespace.group(1) != "eu.kanade.tachiyomi":
@@ -143,6 +148,14 @@ def check_contract(root: Path) -> list[str]:
         for name in SIGNING_SECRET_NAMES:
             if f"secrets.{name}" not in apk_workflow:
                 errors.append(f"APK workflow no longer references {name}")
+        if "-Pinclude-telemetry" in apk_workflow:
+            errors.append("official APK workflow must not enable inherited Mihon telemetry")
+
+    if ci_workflow and "-Pinclude-telemetry" in ci_workflow:
+        errors.append("official CI release compile must not enable inherited Mihon telemetry")
+
+    if (root / "app/google-services.json").is_file():
+        errors.append("inherited Mihon Firebase configuration must remain absent")
 
     if about_screen:
         project_source = "https://github.com/jssantogit/tsuzuki"
@@ -194,8 +207,8 @@ def check_contract(root: Path) -> list[str]:
             errors.append("rootProject.name must be Tsuzuki")
 
     if readme:
-        if not readme.lstrip().startswith("# Tsuzuki"):
-            errors.append("README must identify Tsuzuki as the project")
+        if 'alt="Tsuzuki"' not in readme:
+            errors.append("README must identify Tsuzuki in the repository lockup")
         if "docs/brand/tsuzuki-lockup.svg" not in readme or "docs/brand/tsuzuki-lockup-paper.svg" not in readme:
             errors.append("README must use the Brand v3 A2 repository lockup")
 

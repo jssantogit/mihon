@@ -40,7 +40,7 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.mihon"
+        applicationId = "app.tsuzuki"
 
         versionCode = 29
         versionName = "0.20.4"
@@ -129,7 +129,7 @@ android {
         create("deva") {
             initWith(release)
 
-            applicationIdSuffix = ".tsuzuki.deva"
+            applicationIdSuffix = ".deva"
             versionNameSuffix = "-deva-${getLatestCommitCount()}"
 
             matchingFallbacks.addAll(commonMatchingFallbacks)
@@ -139,7 +139,7 @@ android {
         create("devb") {
             initWith(release)
 
-            applicationIdSuffix = ".tsuzuki.devb"
+            applicationIdSuffix = ".devb"
             versionNameSuffix = "-devb-${getLatestCommitCount()}"
 
             matchingFallbacks.addAll(commonMatchingFallbacks)
@@ -149,7 +149,7 @@ android {
         create("devc") {
             initWith(release)
 
-            applicationIdSuffix = ".tsuzuki.devc"
+            applicationIdSuffix = ".devc"
             versionNameSuffix = "-devc-${getLatestCommitCount()}"
 
             matchingFallbacks.addAll(commonMatchingFallbacks)
@@ -159,7 +159,7 @@ android {
         create("generic") {
             initWith(release)
 
-            applicationIdSuffix = ".tsuzuki.generic"
+            applicationIdSuffix = ".generic"
             versionNameSuffix = "-generic-${getLatestCommitCount()}"
 
             matchingFallbacks.addAll(commonMatchingFallbacks)

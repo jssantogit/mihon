@@ -9,7 +9,7 @@ RELEASE = {
     "task": "assembleRelease",
     "apk": "app/build/outputs/apk/release/app-arm64-v8a-release.apk",
     "mapping": "app/build/outputs/mapping/release",
-    "flags": "-Pinclude-telemetry -Penable-updater",
+    "flags": "-Penable-updater",
 }
 DEV_A = {
     "lane": "dev-a",

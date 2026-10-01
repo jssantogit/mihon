@@ -13,7 +13,10 @@ resolve_lane = MODULE.resolve_lane
 class ApkLaneTest(unittest.TestCase):
     def test_bootstrap_and_main_use_release(self):
         for branch in ("main", "tsuzuki/bootstrap"):
-            self.assertEqual(resolve_lane(branch)["lane"], "release")
+            lane = resolve_lane(branch)
+            self.assertEqual(lane["lane"], "release")
+            self.assertEqual(lane["flags"], "-Penable-updater")
+            self.assertNotIn("include-telemetry", lane["flags"])
 
     def test_runtime_v2_dev_branches_use_isolated_variants(self):
         self.assertEqual(resolve_lane("tsuzuki/runtime-v2-dev-a")["task"], "assembleDeva")
