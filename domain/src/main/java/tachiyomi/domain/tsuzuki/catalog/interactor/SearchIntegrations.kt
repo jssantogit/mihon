@@ -13,6 +13,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
 import tachiyomi.domain.tsuzuki.integration.interactor.ComputeTsuzukiRating
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
@@ -143,17 +144,26 @@ class SearchIntegrations(
                 identifiedItem.copy(
                     score = scores.firstOrNull(),
                     scores = scores,
-                    tsuzukiRating = ComputeTsuzukiRating(
-                        scores.map { score ->
-                            TsuzukiRatingSource(
-                                providerId = score.provider,
-                                value = score.value,
-                                maxValue = score.maxValue,
-                                voteCount = score.voteCount,
-                                identityEvidence = score.identityEvidence,
-                            )
-                        },
-                    ),
+                    tsuzukiRating = if (
+                        registry.isGlobalCapabilityActive(
+                            TSUZUKI_INTEGRATION_ID,
+                            tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability.RATINGS,
+                        )
+                    ) {
+                        ComputeTsuzukiRating(
+                            scores.map { score ->
+                                TsuzukiRatingSource(
+                                    providerId = score.provider,
+                                    value = score.value,
+                                    maxValue = score.maxValue,
+                                    voteCount = score.voteCount,
+                                    identityEvidence = score.identityEvidence,
+                                )
+                            },
+                        )
+                    } else {
+                        null
+                    },
                     externalIds = buildMap {
                         putAll(identifiedItem.externalIds)
                         matches
