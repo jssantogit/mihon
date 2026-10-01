@@ -126,7 +126,7 @@ class RecordCanonicalReaderProgress internal constructor(
 
         if (mihonChapterId != null) flushDurableProjection()
 
-        if (completed || pageIndex % PROGRESS_DIAGNOSTIC_INTERVAL == 0) {
+        if (structuredDiagnostics.detailedCaptureActive || completed || pageIndex % PROGRESS_DIAGNOSTIC_INTERVAL == 0) {
             val trace = DiagnosticTrace.start(
                 recorder = structuredDiagnostics,
                 workflow = DiagnosticWorkflow.READER_OPEN,
