@@ -87,3 +87,29 @@ The capture feature does not enable remote telemetry and does not relax the stru
 ### Wave 3 validation checkpoint
 
 The Wave 3 implementation is complete on the stacked diagnostics branch. The final validation gate is a full CI v2.1 run on the complete Wave 1 → Wave 2 → Wave 3 tree. No APK is requested by this checkpoint.
+
+## Logs UI and bootstrap crash recovery
+
+Advanced settings expose a dedicated **Logs** screen instead of mixing log controls with unrelated advanced options.
+
+The primary workflow is explicit:
+
+1. **Start logs** starts a detailed structured capture for up to 15 minutes.
+2. **Stop logs** closes the active capture and preserves that window for export.
+3. **Clear logs** clears Tsuzuki's persisted structured history, capture-window state, in-process crash context, recorder health counters, the last persisted uncaught crash, and stale shared report files.
+4. **Share logs** creates the normal bounded `tsuzuki_logs.txt` report.
+
+The Logs screen intentionally keeps this four-action workflow focused; the old standalone verbose-logging switch is not part of the new Logs UI.
+
+Clearing Tsuzuki logs does **not** claim to erase Android's system Logcat buffers. Logcat is collected on demand during export using the existing bounded collector.
+
+### Crashes during application startup
+
+The uncaught-exception handler is installed from `Application.attachBaseContext`, before normal application graph creation. Process detection keeps this bootstrap path compatible with Android 8 and explicitly excludes the `:error_handler` process. The handler synchronously writes one bounded latest-crash record under the private no-backup application directory before delegating to Android's previous uncaught-exception handler.
+
+The emergency `CrashActivity` runs in the existing `:error_handler` process but no longer extends `BaseActivity`, calls `appGraph`, or uses the normal graph-backed Compose setup. Its emergency share file is served by a dedicated `CrashFileProvider` in that same process, so sharing does not need to start the broken main process. The application process explicitly skips graph initialization for `:error_handler`. This keeps the crash screen usable when dependency injection or another early bootstrap step is itself the failure.
+
+The emergency crash screen can share the persisted stack trace without requiring the main application graph. After a later successful launch, the regular **Share logs** report also includes that latest persisted uncaught-crash record until the user clears it or a newer uncaught crash replaces it.
+
+The persistent crash record is local-only and bounded to one latest stack trace. It is never uploaded automatically. Like the pre-existing explicit exception and supplemental Logcat sections, a stack trace may contain third-party free text; users should review a report before sharing it.
+

@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Application
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -8,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Process
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -70,6 +72,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addSingleton
+import java.io.File
 import java.security.Security
 
 class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factory, GraphProvider<AppGraph> {
@@ -104,23 +107,36 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     private val disableIncognitoReceiver = DisableIncognitoReceiver()
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        if (!currentProcessName(base).endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
+            GlobalExceptionHandler.initialize(base, CrashActivity::class.java)
+        }
+    }
+
     @SuppressLint("LaunchActivityFromNotification")
     override fun onCreate() {
         super<Application>.onCreate()
 
+        val process = currentProcessName(this)
+        if (process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
+            // CrashActivity must remain usable even when application-graph creation itself is what crashed.
+            return
+        }
+
+        // Install before graph creation so dependency-injection and early bootstrap crashes are persisted.
+        GlobalExceptionHandler.initialize(applicationContext, CrashActivity::class.java)
+
         // Must run before the graph is built, since injecting dependencies initializes WebView and the
         // suffix can't be set once a provider exists in the process. Secondary processes die otherwise.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val process = getProcessName()
-            if (packageName != process) WebView.setDataDirectorySuffix(process)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && packageName != process) {
+            WebView.setDataDirectorySuffix(process)
         }
 
         graph.inject(this)
         setupInjekt()
 
         TelemetryConfig.init(applicationContext)
-
-        GlobalExceptionHandler.initialize(applicationContext, CrashActivity::class.java)
 
         // TLS 1.3 support for Android < 10
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -328,4 +344,27 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     }
 }
 
+private fun currentProcessName(context: Context): String {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        return Application.getProcessName()
+    }
+
+    val procName = runCatching {
+        File("/proc/self/cmdline")
+            .readText()
+            .trim('\u0000', '\n', ' ')
+            .takeIf(String::isNotBlank)
+    }.getOrNull()
+    if (procName != null) return procName
+
+    val pid = Process.myPid()
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+    return activityManager
+        ?.runningAppProcesses
+        ?.firstOrNull { it.pid == pid }
+        ?.processName
+        ?: context.packageName
+}
+
 private const val ACTION_DISABLE_INCOGNITO_MODE = "tachi.action.DISABLE_INCOGNITO_MODE"
+private const val ERROR_HANDLER_PROCESS_SUFFIX = ":error_handler"

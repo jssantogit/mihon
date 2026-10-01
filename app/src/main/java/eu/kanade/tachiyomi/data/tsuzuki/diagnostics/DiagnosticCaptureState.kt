@@ -99,6 +99,18 @@ class DiagnosticCaptureState(
         return latestCompleted()
     }
 
+    @Synchronized
+    fun clear() {
+        preferences.edit()
+            .remove(KEY_ACTIVE_ID)
+            .remove(KEY_ACTIVE_START)
+            .remove(KEY_ACTIVE_EXPIRY)
+            .remove(KEY_LAST_ID)
+            .remove(KEY_LAST_START)
+            .remove(KEY_LAST_END)
+            .apply()
+    }
+
     fun isDetailedCaptureActive(): Boolean = current() != null
 
     fun filterForExport(structuredHistory: String): String {

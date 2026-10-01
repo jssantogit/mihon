@@ -2,37 +2,27 @@ package eu.kanade.tachiyomi.crash
 
 import android.content.Context
 import android.content.Intent
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import kotlin.system.exitProcess
 
 class GlobalExceptionHandler private constructor(
     private val applicationContext: Context,
-    private val defaultHandler: Thread.UncaughtExceptionHandler,
+    private val defaultHandler: Thread.UncaughtExceptionHandler?,
     private val activityToBeLaunched: Class<*>,
+    private val crashLogStore: PersistentCrashLogStore,
 ) : Thread.UncaughtExceptionHandler {
 
-    object ThrowableSerializer : KSerializer<Throwable> {
-        override val descriptor: SerialDescriptor =
-            PrimitiveSerialDescriptor("Throwable", PrimitiveKind.STRING)
-
-        override fun deserialize(decoder: Decoder): Throwable =
-            Throwable(message = decoder.decodeString())
-
-        override fun serialize(encoder: Encoder, value: Throwable) =
-            encoder.encodeString(value.stackTraceToString())
-    }
-
     override fun uncaughtException(thread: Thread, exception: Throwable) {
-        logcat(priority = LogPriority.ERROR, throwable = exception)
-        launchActivity(applicationContext, activityToBeLaunched, exception)
-        defaultHandler.uncaughtException(thread, exception)
+        crashLogStore.record(thread, exception)
+        runCatching {
+            logcat(priority = LogPriority.ERROR, throwable = exception)
+        }
+        runCatching {
+            launchActivity(applicationContext, activityToBeLaunched, exception)
+        }
+
+        defaultHandler?.uncaughtException(thread, exception) ?: exitProcess(10)
     }
 
     private fun launchActivity(
@@ -41,7 +31,7 @@ class GlobalExceptionHandler private constructor(
         exception: Throwable,
     ) {
         val intent = Intent(applicationContext, activity).apply {
-            putExtra(INTENT_EXTRA, Json.encodeToString(ThrowableSerializer, exception))
+            putExtra(INTENT_EXTRA, exception.toString().take(MAX_CRASH_PREVIEW_CHARS))
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
@@ -50,26 +40,26 @@ class GlobalExceptionHandler private constructor(
 
     companion object {
         private const val INTENT_EXTRA = "Throwable"
+        private const val MAX_CRASH_PREVIEW_CHARS = 16 * 1024
 
         fun initialize(
             applicationContext: Context,
             activityToBeLaunched: Class<*>,
         ) {
+            if (Thread.getDefaultUncaughtExceptionHandler() is GlobalExceptionHandler) return
+
             val handler = GlobalExceptionHandler(
-                applicationContext,
-                Thread.getDefaultUncaughtExceptionHandler() as Thread.UncaughtExceptionHandler,
-                activityToBeLaunched,
+                applicationContext = applicationContext,
+                defaultHandler = Thread.getDefaultUncaughtExceptionHandler(),
+                activityToBeLaunched = activityToBeLaunched,
+                crashLogStore = PersistentCrashLogStore(applicationContext),
             )
             Thread.setDefaultUncaughtExceptionHandler(handler)
         }
 
-        fun getThrowableFromIntent(intent: Intent): Throwable? {
-            return try {
-                Json.decodeFromString(ThrowableSerializer, intent.getStringExtra(INTENT_EXTRA)!!)
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "Wasn't able to retrieve throwable from intent" }
-                null
-            }
-        }
+        fun getThrowableFromIntent(intent: Intent): Throwable? =
+            intent.getStringExtra(INTENT_EXTRA)
+                ?.takeIf(String::isNotBlank)
+                ?.let(::Throwable)
     }
 }

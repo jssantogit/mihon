@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.interactor.GetDiscoverFeed
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchCatalog
+import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -66,13 +67,17 @@ class CatalogScreenModelTest {
             titleRepository = titleRepository,
             libraryRepository = libraryRepository,
         ),
-    ) = CatalogScreenModel(
-        searchCatalog = SearchCatalog(registry(provider)),
-        getDiscoverFeed = GetDiscoverFeed(registry(provider)),
-        addCatalogItemToLibrary = addCatalogItemToLibrary,
-        canonicalTitleRepository = titleRepository,
-        canonicalLibraryRepository = libraryRepository,
-    )
+    ): CatalogScreenModel {
+        val integrationRegistry = registry(provider)
+        val searchIntegrations = SearchIntegrations(integrationRegistry)
+        return CatalogScreenModel(
+            searchCatalog = SearchCatalog(integrationRegistry, searchIntegrations),
+            getDiscoverFeed = GetDiscoverFeed(integrationRegistry, searchIntegrations),
+            addCatalogItemToLibrary = addCatalogItemToLibrary,
+            canonicalTitleRepository = titleRepository,
+            canonicalLibraryRepository = libraryRepository,
+        )
+    }
 
     private fun createFakeAddCatalogItemToLibrary(
         titleRepository: FakeCanonicalTitleRepository = FakeCanonicalTitleRepository(),

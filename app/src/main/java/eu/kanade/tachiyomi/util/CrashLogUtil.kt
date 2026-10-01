@@ -5,6 +5,7 @@ import android.os.Build
 import dev.zacsweers.metro.Inject
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.BuildConfig
+import eu.kanade.tachiyomi.crash.PersistentCrashLogStore
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.BoundedLogcatCollector
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.CrashLogReportComposer
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCaptureState
@@ -30,6 +31,7 @@ import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
 import tachiyomi.core.common.util.lang.withNonCancellableContext
 import tachiyomi.core.common.util.lang.withUIContext
+import java.io.File
 import kotlin.time.Clock
 
 @Inject
@@ -45,6 +47,8 @@ class CrashLogUtil(
     private val diagnosticRuntimeSnapshot: DiagnosticRuntimeSnapshot,
     private val logcatCollector: BoundedLogcatCollector,
 ) {
+
+    private val persistentCrashLogStore = PersistentCrashLogStore(context)
 
     suspend fun dumpLogs(exception: Throwable? = null) = withNonCancellableContext {
         try {
@@ -69,6 +73,7 @@ class CrashLogUtil(
                     append("detailed_capture_active=${diagnosticCaptureState.isDetailedCaptureActive()}")
                 }
                 val crashContext = diagnosticCrashContextStore.describe()
+                val persistentCrash = persistentCrashLogStore.read()
                 val logPriority = if (networkPreferences.verboseLogging.get()) "V" else "E"
                 val logcat = try {
                     logcatCollector.collect(logPriority)
@@ -87,8 +92,9 @@ class CrashLogUtil(
                     runtimeSnapshot = runtimeSnapshot,
                     captureWindow = captureWindow,
                     crashContext = crashContext,
+                    persistentCrash = persistentCrash,
                 )
-                context.createFileInCacheDir("mihon_crash_logs.txt").apply { writeText(report) }
+                context.createFileInCacheDir("tsuzuki_logs.txt").apply { writeText(report) }
             }
 
             val uri = reportFile.getUriCompat(context)
@@ -100,12 +106,31 @@ class CrashLogUtil(
         }
     }
 
+    suspend fun clearLogs(): Boolean = withContext(Dispatchers.IO) {
+        diagnosticCaptureState.clear()
+        diagnosticCrashContextStore.clear()
+        diagnosticRecorderHealth.reset()
+        val historyCleared = structuredHistory.clear()
+        val crashCleared = persistentCrashLogStore.clear()
+        var cachedReportsCleared = true
+        listOfNotNull(
+            context.externalCacheDir?.let { File(it, "tsuzuki_logs.txt") },
+            context.externalCacheDir?.let { File(it, "mihon_crash_logs.txt") },
+            File(context.cacheDir, "tsuzuki_startup_crash.txt"),
+        ).forEach { file ->
+            if (file.exists() && !file.delete()) cachedReportsCleared = false
+        }
+        historyCleared && crashCleared && cachedReportsCleared
+    }
+
     fun getDebugInfo(): String {
         val now = Clock.System.now()
         val tz = TimeZone.currentSystemDefault()
+        val versionInfo = "${BuildConfig.VERSION_NAME} " +
+            "(${BuildConfig.COMMIT_SHA}, ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TIME})"
         return """
             App ID: ${BuildConfig.APPLICATION_ID}
-            App version: ${BuildConfig.VERSION_NAME} (${BuildConfig.COMMIT_SHA}, ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TIME})
+            App version: $versionInfo
             Installation ID: ${preferences.installationId.get()}
             Android version: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}; build ${Build.DISPLAY})
             Device brand: ${Build.BRAND}

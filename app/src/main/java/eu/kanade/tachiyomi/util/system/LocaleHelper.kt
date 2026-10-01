@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.util.system
 
 import android.content.Context
 import androidx.core.os.LocaleListCompat
-import eu.kanade.tachiyomi.ui.browse.source.SourcesViewModel
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
 import java.util.Locale
@@ -11,6 +10,9 @@ import java.util.Locale
  * Utility class to change the application's language in runtime.
  */
 object LocaleHelper {
+
+    private const val LAST_USED_KEY = "last_used"
+    private const val PINNED_KEY = "pinned"
 
     /**
      * Sorts by display name, except keeps the "all" (displayed as "Multi") locale at the top.
@@ -30,8 +32,8 @@ object LocaleHelper {
      */
     fun getSourceDisplayName(lang: String?, context: Context): String {
         return when (lang) {
-            SourcesViewModel.LAST_USED_KEY -> context.stringResource(MR.strings.last_used_source)
-            SourcesViewModel.PINNED_KEY -> context.stringResource(MR.strings.pinned_sources)
+            LAST_USED_KEY -> context.stringResource(MR.strings.last_used_source)
+            PINNED_KEY -> context.stringResource(MR.strings.pinned_sources)
             "other" -> context.stringResource(MR.strings.other_source)
             "all" -> context.stringResource(MR.strings.multi_lang)
             else -> getLocalizedDisplayName(lang)

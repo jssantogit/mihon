@@ -7,15 +7,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import eu.kanade.presentation.theme.TachiyomiPreviewTheme
-import kotlinx.coroutines.launch
-import mihon.app.di.appGraph
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.BugReport
 import tachiyomi.i18n.MR
@@ -26,22 +21,15 @@ import tachiyomi.presentation.core.screens.InfoScreen
 @Composable
 fun CrashScreen(
     exception: Throwable?,
+    onShareLogsClick: () -> Unit,
     onRestartClick: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val crashLogUtil = remember { context.appGraph.crashLogUtil }
-
     InfoScreen(
         icon = MaterialSymbols.Rounded.BugReport,
         headingText = stringResource(MR.strings.crash_screen_title),
         subtitleText = stringResource(MR.strings.crash_screen_description, stringResource(MR.strings.app_name)),
         acceptText = stringResource(MR.strings.pref_dump_crash_logs),
-        onAcceptClick = {
-            scope.launch {
-                crashLogUtil.dumpLogs(exception)
-            }
-        },
+        onAcceptClick = onShareLogsClick,
         rejectText = stringResource(MR.strings.crash_screen_restart_application),
         onRejectClick = onRestartClick,
     ) {
@@ -53,7 +41,7 @@ fun CrashScreen(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             Text(
-                text = exception.toString(),
+                text = exception?.toString() ?: stringResource(MR.strings.tsuzuki_crash_persisted_locally),
                 modifier = Modifier
                     .padding(all = MaterialTheme.padding.small),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -66,6 +54,10 @@ fun CrashScreen(
 @Composable
 private fun CrashScreenPreview() {
     TachiyomiPreviewTheme {
-        CrashScreen(exception = RuntimeException("Dummy")) {}
+        CrashScreen(
+            exception = RuntimeException("Dummy"),
+            onShareLogsClick = {},
+            onRestartClick = {},
+        )
     }
 }

@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.util.Screen
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 object SettingsTsuzukiAdvancedHubScreen : Screen() {
     @Composable
@@ -34,6 +36,11 @@ object SettingsTsuzukiAdvancedHubScreen : Screen() {
                     .fillMaxSize()
                     .padding(padding),
             ) {
+                ListItem(
+                    headlineContent = { Text(stringResource(MR.strings.tsuzuki_logs_title)) },
+                    supportingContent = { Text(stringResource(MR.strings.tsuzuki_logs_summary)) },
+                    modifier = Modifier.clickable { navigator.push(SettingsTsuzukiLogsScreen) },
+                )
                 ListItem(
                     headlineContent = { Text("Segurança e Privacidade") },
                     modifier = Modifier.clickable { navigator.push(SettingsSecurityScreen) },

@@ -44,6 +44,28 @@ class DiagnosticCrashContextStoreTest {
     }
 
     @Test
+    fun `clear removes the process crash context`() {
+        val store = DiagnosticCrashContextStore()
+        val event = StructuredDiagnosticSanitizer.sanitize(
+            StructuredDiagnosticEvent(
+                timestampMillis = 1,
+                severity = DiagnosticSeverity.ERROR,
+                subsystem = DiagnosticSubsystem.ARTWORK,
+                name = DiagnosticEventName.INVARIANT_VIOLATION,
+                sessionId = "00000000-0000-0000-0000-000000000001",
+                operationId = null,
+                stage = DiagnosticStage.RENDER,
+                outcome = DiagnosticOutcome.FAILED,
+            ),
+        )!!
+        store.observe(event)
+
+        store.clear()
+
+        assertTrue(store.describe().contains("no structured event observed in this process"))
+    }
+
+    @Test
     fun `empty crash context has fixed marker`() {
         assertTrue(
             DiagnosticCrashContextStore().describe()

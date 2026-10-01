@@ -119,6 +119,24 @@ class StructuredDiagnosticHistory internal constructor(
         }
     }
 
+    /** Clears all persisted structured diagnostic segments owned by this store. */
+    fun clear(timeoutMillis: Long = DEFAULT_FLUSH_TIMEOUT_MILLIS): Boolean {
+        flush(timeoutMillis)
+        return try {
+            withRootLock {
+                var removed = true
+                segmentFiles().forEach { file ->
+                    if (file.exists() && !file.delete()) removed = false
+                }
+                droppedEvents.set(0)
+                pruneEmptyInstanceDirectories()
+                removed
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** Returns a bounded snapshot after flushing, or an empty string when storage is unavailable. */
     fun snapshot(
         maxSnapshotBytes: Long = maxBytes,

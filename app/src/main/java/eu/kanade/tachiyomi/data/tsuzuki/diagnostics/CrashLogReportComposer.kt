@@ -12,6 +12,7 @@ object CrashLogReportComposer {
         runtimeSnapshot: String? = null,
         captureWindow: String? = null,
         crashContext: String? = null,
+        persistentCrash: String? = null,
     ): String = buildString {
         appendSection(debugInfo)
         runtimeSnapshot?.takeIf(String::isNotBlank)?.let {
@@ -24,6 +25,10 @@ object CrashLogReportComposer {
         }
         crashContext?.takeIf(String::isNotBlank)?.let {
             appendLine("Diagnostic crash context:")
+            appendSection(it)
+        }
+        persistentCrash?.takeIf(String::isNotBlank)?.let {
+            appendLine("Last persistent uncaught crash:")
             appendSection(it)
         }
         extensionsInfo?.takeIf(String::isNotBlank)?.let { appendSection(it) }

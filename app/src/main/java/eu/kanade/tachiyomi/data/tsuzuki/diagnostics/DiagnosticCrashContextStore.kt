@@ -38,6 +38,10 @@ class DiagnosticCrashContextStore {
         )
     }
 
+    fun clear() {
+        lastEvent.set(null)
+    }
+
     fun describe(): String {
         val snapshot = lastEvent.get() ?: return "(no structured event observed in this process)"
         val age = (Clock.System.now().toEpochMilliseconds() - snapshot.timestampMillis).coerceAtLeast(0)
