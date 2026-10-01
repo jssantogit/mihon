@@ -111,7 +111,12 @@ class CrashLogUtil(
         diagnosticRecorderHealth.reset()
         val historyCleared = structuredHistory.clear()
         val crashCleared = persistentCrashLogStore.clear()
-        historyCleared && crashCleared
+        val cachedReportsCleared = listOfNotNull(
+            context.externalCacheDir?.let { File(it, "tsuzuki_logs.txt") },
+            context.externalCacheDir?.let { File(it, "mihon_crash_logs.txt") },
+            File(context.cacheDir, "tsuzuki_startup_crash.txt"),
+        ).all { file -> !file.exists() || file.delete() }
+        historyCleared && crashCleared && cachedReportsCleared
     }
 
     fun getDebugInfo(): String {
