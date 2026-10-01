@@ -48,6 +48,15 @@ RETIRED_UI_PATHS = (
     "app/src/main/java/eu/kanade/presentation/browse/components/GlobalSearchCardRow.kt",
     "app/src/main/java/eu/kanade/presentation/browse/components/GlobalSearchResultItems.kt",
     "app/src/main/java/eu/kanade/presentation/browse/components/GlobalSearchToolbar.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaViewModel.kt",
+    "app/src/main/java/eu/kanade/presentation/manga/MangaScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/manga/notes/MangaNotesScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/manga/MangaNotesScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceScreen.kt",
+    "app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceViewModel.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/BrowseSourceScreen.kt",
+    "app/src/main/java/eu/kanade/presentation/browse/components/BrowseSourceToolbar.kt",
 )
 
 RETIRED_UI_PREFIXES = (
