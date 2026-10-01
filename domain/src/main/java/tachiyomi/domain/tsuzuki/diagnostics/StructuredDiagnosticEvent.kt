@@ -177,6 +177,7 @@ enum class DiagnosticAttribute {
     MAPPING_REUSED,
     LANGUAGE,
     PROVIDER_ID,
+    ADDON_ID,
     CANONICAL_TITLE_REF,
     MIHON_MANGA_REF,
     CONFIDENCE_SCORE,
@@ -378,7 +379,9 @@ object StructuredDiagnosticSanitizer {
 
         DiagnosticAttribute.LANGUAGE -> (value as? DiagnosticAttributeValue.Text)
             ?.takeIf { languageTagPattern.matches(it.value) }
-        DiagnosticAttribute.PROVIDER_ID -> (value as? DiagnosticAttributeValue.Text)
+        DiagnosticAttribute.PROVIDER_ID,
+        DiagnosticAttribute.ADDON_ID,
+        -> (value as? DiagnosticAttributeValue.Text)
             ?.takeIf { providerIdPattern.matches(it.value) }
         DiagnosticAttribute.CANONICAL_TITLE_REF,
         DiagnosticAttribute.MIHON_MANGA_REF,
