@@ -75,6 +75,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadArtifact
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
@@ -905,6 +906,7 @@ class MihonRuntimeEndToEndIntegrationTest {
                 chapterContentPreparer = MihonChapterContentPreparer(
                     MihonCanonicalReaderGateway(chapterRows.repository),
                 ),
+                structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
             )
         }
 
