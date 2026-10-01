@@ -1154,10 +1154,12 @@
 
     <string name="tsuzuki_integrations_tracking_behavior_title">Tracking behavior</string>
     <string name="tsuzuki_integrations_tracking_behavior_summary">Automatic updates and synchronization when chapters are marked as read</string>
+    <string name="tsuzuki_integrations_category_general">General</string>
     <string name="tsuzuki_integrations_category_metadata">Metadata and catalog</string>
     <string name="tsuzuki_integrations_category_servers">Servers</string>
     <string name="tsuzuki_integrations_category_compatibility">Compatibility</string>
     <string name="tsuzuki_integration_enabled">Enabled</string>
+    <string name="tsuzuki_integration_enable_tsuzuki">Enable Tsuzuki</string>
     <string name="tsuzuki_integration_use_provider">Use %s in Tsuzuki</string>
     <string name="tsuzuki_integration_type">Type</string>
     <string name="tsuzuki_integration_features">Features</string>
