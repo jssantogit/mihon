@@ -77,6 +77,8 @@ Acceptance sequence after stacked CI is green:
 
 No signed APK is produced before all three waves are merged.
 
+Full CI is explicitly required for the Wave 3 head.
+
 ## Invariants
 
 - native provider scales remain unchanged in provider badges;
