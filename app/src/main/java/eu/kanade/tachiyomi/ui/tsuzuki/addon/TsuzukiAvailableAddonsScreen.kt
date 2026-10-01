@@ -38,6 +38,7 @@ class TsuzukiAvailableAddonsScreen : Screen() {
     @Composable
     override fun Content() {
         val context = LocalContext.current
+        // Keep add-on discovery independent from the retired Mihon Browse/Extensions UI stack.
         val navigator = LocalNavigator.currentOrThrow
         val scope = rememberCoroutineScope()
         val extensionManager = remember { context.appGraph.extensionManager }
