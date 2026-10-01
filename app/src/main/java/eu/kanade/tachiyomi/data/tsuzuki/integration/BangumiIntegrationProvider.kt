@@ -125,6 +125,7 @@ class BangumiIntegrationProvider private constructor(
             label = "Bangumi",
             value = score.value,
             scaleMax = score.maxValue,
+            voteCount = score.voteCount,
         )
     }
 
