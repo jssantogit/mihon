@@ -202,7 +202,7 @@ class ShikimoriApi(
             }
 
             with(json) {
-                authClient.newCall(
+                publicClient.newCall(
                     POST(
                         GRAPHQL_API_URL,
                         body = payload.toString().toRequestBody(jsonMime),
