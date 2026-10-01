@@ -122,29 +122,6 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                                 HorizontalDivider()
                             }
 
-                            item(key = "tracking_behavior") {
-                                ListItem(
-                                    headlineContent = {
-                                        Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_title))
-                                    },
-                                    supportingContent = {
-                                        Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_summary))
-                                    },
-                                    trailingContent = {
-                                        TextButton(
-                                            onClick = {
-                                                navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
-                                            },
-                                        ) {
-                                            Text(stringResource(MR.strings.action_settings))
-                                        }
-                                    },
-                                    modifier = Modifier.clickable {
-                                        navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
-                                    },
-                                )
-                                HorizontalDivider()
-                            }
                         }
 
                         IntegrationCategory.entries
@@ -314,6 +291,31 @@ class SettingsTsuzukiIntegrationDetailScreen(
                                     )
                                 },
                                 modifier = Modifier.alpha(if (item.enabled) 1f else 0.45f),
+                            )
+                        }
+                    }
+
+                    if (item.id.value == "tsuzuki") {
+                        item(key = "tracking_behavior") {
+                            ListItem(
+                                headlineContent = {
+                                    Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_title))
+                                },
+                                supportingContent = {
+                                    Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_summary))
+                                },
+                                trailingContent = {
+                                    TextButton(
+                                        onClick = {
+                                            navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
+                                        },
+                                    ) {
+                                        Text(stringResource(MR.strings.action_settings))
+                                    }
+                                },
+                                modifier = Modifier.clickable {
+                                    navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
+                                },
                             )
                         }
                     }

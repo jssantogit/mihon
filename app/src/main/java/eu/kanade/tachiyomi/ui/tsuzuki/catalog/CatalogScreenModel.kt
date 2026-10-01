@@ -163,16 +163,16 @@ class CatalogScreenModel(
     suspend fun refreshDiscover() {
         discoverStateFlow.value = DiscoverState.Loading
         try {
-            val feed = getDiscoverFeed()
-            if (feed.isCompleteFailure) {
-                val error = feed.trending.exceptionOrNull()
-                    ?: feed.popular.exceptionOrNull()
-                    ?: IllegalStateException("Complete feed failure")
-                discoverStateFlow.value = DiscoverState.Error(error)
-            } else if (feed.isDegraded) {
-                discoverStateFlow.value = DiscoverState.Degraded(feed)
-            } else {
-                discoverStateFlow.value = DiscoverState.Success(feed)
+            val baseFeed = getDiscoverFeed.awaitBase()
+            publishDiscover(baseFeed)
+            if (!baseFeed.isCompleteFailure) {
+                try {
+                    publishDiscover(getDiscoverFeed.enrich(baseFeed))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    // Catalog content is already visible; enrichment is best-effort.
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -212,13 +212,23 @@ class CatalogScreenModel(
         }
         searchStateFlow.value = SearchState.Loading
         try {
-            val result = searchCatalog(query = query)
+            val result = searchCatalog.awaitBase(query = query)
             result.fold(
                 onSuccess = { page ->
                     if (page.items.isEmpty()) {
                         searchStateFlow.value = SearchState.Empty
                     } else {
                         searchStateFlow.value = SearchState.Success(page.items)
+                        try {
+                            val enriched = searchCatalog.enrich(page)
+                            if (searchQueryFlow.value == query) {
+                                searchStateFlow.value = SearchState.Success(enriched.items)
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Throwable) {
+                            // Keep the fast catalog result if optional enrichment fails.
+                        }
                     }
                 },
                 onFailure = { error ->
@@ -280,6 +290,19 @@ class CatalogScreenModel(
             } catch (e: Throwable) {
                 libraryActionStateFlow.value = LibraryActionState.Error(e)
             }
+        }
+    }
+
+    private fun publishDiscover(feed: DiscoverFeed) {
+        if (feed.isCompleteFailure) {
+            val error = feed.trending.exceptionOrNull()
+                ?: feed.popular.exceptionOrNull()
+                ?: IllegalStateException("Complete feed failure")
+            discoverStateFlow.value = DiscoverState.Error(error)
+        } else if (feed.isDegraded) {
+            discoverStateFlow.value = DiscoverState.Degraded(feed)
+        } else {
+            discoverStateFlow.value = DiscoverState.Success(feed)
         }
     }
 
