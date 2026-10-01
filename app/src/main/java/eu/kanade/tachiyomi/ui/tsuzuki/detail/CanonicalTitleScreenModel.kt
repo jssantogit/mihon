@@ -11,14 +11,11 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
@@ -198,7 +195,6 @@ class CanonicalTitleScreenModel(
             try {
                 val refreshed = loadLocalState(
                     canonicalTitleId = id,
-                    includeLegacyDownloadChecks = false,
                     includeIntegrationMetadata = false,
                     isRefreshing = false,
                 )
@@ -429,7 +425,6 @@ class CanonicalTitleScreenModel(
             // never be on the critical path to opening a title.
             _state.value = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
-                includeLegacyDownloadChecks = false,
                 includeIntegrationMetadata = false,
                 isRefreshing = true,
             )
@@ -489,7 +484,6 @@ class CanonicalTitleScreenModel(
         try {
             val refreshed = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
-                includeLegacyDownloadChecks = true,
                 includeIntegrationMetadata = true,
                 isRefreshing = false,
                 refreshError = errors.firstOrNull(),
@@ -525,7 +519,6 @@ class CanonicalTitleScreenModel(
 
     private suspend fun loadLocalState(
         canonicalTitleId: String,
-        includeLegacyDownloadChecks: Boolean,
         includeIntegrationMetadata: Boolean,
         isRefreshing: Boolean,
         refreshError: Throwable? = null,
@@ -534,10 +527,8 @@ class CanonicalTitleScreenModel(
             ?: throw NoSuchElementException("Canonical title not found: $canonicalTitleId")
         val libraryEntry = canonicalLibraryRepository.get(canonicalTitleId)
         val chapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
-        val persistedEvidence = chapterEvidenceRepository.getByCanonicalTitleId(canonicalTitleId)
-        val supportedChapterIds = persistedEvidence
-            .mapNotNull { it.mappedCanonicalChapterId }
-            .toSet()
+        val supportSnapshot = chapterEvidenceRepository.getSupportSnapshot(canonicalTitleId)
+        val supportedChapterIds = supportSnapshot.mappedCanonicalChapterIds
         val addonNames = try {
             addonRepository.snapshot().associate { it.id.value to it.displayName }
         } catch (error: CancellationException) {
@@ -646,57 +637,22 @@ class CanonicalTitleScreenModel(
             }
         }.distinct()
 
-        val details = if (!includeLegacyDownloadChecks) {
-            chapters.mapNotNull { chapter ->
-                val progress = progressByChapter[chapter.id]
-                val downloaded = chapter.id in canonicalDownloadIds
-                if (
-                    chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
-                    chapter.id !in supportedChapterIds &&
-                    progress == null &&
-                    !downloaded
-                ) {
-                    null
-                } else {
-                    CanonicalChapterDetailItem(
-                        chapter = chapter,
-                        progress = progress,
-                        downloaded = downloaded,
-                    )
-                }
-            }
-        } else {
-            coroutineScope {
-                val downloadCheckGate = Semaphore(MAX_CONCURRENT_DOWNLOAD_CHECKS)
-                chapters.map { chapter ->
-                    async {
-                        val progress = progressByChapter[chapter.id]
-                        val downloaded = chapter.id in canonicalDownloadIds ||
-                            downloadCheckGate.withPermit {
-                                try {
-                                    getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (_: Throwable) {
-                                    false
-                                }
-                            }
-                        if (
-                            chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
-                            chapter.id !in supportedChapterIds &&
-                            progress == null &&
-                            !downloaded
-                        ) {
-                            null
-                        } else {
-                            CanonicalChapterDetailItem(
-                                chapter = chapter,
-                                progress = progress,
-                                downloaded = downloaded,
-                            )
-                        }
-                    }
-                }.awaitAll().filterNotNull()
+        val details = chapters.mapNotNull { chapter ->
+            val progress = progressByChapter[chapter.id]
+            val downloaded = chapter.id in canonicalDownloadIds
+            if (
+                chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
+                chapter.id !in supportedChapterIds &&
+                progress == null &&
+                !downloaded
+            ) {
+                null
+            } else {
+                CanonicalChapterDetailItem(
+                    chapter = chapter,
+                    progress = progress,
+                    downloaded = downloaded,
+                )
             }
         }
 
@@ -713,7 +669,7 @@ class CanonicalTitleScreenModel(
             libraryEntry = libraryEntry,
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
-            addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
+            addonCoverage = observedAddonCoverage(chapters, supportSnapshot.addonMappedChapterIds, addonNames),
             coverUrl = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl,
             sourceCover = metadata?.asMangaCover(),
             author = integrationMetadata
@@ -893,6 +849,5 @@ class CanonicalTitleScreenModel(
     }
 
     private companion object {
-        const val MAX_CONCURRENT_DOWNLOAD_CHECKS = 8
     }
 }

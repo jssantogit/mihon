@@ -10,6 +10,7 @@ import tachiyomi.data.Database
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceSupportSnapshot
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
@@ -30,6 +31,32 @@ class ChapterEvidenceRepositoryImpl(
         return database.tsuzuki_chapter_evidenceQueries
             .getTsuzukiChapterEvidenceByTitle(canonicalTitleId, ::mapEvidence)
             .awaitAsList()
+    }
+
+    override suspend fun getSupportSnapshot(canonicalTitleId: String): ChapterEvidenceSupportSnapshot {
+        val rows = database.tsuzuki_chapter_evidenceQueries
+            .getTsuzukiChapterEvidenceSupportByTitle(canonicalTitleId) {
+                    producerKind,
+                    producerId,
+                    mappedCanonicalChapterId,
+                ->
+                SupportRow(producerKind, producerId, mappedCanonicalChapterId)
+            }
+            .awaitAsList()
+
+        val mappedCanonicalChapterIds = rows.mapNotNullTo(linkedSetOf()) { it.mappedCanonicalChapterId }
+        val addonMappedChapterIds = rows.asSequence()
+            .filter { it.producerKind == ProducerKind.ADDON.name }
+            .mapNotNull { row ->
+                row.mappedCanonicalChapterId?.let { chapterId -> row.producerId to chapterId }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, chapterIds) -> chapterIds.toSet() }
+
+        return ChapterEvidenceSupportSnapshot(
+            mappedCanonicalChapterIds = mappedCanonicalChapterIds,
+            addonMappedChapterIds = addonMappedChapterIds,
+        )
     }
 
     override suspend fun getByProducerExternalKey(
@@ -153,6 +180,12 @@ class ChapterEvidenceRepositoryImpl(
         ),
         mappedCanonicalChapterId = mappedCanonicalChapterId,
         rawMetadata = rawMetadata,
+    )
+
+    private data class SupportRow(
+        val producerKind: String,
+        val producerId: String,
+        val mappedCanonicalChapterId: String?,
     )
 
     private data class ExternalEvidenceKey(
