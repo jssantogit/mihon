@@ -25,16 +25,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.tsuzuki.recordArtworkLoad
 import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
 import eu.kanade.presentation.tsuzuki.integration.ratingScaleLabel
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalChapterDetailItem
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalProviderRating
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreenState
+import mihon.app.di.appGraph
 import tachiyomi.domain.tsuzuki.chapter.evidence.CanonicalChapterConfirmation
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 
@@ -155,6 +162,15 @@ private fun TitleHeader(
     onAddToLibrary: () -> Unit,
     onRemoveFromLibrary: () -> Unit,
 ) {
+    val recorder = LocalContext.current.appGraph.structuredDiagnosticRecorder
+    val trace = remember(state.title.id, recorder.sessionId) {
+        DiagnosticTrace.start(
+            recorder = recorder,
+            workflow = DiagnosticWorkflow.OPEN_TITLE,
+            canonicalTitleId = state.title.id,
+            subsystem = DiagnosticSubsystem.IMAGE,
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -171,6 +187,7 @@ private fun TitleHeader(
                 fallbackData = listOf(state.sourceCover, state.sourceCover?.url),
                 contentDescription = state.title.displayTitle,
                 modifier = Modifier.width(112.dp),
+                onLoadEvent = { trace.recordArtworkLoad(it) },
             )
             Column(
                 modifier = Modifier.weight(1f),
