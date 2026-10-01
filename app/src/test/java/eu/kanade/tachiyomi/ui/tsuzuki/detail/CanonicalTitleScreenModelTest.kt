@@ -120,6 +120,7 @@ class CanonicalTitleScreenModelTest {
             addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -310,6 +311,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -398,6 +400,7 @@ class CanonicalTitleScreenModelTest {
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
             diagnostics = diagnostics,
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -471,6 +474,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -541,6 +545,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -622,6 +627,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -684,6 +690,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
+            resolveCanonicalMetadata = mockk(relaxed = true),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -734,6 +741,7 @@ class CanonicalTitleScreenModelTest {
                     ),
                 ),
                 diagnostics = diagnostics,
+                resolveCanonicalMetadata = mockk(relaxed = true),
                 resolveCanonicalSourceManga = mockk(relaxed = true),
                 resolveCanonicalArtwork = mockk(relaxed = true),
             )
