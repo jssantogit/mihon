@@ -13,8 +13,10 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.mergeCatalogItemsByVerifiedIdentity
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.interactor.ComputeTsuzukiRating
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRatingSource
 import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 
 @Inject
@@ -140,6 +142,17 @@ class SearchIntegrations(
                 identifiedItem.copy(
                     score = scores.firstOrNull(),
                     scores = scores,
+                    tsuzukiRating = ComputeTsuzukiRating(
+                        scores.map { score ->
+                            TsuzukiRatingSource(
+                                providerId = score.provider,
+                                value = score.value,
+                                maxValue = score.maxValue,
+                                voteCount = score.voteCount,
+                                identityEvidence = score.identityEvidence,
+                            )
+                        },
+                    ),
                     externalIds = buildMap {
                         putAll(identifiedItem.externalIds)
                         matches
