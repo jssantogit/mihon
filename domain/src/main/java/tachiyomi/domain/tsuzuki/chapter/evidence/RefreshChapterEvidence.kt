@@ -30,6 +30,18 @@ import tachiyomi.domain.tsuzuki.content.interactor.ContentBindingNotFoundExcepti
 import tachiyomi.domain.tsuzuki.content.interactor.DiscoverReadableTitle
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
+import kotlin.time.TimeSource
 
 class RefreshChapterEvidence private constructor(
     private val registry: IntegrationRegistry,
@@ -40,6 +52,7 @@ class RefreshChapterEvidence private constructor(
     private val inFlightContentResolution: InFlightContentResolution?,
     private val diagnostics: ChapterInventoryDiagnostics,
     private val discoverReadableTitle: DiscoverReadableTitle?,
+    private val structuredDiagnostics: StructuredDiagnosticRecorder,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
@@ -53,6 +66,7 @@ class RefreshChapterEvidence private constructor(
         inFlightContentResolution: InFlightContentResolution,
         diagnostics: ChapterInventoryDiagnostics,
         discoverReadableTitle: DiscoverReadableTitle,
+        structuredDiagnostics: StructuredDiagnosticRecorder,
     ) : this(
         registry = registry,
         reconcileChapterEvidence = reconcileChapterEvidence,
@@ -62,6 +76,7 @@ class RefreshChapterEvidence private constructor(
         inFlightContentResolution = inFlightContentResolution,
         diagnostics = diagnostics,
         discoverReadableTitle = discoverReadableTitle,
+        structuredDiagnostics = structuredDiagnostics,
         constructorMarker = Unit,
     )
 
@@ -82,6 +97,7 @@ class RefreshChapterEvidence private constructor(
         inFlightContentResolution = null,
         diagnostics = diagnostics,
         discoverReadableTitle = discoverReadableTitle,
+        structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
         constructorMarker = Unit,
     )
 
@@ -97,10 +113,24 @@ class RefreshChapterEvidence private constructor(
         inFlightContentResolution = null,
         diagnostics = NoOpChapterInventoryDiagnostics,
         discoverReadableTitle = null,
+        structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
         constructorMarker = Unit,
     )
 
     suspend fun execute(canonicalTitleId: String): Result<Unit> {
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.CHAPTER_REFRESH,
+            canonicalTitleId = canonicalTitleId,
+            subsystem = DiagnosticSubsystem.CHAPTER,
+        )
+        val started = TimeSource.Monotonic.markNow()
+        trace.event(
+            subsystem = DiagnosticSubsystem.CHAPTER,
+            name = DiagnosticEventName.CHAPTER_REFRESH_STARTED,
+            stage = DiagnosticStage.RECONCILE,
+            outcome = DiagnosticOutcome.STARTED,
+        )
         return try {
             registry.awaitReady()
             // Break the zero-binding/zero-chapter deadlock before probing inventories.
@@ -151,6 +181,15 @@ class RefreshChapterEvidence private constructor(
                 (integrationEvidence + addonEvidence).distinctBy(ChapterEvidence::id)
             }
             reconcileChapterEvidence.execute(canonicalTitleId, evidence)
+            trace.event(
+                subsystem = DiagnosticSubsystem.CHAPTER,
+                name = DiagnosticEventName.CHAPTER_EVIDENCE_RECONCILED,
+                stage = DiagnosticStage.RECONCILE,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                attributes = mapOf(
+                    DiagnosticAttribute.ITEM_COUNT to DiagnosticAttributeValue.Number(evidence.size.toLong()),
+                ),
+            )
             // Chapter mappings may have changed; never serve stale provider
             // work or cached options that were resolved against an older graph.
             invalidateContentOptionsAfterChapterRefresh(
@@ -158,6 +197,16 @@ class RefreshChapterEvidence private constructor(
                     inFlightContentResolution?.invalidateTitle(canonicalTitleId)
                 },
                 invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
+            )
+            trace.event(
+                subsystem = DiagnosticSubsystem.CHAPTER,
+                name = DiagnosticEventName.CHAPTER_REFRESH_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+                attributes = mapOf(
+                    DiagnosticAttribute.ITEM_COUNT to DiagnosticAttributeValue.Number(evidence.size.toLong()),
+                ),
             )
             Result.success(Unit)
         } catch (error: CancellationException) {
@@ -168,12 +217,36 @@ class RefreshChapterEvidence private constructor(
                     reason = ChapterInventoryDiagnosticReason.TIMEOUT_FAILURE,
                 )
             }
+            trace.event(
+                subsystem = DiagnosticSubsystem.CHAPTER,
+                name = DiagnosticEventName.CHAPTER_REFRESH_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                    DiagnosticOutcome.TIMEOUT
+                } else {
+                    DiagnosticOutcome.CANCELLED
+                },
+                severity = if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                    DiagnosticSeverity.WARN
+                } else {
+                    DiagnosticSeverity.INFO
+                },
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
+            )
             throw error
         } catch (error: Throwable) {
             recordRefreshOutcome(
                 canonicalTitleId = canonicalTitleId,
                 outcome = error.toDiagnosticOutcome(),
                 reason = ChapterInventoryDiagnosticFailures.classify(error).second,
+            )
+            trace.event(
+                subsystem = DiagnosticSubsystem.CHAPTER,
+                name = DiagnosticEventName.CHAPTER_REFRESH_COMPLETED,
+                stage = DiagnosticStage.COMPLETE,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.WARN,
+                durationMillis = started.elapsedNow().inWholeMilliseconds.coerceAtLeast(0),
             )
             Result.failure(error)
         }
