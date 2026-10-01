@@ -10,6 +10,11 @@ internal fun TrackSearch.toIntegrationCatalogItem(providerId: String): CatalogIt
     provider = providerId,
     providerId = remote_id.toString(),
     title = title,
+    titles = alternate_titles
+        .filter(String::isNotBlank)
+        .distinct()
+        .mapIndexed { index, value -> "alternate_$index" to value }
+        .toMap(),
     synopsis = summary.ifBlank { null },
     coverUrl = cover_url.ifBlank { null },
     score = score
