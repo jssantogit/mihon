@@ -76,3 +76,5 @@ The approved repository/About wordmark direction is **A2 — Organic T**.
 - launcher and splash remain symbol-only.
 
 This creates a deliberate hierarchy: symbol alone for compact/system identity, horizontal lockup for institutional/repository identity, and RGB + halo for Tsuzuki Rating.
+
+Full CI is required before merge; no local Gradle validation.
