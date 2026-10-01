@@ -33,6 +33,8 @@ import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshot
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.ContentDelivery
@@ -62,6 +64,43 @@ import java.net.SocketTimeoutException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RefreshChapterEvidenceTest {
+
+    @Test
+    fun `fresh chapter snapshot skips provider until forced refresh`() = runTest {
+        var providerCalls = 0
+        var now = 1_000L
+        val snapshots = FakeChapterRefreshSnapshotRepository()
+        val chapters = FakeCanonicalChapterRepository()
+        val evidenceRepository = FakeChapterEvidenceRepository()
+        val provider = object : ChapterEvidenceProvider {
+            override val producerId = "editorial"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                providerCalls++
+                return Result.success(emptyList())
+            }
+        }
+        val refresh = RefreshChapterEvidence(
+            registry = registry(listOf(provider)),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = evidenceRepository,
+            ),
+            refreshSnapshots = snapshots,
+            clock = { now },
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        providerCalls shouldBe 1
+
+        now += 1_000L
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        providerCalls shouldBe 1
+
+        refresh.execute("canonical-title", forceRefresh = true).isSuccess shouldBe true
+        providerCalls shouldBe 2
+    }
 
     @Test
     fun `chapter evidence refresh works with zero source mappings`() = runTest {
@@ -974,6 +1013,24 @@ class RefreshChapterEvidenceTest {
         }
 
         override fun report(): String = events.joinToString("\n")
+    }
+
+    private class FakeChapterRefreshSnapshotRepository : ChapterRefreshSnapshotRepository {
+        private val values = linkedMapOf<Pair<String, String>, ChapterRefreshSnapshot>()
+
+        override suspend fun get(canonicalTitleId: String, scopeKey: String): ChapterRefreshSnapshot? =
+            values[canonicalTitleId to scopeKey]
+
+        override suspend fun upsertIfNewer(snapshot: ChapterRefreshSnapshot): ChapterRefreshSnapshot {
+            val key = snapshot.canonicalTitleId to snapshot.scopeKey
+            val existing = values[key]
+            if (existing == null || snapshot.observedAt > existing.observedAt ||
+                (snapshot.observedAt == existing.observedAt && snapshot.fingerprint == existing.fingerprint)
+            ) {
+                values[key] = snapshot
+            }
+            return values.getValue(key)
+        }
     }
 
     private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {
