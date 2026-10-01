@@ -217,7 +217,6 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
     }
 }
 
-
 interface ShikimoriIntegrationApi {
     suspend fun searchPublic(query: String): List<TrackSearch>
 
