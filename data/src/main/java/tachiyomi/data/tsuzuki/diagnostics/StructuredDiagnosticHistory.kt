@@ -124,7 +124,10 @@ class StructuredDiagnosticHistory internal constructor(
         flush(timeoutMillis)
         return try {
             withRootLock {
-                val removed = segmentFiles().all(File::delete)
+                var removed = true
+                segmentFiles().forEach { file ->
+                    if (file.exists() && !file.delete()) removed = false
+                }
                 droppedEvents.set(0)
                 pruneEmptyInstanceDirectories()
                 removed
