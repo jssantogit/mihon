@@ -9,8 +9,23 @@ object CrashLogReportComposer {
         diagnosticSummary: String,
         structuredHistory: String,
         logcat: LogcatCapture,
+        runtimeSnapshot: String? = null,
+        captureWindow: String? = null,
+        crashContext: String? = null,
     ): String = buildString {
         appendSection(debugInfo)
+        runtimeSnapshot?.takeIf(String::isNotBlank)?.let {
+            appendLine("Diagnostic runtime snapshot:")
+            appendSection(it)
+        }
+        captureWindow?.takeIf(String::isNotBlank)?.let {
+            appendLine("Diagnostic capture window:")
+            appendSection(it)
+        }
+        crashContext?.takeIf(String::isNotBlank)?.let {
+            appendLine("Diagnostic crash context:")
+            appendSection(it)
+        }
         extensionsInfo?.takeIf(String::isNotBlank)?.let { appendSection(it) }
         exception?.takeIf(String::isNotBlank)?.let { appendSection(it) }
         appendLine("Diagnostic summary:")
