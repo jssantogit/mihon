@@ -1,6 +1,7 @@
 package eu.kanade.presentation.more.settings.screen
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.tachiyomi.util.system.toast
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mihon.app.di.appGraph
 import tachiyomi.i18n.MR
@@ -32,6 +34,15 @@ object SettingsTsuzukiLogsScreen : SearchableSettings {
 
         var captureActive by remember {
             mutableStateOf(captureSession.current() != null)
+        }
+
+        LaunchedEffect(captureActive) {
+            if (captureActive) {
+                while (captureSession.current() != null) {
+                    delay(1_000)
+                }
+                captureActive = false
+            }
         }
 
         return listOf(
