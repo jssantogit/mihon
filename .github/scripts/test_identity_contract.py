@@ -242,6 +242,13 @@ class IdentityContractTest(unittest.TestCase):
         root = self.make_repo(build=VALID_BUILD.replace('"app.tsuzuki"', '"app.mihon"'))
         self.assertIn("applicationId must be app.tsuzuki", check_contract(root))
 
+    def test_legacy_or_duplicated_application_ids_are_rejected(self):
+        legacy = self.make_repo(build=VALID_BUILD + '\nval old = "app.mihon"\n')
+        self.assertIn("build configuration must not retain app.mihon as an application ID", check_contract(legacy))
+
+        duplicated = self.make_repo(build=VALID_BUILD + '\napplicationIdSuffix = ".tsuzuki.deva"\n')
+        self.assertIn("Tsuzuki application ID suffixes must not duplicate the tsuzuki segment", check_contract(duplicated))
+
     def test_android_namespace_change_is_rejected(self):
         root = self.make_repo(build=VALID_BUILD.replace('"eu.kanade.tachiyomi"', '"app.tsuzuki"'))
         self.assertIn("Android namespace must remain eu.kanade.tachiyomi", check_contract(root))
