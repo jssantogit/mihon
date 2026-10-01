@@ -1,7 +1,11 @@
 # Tsuzuki
 
 <p align="center">
-  <img src="docs/brand/tsuzuki-repo-logo.svg" alt="Tsuzuki logo" width="160" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/tsuzuki-lockup-paper.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/brand/tsuzuki-lockup.svg">
+    <img src="docs/brand/tsuzuki-lockup.svg" alt="Tsuzuki" width="460">
+  </picture>
 </p>
 
 Tsuzuki is an Android manga reader focused on a unified library, source-agnostic reading, and a cleaner separation between metadata, reading sources, and transport.
