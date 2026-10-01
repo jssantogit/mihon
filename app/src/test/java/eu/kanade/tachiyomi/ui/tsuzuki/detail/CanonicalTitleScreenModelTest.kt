@@ -118,7 +118,9 @@ class CanonicalTitleScreenModelTest {
             addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
         model.start("title")
         advanceUntilIdle()
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>().chapters shouldBe emptyList()
@@ -245,7 +247,8 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalMetadata = resolver,
             resolveCanonicalSourceManga = sourceResolver,
-        )
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         advanceUntilIdle()
@@ -298,7 +301,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         advanceUntilIdle()
@@ -384,7 +389,9 @@ class CanonicalTitleScreenModelTest {
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
             diagnostics = diagnostics,
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         advanceUntilIdle()
@@ -455,7 +462,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         advanceUntilIdle()
@@ -523,7 +532,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         advanceUntilIdle()
@@ -602,7 +613,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         runCurrent()
@@ -662,7 +675,9 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-        )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                )
 
         model.start("title")
         advanceUntilIdle()
@@ -710,7 +725,9 @@ class CanonicalTitleScreenModelTest {
                     ),
                 ),
                 diagnostics = diagnostics,
-            )
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+                        )
             model.start("title")
             advanceUntilIdle()
 
