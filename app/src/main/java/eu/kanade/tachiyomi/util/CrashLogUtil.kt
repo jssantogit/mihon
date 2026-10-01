@@ -15,6 +15,7 @@ import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LocalStructuredDiagnosticHis
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatCapture
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatFailure
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.StructuredDiagnosticSummary
+import eu.kanade.tachiyomi.crash.PersistentCrashLogStore
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.util.storage.getUriCompat
@@ -46,6 +47,8 @@ class CrashLogUtil(
     private val logcatCollector: BoundedLogcatCollector,
 ) {
 
+    private val persistentCrashLogStore = PersistentCrashLogStore(context)
+
     suspend fun dumpLogs(exception: Throwable? = null) = withNonCancellableContext {
         try {
             val debugInfo = getDebugInfo()
@@ -69,6 +72,7 @@ class CrashLogUtil(
                     append("detailed_capture_active=${diagnosticCaptureState.isDetailedCaptureActive()}")
                 }
                 val crashContext = diagnosticCrashContextStore.describe()
+                val persistentCrash = persistentCrashLogStore.read()
                 val logPriority = if (networkPreferences.verboseLogging.get()) "V" else "E"
                 val logcat = try {
                     logcatCollector.collect(logPriority)
@@ -87,6 +91,7 @@ class CrashLogUtil(
                     runtimeSnapshot = runtimeSnapshot,
                     captureWindow = captureWindow,
                     crashContext = crashContext,
+                    persistentCrash = persistentCrash,
                 )
                 context.createFileInCacheDir("mihon_crash_logs.txt").apply { writeText(report) }
             }
@@ -98,6 +103,15 @@ class CrashLogUtil(
         } catch (_: Throwable) {
             withUIContext { context.toast("Failed to get logs") }
         }
+    }
+
+    suspend fun clearLogs(): Boolean = withContext(Dispatchers.IO) {
+        diagnosticCaptureState.clear()
+        diagnosticCrashContextStore.clear()
+        diagnosticRecorderHealth.reset()
+        val historyCleared = structuredHistory.clear()
+        val crashCleared = persistentCrashLogStore.clear()
+        historyCleared && crashCleared
     }
 
     fun getDebugInfo(): String {
