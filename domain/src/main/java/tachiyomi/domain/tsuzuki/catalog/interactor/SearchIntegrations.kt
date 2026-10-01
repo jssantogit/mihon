@@ -120,6 +120,8 @@ class SearchIntegrations(
                         provider = match.rating.providerId,
                         value = match.rating.value,
                         maxValue = match.rating.scaleMax,
+                        voteCount = match.rating.voteCount,
+                        identityEvidence = match.identityEvidence,
                     )
                 }
                 val scores = (existingScores + resolvedScores)
@@ -171,6 +173,7 @@ class SearchIntegrations(
                 label = providerId,
                 value = score.value,
                 scaleMax = score.maxValue,
+                voteCount = score.voteCount,
             ),
             verifiedIdentity = false,
         )
