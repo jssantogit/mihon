@@ -121,7 +121,6 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                                 )
                                 HorizontalDivider()
                             }
-
                         }
 
                         IntegrationCategory.entries
