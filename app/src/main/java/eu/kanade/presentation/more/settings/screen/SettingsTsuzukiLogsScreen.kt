@@ -30,7 +30,6 @@ object SettingsTsuzukiLogsScreen : SearchableSettings {
         val graph = remember { context.appGraph }
         val captureSession = remember { graph.diagnosticCaptureSession }
         val crashLogUtil = remember { graph.crashLogUtil }
-        val networkPreferences = remember { graph.networkPreferences }
 
         var captureActive by remember {
             mutableStateOf(captureSession.current() != null)
@@ -100,20 +99,6 @@ object SettingsTsuzukiLogsScreen : SearchableSettings {
                         crashLogUtil.dumpLogs()
                     }
                 },
-            ),
-            Preference.PreferenceGroup(
-                title = stringResource(MR.strings.tsuzuki_logs_options),
-                preferenceItems = listOf(
-                    Preference.PreferenceItem.SwitchPreference(
-                        preference = networkPreferences.verboseLogging,
-                        title = stringResource(MR.strings.pref_verbose_logging),
-                        subtitle = stringResource(MR.strings.pref_verbose_logging_summary),
-                        onValueChanged = {
-                            context.toast(MR.strings.requires_app_restart)
-                            true
-                        },
-                    ),
-                ),
             ),
         )
     }
