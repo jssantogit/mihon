@@ -207,8 +207,8 @@ def check_contract(root: Path) -> list[str]:
             errors.append("rootProject.name must be Tsuzuki")
 
     if readme:
-        if not readme.lstrip().startswith("# Tsuzuki"):
-            errors.append("README must identify Tsuzuki as the project")
+        if 'alt="Tsuzuki"' not in readme:
+            errors.append("README must identify Tsuzuki in the repository lockup")
         if "docs/brand/tsuzuki-lockup.svg" not in readme or "docs/brand/tsuzuki-lockup-paper.svg" not in readme:
             errors.append("README must use the Brand v3 A2 repository lockup")
 
