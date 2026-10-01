@@ -4,7 +4,9 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import tachiyomi.domain.tsuzuki.addon.repository.AddonRepository
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -26,9 +28,13 @@ class DiagnosticRuntimeSnapshot(
         }
         val connectedAccounts = bestEffort {
             integrationRegistry.awaitReady()
-            integrationRegistry.userListProviders().count { provider ->
-                bestEffort { provider.connection.first() }.getOrNull() == true
+            var connected = 0
+            integrationRegistry.userListProviders().forEach { provider ->
+                if (bestEffort { provider.connection.first() }.getOrNull() == true) {
+                    connected++
+                }
             }
+            connected
         }
         val canonicalTitles = bestEffort { canonicalTitleRepository.getAllAsFlow().first().size }
         val externalMemberships = bestEffort { externalLibraryRepository.observeAll().first().size }
@@ -44,7 +50,9 @@ class DiagnosticRuntimeSnapshot(
     }
 
     private suspend fun <T> bestEffort(block: suspend () -> T): Result<T> = try {
-        Result.success(block())
+        Result.success(withTimeout(SNAPSHOT_TIMEOUT_MILLIS) { block() })
+    } catch (_: TimeoutCancellationException) {
+        Result.failure(IllegalStateException("diagnostic runtime snapshot timeout"))
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -53,5 +61,6 @@ class DiagnosticRuntimeSnapshot(
 
     private companion object {
         const val UNAVAILABLE = "unavailable"
+        const val SNAPSHOT_TIMEOUT_MILLIS = 500L
     }
 }
