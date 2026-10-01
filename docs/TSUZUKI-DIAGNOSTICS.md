@@ -1,10 +1,10 @@
-# Tsuzuki diagnostics v1
+# Tsuzuki diagnostics v2
 
 Tsuzuki records a small, local structured trace for supported operations. It augments Mihon's existing Logcat and crash handling; it does not upload diagnostics or replace the reading and crash pipeline.
 
 ## Structured event schema
 
-The JSONL schema is version `1`. Each event record requires `schemaVersion`, `recordType`, `timestampMillis`, `severity`, `subsystem`, `name`, `sessionId`, `stage`, `outcome`, and `attributes`; `operationId`, `durationMillis`, and `attempt` are optional. `severity` and `subsystem` use uppercase enum names. Event name, stage, and outcome use lowercase underscore form, such as `source_resolve_started`, `preferred_sources`, and `not_found_with_source_failures`. Safe-code attributes retain their uppercase enum code names. Overflow records use `recordType: "dropped_events"` and a count.
+The JSONL schema is version `2`. Each event record requires `schemaVersion`, `recordType`, `timestampMillis`, `severity`, `subsystem`, `name`, `sessionId`, `stage`, `outcome`, and `attributes`; `operationId`, `durationMillis`, and `attempt` are optional. `severity` and `subsystem` use uppercase enum names. Event name, stage, and outcome use lowercase underscore form, such as `source_resolve_started`, `preferred_sources`, and `not_found_with_source_failures`. Safe-code attributes retain their uppercase enum code names. Overflow records use `recordType: "dropped_events"` and a count.
 
 The current event names cover source resolution: start, mapping reuse, preferred-source selection, search start/completion/failure, match evaluation, mapping-confirmation failure, and resolution completion. Outcomes distinguish successful resolution, reuse, confirmation, empty results, source failures, typed failures, thrown failures, and cancellation. The resolver's user-facing result semantics remain unchanged.
 
@@ -36,3 +36,20 @@ Before merge, validate on a physical device with the tested APK and record its c
 2. Exercise an unavailable Logcat command or equivalent test condition and confirm the report still opens with a fixed partial/unavailable marker.
 3. Enable incognito, record an event, export, and confirm the structured history section contains no persisted event from that period.
 4. Inspect the structured and verbose HTTP sections for absence of a known test title, URL, credential, cookie, or token. Treat the legacy exception and Logcat sections according to their separate privacy limits above.
+
+
+## Diagnostics v2 — Wave 1
+
+Wave 1 turns artwork and metadata debugging into correlated traces without widening the privacy surface.
+
+- every structured event may carry a random `workflowId`, `operationId`, `parentOperationId`, and a closed `workflow` enum;
+- canonical artwork resolution records observation count, selected provider, presence/absence of artwork, and total duration;
+- provider metadata resolution records provider-safe results and duration without titles, URLs, response bodies, or exception text;
+- the shared cover component exposes only candidate index/count, request-data presence, fallback, success, and failure signals;
+- Continue Reading, canonical Detail, and unified Library emit the same safe image-load trace;
+- invariant codes are closed enums; the first guard detects a resolved candidate list that loses request data before rendering;
+- recorder health counters distinguish sanitizer rejection and sink failures from a genuinely empty diagnostic history;
+- exports begin with a deterministic summary of workflows, failures, invariant violations, dropped events, slow operations, and recorder health;
+- App tests scan critical production source for the exact optional/NoOp DI defaults that caused the post-PR #55 artwork/diagnostics wiring regression.
+
+Wave 1 does not add free-form diagnostic messages and does not log manga titles, URLs, credentials, cookies, provider responses, or image request payloads.
