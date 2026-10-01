@@ -13,14 +13,29 @@ internal class StructuredDiagnosticRecordingPipeline(
     private val persistenceEnabled: () -> Boolean,
     private val logcatSink: (LogPriority, String) -> Unit,
     private val historySink: (SanitizedStructuredDiagnosticEvent) -> Unit,
+    private val health: DiagnosticRecorderHealth? = null,
 ) {
     fun record(event: StructuredDiagnosticEvent) {
-        val sanitized = bestEffort { StructuredDiagnosticSanitizer.sanitize(event) }.getOrNull() ?: return
-        val encoded = bestEffort { StructuredDiagnosticHistoryJson.serialize(sanitized) }.getOrNull() ?: return
+        health?.received()
+        val sanitized = bestEffort { StructuredDiagnosticSanitizer.sanitize(event) }.getOrNull()
+        if (sanitized == null) {
+            health?.rejected()
+            return
+        }
+        health?.sanitized()
+        val encoded = bestEffort { StructuredDiagnosticHistoryJson.serialize(sanitized) }.getOrNull()
+        if (encoded == null) {
+            health?.rejected()
+            return
+        }
 
-        bestEffort { logcatSink(sanitized.severity.toLogPriority(), encoded) }
+        if (bestEffort { logcatSink(sanitized.severity.toLogPriority(), encoded) }.isFailure) {
+            health?.logcatSinkFailed()
+        }
         if (bestEffort(persistenceEnabled).getOrDefault(false)) {
-            bestEffort { historySink(sanitized) }
+            if (bestEffort { historySink(sanitized) }.isFailure) {
+                health?.historySinkFailed()
+            }
         }
     }
 
