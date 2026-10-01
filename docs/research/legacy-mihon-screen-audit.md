@@ -178,3 +178,13 @@ The final three should be removed or redirected when their replacement decisions
 ## Guardrail
 
 Do not delete a legacy class merely because it is not visible in the bottom navigation. First remove or redirect every notification, shortcut, deep-link, dialog and compatibility caller. The canonical work/source/provider invariants take precedence over visual cleanup.
+
+
+## Validation for this branch
+
+This branch changes only the Reader → details navigation plus the audit/tests. It does not remove hidden legacy tabs yet.
+
+- no local Gradle;
+- full GitHub Actions CI required;
+- post-CI smoke: open a canonical chapter, tap the Reader title, verify canonical Tsuzuki Detail opens instead of Mihon's `MangaScreen`;
+- compatibility smoke: a genuinely unmapped legacy Reader session may still fall back to `MangaScreen`.
