@@ -548,9 +548,9 @@ private fun IntegrationSettingRow(
                     )
                 }
             }
-            tracker != null -> {
+            tracker != null -> tracker.let { resolvedTracker ->
                 {
-                    TrackLogoIcon(tracker)
+                    TrackLogoIcon(resolvedTracker)
                 }
             }
             else -> null
