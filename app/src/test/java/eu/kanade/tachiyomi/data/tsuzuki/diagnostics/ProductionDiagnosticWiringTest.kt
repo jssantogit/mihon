@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 class ProductionDiagnosticWiringTest {
+    // Final full-stack CI checkpoint for Diagnostics v2 Waves 1-3.
     @Test
     fun `critical diagnostic and artwork dependencies cannot silently default in production`() {
         var root: File? = File(System.getProperty("user.dir")).absoluteFile
