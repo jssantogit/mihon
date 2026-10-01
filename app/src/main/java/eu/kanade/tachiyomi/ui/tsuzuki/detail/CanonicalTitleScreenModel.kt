@@ -46,6 +46,7 @@ import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadS
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
+import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRating
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
 import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
@@ -83,6 +84,7 @@ sealed interface CanonicalTitleScreenState {
         val ratingMaxValue: Double? = null,
         val ratingVoteCount: Int? = null,
         val ratings: List<CanonicalProviderRating> = emptyList(),
+        val tsuzukiRating: TsuzukiRating? = null,
         val startDate: String? = null,
         val endDate: String? = null,
         val editorialVolumeCount: Int? = null,
@@ -734,6 +736,7 @@ class CanonicalTitleScreenModel(
             ratingMaxValue = integrationRatings.firstOrNull()?.maxValue,
             ratingVoteCount = integrationRatings.firstOrNull()?.voteCount,
             ratings = integrationRatings,
+            tsuzukiRating = integrationMetadata?.tsuzukiRating,
             startDate = integrationMetadata?.startDate?.value,
             endDate = integrationMetadata?.endDate?.value,
             editorialVolumeCount = integrationMetadata?.editorialVolumeCount?.value,
