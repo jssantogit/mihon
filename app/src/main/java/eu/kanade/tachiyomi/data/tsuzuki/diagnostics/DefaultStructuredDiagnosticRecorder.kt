@@ -17,6 +17,7 @@ import java.util.UUID
 @ContributesBinding(AppScope::class)
 class DefaultStructuredDiagnosticRecorder(
     private val history: LocalStructuredDiagnosticHistory,
+    private val health: DiagnosticRecorderHealth,
 ) : StructuredDiagnosticRecorder {
     override val sessionId: String = UUID.randomUUID().toString()
 
@@ -26,6 +27,7 @@ class DefaultStructuredDiagnosticRecorder(
             persistenceEnabled = history::persistenceAllowed,
             logcatSink = { priority, encoded -> logcat(priority) { encoded } },
             historySink = history::submit,
+            health = health,
         )
     }
 
