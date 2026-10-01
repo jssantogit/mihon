@@ -82,9 +82,7 @@ import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.extension.api.ExtensionApi
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
-import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.ui.more.OnboardingScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
@@ -207,9 +205,8 @@ class MainActivity : BaseActivity() {
                         preferences.incognitoMode.set(false)
                     }
                 }
-                LaunchedEffect(navigator.lastItem) {
-                    (navigator.lastItem as? BrowseSourceScreen)?.sourceId
-                        .let(getIncognitoState::subscribe)
+                LaunchedEffect(Unit) {
+                    getIncognitoState.subscribe(null)
                         .collectLatest { incognito = it }
                 }
 
@@ -247,22 +244,6 @@ class MainActivity : BaseActivity() {
                             )
                         }
                     }
-                }
-
-                // Pop source-related screens when incognito mode is turned off
-                LaunchedEffect(Unit) {
-                    preferences.incognitoMode.changes()
-                        .drop(1)
-                        .filter { !it }
-                        .onEach {
-                            val currentScreen = navigator.lastItem
-                            if (currentScreen is BrowseSourceScreen ||
-                                (currentScreen is MangaScreen && currentScreen.fromSource)
-                            ) {
-                                navigator.popUntilRoot()
-                            }
-                        }
-                        .launchIn(this)
                 }
 
                 HandleOnNewIntent(context = context, navigator = navigator)
@@ -581,9 +562,10 @@ class MainActivity : BaseActivity() {
         val tabToOpen = when (intent.action) {
             Constants.SHORTCUT_LIBRARY -> HomeScreen.Tab.Library()
             Constants.SHORTCUT_MANGA -> {
-                val idToOpen = intent.extras?.getLong(Constants.MANGA_EXTRA) ?: return false
+                // The source-centric MangaScreen no longer exists. Old notifications/actions
+                // land safely in the unified Library instead of reviving legacy Mihon details.
                 navigator.popUntilRoot()
-                HomeScreen.Tab.Library(idToOpen)
+                HomeScreen.Tab.Library()
             }
             // Compatibility-only legacy actions: redirect into current Tsuzuki surfaces.
             Constants.SHORTCUT_UPDATES,
