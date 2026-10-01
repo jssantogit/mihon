@@ -19,6 +19,13 @@ import coil3.compose.AsyncImage
 import eu.kanade.presentation.util.rememberResourceBitmapPainter
 import eu.kanade.tachiyomi.R
 
+sealed interface MangaCoverLoadEvent {
+    data class Attempt(val candidateIndex: Int, val candidateCount: Int, val requestDataPresent: Boolean) :
+        MangaCoverLoadEvent
+    data class Failed(val candidateIndex: Int, val willFallback: Boolean) : MangaCoverLoadEvent
+    data class Succeeded(val candidateIndex: Int) : MangaCoverLoadEvent
+}
+
 enum class MangaCover(val ratio: Float) {
     Square(1f / 1f),
     Book(2f / 3f),
@@ -32,22 +39,39 @@ enum class MangaCover(val ratio: Float) {
         contentDescription: String = "",
         shape: Shape = MaterialTheme.shapes.extraSmall,
         onClick: (() -> Unit)? = null,
+        onLoadEvent: ((MangaCoverLoadEvent) -> Unit)? = null,
     ) {
         val candidates = remember(data, fallbackData) {
             coverCandidates(data, fallbackData)
         }
         var candidateIndex by remember(candidates) { mutableIntStateOf(0) }
         val errorPainter = rememberResourceBitmapPainter(id = R.drawable.cover_error)
+        val currentCandidate = candidates.getOrNull(candidateIndex)
+        remember(candidateIndex, candidates, onLoadEvent) {
+            onLoadEvent?.invoke(
+                MangaCoverLoadEvent.Attempt(
+                    candidateIndex = candidateIndex,
+                    candidateCount = candidates.size,
+                    requestDataPresent = currentCandidate != null,
+                ),
+            )
+            Unit
+        }
 
         AsyncImage(
-            model = candidates.getOrNull(candidateIndex),
+            model = currentCandidate,
             placeholder = ColorPainter(CoverPlaceholderColor),
             error = errorPainter,
             fallback = errorPainter,
             onError = {
-                if (candidateIndex < candidates.lastIndex) {
+                val willFallback = candidateIndex < candidates.lastIndex
+                onLoadEvent?.invoke(MangaCoverLoadEvent.Failed(candidateIndex, willFallback))
+                if (willFallback) {
                     candidateIndex += 1
                 }
+            },
+            onSuccess = {
+                onLoadEvent?.invoke(MangaCoverLoadEvent.Succeeded(candidateIndex))
             },
             contentDescription = contentDescription,
             modifier = modifier
