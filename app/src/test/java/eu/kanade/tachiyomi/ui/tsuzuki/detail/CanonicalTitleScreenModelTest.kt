@@ -148,6 +148,7 @@ class CanonicalTitleScreenModelTest {
         coVerify(exactly = 1) { refresh.execute("title") }
     }
 
+    // Physical regression guard: production DI must deliver canonical artwork to Detail.
     @Test
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
         val sourceResolver = mockk<ResolveCanonicalSourceManga>()
