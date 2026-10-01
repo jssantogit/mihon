@@ -88,7 +88,7 @@ class ChapterEvidenceReconciliationBenchmarkTest {
 
     @Test
     @EnabledIfEnvironmentVariable(named = "TSUZUKI_CHAPTER_BENCHMARK", matches = "true")
-    fun `measure reconciliations at 100 500 and 1000 existing observations`() = runBlocking<Unit> {
+    fun `measure reconciliations at 1000 5000 and 10000 existing observations`() = runBlocking<Unit> {
         val samples = mutableListOf<String>()
         val label = System.getenv("TSUZUKI_BENCHMARK_LABEL") ?: "unlabeled"
         val output = java.io.File("build/reports/tsuzuki/chapter-evidence-benchmark.txt")
@@ -98,7 +98,7 @@ class ChapterEvidenceReconciliationBenchmarkTest {
             "os=${System.getProperty("os.name")} arch=${System.getProperty("os.arch")} " +
             "processors=${Runtime.getRuntime().availableProcessors()} driver=JdbcSqliteDriver(IN_MEMORY)"
 
-        for (size in listOf(100, 500, 1_000)) {
+        for (size in listOf(1_000, 5_000, 10_000)) {
             val titleId = "benchmark-title-$size"
             val observations = seedExistingInventory(titleId, size)
             val reconciler = ReconcileChapterEvidence(
@@ -126,6 +126,29 @@ class ChapterEvidenceReconciliationBenchmarkTest {
             samples += "sample size=$size warmup=25 elapsed_ms=[$elapsedMs] " +
                 "execute=${counts.execute} executeQuery=${counts.executeQuery} total_sql=${counts.total}"
         }
+
+        val multiProducerTitleId = "benchmark-multi-producer"
+        val multiProducerObservations = seedExistingMultiProducerInventory(
+            titleId = multiProducerTitleId,
+            logicalChapters = 1_000,
+            producerCount = 4,
+        )
+        val multiProducerReconciler = ReconcileChapterEvidence(
+            parser = ParseCanonicalChapterLabel(),
+            canonicalChapterRepository = chapterRepository,
+            evidenceRepository = evidenceRepository,
+        )
+        queryCounter.reset()
+        val multiProducerStartedAt = System.nanoTime()
+        multiProducerReconciler.execute(multiProducerTitleId, multiProducerObservations)
+        val multiProducerElapsed = System.nanoTime() - multiProducerStartedAt
+        val multiProducerCounts = queryCounter.snapshot()
+        chapterRepository.getByCanonicalTitleId(multiProducerTitleId).size shouldBe 1_000
+        evidenceRepository.getByCanonicalTitleId(multiProducerTitleId).size shouldBe 4_000
+        samples += "sample workload=multi_producer logical=1000 producers=4 evidence=4000 " +
+            "elapsed_ms=${formatMillis(multiProducerElapsed)} " +
+            "execute=${multiProducerCounts.execute} executeQuery=${multiProducerCounts.executeQuery} " +
+            "total_sql=${multiProducerCounts.total}"
 
         val report = samples.joinToString(separator = "\n", postfix = "\n")
         output.writeText(report)
@@ -295,6 +318,82 @@ class ChapterEvidenceReconciliationBenchmarkTest {
                     confidence = observation.confidence,
                     authorityClass = observation.authority.name,
                     mappedCanonicalChapterId = chapterId,
+                    rawMetadata = byteArrayOf(),
+                )
+            }
+        }
+        return observations
+    }
+
+    private suspend fun seedExistingMultiProducerInventory(
+        titleId: String,
+        logicalChapters: Int,
+        producerCount: Int,
+    ): List<ChapterEvidence> {
+        database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+            id = titleId,
+            displayTitle = titleId,
+            identityState = "SOURCE_ONLY",
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val observations = buildList {
+            repeat(producerCount) { producerIndex ->
+                for (chapterIndex in 1..logicalChapters) {
+                    add(
+                        ChapterEvidence(
+                            id = "$titleId-p$producerIndex-evidence-$chapterIndex",
+                            canonicalTitleId = titleId,
+                            producerKind = ProducerKind.ADDON,
+                            producerId = "$titleId-provider-$producerIndex",
+                            externalChapterKey = "p$producerIndex-chapter-$chapterIndex",
+                            rawLabel = "Chapter $chapterIndex",
+                            rawNumber = chapterIndex.toDouble(),
+                            volume = null,
+                            title = null,
+                            observedAt = 1L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                    )
+                }
+            }
+        }
+
+        database.transaction {
+            for (chapterIndex in 1..logicalChapters) {
+                database.tsuzuki_canonical_chaptersQueries.upsertTsuzukiCanonicalChapter(
+                    id = "$titleId-chapter-$chapterIndex",
+                    canonicalTitleId = titleId,
+                    displayNumber = chapterIndex.toString(),
+                    volume = null,
+                    title = null,
+                    type = "REGULAR",
+                    baseNumber = chapterIndex.toLong(),
+                    part = null,
+                    alphaSuffix = null,
+                    confidence = 1.0,
+                    createdAt = 1L,
+                    updatedAt = 1L,
+                    confirmationState = "CONFIRMED",
+                )
+            }
+            observations.forEach { observation ->
+                val chapterIndex = observation.rawNumber?.toInt() ?: error("benchmark chapter number missing")
+                database.tsuzuki_chapter_evidenceQueries.upsertTsuzukiChapterEvidence(
+                    id = observation.id,
+                    canonicalTitleId = titleId,
+                    producerKind = observation.producerKind.name,
+                    producerId = observation.producerId,
+                    externalChapterKey = observation.externalChapterKey,
+                    rawLabel = observation.rawLabel,
+                    rawNumber = observation.rawNumber,
+                    volume = null,
+                    title = null,
+                    observedAt = observation.observedAt,
+                    confidence = observation.confidence,
+                    authorityClass = observation.authority.name,
+                    mappedCanonicalChapterId = "$titleId-chapter-$chapterIndex",
                     rawMetadata = byteArrayOf(),
                 )
             }
