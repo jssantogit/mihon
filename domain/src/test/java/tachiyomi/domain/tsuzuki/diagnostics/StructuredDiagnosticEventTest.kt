@@ -46,6 +46,35 @@ class StructuredDiagnosticEventTest {
     }
 
     @Test
+    fun `sanitizer keeps bounded Tsuzuki Rating composition fields`() {
+        val event = StructuredDiagnosticEvent(
+            timestampMillis = 1_790_755_200_000,
+            severity = DiagnosticSeverity.INFO,
+            subsystem = DiagnosticSubsystem.METADATA,
+            name = DiagnosticEventName.TSUZUKI_RATING_COMPUTED,
+            sessionId = "d2719c3b-4518-4d6b-9b09-2834381a322c",
+            operationId = "865624e0-50f1-41c9-81eb-9a68fc9e50a4",
+            stage = DiagnosticStage.SUMMARY,
+            outcome = DiagnosticOutcome.SUCCEEDED,
+            attributes = mapOf(
+                "rating_source_count" to DiagnosticAttributeValue.Number(6),
+                "rating_verified_source_count" to DiagnosticAttributeValue.Number(4),
+                "rating_corroborated_source_count" to DiagnosticAttributeValue.Number(2),
+                "tsuzuki_rating_present" to DiagnosticAttributeValue.Flag(true),
+            ),
+        )
+
+        val sanitized = StructuredDiagnosticSanitizer.sanitize(event)
+
+        sanitized?.attributes shouldBe mapOf(
+            DiagnosticAttribute.RATING_SOURCE_COUNT to DiagnosticAttributeValue.Number(6),
+            DiagnosticAttribute.RATING_VERIFIED_SOURCE_COUNT to DiagnosticAttributeValue.Number(4),
+            DiagnosticAttribute.RATING_CORROBORATED_SOURCE_COUNT to DiagnosticAttributeValue.Number(2),
+            DiagnosticAttribute.TSUZUKI_RATING_PRESENT to DiagnosticAttributeValue.Flag(true),
+        )
+    }
+
+    @Test
     fun `sanitizer rejects secret shaped correlation ids`() {
         val event = StructuredDiagnosticEvent(
             timestampMillis = 1_790_755_200_000,

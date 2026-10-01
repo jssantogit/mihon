@@ -1,7 +1,7 @@
 # Tsuzuki Rating — implementation plan
 
 **Date:** 2026-10-01  
-**Status:** Waves 1–2 implemented; Wave 2 validation re-requested after first-party integration controls
+**Status:** Waves 1–3 implemented; final stacked validation requested
 
 ## Product definition
 
@@ -50,11 +50,34 @@ Corroborated rating-only evidence may contribute to Tsuzuki Rating but never bec
 
 ## Wave 3 — diagnostics and acceptance
 
-- record bounded aggregate composition diagnostics: source count, verified/corroborated counts and whether an aggregate was produced;
-- never export raw titles or arbitrary provider payloads;
-- full CI on every wave;
-- final signed APK only after all waves merge;
-- physical smoke with works exposing 1 through 6 ratings.
+Implemented diagnostics:
+
+- `TSUZUKI_RATING_COMPUTED` on canonical metadata resolution;
+- bounded `rating_source_count`;
+- bounded `rating_verified_source_count`;
+- bounded `rating_corroborated_source_count`;
+- boolean `tsuzuki_rating_present`;
+- no raw title, provider payload, vote total or rating value is attached to the aggregate summary event.
+
+Acceptance sequence after stacked CI is green:
+
+1. merge Wave 1;
+2. retarget and merge Wave 2;
+3. retarget and merge Wave 3;
+4. build one signed APK;
+5. physical smoke with:
+   - Tsuzuki disabled;
+   - Tsuzuki enabled + Ratings disabled;
+   - one provider rating;
+   - two provider ratings;
+   - three/four provider ratings;
+   - five/six provider ratings;
+   - at least one strict corroborated rating-only contribution;
+6. verify Search/Discovery cards, canonical Detail and integration switches.
+
+No signed APK is produced before all three waves are merged.
+
+Full CI is explicitly required for the Wave 3 head.
 
 ## Invariants
 

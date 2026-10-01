@@ -86,6 +86,7 @@ enum class DiagnosticEventName {
     METADATA_RESOLVE_STARTED,
     METADATA_PROVIDER_RESULT,
     RATING_PROVIDER_RESULT,
+    TSUZUKI_RATING_COMPUTED,
     METADATA_RESOLVE_COMPLETED,
 
     LIBRARY_SYNC_STARTED,
@@ -207,6 +208,10 @@ enum class DiagnosticAttribute {
     COMPLETED,
     IDENTITY_VERIFIED,
     RATING_PRESENT,
+    RATING_SOURCE_COUNT,
+    RATING_VERIFIED_SOURCE_COUNT,
+    RATING_CORROBORATED_SOURCE_COUNT,
+    TSUZUKI_RATING_PRESENT,
 
     CANDIDATE_TYPE,
     CACHE_STATUS,
@@ -363,6 +368,9 @@ object StructuredDiagnosticSanitizer {
         DiagnosticAttribute.CHAPTER_COUNT,
         DiagnosticAttribute.VARIANT_COUNT,
         DiagnosticAttribute.QUEUE_DEPTH,
+        DiagnosticAttribute.RATING_SOURCE_COUNT,
+        DiagnosticAttribute.RATING_VERIFIED_SOURCE_COUNT,
+        DiagnosticAttribute.RATING_CORROBORATED_SOURCE_COUNT,
         DiagnosticAttribute.EVENTS_RECEIVED,
         DiagnosticAttribute.EVENTS_SANITIZED,
         DiagnosticAttribute.EVENTS_REJECTED,
@@ -384,6 +392,7 @@ object StructuredDiagnosticSanitizer {
         DiagnosticAttribute.COMPLETED,
         DiagnosticAttribute.IDENTITY_VERIFIED,
         DiagnosticAttribute.RATING_PRESENT,
+        DiagnosticAttribute.TSUZUKI_RATING_PRESENT,
         -> value as? DiagnosticAttributeValue.Flag
 
         DiagnosticAttribute.LANGUAGE -> (value as? DiagnosticAttributeValue.Text)
