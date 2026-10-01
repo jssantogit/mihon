@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.time.Instant
@@ -23,6 +24,50 @@ class MangaUpdatesIntegrationProviderTest {
         val provider = MangaUpdatesIntegrationProvider.forTest(FakeMangaUpdatesIntegrationApi())
 
         (provider as Any is UserListProvider) shouldBe true
+    }
+
+    @Test
+    fun `mangaupdates exposes native ratings capability`() = runTest {
+        val provider = MangaUpdatesIntegrationProvider.forTest(
+            FakeMangaUpdatesIntegrationApi(
+                detailsById = mapOf(
+                    42L to track(42, "Monster", 9.12),
+                ),
+            ),
+        )
+
+        (provider as Any is RatingsProvider) shouldBe true
+        val rating = (provider as RatingsProvider).ratings("42").getOrThrow().single()
+
+        rating.providerId shouldBe "mangaupdates"
+        rating.label shouldBe "MangaUpdates"
+        rating.value shouldBe 9.12
+        rating.scaleMax shouldBe 10.0
+    }
+
+    @Test
+    fun `mangaupdates can add an ephemeral rating without claiming cross-provider identity`() = runTest {
+        val provider = MangaUpdatesIntegrationProvider.forTest(
+            FakeMangaUpdatesIntegrationApi(
+                searchResults = listOf(
+                    track(42, "Star Embracing Swordmaster", 8.7).apply {
+                        start_date = "2023"
+                    },
+                ),
+            ),
+        )
+
+        val match = (provider as RatingsProvider).ratingFor(
+            tachiyomi.domain.tsuzuki.catalog.model.CatalogItem(
+                provider = "kitsu",
+                providerId = "k1",
+                title = "Star-Embracing Swordmaster",
+                startDate = "2023-09-19",
+            ),
+        ).getOrThrow()
+
+        match?.rating?.value shouldBe 8.7
+        match?.verifiedIdentity shouldBe false
     }
 
     @Test
@@ -134,10 +179,12 @@ class MangaUpdatesIntegrationProviderTest {
 
     private class FakeMangaUpdatesIntegrationApi(
         private val discoveryResults: List<TrackSearch> = emptyList(),
+        private val searchResults: List<TrackSearch> = emptyList(),
+        private val detailsById: Map<Long, TrackSearch> = emptyMap(),
     ) : MangaUpdatesIntegrationApi {
         val discoveryRequests = mutableListOf<Triple<String, Int, Int>>()
 
-        override suspend fun search(query: String): List<TrackSearch> = emptyList()
+        override suspend fun search(query: String): List<TrackSearch> = searchResults
 
         override suspend fun discover(
             orderBy: String,
@@ -149,7 +196,7 @@ class MangaUpdatesIntegrationProviderTest {
         }
 
         override suspend fun getMangaDetails(id: Long): TrackSearch =
-            error("Not used")
+            detailsById[id] ?: error("Missing MangaUpdates fixture for id=$id")
     }
 
     private fun track(id: Long, title: String, score: Double): TrackSearch =
