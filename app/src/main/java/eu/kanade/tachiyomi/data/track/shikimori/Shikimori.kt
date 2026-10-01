@@ -48,6 +48,9 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
         )
     }
 
+    internal val integrationApi: ShikimoriIntegrationApi
+        get() = api
+
     fun getClientId(): String =
         trackPreferences.integrationCredential(INTEGRATION_ID, CLIENT_ID_KEY).get().trim()
 
@@ -212,4 +215,11 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
         trackPreferences.trackToken(this).delete()
         interceptor.newAuth(null)
     }
+}
+
+
+interface ShikimoriIntegrationApi {
+    suspend fun searchPublic(query: String): List<TrackSearch>
+
+    suspend fun getMangaDetailsPublic(id: Int): TrackSearch?
 }

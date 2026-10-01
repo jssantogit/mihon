@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.track.shikimori
 
 import androidx.core.net.toUri
+import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.data.track.shikimori.dto.SMLibraryIdResponse
@@ -33,10 +34,19 @@ class ShikimoriApi(
     interceptor: ShikimoriInterceptor,
     private val clientIdProvider: () -> String,
     private val clientSecretProvider: () -> String,
-) {
+) : ShikimoriIntegrationApi {
 
     private val json: Json by injectLazy()
 
+    private val publicClient = client.newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+                .newBuilder()
+                .header("User-Agent", userAgent())
+                .build()
+            chain.proceed(request)
+        }
+        .build()
     private val authClient = client.newBuilder().addInterceptor(interceptor).build()
 
     suspend fun addLibManga(track: Track, userId: String): Track {
@@ -103,7 +113,9 @@ class ShikimoriApi(
         }
     }
 
-    suspend fun search(search: String): List<TrackSearch> {
+    suspend fun search(search: String): List<TrackSearch> = searchPublic(search)
+
+    override suspend fun searchPublic(queryText: String): List<TrackSearch> {
         return withIOContext {
             val query = $$"""
             |query($query: String) {
@@ -134,11 +146,11 @@ class ShikimoriApi(
             val payload = buildJsonObject {
                 put("query", query)
                 putJsonObject("variables") {
-                    put("query", search)
+                    put("query", queryText)
                 }
             }
             with(json) {
-                authClient.newCall(
+                publicClient.newCall(
                     POST(
                         GRAPHQL_API_URL,
                         body = payload.toString().toRequestBody(jsonMime),
@@ -152,7 +164,9 @@ class ShikimoriApi(
         }
     }
 
-    suspend fun getMangaDetails(id: Int): TrackSearch? {
+    suspend fun getMangaDetails(id: Int): TrackSearch? = getMangaDetailsPublic(id)
+
+    override suspend fun getMangaDetailsPublic(id: Int): TrackSearch? {
         return withIOContext {
             val query = $$"""
             |query($query: String) {
@@ -308,6 +322,9 @@ class ShikimoriApi(
         private const val GRAPHQL_API_URL = "$BASE_URL/api/graphql"
         private const val OAUTH_URL = "$BASE_URL/oauth/token"
         private const val LOGIN_URL = "$BASE_URL/oauth/authorize"
+
+        internal fun userAgent(): String =
+            "Tsuzuki v${BuildConfig.VERSION_NAME} (${BuildConfig.APPLICATION_ID})"
 
         fun authUrl(clientId: String): String = LOGIN_URL.toHttpUrl()
             .newBuilder()
