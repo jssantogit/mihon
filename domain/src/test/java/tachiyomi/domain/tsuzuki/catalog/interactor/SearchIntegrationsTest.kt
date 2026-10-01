@@ -22,6 +22,7 @@ import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.RatingIdentityEvidence
 
 class SearchIntegrationsTest {
 
@@ -241,6 +242,7 @@ class SearchIntegrationsTest {
         val result = search.execute(CatalogQuery(query = "Work")).single()
 
         result.scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mangaupdates")
+        result.scores.last().identityEvidence shouldBe RatingIdentityEvidence.CORROBORATED_RATING_ONLY
         result.externalIds["mangaupdates"] shouldBe null
     }
 
