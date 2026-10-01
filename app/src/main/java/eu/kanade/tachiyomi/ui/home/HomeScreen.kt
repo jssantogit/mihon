@@ -26,16 +26,10 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabNavigator
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
-import eu.kanade.tachiyomi.ui.browse.BrowseTab
-import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
-import eu.kanade.tachiyomi.ui.history.HistoryTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
-import eu.kanade.tachiyomi.ui.more.MoreTab
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeTab
 import eu.kanade.tachiyomi.ui.tsuzuki.search.TsuzukiSearchTab
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiSettingsTab
-import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -45,8 +39,9 @@ import soup.compose.material.motion.animation.materialFadeThroughOut
 
 object HomeScreen : Screen() {
 
-    private val librarySearchEvent = Channel<String>()
-    private val openTabEvent = Channel<Tab>()
+    private val librarySearchEvent = Channel<String>(capacity = Channel.CONFLATED)
+    private val openSearchEvent = Channel<String>(capacity = Channel.CONFLATED)
+    private val openTabEvent = Channel<Tab>(capacity = Channel.CONFLATED)
     private val showBottomNavEvent = Channel<Boolean>()
 
     @Suppress("ConstPropertyName")
@@ -131,25 +126,17 @@ object HomeScreen : Screen() {
                     }
                 }
                 launch {
-                    openTabEvent.receiveAsFlow().collectLatest {
-                        tabNavigator.current = when (it) {
-                            is Tab.Library -> LibraryTab
-                            Tab.Updates -> UpdatesTab
-                            Tab.History -> HistoryTab
-                            is Tab.Browse -> {
-                                if (it.toExtensions) {
-                                    BrowseTab.showExtension()
-                                }
-                                BrowseTab
+                    openSearchEvent.receiveAsFlow().collectLatest { query ->
+                        tabNavigator.current = TsuzukiSearchTab
+                        TsuzukiSearchTab.search(query)
+                    }
+                }
+                launch {
+                    openTabEvent.receiveAsFlow().collectLatest { tab ->
+                        when (tab) {
+                            is Tab.Library -> {
+                                tabNavigator.current = LibraryTab
                             }
-                            is Tab.More -> MoreTab
-                        }
-
-                        if (it is Tab.Library && it.mangaIdToOpen != null) {
-                            navigator.push(MangaScreen(it.mangaIdToOpen))
-                        }
-                        if (it is Tab.More && it.toDownloads) {
-                            navigator.push(DownloadQueueScreen)
                         }
                     }
                 }
@@ -201,15 +188,17 @@ object HomeScreen : Screen() {
         openTabEvent.send(tab)
     }
 
+    suspend fun openSearch(query: String) {
+        if (query.isNotBlank()) {
+            openSearchEvent.send(query)
+        }
+    }
+
     suspend fun showBottomNav(show: Boolean) {
         showBottomNavEvent.send(show)
     }
 
     sealed interface Tab {
         data class Library(val mangaIdToOpen: Long? = null) : Tab
-        data object Updates : Tab
-        data object History : Tab
-        data class Browse(val toExtensions: Boolean = false) : Tab
-        data class More(val toDownloads: Boolean) : Tab
     }
 }

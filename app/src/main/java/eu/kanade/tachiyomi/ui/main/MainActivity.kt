@@ -81,11 +81,8 @@ import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.extension.api.ExtensionApi
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
-import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
-import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
-import eu.kanade.tachiyomi.ui.deeplink.DeepLinkScreen
+import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.NewUpdateScreen
 import eu.kanade.tachiyomi.ui.more.OnboardingScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
@@ -98,10 +95,6 @@ import eu.kanade.tachiyomi.util.view.setComposeContent
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.app.di.AppGraph
@@ -208,9 +201,8 @@ class MainActivity : BaseActivity() {
                         preferences.incognitoMode.set(false)
                     }
                 }
-                LaunchedEffect(navigator.lastItem) {
-                    (navigator.lastItem as? BrowseSourceScreen)?.sourceId
-                        .let(getIncognitoState::subscribe)
+                LaunchedEffect(Unit) {
+                    getIncognitoState.subscribe(null)
                         .collectLatest { incognito = it }
                 }
 
@@ -248,22 +240,6 @@ class MainActivity : BaseActivity() {
                             )
                         }
                     }
-                }
-
-                // Pop source-related screens when incognito mode is turned off
-                LaunchedEffect(Unit) {
-                    preferences.incognitoMode.changes()
-                        .drop(1)
-                        .filter { !it }
-                        .onEach {
-                            val currentScreen = navigator.lastItem
-                            if (currentScreen is BrowseSourceScreen ||
-                                (currentScreen is MangaScreen && currentScreen.fromSource)
-                            ) {
-                                navigator.popUntilRoot()
-                            }
-                        }
-                        .launchIn(this)
                 }
 
                 HandleOnNewIntent(context = context, navigator = navigator)
@@ -582,17 +558,24 @@ class MainActivity : BaseActivity() {
         val tabToOpen = when (intent.action) {
             Constants.SHORTCUT_LIBRARY -> HomeScreen.Tab.Library()
             Constants.SHORTCUT_MANGA -> {
-                val idToOpen = intent.extras?.getLong(Constants.MANGA_EXTRA) ?: return false
+                // The source-centric MangaScreen no longer exists. Old notifications/actions
+                // land safely in the unified Library instead of reviving legacy Mihon details.
                 navigator.popUntilRoot()
-                HomeScreen.Tab.Library(idToOpen)
+                HomeScreen.Tab.Library()
             }
-            Constants.SHORTCUT_UPDATES -> HomeScreen.Tab.Updates
-            Constants.SHORTCUT_HISTORY -> HomeScreen.Tab.History
-            Constants.SHORTCUT_SOURCES -> HomeScreen.Tab.Browse(false)
-            Constants.SHORTCUT_EXTENSIONS -> HomeScreen.Tab.Browse(true)
+            // Compatibility-only legacy actions: redirect into current Tsuzuki surfaces.
+            Constants.SHORTCUT_UPDATES,
+            Constants.SHORTCUT_HISTORY -> HomeScreen.Tab.Library()
+            Constants.SHORTCUT_SOURCES,
+            Constants.SHORTCUT_EXTENSIONS -> {
+                navigator.popUntilRoot()
+                navigator.push(SettingsScreen(SettingsScreen.Destination.TsuzukiAddons))
+                null
+            }
             Constants.SHORTCUT_DOWNLOADS -> {
                 navigator.popUntilRoot()
-                HomeScreen.Tab.More(toDownloads = true)
+                navigator.push(DownloadQueueScreen)
+                null
             }
             Intent.ACTION_APPLICATION_PREFERENCES -> {
                 navigator.popUntilRoot()
@@ -603,23 +586,19 @@ class MainActivity : BaseActivity() {
                 null
             }
             Intent.ACTION_SEARCH, Intent.ACTION_SEND, "com.google.android.gms.actions.SEARCH_ACTION" -> {
-                // If the intent match the "standard" Android search intent
-                // or the Google-specific search intent (triggered by saying or typing "search *query* on *Tachiyomi*" in Google Search/Google Assistant)
-
-                // Get the search query provided in extras, and if not null, perform a global search with it.
-                val query = intent.getStringExtra(SearchManager.QUERY) ?: intent.getStringExtra(Intent.EXTRA_TEXT)
-                if (!query.isNullOrEmpty()) {
+                val query = intent.getStringExtra(SearchManager.QUERY)
+                    ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!query.isNullOrBlank()) {
                     navigator.popUntilRoot()
-                    navigator.push(DeepLinkScreen(query))
+                    lifecycleScope.launch { HomeScreen.openSearch(query) }
                 }
                 null
             }
             INTENT_SEARCH -> {
                 val query = intent.getStringExtra(INTENT_SEARCH_QUERY)
-                if (!query.isNullOrEmpty()) {
-                    val filter = intent.getStringExtra(INTENT_SEARCH_FILTER)
+                if (!query.isNullOrBlank()) {
                     navigator.popUntilRoot()
-                    navigator.push(GlobalSearchScreen(query, filter))
+                    lifecycleScope.launch { HomeScreen.openSearch(query) }
                 }
                 null
             }
