@@ -193,6 +193,8 @@ class SearchIntegrationsTest {
             "mangaupdates",
             "bangumi",
         )
+        result.tsuzukiRating?.sourceCount shouldBe 4
+        result.tsuzukiRating?.value shouldBe 8.075
     }
 
     @Test
@@ -243,6 +245,9 @@ class SearchIntegrationsTest {
 
         result.scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mangaupdates")
         result.scores.last().identityEvidence shouldBe RatingIdentityEvidence.CORROBORATED_RATING_ONLY
+        result.tsuzukiRating?.sourceCount shouldBe 2
+        result.tsuzukiRating?.verifiedSourceCount shouldBe 1
+        result.tsuzukiRating?.corroboratedSourceCount shouldBe 1
         result.externalIds["mangaupdates"] shouldBe null
     }
 
