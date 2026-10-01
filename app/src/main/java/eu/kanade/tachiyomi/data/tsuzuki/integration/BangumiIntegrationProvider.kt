@@ -11,16 +11,21 @@ import eu.kanade.tachiyomi.data.track.bangumi.BangumiUserLibraryApi
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiUserListEntry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
+import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 import tachiyomi.domain.tsuzuki.integration.model.UserListDefinition
+import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
@@ -29,12 +34,13 @@ import kotlin.time.Instant
 @ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<DiscoveryProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<MetadataProvider>())
+@ContributesIntoSet(AppScope::class, binding = binding<RatingsProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<UserListProvider>())
 class BangumiIntegrationProvider private constructor(
     private val api: BangumiIntegrationApi,
     private val userLibraryApi: BangumiUserLibraryApi,
     override val connection: Flow<Boolean>,
-) : SearchProvider, DiscoveryProvider, MetadataProvider, UserListProvider {
+) : SearchProvider, DiscoveryProvider, MetadataProvider, RatingsProvider, UserListProvider {
 
     @Inject
     constructor(trackerManager: TrackerManager) : this(
@@ -84,6 +90,52 @@ class BangumiIntegrationProvider private constructor(
         api.getMangaDetails(externalId.requireBangumiId())
             .toIntegrationCatalogItem(integrationId.value)
     }
+
+    override suspend fun ratings(externalId: String): Result<List<ExternalRating>> = capture {
+        listOfNotNull(
+            api.getMangaDetails(externalId.requireBangumiId())
+                .toIntegrationCatalogItem(integrationId.value)
+                .toExternalRating(),
+        )
+    }
+
+    override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> = capture {
+        val exactId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank)
+
+        if (exactId != null) {
+            val details = api.getMangaDetails(exactId.requireBangumiId())
+                .toIntegrationCatalogItem(integrationId.value)
+            return@capture details.toRatingMatch(verifiedIdentity = true)
+        }
+
+        val candidates = api.search(item.title)
+            .take(RATING_IDENTITY_SEARCH_LIMIT)
+            .map { candidate -> candidate.toIntegrationCatalogItem(integrationId.value) }
+        matchRatingOnlyCandidate(item, candidates)
+            ?.toRatingMatch(verifiedIdentity = false)
+    }
+
+    private fun CatalogItem.toExternalRating(): ExternalRating? {
+        val score = score ?: return null
+        return ExternalRating(
+            providerId = integrationId.value,
+            label = "Bangumi",
+            value = score.value,
+            scaleMax = score.maxValue,
+        )
+    }
+
+    private fun CatalogItem.toRatingMatch(verifiedIdentity: Boolean): CatalogRatingMatch? =
+        toExternalRating()?.let { rating ->
+            CatalogRatingMatch(
+                externalId = providerId,
+                rating = rating,
+                verifiedIdentity = verifiedIdentity,
+            )
+        }
 
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = capture {
         UserLibrarySnapshot(
@@ -140,6 +192,7 @@ class BangumiIntegrationProvider private constructor(
 
     companion object {
         private const val BANGUMI_RANK_SORT = "rank"
+        private const val RATING_IDENTITY_SEARCH_LIMIT = 10
         private const val BANGUMI_WISH = 1
         private const val BANGUMI_DONE = 2
         private const val BANGUMI_DOING = 3
