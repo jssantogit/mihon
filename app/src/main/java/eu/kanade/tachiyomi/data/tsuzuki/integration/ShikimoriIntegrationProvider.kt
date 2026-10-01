@@ -70,6 +70,7 @@ class ShikimoriIntegrationProvider private constructor(
             label = "Shikimori",
             value = score.value,
             scaleMax = score.maxValue,
+            voteCount = score.voteCount,
         )
     }
 

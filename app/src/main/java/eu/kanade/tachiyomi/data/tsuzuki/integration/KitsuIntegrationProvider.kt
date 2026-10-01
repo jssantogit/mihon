@@ -101,6 +101,7 @@ class KitsuIntegrationProvider private constructor(
                         label = "Kitsu",
                         value = score.value,
                         scaleMax = score.maxValue,
+                        voteCount = score.voteCount,
                     )
                 },
             )
@@ -150,6 +151,7 @@ class KitsuIntegrationProvider private constructor(
                     label = "Kitsu",
                     value = score.value,
                     scaleMax = score.maxValue,
+                    voteCount = score.voteCount,
                 ),
                 verifiedIdentity = verified != null,
             )

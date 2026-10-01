@@ -103,6 +103,7 @@ class HikkaIntegrationProvider private constructor(
             label = "Hikka",
             value = value,
             scaleMax = HIKKA_SCORE_MAX,
+            voteCount = nativeScoredBy,
         )
     }
 
@@ -124,6 +125,7 @@ class HikkaIntegrationProvider private constructor(
                 label = "Hikka",
                 value = score.value,
                 scaleMax = score.maxValue,
+                voteCount = score.voteCount,
             ),
             verifiedIdentity = verifiedIdentity,
         )

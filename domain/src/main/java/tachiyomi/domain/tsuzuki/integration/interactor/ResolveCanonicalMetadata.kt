@@ -27,6 +27,7 @@ import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
+import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRatingSource
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import kotlin.time.Clock
@@ -162,6 +163,17 @@ class ResolveCanonicalMetadata(
                 },
                 ratingDetails = ratings.firstOrNull(),
                 ratings = ratings,
+                tsuzukiRating = ComputeTsuzukiRating(
+                    ratings.map { rating ->
+                        TsuzukiRatingSource(
+                            providerId = rating.providerId.value,
+                            value = rating.value.value,
+                            maxValue = rating.value.maxValue,
+                            voteCount = rating.value.voteCount,
+                            identityEvidence = rating.value.identityEvidence,
+                        )
+                    },
+                ),
                 authors = select(
                     candidates = candidates,
                     capability = IntegrationCapability.METADATA_STAFF,
@@ -375,6 +387,8 @@ class ResolveCanonicalMetadata(
                             value = ResolvedRating(
                                 value = match.rating.value,
                                 maxValue = match.rating.scaleMax,
+                                voteCount = match.rating.voteCount,
+                                identityEvidence = match.identityEvidence,
                             ),
                             providerId = provider.integrationId,
                             externalId = match.externalId,
@@ -485,6 +499,7 @@ class ResolveCanonicalMetadata(
                         value = score.value,
                         maxValue = score.maxValue,
                         voteCount = score.voteCount,
+                        identityEvidence = score.identityEvidence,
                     ),
                     providerId = candidate.providerId,
                     externalId = candidate.externalId,

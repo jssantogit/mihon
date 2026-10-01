@@ -20,6 +20,7 @@ data class ResolvedRating(
     val value: Double,
     val maxValue: Double,
     val voteCount: Int? = null,
+    val identityEvidence: RatingIdentityEvidence = RatingIdentityEvidence.VERIFIED,
 )
 
 data class ResolvedMetadata(
@@ -32,6 +33,7 @@ data class ResolvedMetadata(
     val rating: ProvenancedMetadata<Double>? = null,
     val ratingDetails: ProvenancedMetadata<ResolvedRating>? = null,
     val ratings: List<ProvenancedMetadata<ResolvedRating>> = emptyList(),
+    val tsuzukiRating: TsuzukiRating? = null,
     val authors: ProvenancedMetadata<List<String>>? = null,
     val artists: ProvenancedMetadata<List<String>>? = null,
     val genres: ProvenancedMetadata<List<String>>? = null,
