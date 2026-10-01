@@ -36,9 +36,10 @@ class StartupCrashResilienceTest {
         assertFalse(crashActivity.contains("setComposeContent"))
 
         val manifest = File(root, "app/src/main/AndroidManifest.xml").readText()
-        assertTrue(manifest.contains("""android:authorities="${applicationId}.crash-provider""""))
-        assertTrue(manifest.contains("""android:process=":error_handler""""))
-        assertTrue(crashActivity.contains(""""$packageName.crash-provider""""))
+        assertTrue(manifest.contains("android:name=\".crash.CrashFileProvider\""))
+        assertTrue(manifest.contains("android:authorities=\"\${applicationId}.crash-provider\""))
+        assertTrue(manifest.contains("android:process=\":error_handler\""))
+        assertTrue(crashActivity.contains("\"\$packageName.crash-provider\""))
     }
 
     private fun repositoryRoot(): File {
