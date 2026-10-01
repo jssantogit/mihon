@@ -81,12 +81,6 @@ val projectSource = "https://github.com/jssantogit/tsuzuki"
 val upstream = "https://github.com/mihonapp/mihon"
 """
 
-VALID_MORE_SCREEN = """
-fun MoreScreen() {
-    // Tsuzuki-owned navigation only.
-}
-"""
-
 VALID_BASE_STRINGS = """
 <resources>
     <string name="app_name" translatable="false">Tsuzuki</string>
@@ -192,7 +186,6 @@ class IdentityContractTest(unittest.TestCase):
         apk_workflow=VALID_APK_WORKFLOW,
         ci_workflow=VALID_CI_WORKFLOW,
         about_screen=VALID_ABOUT_SCREEN,
-        more_screen=VALID_MORE_SCREEN,
         base_strings=VALID_BASE_STRINGS,
         settings=VALID_SETTINGS,
         readme=VALID_README,
@@ -216,7 +209,6 @@ class IdentityContractTest(unittest.TestCase):
             ".github/workflows/apk.yml": apk_workflow,
             ".github/workflows/ci-v2.yml": ci_workflow,
             "app/src/main/java/eu/kanade/presentation/more/settings/screen/about/AboutScreen.kt": about_screen,
-            "app/src/main/java/eu/kanade/presentation/more/MoreScreen.kt": more_screen,
             "i18n/src/commonMain/moko-resources/base/strings.xml": base_strings,
             "settings.gradle.kts": settings,
             "README.md": readme,
@@ -330,11 +322,28 @@ class IdentityContractTest(unittest.TestCase):
         root = self.make_repo(about_screen=VALID_ABOUT_SCREEN + "\nval release = RELEASE_URL\n")
         self.assertIn("About screen still exposes the inherited Mihon release channel", check_contract(root))
 
-    def test_more_screen_rejects_inherited_support_and_help_entries(self):
-        inherited = VALID_MORE_SCREEN + "\nval support = MR.strings.label_support_us\nval help = Constants.URL_HELP\n"
-        root = self.make_repo(more_screen=inherited)
-        errors = check_contract(root)
-        self.assertIn("More screen still exposes inherited Mihon support/help entry points", errors)
+    def test_retired_legacy_ui_surfaces_remain_absent(self):
+        root = self.make_repo()
+        retired = root / "app/src/main/java/eu/kanade/tachiyomi/ui/history/HistoryTab.kt"
+        retired.parent.mkdir(parents=True, exist_ok=True)
+        retired.write_text("data object HistoryTab", encoding="utf-8")
+        self.assertIn(
+            "retired legacy UI surface must remain absent: app/src/main/java/eu/kanade/tachiyomi/ui/history/HistoryTab.kt",
+            check_contract(root),
+        )
+
+    def test_retired_launcher_shortcuts_remain_absent(self):
+        root = self.make_repo()
+        shortcuts = root / "app/src/main/shortcuts.xml"
+        shortcuts.parent.mkdir(parents=True, exist_ok=True)
+        shortcuts.write_text(
+            '<shortcut android:shortcutId="show_recently_read" />',
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "retired launcher shortcut must remain absent: show_recently_read",
+            check_contract(root),
+        )
 
     def test_base_product_name_must_be_tsuzuki(self):
         root = self.make_repo(base_strings=VALID_BASE_STRINGS.replace(">Tsuzuki<", ">Mihon<"))
