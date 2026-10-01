@@ -98,14 +98,17 @@ rootProject.name = "Tsuzuki"
 """
 
 VALID_README = """
+<div align="center">
 <picture>
 docs/brand/tsuzuki-lockup-paper.svg
 docs/brand/tsuzuki-lockup.svg
 <img alt="Tsuzuki" />
 </picture>
+</div>
 
-Independent Android manga reader derived from Mihon.
+## Get Tsuzuki
 """
+
 
 VALID_BRAND_COLORS = """
 <resources>
