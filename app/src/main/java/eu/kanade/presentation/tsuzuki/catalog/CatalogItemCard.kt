@@ -1,5 +1,6 @@
 package eu.kanade.presentation.tsuzuki.catalog
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -15,15 +17,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
 import eu.kanade.presentation.tsuzuki.integration.ratingScaleLabel
+import eu.kanade.tachiyomi.R
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
+import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRating
+import java.util.Locale
 
 @Composable
 fun CatalogItemCard(
@@ -76,6 +82,7 @@ fun CatalogItemCard(
 
                 CatalogRatingBadges(
                     scores = item.scores.ifEmpty { listOfNotNull(item.score) },
+                    tsuzukiRating = item.tsuzukiRating,
                     modifier = Modifier.padding(top = 2.dp),
                 )
 
@@ -120,6 +127,7 @@ fun CatalogCompactCard(
         )
         CatalogRatingBadges(
             scores = item.scores.ifEmpty { listOfNotNull(item.score) },
+            tsuzukiRating = item.tsuzukiRating,
             modifier = Modifier.padding(top = 2.dp),
         )
     }
@@ -129,11 +137,17 @@ fun CatalogCompactCard(
 @Composable
 private fun CatalogRatingBadges(
     scores: List<CatalogScore>,
+    tsuzukiRating: TsuzukiRating?,
     modifier: Modifier = Modifier,
 ) {
-    if (scores.isEmpty()) return
+    if (scores.isEmpty() && tsuzukiRating == null) return
 
-    val visibleScores = scores.take(MAX_VISIBLE_CATALOG_RATINGS)
+    val nativeLimit = if (tsuzukiRating == null) {
+        MAX_VISIBLE_CATALOG_RATINGS
+    } else {
+        MAX_VISIBLE_CATALOG_RATINGS - 1
+    }
+    val visibleScores = scores.take(nativeLimit.coerceAtLeast(0))
     val hiddenCount = (scores.size - visibleScores.size).coerceAtLeast(0)
 
     FlowRow(
@@ -141,6 +155,9 @@ private fun CatalogRatingBadges(
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
     ) {
+        tsuzukiRating?.let { rating ->
+            TsuzukiCatalogRatingBadge(rating)
+        }
         visibleScores.forEach { score ->
             CatalogRatingBadge(score = score)
         }
@@ -152,6 +169,28 @@ private fun CatalogRatingBadges(
                 fontWeight = FontWeight.Bold,
             )
         }
+    }
+}
+
+@Composable
+private fun TsuzukiCatalogRatingBadge(
+    rating: TsuzukiRating,
+) {
+    Row(
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.tsuzuki_rating),
+            contentDescription = "Tsuzuki Rating",
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = String.format(Locale.US, "%.1f", rating.value),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

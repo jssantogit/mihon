@@ -4,6 +4,7 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.DiscoverFeed
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import kotlin.coroutines.cancellation.CancellationException
@@ -11,7 +12,13 @@ import kotlin.coroutines.cancellation.CancellationException
 @Inject
 class GetDiscoverFeed(
     private val integrationRegistry: IntegrationRegistry,
+    private val searchIntegrations: SearchIntegrations,
 ) {
+
+    internal constructor(integrationRegistry: IntegrationRegistry) : this(
+        integrationRegistry = integrationRegistry,
+        searchIntegrations = SearchIntegrations(integrationRegistry),
+    )
 
     suspend fun await(
         trendingLimit: Int = 10,
@@ -28,7 +35,9 @@ class GetDiscoverFeed(
 
         val trendingDeferred = async {
             try {
-                provider.trending(offset = 0, limit = trendingLimit)
+                enrichRatings(
+                    provider.trending(offset = 0, limit = trendingLimit),
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -37,7 +46,9 @@ class GetDiscoverFeed(
         }
         val popularDeferred = async {
             try {
-                provider.popular(offset = 0, limit = popularLimit)
+                enrichRatings(
+                    provider.popular(offset = 0, limit = popularLimit),
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -48,6 +59,19 @@ class GetDiscoverFeed(
         DiscoverFeed(
             trending = trendingDeferred.await(),
             popular = popularDeferred.await(),
+        )
+    }
+
+    private suspend fun enrichRatings(result: Result<CatalogPage>): Result<CatalogPage> {
+        val error = result.exceptionOrNull()
+        if (error is CancellationException) throw error
+        if (error != null) return Result.failure(error)
+
+        val page = result.getOrThrow()
+        return Result.success(
+            page.copy(
+                items = searchIntegrations.enrichRatings(page.items),
+            ),
         )
     }
 

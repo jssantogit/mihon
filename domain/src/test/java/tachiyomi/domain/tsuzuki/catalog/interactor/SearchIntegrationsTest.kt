@@ -22,6 +22,7 @@ import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.RatingIdentityEvidence
 
 class SearchIntegrationsTest {
@@ -193,6 +194,8 @@ class SearchIntegrationsTest {
             "mangaupdates",
             "bangumi",
         )
+        result.tsuzukiRating?.sourceCount shouldBe 4
+        result.tsuzukiRating?.value shouldBe 8.075
     }
 
     @Test
@@ -243,7 +246,39 @@ class SearchIntegrationsTest {
 
         result.scores.map(CatalogScore::provider) shouldContainExactly listOf("kitsu", "mangaupdates")
         result.scores.last().identityEvidence shouldBe RatingIdentityEvidence.CORROBORATED_RATING_ONLY
+        result.tsuzukiRating?.sourceCount shouldBe 2
+        result.tsuzukiRating?.verifiedSourceCount shouldBe 1
+        result.tsuzukiRating?.corroboratedSourceCount shouldBe 1
         result.externalIds["mangaupdates"] shouldBe null
+    }
+
+    @Test
+    fun `disabling Tsuzuki ratings hides only the aggregate`() = runTest {
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Work",
+            score = CatalogScore("kitsu", 80.0, 100.0),
+            externalIds = mapOf("mal" to "m1"),
+        )
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("kitsu", Result.success(page(item))),
+                ratingProviders = listOf(
+                    FakeRatingsProvider("kitsu", emptyMap()),
+                    FakeRatingsProvider(
+                        "mal",
+                        mapOf("m1" to ExternalRating("mal", "MAL", 8.4, 10.0)),
+                    ),
+                ),
+                tsuzukiRatingsEnabled = false,
+            ),
+        )
+
+        val result = search.execute(CatalogQuery(query = "Work")).single()
+
+        result.scores.map(CatalogScore::provider) shouldContainExactly listOf("mal", "kitsu")
+        result.tsuzukiRating shouldBe null
     }
 
     @Test
@@ -366,10 +401,17 @@ class SearchIntegrationsTest {
     private fun registry(
         vararg providers: SearchProvider,
         ratingProviders: List<RatingsProvider> = emptyList(),
+        tsuzukiRatingsEnabled: Boolean = true,
     ) = object : IntegrationRegistry {
         override fun searchProviders(): List<SearchProvider> = providers.toList()
         override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
+        override fun isGlobalCapabilityActive(
+            integrationId: IntegrationId,
+            capability: IntegrationCapability,
+        ): Boolean = integrationId.value == "tsuzuki" &&
+            capability == IntegrationCapability.RATINGS &&
+            tsuzukiRatingsEnabled
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
         override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()

@@ -1,7 +1,7 @@
 # Tsuzuki Rating — implementation plan
 
 **Date:** 2026-10-01  
-**Status:** Wave 1 implemented; full CI requested
+**Status:** Waves 1–2 implemented; Wave 2 validation re-requested after first-party integration controls
 
 ## Product definition
 
@@ -38,6 +38,11 @@ Corroborated rating-only evidence may contribute to Tsuzuki Rating but never bec
 
 ## Wave 2 — product surfaces
 
+- register **Tsuzuki** as a first-party integration under a top-level **General** section;
+- expose a global Tsuzuki switch and, inside its detail screen, an independent **Ratings** capability switch;
+- Tsuzuki off → no Tsuzuki Rating is calculated or displayed;
+- Tsuzuki on + Ratings off → native provider ratings remain available, but no aggregate is produced;
+- Tsuzuki on + Ratings on → aggregate when at least two valid provider ratings exist;
 - compute Tsuzuki Rating for Search/Discovery catalog items;
 - show the approved Tsuzuki Rating identity in canonical Detail;
 - show a compact Tsuzuki Rating on catalog cards while retaining provider provenance;
@@ -58,4 +63,5 @@ Corroborated rating-only evidence may contribute to Tsuzuki Rating but never bec
 - vote-count dominance is intentionally rejected in V1;
 - source identity matching rules are not weakened;
 - no canonical identity is created from a rating-only match;
-- formula changes require an explicit future product decision.
+- formula changes require an explicit future product decision;
+- Tsuzuki is first-party product functionality, not an external metadata provider; its integration entry exists only to give the user explicit control over Tsuzuki-owned capabilities.

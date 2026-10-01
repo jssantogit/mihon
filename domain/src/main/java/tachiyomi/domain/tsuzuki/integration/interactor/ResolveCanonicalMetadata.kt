@@ -22,6 +22,7 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
@@ -114,6 +115,27 @@ class ResolveCanonicalMetadata(
                 trace = trace,
             )
 
+            val tsuzukiRating = if (
+                registry.isGlobalCapabilityActive(
+                    TSUZUKI_INTEGRATION_ID,
+                    IntegrationCapability.RATINGS,
+                )
+            ) {
+                ComputeTsuzukiRating(
+                    ratings.map { rating ->
+                        TsuzukiRatingSource(
+                            providerId = rating.providerId.value,
+                            value = rating.value.value,
+                            maxValue = rating.value.maxValue,
+                            voteCount = rating.value.voteCount,
+                            identityEvidence = rating.value.identityEvidence,
+                        )
+                    },
+                )
+            } else {
+                null
+            }
+
             val resolved = ResolvedMetadata(
                 title = select(
                     candidates = candidates,
@@ -163,17 +185,7 @@ class ResolveCanonicalMetadata(
                 },
                 ratingDetails = ratings.firstOrNull(),
                 ratings = ratings,
-                tsuzukiRating = ComputeTsuzukiRating(
-                    ratings.map { rating ->
-                        TsuzukiRatingSource(
-                            providerId = rating.providerId.value,
-                            value = rating.value.value,
-                            maxValue = rating.value.maxValue,
-                            voteCount = rating.value.voteCount,
-                            identityEvidence = rating.value.identityEvidence,
-                        )
-                    },
-                ),
+                tsuzukiRating = tsuzukiRating,
                 authors = select(
                     candidates = candidates,
                     capability = IntegrationCapability.METADATA_STAFF,

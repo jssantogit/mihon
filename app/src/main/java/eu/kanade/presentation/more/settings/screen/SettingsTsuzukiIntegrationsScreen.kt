@@ -35,6 +35,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.track.components.TrackLogoIcon
+import eu.kanade.presentation.tsuzuki.integration.IntegrationBrandIcon
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.data.track.hikka.Hikka
@@ -89,46 +90,21 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                             .fillMaxSize()
                             .padding(contentPadding),
                     ) {
-                        item(key = "tracking_behavior") {
-                            ListItem(
-                                headlineContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_title))
-                                },
-                                supportingContent = {
-                                    Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_summary))
-                                },
-                                trailingContent = {
-                                    TextButton(
-                                        onClick = {
-                                            navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
-                                        },
-                                    ) {
-                                        Text(stringResource(MR.strings.action_settings))
-                                    }
-                                },
-                                modifier = Modifier.clickable {
-                                    navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
-                                },
-                            )
-                            HorizontalDivider()
+                        val generalItems = current.items.filter {
+                            it.category == IntegrationCategory.GENERAL
                         }
-
-                        IntegrationCategory.entries.forEach { category ->
-                            val categoryItems = current.items.filter { it.category == category }
-                            if (categoryItems.isEmpty()) return@forEach
-
-                            item(key = "header_${category.name}") {
+                        if (generalItems.isNotEmpty()) {
+                            item(key = "header_GENERAL") {
                                 Text(
-                                    text = stringResource(category.labelRes()),
+                                    text = stringResource(IntegrationCategory.GENERAL.labelRes()),
                                     modifier = Modifier.padding(
                                         horizontal = 16.dp,
                                         vertical = 12.dp,
                                     ),
                                 )
                             }
-
                             items(
-                                items = categoryItems,
+                                items = generalItems,
                                 key = { it.id.value },
                             ) { item ->
                                 IntegrationSettingRow(
@@ -145,7 +121,67 @@ class SettingsTsuzukiIntegrationsScreen : Screen() {
                                 )
                                 HorizontalDivider()
                             }
+
+                            item(key = "tracking_behavior") {
+                                ListItem(
+                                    headlineContent = {
+                                        Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_title))
+                                    },
+                                    supportingContent = {
+                                        Text(stringResource(MR.strings.tsuzuki_integrations_tracking_behavior_summary))
+                                    },
+                                    trailingContent = {
+                                        TextButton(
+                                            onClick = {
+                                                navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
+                                            },
+                                        ) {
+                                            Text(stringResource(MR.strings.action_settings))
+                                        }
+                                    },
+                                    modifier = Modifier.clickable {
+                                        navigator.push(SettingsTsuzukiTrackingBehaviorScreen)
+                                    },
+                                )
+                                HorizontalDivider()
+                            }
                         }
+
+                        IntegrationCategory.entries
+                            .filterNot { it == IntegrationCategory.GENERAL }
+                            .forEach { category ->
+                                val categoryItems = current.items.filter { it.category == category }
+                                if (categoryItems.isEmpty()) return@forEach
+
+                                item(key = "header_${category.name}") {
+                                    Text(
+                                        text = stringResource(category.labelRes()),
+                                        modifier = Modifier.padding(
+                                            horizontal = 16.dp,
+                                            vertical = 12.dp,
+                                        ),
+                                    )
+                                }
+
+                                items(
+                                    items = categoryItems,
+                                    key = { it.id.value },
+                                ) { item ->
+                                    IntegrationSettingRow(
+                                        item = item,
+                                        onEnabledChange = {
+                                            screenModel.setEnabled(
+                                                id = item.id,
+                                                enabled = it,
+                                            )
+                                        },
+                                        onOpen = {
+                                            navigator.push(SettingsTsuzukiIntegrationDetailScreen(item.id.value))
+                                        },
+                                    )
+                                    HorizontalDivider()
+                                }
+                            }
                     }
                 }
             }
@@ -235,10 +271,14 @@ class SettingsTsuzukiIntegrationDetailScreen(
                             ListItem(
                                 headlineContent = {
                                     Text(
-                                        stringResource(
-                                            MR.strings.tsuzuki_integration_use_provider,
-                                            item.label,
-                                        ),
+                                        if (item.id.value == "tsuzuki") {
+                                            stringResource(MR.strings.tsuzuki_integration_enable_tsuzuki)
+                                        } else {
+                                            stringResource(
+                                                MR.strings.tsuzuki_integration_use_provider,
+                                                item.label,
+                                            )
+                                        },
                                     )
                                 },
                                 trailingContent = {
@@ -499,10 +539,21 @@ private fun IntegrationSettingRow(
         } else {
             null
         },
-        leadingContent = tracker?.let {
-            {
-                TrackLogoIcon(it)
+        leadingContent = when {
+            item.id.value == "tsuzuki" -> {
+                {
+                    IntegrationBrandIcon(
+                        providerId = "tsuzuki",
+                        size = 32.dp,
+                    )
+                }
             }
+            tracker != null -> tracker.let { resolvedTracker ->
+                {
+                    TrackLogoIcon(resolvedTracker)
+                }
+            }
+            else -> null
         },
         trailingContent = {
             if (item.configurableCapabilities.isNotEmpty()) {
@@ -518,6 +569,7 @@ private fun IntegrationSettingRow(
 }
 
 private fun IntegrationCategory.labelRes(): StringResource = when (this) {
+    IntegrationCategory.GENERAL -> MR.strings.tsuzuki_integrations_category_general
     IntegrationCategory.METADATA_SERVICE -> MR.strings.tsuzuki_integrations_category_metadata
     IntegrationCategory.PERSONAL_SERVER -> MR.strings.tsuzuki_integrations_category_servers
     IntegrationCategory.COMPATIBILITY -> MR.strings.tsuzuki_integrations_category_compatibility

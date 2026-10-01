@@ -3,6 +3,7 @@ package eu.kanade.presentation.tsuzuki.integration
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -19,17 +20,27 @@ fun IntegrationBrandIcon(
     size: Dp = 20.dp,
 ) {
     val drawable = integrationBrandDrawable(providerId) ?: return
-    Image(
-        painter = painterResource(drawable),
-        contentDescription = integrationDisplayName(providerId),
-        modifier = modifier
-            .size(size)
-            .clip(MaterialTheme.shapes.small),
-    )
+    if (providerId.equals("tsuzuki", ignoreCase = true)) {
+        Icon(
+            painter = painterResource(drawable),
+            contentDescription = integrationDisplayName(providerId),
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = modifier.size(size),
+        )
+    } else {
+        Image(
+            painter = painterResource(drawable),
+            contentDescription = integrationDisplayName(providerId),
+            modifier = modifier
+                .size(size)
+                .clip(MaterialTheme.shapes.small),
+        )
+    }
 }
 
 @DrawableRes
 internal fun integrationBrandDrawable(providerId: String): Int? = when (providerId.lowercase()) {
+    "tsuzuki" -> R.drawable.ic_mihon
     "mal" -> R.drawable.brand_myanimelist
     "kitsu" -> R.drawable.brand_kitsu
     "mangaupdates" -> R.drawable.brand_mangaupdates
@@ -40,6 +51,7 @@ internal fun integrationBrandDrawable(providerId: String): Int? = when (provider
 }
 
 internal fun integrationDisplayName(providerId: String): String = when (providerId.lowercase()) {
+    "tsuzuki" -> "Tsuzuki"
     "mal" -> "MyAnimeList"
     "kitsu" -> "Kitsu"
     "mangaupdates" -> "MangaUpdates"

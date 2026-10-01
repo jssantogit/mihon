@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
@@ -17,6 +18,8 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
+import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 
 class GetDiscoverFeedTest {
 
@@ -38,6 +41,38 @@ class GetDiscoverFeedTest {
         feed.popular.getOrThrow().items.first().title shouldBe "Popular 1"
         fakeProvider.lastTrendingLimit shouldBe 10
         fakeProvider.lastPopularLimit shouldBe 20
+    }
+
+    @Test
+    fun `discover feed enriches sections with Tsuzuki Rating`() = runTest {
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Work",
+            score = CatalogScore("kitsu", 80.0, 100.0),
+            externalIds = mapOf("mal" to "m1"),
+        )
+        val fakeProvider = FakeDiscoveryProvider(
+            trendingResult = Result.success(CatalogPage(listOf(item), false)),
+            popularResult = Result.success(CatalogPage(listOf(item), false)),
+        )
+        val interactor = GetDiscoverFeed(
+            registry(
+                discoveryProviders = listOf(fakeProvider),
+                ratingProviders = listOf(
+                    FakeRatingsProvider("kitsu", emptyMap()),
+                    FakeRatingsProvider(
+                        "mal",
+                        mapOf("m1" to ExternalRating("mal", "MAL", 8.4, 10.0)),
+                    ),
+                ),
+            ),
+        )
+
+        val feed = interactor.await()
+
+        feed.trending.getOrThrow().items.single().tsuzukiRating?.value shouldBe 8.2
+        feed.popular.getOrThrow().items.single().tsuzukiRating?.sourceCount shouldBe 2
     }
 
     @Test
@@ -151,13 +186,28 @@ class GetDiscoverFeedTest {
 
     private fun registry(
         discoveryProviders: List<DiscoveryProvider> = emptyList(),
+        ratingProviders: List<RatingsProvider> = emptyList(),
     ) = object : IntegrationRegistry {
         override fun searchProviders(): List<SearchProvider> = emptyList()
         override fun discoveryProviders(): List<DiscoveryProvider> = discoveryProviders
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
+        override fun isGlobalCapabilityActive(
+            integrationId: IntegrationId,
+            capability: IntegrationCapability,
+        ): Boolean = integrationId.value == "tsuzuki" && capability == IntegrationCapability.RATINGS
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
-        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
+    }
+
+    private class FakeRatingsProvider(
+        id: String,
+        private val ratingsByExternalId: Map<String, ExternalRating>,
+    ) : RatingsProvider {
+        override val integrationId = IntegrationId(id)
+
+        override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+            Result.success(listOfNotNull(ratingsByExternalId[externalId]))
     }
 
     private class FakeDiscoveryProvider(

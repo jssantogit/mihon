@@ -31,6 +31,7 @@ enum class IntegrationPolicy {
 }
 
 enum class IntegrationCategory {
+    GENERAL,
     METADATA_SERVICE,
     PERSONAL_SERVER,
     COMPATIBILITY,
