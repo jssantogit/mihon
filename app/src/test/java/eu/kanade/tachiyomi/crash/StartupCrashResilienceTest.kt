@@ -20,6 +20,8 @@ class StartupCrashResilienceTest {
         assertTrue(handlerIndex < graphIndex)
         assertTrue(app.contains("override fun attachBaseContext(base: Context)"))
         assertTrue(app.contains("process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX)"))
+        assertTrue(app.contains("Build.VERSION.SDK_INT >= Build.VERSION_CODES.P"))
+        assertTrue(app.contains("/proc/self/cmdline"))
     }
 
     @Test
@@ -40,6 +42,27 @@ class StartupCrashResilienceTest {
         assertTrue(manifest.contains("android:authorities=\"\${applicationId}.crash-provider\""))
         assertTrue(manifest.contains("android:process=\":error_handler\""))
         assertTrue(crashActivity.contains("\"\$packageName.crash-provider\""))
+    }
+
+    @Test
+    fun `Logs screen keeps the explicit four action workflow`() {
+        val root = repositoryRoot()
+        val logsScreen = File(
+            root,
+            "app/src/main/java/eu/kanade/presentation/more/settings/screen/SettingsTsuzukiLogsScreen.kt",
+        ).readText()
+
+        assertTrue(logsScreen.contains("MR.strings.tsuzuki_logs_start"))
+        assertTrue(logsScreen.contains("MR.strings.tsuzuki_logs_stop"))
+        assertTrue(logsScreen.contains("MR.strings.tsuzuki_logs_clear"))
+        assertTrue(logsScreen.contains("MR.strings.tsuzuki_logs_share"))
+        assertFalse(logsScreen.contains("MR.strings.pref_verbose_logging"))
+
+        val crashLogUtil = File(
+            root,
+            "app/src/main/java/eu/kanade/tachiyomi/util/CrashLogUtil.kt",
+        ).readText()
+        assertTrue(crashLogUtil.contains("\"tsuzuki_logs.txt\""))
     }
 
     private fun repositoryRoot(): File {
