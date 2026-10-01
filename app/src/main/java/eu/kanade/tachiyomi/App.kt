@@ -104,6 +104,13 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     private val disableIncognitoReceiver = DisableIncognitoReceiver()
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        if (!getProcessName().endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
+            GlobalExceptionHandler.initialize(base, CrashActivity::class.java)
+        }
+    }
+
     @SuppressLint("LaunchActivityFromNotification")
     override fun onCreate() {
         super<Application>.onCreate()
