@@ -10,8 +10,8 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
-import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
@@ -65,7 +65,12 @@ class ResolveCanonicalMetadataTest {
         )
         val registry = FakeRegistry(listOf(kitsu, mal))
 
-        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true), NoOpStructuredDiagnosticRecorder)
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -132,7 +137,12 @@ class ResolveCanonicalMetadataTest {
             ),
         )
 
-        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true), NoOpStructuredDiagnosticRecorder)
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -185,7 +195,12 @@ class ResolveCanonicalMetadataTest {
         )
         val registry = FakeRegistry(listOf(mangaUpdates, mal))
 
-        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true), NoOpStructuredDiagnosticRecorder)
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -231,7 +246,12 @@ class ResolveCanonicalMetadataTest {
             disabled = setOf(IntegrationId("kitsu") to IntegrationCapability.METADATA_ARTWORK),
         )
 
-        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true), NoOpStructuredDiagnosticRecorder)
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
             .execute(TITLE_ID)
             .getOrThrow()
 
@@ -260,7 +280,12 @@ class ResolveCanonicalMetadataTest {
             ),
         )
 
-        val resolved = ResolveCanonicalMetadata(repository, registry, mockk(relaxed = true), NoOpStructuredDiagnosticRecorder)
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
             .execute(TITLE_ID)
             .getOrThrow()
 
