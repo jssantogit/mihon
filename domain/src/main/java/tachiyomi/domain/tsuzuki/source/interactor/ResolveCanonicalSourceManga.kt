@@ -10,6 +10,17 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticInvariantCode
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.model.SourceMappingAvailability
 import tachiyomi.domain.tsuzuki.model.SourceRepresentation
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -25,6 +36,7 @@ class ResolveCanonicalSourceManga(
     private val networkToLocalManga: NetworkToLocalManga,
     private val readingSourceGateway: ReadingSourceGateway,
     private val contentBindingRepository: ContentBindingRepository,
+    private val structuredDiagnostics: StructuredDiagnosticRecorder,
 ) {
 
     suspend fun execute(canonicalTitleId: String): Manga? {
@@ -151,6 +163,12 @@ class ResolveCanonicalSourceManga(
         diagnosticId: String,
     ): Manga? {
         val repository = contentBindingRepository
+        val trace = DiagnosticTrace.start(
+            recorder = structuredDiagnostics,
+            workflow = DiagnosticWorkflow.CONTENT_RESOLUTION,
+            canonicalTitleId = canonicalTitleId,
+            subsystem = DiagnosticSubsystem.CONTENT,
+        )
         val bindings = try {
             repository.getByTitle(canonicalTitleId)
         } catch (error: CancellationException) {
@@ -174,7 +192,17 @@ class ResolveCanonicalSourceManga(
         logcat {
             "TsuzukiCover sourceResolve title=$diagnosticId contentBindings=${bindings.size}"
         }
+        trace.event(
+            subsystem = DiagnosticSubsystem.CONTENT,
+            name = DiagnosticEventName.CONTENT_BINDING_LOOKUP,
+            stage = DiagnosticStage.LOOKUP,
+            outcome = if (bindings.isEmpty()) DiagnosticOutcome.MISS else DiagnosticOutcome.HIT,
+            attributes = mapOf(
+                DiagnosticAttribute.BINDING_COUNT to DiagnosticAttributeValue.Number(bindings.size.toLong()),
+            ),
+        )
 
+        var restoredCandidates = 0
         var fallback: Manga? = null
         for (binding in bindings) {
             val candidate = try {
@@ -186,6 +214,7 @@ class ResolveCanonicalSourceManga(
             } catch (_: Throwable) {
                 null
             } ?: continue
+            restoredCandidates++
 
             val details = try {
                 readingSourceGateway.getDetails(candidate).getOrElse { candidate }
@@ -222,6 +251,21 @@ class ResolveCanonicalSourceManga(
                 }
                 return repaired
             }
+        }
+        if (bindings.isNotEmpty() && restoredCandidates == 0) {
+            trace.event(
+                subsystem = DiagnosticSubsystem.CONTENT,
+                name = DiagnosticEventName.INVARIANT_VIOLATION,
+                stage = DiagnosticStage.BINDING,
+                outcome = DiagnosticOutcome.FAILED,
+                severity = DiagnosticSeverity.ERROR,
+                attributes = mapOf(
+                    DiagnosticAttribute.INVARIANT_CODE to DiagnosticAttributeValue.Code(
+                        DiagnosticInvariantCode.CONTENT_BINDING_EXISTS_BUT_NOT_CONSUMED,
+                    ),
+                    DiagnosticAttribute.BINDING_COUNT to DiagnosticAttributeValue.Number(bindings.size.toLong()),
+                ),
+            )
         }
         return fallback
     }
