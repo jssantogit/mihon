@@ -6,6 +6,7 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -61,6 +62,7 @@ class CatalogScreenModelTest {
 
     private fun createScreenModel(
         provider: CatalogCapabilityProvider,
+        ratingProviders: List<RatingsProvider> = emptyList(),
         titleRepository: FakeCanonicalTitleRepository = FakeCanonicalTitleRepository(),
         libraryRepository: CanonicalLibraryRepository = FakeCanonicalLibraryRepository(),
         addCatalogItemToLibrary: AddCatalogItemToLibrary = createFakeAddCatalogItemToLibrary(
@@ -68,7 +70,7 @@ class CatalogScreenModelTest {
             libraryRepository = libraryRepository,
         ),
     ): CatalogScreenModel {
-        val integrationRegistry = registry(provider)
+        val integrationRegistry = registry(provider, ratingProviders)
         val searchIntegrations = SearchIntegrations(integrationRegistry)
         return CatalogScreenModel(
             searchCatalog = SearchCatalog(integrationRegistry, searchIntegrations),
@@ -171,6 +173,43 @@ class CatalogScreenModelTest {
         val state = screenModel.state.value
         state.shouldBeInstanceOf<CatalogScreenState.Success>()
         state.searchResults.map { it.title } shouldBe listOf("One Piece")
+    }
+
+    @Test
+    fun `search publishes base results before rating enrichment completes`() = runTest(testDispatcher) {
+        val enrichmentGate = CompletableDeferred<Unit>()
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(listOf(CatalogItem("fake", "10", "Chainsaw Man")), false),
+            ),
+        )
+        val blockingRatingsProvider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun ratings(externalId: String) = Result.success(emptyList<tachiyomi.domain.tsuzuki.integration.model.ExternalRating>())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch?> {
+                enrichmentGate.await()
+                return Result.success(null)
+            }
+        }
+        val screenModel = createScreenModel(
+            provider = fakeProvider,
+            ratingProviders = listOf(blockingRatingsProvider),
+        )
+        advanceUntilIdle()
+
+        val searchJob = screenModel.search("Chainsaw")
+        runCurrent()
+
+        val visibleState = screenModel.state.value
+        visibleState.shouldBeInstanceOf<CatalogScreenState.Success>()
+        visibleState.searchResults.map { it.title } shouldBe listOf("Chainsaw Man")
+        searchJob.isCompleted shouldBe false
+
+        enrichmentGate.complete(Unit)
+        advanceUntilIdle()
+        searchJob.isCompleted shouldBe true
     }
 
     @Test
@@ -447,12 +486,15 @@ class CatalogScreenModelTest {
 
     private interface CatalogCapabilityProvider : SearchProvider, DiscoveryProvider
 
-    private fun registry(provider: CatalogCapabilityProvider) = object : IntegrationRegistry {
+    private fun registry(
+        provider: CatalogCapabilityProvider,
+        ratingProviders: List<RatingsProvider> = emptyList(),
+    ) = object : IntegrationRegistry {
         override fun searchProviders(): List<SearchProvider> = listOf(provider)
         override fun discoveryProviders(): List<DiscoveryProvider> = listOf(provider)
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
-        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
     }
 
