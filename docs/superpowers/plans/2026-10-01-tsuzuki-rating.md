@@ -1,7 +1,7 @@
 # Tsuzuki Rating — implementation plan
 
 **Date:** 2026-10-01  
-**Status:** Wave 1 implementation
+**Status:** Wave 1 implemented; full CI requested
 
 ## Product definition
 
