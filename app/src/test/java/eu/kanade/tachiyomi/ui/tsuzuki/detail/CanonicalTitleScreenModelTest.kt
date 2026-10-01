@@ -6,7 +6,6 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -562,7 +561,7 @@ class CanonicalTitleScreenModelTest {
     }
 
     @Test
-    fun `detail bounds legacy download checks for large chapter lists`() = runTest(dispatcher) {
+    fun `detail does not probe every legacy download while rendering canonical chapters`() = runTest(dispatcher) {
         val chapterList = (1..24).map { index ->
             CanonicalChapter(
                 id = "chapter-$index",
@@ -588,9 +587,7 @@ class CanonicalTitleScreenModelTest {
                 )
             },
         )
-        val releaseChecks = CompletableDeferred<Unit>()
-        var concurrent = 0
-        var peak = 0
+        var legacyChecks = 0
         val downloads = mockk<CanonicalDownloadRepository>()
         coEvery { downloads.getAll() } returns emptyList()
         val model = CanonicalTitleScreenModel(
@@ -604,14 +601,8 @@ class CanonicalTitleScreenModelTest {
                 canonicalChapterRepository = chapterRepo,
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean {
-                        concurrent++
-                        peak = maxOf(peak, concurrent)
-                        try {
-                            releaseChecks.await()
-                            return false
-                        } finally {
-                            concurrent--
-                        }
+                        legacyChecks++
+                        return false
                     }
                 },
             ),
@@ -634,16 +625,11 @@ class CanonicalTitleScreenModelTest {
         )
 
         model.start("title")
-        runCurrent()
-        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
-            .chapters.size shouldBe 24
-        peak shouldBe 8
-
-        releaseChecks.complete(Unit)
         advanceUntilIdle()
-        concurrent shouldBe 0
+
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters.size shouldBe 24
+        legacyChecks shouldBe 0
     }
 
     @Test

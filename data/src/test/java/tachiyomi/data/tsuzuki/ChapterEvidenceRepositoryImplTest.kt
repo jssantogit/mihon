@@ -138,6 +138,38 @@ class ChapterEvidenceRepositoryImplTest {
     }
 
     @Test
+    fun `support snapshot returns unique mapped chapter ids without per evidence queries`() = runBlocking<Unit> {
+        chapterRepository.upsert(chapter("chapter-1", 1))
+        chapterRepository.upsert(chapter("chapter-2", 2))
+        evidenceRepository.upsert(
+            addonEvidence(id = "a-1", label = "Chapter 1", key = "a-1"),
+            "chapter-1",
+        )
+        evidenceRepository.upsert(
+            addonEvidence(id = "a-1-duplicate", label = "Chapter 1", key = "a-1-duplicate"),
+            "chapter-1",
+        )
+        evidenceRepository.upsert(
+            addonEvidence(id = "b-1", label = "Chapter 1", key = "b-1").copy(producerId = "addon-b"),
+            "chapter-1",
+        )
+        evidenceRepository.upsert(
+            editorialEvidence(id = "editorial-2", label = "Chapter 2", key = "editorial-2"),
+            "chapter-2",
+        )
+
+        queryCounter.reset()
+        val snapshot = evidenceRepository.getSupportSnapshot("title-1")
+
+        queryCounter.executeQueryCount shouldBe 1
+        snapshot.mappedCanonicalChapterIds shouldBe setOf("chapter-1", "chapter-2")
+        snapshot.addonMappedChapterIds shouldBe mapOf(
+            "addon" to setOf("chapter-1"),
+            "addon-b" to setOf("chapter-1"),
+        )
+    }
+
+    @Test
     fun `reconciliation rolls back chapter and evidence after injected write failure`() = runBlocking<Unit> {
         val failingEvidenceRepository = object : ChapterEvidenceRepository by evidenceRepository {
             override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>) =
