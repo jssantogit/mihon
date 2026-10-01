@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.CrashLogReportComposer
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCaptureState
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticCrashContextStore
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticRecorderHealth
+import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.DiagnosticRuntimeSnapshot
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LocalStructuredDiagnosticHistory
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatCapture
 import eu.kanade.tachiyomi.data.tsuzuki.diagnostics.LogcatFailure
@@ -41,6 +42,7 @@ class CrashLogUtil(
     private val diagnosticRecorderHealth: DiagnosticRecorderHealth,
     private val diagnosticCaptureState: DiagnosticCaptureState,
     private val diagnosticCrashContextStore: DiagnosticCrashContextStore,
+    private val diagnosticRuntimeSnapshot: DiagnosticRuntimeSnapshot,
     private val logcatCollector: BoundedLogcatCollector,
 ) {
 
@@ -60,6 +62,7 @@ class CrashLogUtil(
                 )
                 val captureWindow = diagnosticCaptureState.describeWindow()
                 val runtimeSnapshot = buildString {
+                    appendLine(diagnosticRuntimeSnapshot.build())
                     appendLine("verbose_logging=${networkPreferences.verboseLogging.get()}")
                     appendLine("incognito=${preferences.incognitoMode.get()}")
                     appendLine("installed_extensions=${extensionManager.getInstalledExtensions().size}")
