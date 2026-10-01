@@ -30,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.icerock.moko.resources.StringResource
@@ -46,8 +45,6 @@ import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeList
 import eu.kanade.tachiyomi.data.track.shikimori.Shikimori
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.extension.details.SourcePreferencesScreen
-import eu.kanade.tachiyomi.ui.home.HomeScreen
-import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.CancellationException
@@ -139,10 +136,7 @@ class SettingsTsuzukiTrackingServiceScreen(
                     navigator.push(SourcePreferencesScreen(source.id))
                 },
                 onOpenExtensions = {
-                    (context as? MainActivity)?.lifecycleScope?.launch {
-                        navigator.popUntilRoot()
-                        HomeScreen.openTab(HomeScreen.Tab.Browse(toExtensions = true))
-                    }
+                    navigator.push(SettingsTsuzukiAddonsScreen)
                 },
                 modifier = Modifier.padding(contentPadding),
             )
