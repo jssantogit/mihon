@@ -110,6 +110,7 @@ class ResolveCanonicalMetadata(
             val ratings = resolveRatings(
                 candidates = candidates,
                 identities = identities,
+                trace = trace,
             )
 
             val resolved = ResolvedMetadata(
@@ -314,8 +315,22 @@ class ResolveCanonicalMetadata(
     private suspend fun resolveRatings(
         candidates: List<Candidate>,
         identities: List<ExternalIdentity>,
+        trace: DiagnosticTrace,
     ): List<ProvenancedMetadata<ResolvedRating>> = coroutineScope {
         val exactRatings = selectRatings(candidates)
+        exactRatings.forEach { rating ->
+            trace.child().event(
+                subsystem = DiagnosticSubsystem.METADATA,
+                name = DiagnosticEventName.RATING_PROVIDER_RESULT,
+                stage = DiagnosticStage.READ,
+                outcome = DiagnosticOutcome.SUCCEEDED,
+                attributes = mapOf(
+                    DiagnosticAttribute.PROVIDER_ID to DiagnosticAttributeValue.Text(rating.providerId.value),
+                    DiagnosticAttribute.IDENTITY_VERIFIED to DiagnosticAttributeValue.Flag(true),
+                    DiagnosticAttribute.RATING_PRESENT to DiagnosticAttributeValue.Flag(true),
+                ),
+            )
+        }
         val existingProviderIds = exactRatings.map { it.providerId.value }.toSet()
         val seed = buildRatingSeed(candidates, identities)
             ?: return@coroutineScope exactRatings
@@ -327,7 +342,31 @@ class ResolveCanonicalMetadata(
                     val result = provider.ratingFor(seed)
                     val error = result.exceptionOrNull()
                     if (error is CancellationException) throw error
-                    result.getOrNull()?.let { match ->
+                    val match = result.getOrNull()
+                    trace.child().event(
+                        subsystem = DiagnosticSubsystem.METADATA,
+                        name = DiagnosticEventName.RATING_PROVIDER_RESULT,
+                        stage = DiagnosticStage.MATCH,
+                        outcome = when {
+                            result.isFailure -> DiagnosticOutcome.FAILED
+                            match == null -> DiagnosticOutcome.EMPTY
+                            else -> DiagnosticOutcome.SUCCEEDED
+                        },
+                        severity = if (result.isFailure) {
+                            DiagnosticSeverity.WARN
+                        } else {
+                            DiagnosticSeverity.INFO
+                        },
+                        attributes = mapOf(
+                            DiagnosticAttribute.PROVIDER_ID to
+                                DiagnosticAttributeValue.Text(provider.integrationId.value),
+                            DiagnosticAttribute.IDENTITY_VERIFIED to
+                                DiagnosticAttributeValue.Flag(match?.verifiedIdentity == true),
+                            DiagnosticAttribute.RATING_PRESENT to
+                                DiagnosticAttributeValue.Flag(match != null),
+                        ),
+                    )
+                    match?.let { match ->
                         val attribution = registry.manifests()
                             .firstOrNull { it.integrationId == provider.integrationId }
                             ?.policyFor(IntegrationCapability.RATINGS)
