@@ -228,6 +228,7 @@
     <string name="tsuzuki_logs_cleared">Logs cleared</string>
     <string name="tsuzuki_logs_clear_failed">Some logs could not be cleared</string>
     <string name="tsuzuki_logs_options">Options</string>
+    <string name="tsuzuki_crash_persisted_locally">Crash details were saved locally.</string>
     <string name="pref_category_about">About</string>
 
     <string name="pref_appearance_summary">Theme, date &amp; time format</string>
