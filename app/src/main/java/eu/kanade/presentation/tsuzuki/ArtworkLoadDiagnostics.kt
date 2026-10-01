@@ -4,6 +4,7 @@ import eu.kanade.presentation.manga.components.MangaCoverLoadEvent
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttribute
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticInvariantCode
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticOutcome
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSeverity
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticStage
@@ -13,6 +14,22 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
     when (event) {
         is MangaCoverLoadEvent.Attempt -> {
+            if (event.candidateCount > 0 && !event.requestDataPresent) {
+                event(
+                    subsystem = DiagnosticSubsystem.IMAGE,
+                    name = DiagnosticEventName.INVARIANT_VIOLATION,
+                    stage = DiagnosticStage.RENDER,
+                    outcome = DiagnosticOutcome.FAILED,
+                    severity = DiagnosticSeverity.ERROR,
+                    attributes = mapOf(
+                        DiagnosticAttribute.INVARIANT_CODE to DiagnosticAttributeValue.Code(
+                            DiagnosticInvariantCode.ARTWORK_LOST_AFTER_RESOLUTION,
+                        ),
+                        DiagnosticAttribute.CANDIDATE_COUNT to
+                            DiagnosticAttributeValue.Number(event.candidateCount.toLong()),
+                    ),
+                )
+            }
             if (event.candidateIndex == 0) {
                 event(
                     subsystem = DiagnosticSubsystem.ARTWORK,
