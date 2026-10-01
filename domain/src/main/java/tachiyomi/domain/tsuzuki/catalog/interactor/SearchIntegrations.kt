@@ -56,6 +56,7 @@ class SearchIntegrations(
                 item.copy(
                     score = null,
                     scores = emptyList(),
+                    tsuzukiRating = null,
                 )
             }
         }
