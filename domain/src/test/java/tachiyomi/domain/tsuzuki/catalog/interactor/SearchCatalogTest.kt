@@ -20,6 +20,7 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 
 class SearchCatalogTest {
 
@@ -42,6 +43,37 @@ class SearchCatalogTest {
         fakeProvider.lastQuery?.sort shouldBe CatalogSort.POPULARITY_DESC
         fakeProvider.lastQuery?.offset shouldBe 0
         fakeProvider.lastQuery?.limit shouldBe 20
+    }
+
+    @Test
+    fun `search enriches active results with Tsuzuki Rating`() = runTest {
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Work",
+            score = tachiyomi.domain.tsuzuki.catalog.model.CatalogScore("kitsu", 80.0, 100.0),
+            externalIds = mapOf("mal" to "m1"),
+        )
+        val fakeProvider = FakeSearchProvider(
+            searchResult = Result.success(CatalogPage(items = listOf(item), hasNextPage = false)),
+        )
+        val interactor = SearchCatalog(
+            registry(
+                searchProviders = listOf(fakeProvider),
+                ratingProviders = listOf(
+                    FakeRatingsProvider("kitsu", emptyMap()),
+                    FakeRatingsProvider(
+                        "mal",
+                        mapOf("m1" to ExternalRating("mal", "MAL", 8.4, 10.0)),
+                    ),
+                ),
+            ),
+        )
+
+        val result = interactor.await("Work").getOrThrow().items.single()
+
+        result.tsuzukiRating?.sourceCount shouldBe 2
+        result.tsuzukiRating?.value shouldBe 8.2
     }
 
     @Test
@@ -254,13 +286,24 @@ class SearchCatalogTest {
 
     private fun registry(
         searchProviders: List<SearchProvider> = emptyList(),
+        ratingProviders: List<RatingsProvider> = emptyList(),
     ) = object : IntegrationRegistry {
         override fun searchProviders(): List<SearchProvider> = searchProviders
         override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
-        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
+    }
+
+    private class FakeRatingsProvider(
+        id: String,
+        private val ratingsByExternalId: Map<String, ExternalRating>,
+    ) : RatingsProvider {
+        override val integrationId = IntegrationId(id)
+
+        override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+            Result.success(listOfNotNull(ratingsByExternalId[externalId]))
     }
 
     private class FakeSearchProvider(
