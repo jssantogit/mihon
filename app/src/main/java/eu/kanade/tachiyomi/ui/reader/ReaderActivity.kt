@@ -105,7 +105,6 @@ import kotlinx.coroutines.launch
 import logcat.LogPriority
 import mihon.app.di.AppGraph
 import mihon.core.metro.metroGraph
-import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
@@ -643,7 +642,7 @@ class ReaderActivity : BaseActivity() {
                 state.activeContentLabel,
             ).joinToString(" · "),
             navigateUp = onBackPressedDispatcher::onBackPressed,
-            onClickTopAppBar = ::openMangaScreen,
+            onClickTopAppBar = ::openTitleDetails,
             bookmarked = state.bookmarked,
             onToggleBookmarked = viewModel::toggleChapterBookmark,
             onChangeSource = viewModel::openContentSelector.takeIf { viewModel.canChangeCanonicalSource() },
@@ -744,15 +743,27 @@ class ReaderActivity : BaseActivity() {
         startPostponedEnterTransition()
     }
 
-    private fun openMangaScreen() {
-        viewModel.manga?.id?.let { id ->
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    action = Constants.SHORTCUT_MANGA
-                    putExtra(Constants.MANGA_EXTRA, id)
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                },
+    private fun openTitleDetails() {
+        when (
+            val route = resolveReaderTitleDetailsRoute(
+                canonicalTitleId = viewModel.state.value.canonicalTitleId,
+                mangaId = viewModel.manga?.id,
             )
+        ) {
+            is ReaderTitleDetailsRoute.Canonical -> {
+                MainActivity.openCanonicalTitleIntent(this, route.canonicalTitleId)
+                    ?.let(::startActivity)
+            }
+            is ReaderTitleDetailsRoute.Legacy -> {
+                startActivity(
+                    Intent(this, MainActivity::class.java).apply {
+                        action = tachiyomi.core.common.Constants.SHORTCUT_MANGA
+                        putExtra(tachiyomi.core.common.Constants.MANGA_EXTRA, route.mangaId)
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    },
+                )
+            }
+            ReaderTitleDetailsRoute.Unavailable -> Unit
         }
     }
 
@@ -1118,3 +1129,24 @@ class ReaderActivity : BaseActivity() {
         }
     }
 }
+
+
+internal sealed interface ReaderTitleDetailsRoute {
+    data class Canonical(val canonicalTitleId: String) : ReaderTitleDetailsRoute
+
+    data class Legacy(val mangaId: Long) : ReaderTitleDetailsRoute
+
+    data object Unavailable : ReaderTitleDetailsRoute
+}
+
+internal fun resolveReaderTitleDetailsRoute(
+    canonicalTitleId: String?,
+    mangaId: Long?,
+): ReaderTitleDetailsRoute =
+    canonicalTitleId
+        ?.takeIf(String::isNotBlank)
+        ?.let(ReaderTitleDetailsRoute::Canonical)
+        ?: mangaId
+            ?.takeIf { it >= 0L }
+            ?.let(ReaderTitleDetailsRoute::Legacy)
+        ?: ReaderTitleDetailsRoute.Unavailable
