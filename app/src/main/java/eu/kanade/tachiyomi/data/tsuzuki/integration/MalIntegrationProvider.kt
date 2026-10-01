@@ -136,7 +136,7 @@ class MalIntegrationProvider private constructor(
 
         val candidates = api.search(item.title)
             .take(RATING_IDENTITY_SEARCH_LIMIT)
-            .map(TrackSearch::toCatalogItem)
+            .map { candidate -> candidate.toCatalogItem() }
         matchRatingOnlyCandidate(item, candidates)
             ?.toRatingMatch(verifiedIdentity = false)
     }
