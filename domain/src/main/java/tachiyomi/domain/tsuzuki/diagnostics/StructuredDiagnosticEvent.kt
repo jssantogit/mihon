@@ -192,6 +192,7 @@ enum class DiagnosticAttribute {
     ACCEPTED_COUNT,
     REJECTED_COUNT,
     PAGE_COUNT,
+    PAGE_INDEX,
     BINDING_COUNT,
     CHAPTER_COUNT,
     VARIANT_COUNT,
@@ -202,6 +203,7 @@ enum class DiagnosticAttribute {
     CANONICAL_ARTWORK_PRESENT,
     REQUEST_DATA_PRESENT,
     INITIALIZED,
+    COMPLETED,
 
     CANDIDATE_TYPE,
     CACHE_STATUS,
@@ -353,6 +355,7 @@ object StructuredDiagnosticSanitizer {
         DiagnosticAttribute.ACCEPTED_COUNT,
         DiagnosticAttribute.REJECTED_COUNT,
         DiagnosticAttribute.PAGE_COUNT,
+        DiagnosticAttribute.PAGE_INDEX,
         DiagnosticAttribute.BINDING_COUNT,
         DiagnosticAttribute.CHAPTER_COUNT,
         DiagnosticAttribute.VARIANT_COUNT,
@@ -375,6 +378,7 @@ object StructuredDiagnosticSanitizer {
         DiagnosticAttribute.CANONICAL_ARTWORK_PRESENT,
         DiagnosticAttribute.REQUEST_DATA_PRESENT,
         DiagnosticAttribute.INITIALIZED,
+        DiagnosticAttribute.COMPLETED,
         -> value as? DiagnosticAttributeValue.Flag
 
         DiagnosticAttribute.LANGUAGE -> (value as? DiagnosticAttributeValue.Text)
