@@ -39,6 +39,8 @@ class LocalStructuredDiagnosticHistory(
         return bestEffort { history.flush(timeoutMillis) }.getOrDefault(false)
     }
 
+    fun clear(): Boolean = bestEffort { history.clear() }.getOrDefault(false)
+
     internal fun persistenceAllowed(): Boolean = isPersistenceEnabled()
 
     private fun isPersistenceEnabled(): Boolean = bestEffort {
