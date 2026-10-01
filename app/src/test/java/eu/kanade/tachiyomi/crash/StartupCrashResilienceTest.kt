@@ -18,6 +18,7 @@ class StartupCrashResilienceTest {
         assertTrue(handlerIndex >= 0)
         assertTrue(graphIndex >= 0)
         assertTrue(handlerIndex < graphIndex)
+        assertTrue(app.contains("override fun attachBaseContext(base: Context)"))
         assertTrue(app.contains("process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX)"))
     }
 
