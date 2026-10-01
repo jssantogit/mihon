@@ -10,7 +10,7 @@ import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 
 class ResolveCanonicalArtworkTest {
 
-    // Full-CI anchor for the canonical artwork regression suite.
+    // Full-CI anchor for the combined artwork + diagnostics regression suite.
 
     // Canonical artwork is durable shared state; validate persistence, source fallback, and UI together.
 
