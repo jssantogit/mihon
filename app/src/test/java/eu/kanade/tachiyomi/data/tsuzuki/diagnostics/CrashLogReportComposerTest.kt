@@ -25,6 +25,22 @@ class CrashLogReportComposerTest {
     }
 
     @Test
+    fun `includes the last persistent uncaught crash when available`() {
+        val report = CrashLogReportComposer.compose(
+            debugInfo = "debug info",
+            extensionsInfo = null,
+            exception = null,
+            diagnosticSummary = "summary",
+            structuredHistory = "",
+            logcat = LogcatCapture.complete(""),
+            persistentCrash = "persistent startup stack",
+        )
+
+        assertTrue(report.contains("Last persistent uncaught crash:"))
+        assertTrue(report.contains("persistent startup stack"))
+    }
+
+    @Test
     fun `composes partial logcat output and marks nonzero exit`() {
         val report = CrashLogReportComposer.compose(
             debugInfo = "debug info",
