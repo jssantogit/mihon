@@ -228,6 +228,53 @@ class ResolveCanonicalMetadataTest {
     }
 
     @Test
+    fun `disabling Tsuzuki ratings preserves native provider ratings only`() = runTest {
+        val repository = FakeCanonicalTitleRepository(
+            identities = listOf(
+                identity("kitsu", "k1"),
+                identity("mal", "m1"),
+            ),
+        )
+        val registry = FakeRegistry(
+            providers = listOf(
+                FakeMetadataProvider(
+                    "kitsu",
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = "k1",
+                        title = "Kitsu title",
+                        score = CatalogScore("kitsu", 80.0, 100.0),
+                    ),
+                ),
+                FakeMetadataProvider(
+                    "mal",
+                    CatalogItem(
+                        provider = "mal",
+                        providerId = "m1",
+                        title = "MAL title",
+                        score = CatalogScore("mal", 8.4, 10.0),
+                    ),
+                ),
+            ),
+            disabled = setOf(
+                IntegrationId("tsuzuki") to IntegrationCapability.RATINGS,
+            ),
+        )
+
+        val resolved = ResolveCanonicalMetadata(
+            repository,
+            registry,
+            mockk(relaxed = true),
+            NoOpStructuredDiagnosticRecorder,
+        )
+            .execute(TITLE_ID)
+            .getOrThrow()
+
+        resolved.ratings.map { it.providerId.value } shouldBe listOf("mal", "kitsu")
+        resolved.tsuzukiRating shouldBe null
+    }
+
+    @Test
     fun `staff and editorial fields keep deterministic provenance`() = runTest {
         val repository = FakeCanonicalTitleRepository(
             identities = listOf(
