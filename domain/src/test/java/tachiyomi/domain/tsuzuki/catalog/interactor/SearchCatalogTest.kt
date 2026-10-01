@@ -11,6 +11,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.integration.ChapterEvidenceProvider
 import tachiyomi.domain.tsuzuki.integration.DiscoveryProvider
@@ -51,7 +52,7 @@ class SearchCatalogTest {
             provider = "kitsu",
             providerId = "k1",
             title = "Work",
-            score = tachiyomi.domain.tsuzuki.catalog.model.CatalogScore("kitsu", 80.0, 100.0),
+            score = CatalogScore("kitsu", 80.0, 100.0),
             externalIds = mapOf("mal" to "m1"),
         )
         val fakeProvider = FakeSearchProvider(
