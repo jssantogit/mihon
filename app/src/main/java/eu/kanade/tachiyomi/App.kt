@@ -127,6 +127,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         setupInjekt()
 
         TelemetryConfig.init(applicationContext)
+        // If telemetry installs its own handler, keep Tsuzuki's persistence layer outermost.
+        GlobalExceptionHandler.initialize(applicationContext, CrashActivity::class.java)
 
         // TLS 1.3 support for Android < 10
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
