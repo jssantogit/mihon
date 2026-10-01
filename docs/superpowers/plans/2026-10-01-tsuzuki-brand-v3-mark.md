@@ -61,4 +61,5 @@ Historical Brand v2 plans and records should be read as evidence of the previous
 - identity-contract guardrails must enforce the new master and 45% initial launcher calibration;
 - GitHub Actions remains the authoritative project validation environment;
 - do not run Gradle locally;
+- full CI is explicitly required before merge;
 - after CI is green, produce a signed APK only when physical launcher/splash/About smoke is requested.
