@@ -196,8 +196,7 @@ class ResolveCanonicalMetadata(
                     externalIds = identities.associate { identity ->
                         IntegrationId(identity.provider) to identity.externalId
                     },
-                ),
-            )
+                )
             trace.event(
                 subsystem = DiagnosticSubsystem.METADATA,
                 name = DiagnosticEventName.METADATA_RESOLVE_COMPLETED,
