@@ -384,7 +384,7 @@ class StructuredDiagnosticHistory internal constructor(
     )
 
     companion object {
-        private const val SCHEMA_VERSION = 1
+        private const val SCHEMA_VERSION = 2
         private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1_000
         private const val SEGMENT_BYTES = 256L * 1024
         private const val DEFAULT_MAX_BYTES = 5L * 1024 * 1024
@@ -435,7 +435,10 @@ object StructuredDiagnosticHistoryJson {
             put("subsystem", event.subsystem.name)
             put("name", event.name.name.lowercase())
             put("sessionId", event.sessionId)
+            event.workflowId?.let { put("workflowId", it) }
             event.operationId?.let { put("operationId", it) }
+            event.parentOperationId?.let { put("parentOperationId", it) }
+            event.workflow?.let { put("workflow", it.name.lowercase()) }
             put("stage", event.stage.name.lowercase())
             put("outcome", event.outcome.name.lowercase())
             event.durationMillis?.let { put("durationMillis", it) }
