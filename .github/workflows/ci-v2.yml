@@ -364,7 +364,7 @@ jobs:
           cache-read-only: true
 
       - name: Compile release
-        run: ./gradlew assembleRelease -Pinclude-telemetry -Penable-updater
+        run: ./gradlew assembleRelease -Penable-updater
 
   gate:
     name: CI Gate
