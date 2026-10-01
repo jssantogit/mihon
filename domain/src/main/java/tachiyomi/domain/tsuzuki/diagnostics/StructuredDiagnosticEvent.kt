@@ -211,6 +211,7 @@ enum class DiagnosticAttribute {
     RATING_SOURCE_COUNT,
     RATING_VERIFIED_SOURCE_COUNT,
     RATING_CORROBORATED_SOURCE_COUNT,
+    TSUZUKI_RATING_ENABLED,
     TSUZUKI_RATING_PRESENT,
 
     CANDIDATE_TYPE,
@@ -392,6 +393,7 @@ object StructuredDiagnosticSanitizer {
         DiagnosticAttribute.COMPLETED,
         DiagnosticAttribute.IDENTITY_VERIFIED,
         DiagnosticAttribute.RATING_PRESENT,
+        DiagnosticAttribute.TSUZUKI_RATING_ENABLED,
         DiagnosticAttribute.TSUZUKI_RATING_PRESENT,
         -> value as? DiagnosticAttributeValue.Flag
 
