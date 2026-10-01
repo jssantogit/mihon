@@ -6,12 +6,16 @@ object CrashLogReportComposer {
         debugInfo: String,
         extensionsInfo: String?,
         exception: String?,
+        diagnosticSummary: String,
         structuredHistory: String,
         logcat: LogcatCapture,
     ): String = buildString {
         appendSection(debugInfo)
         extensionsInfo?.takeIf(String::isNotBlank)?.let { appendSection(it) }
         exception?.takeIf(String::isNotBlank)?.let { appendSection(it) }
+        appendLine("Diagnostic summary:")
+        appendLine(diagnosticSummary.ifBlank { "(unavailable)" })
+        appendLine()
         appendLine("Structured diagnostic history:")
         appendLine(structuredHistory.ifBlank { "(no recent structured events)" })
         appendLine()
