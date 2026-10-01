@@ -83,3 +83,7 @@ Wave 3 adds an explicit reproduction workflow around the structured diagnostics 
 - a completed capture remains the structured export scope until a newer capture starts, allowing the user to stop reproduction first and export immediately afterward.
 
 The capture feature does not enable remote telemetry and does not relax the structured-event allowlist. It does not persist raw titles, queries, URLs, page content, local file paths, credentials, cookies, tokens, provider bodies, or arbitrary exception text.
+
+### Wave 3 validation checkpoint
+
+The Wave 3 implementation is complete on the stacked diagnostics branch. The final validation gate is a full CI v2.1 run on the complete Wave 1 → Wave 2 → Wave 3 tree. No APK is requested by this checkpoint.
