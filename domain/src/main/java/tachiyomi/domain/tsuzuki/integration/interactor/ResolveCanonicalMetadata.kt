@@ -22,6 +22,7 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
+import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
