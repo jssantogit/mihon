@@ -48,7 +48,7 @@ class CrashActivity : ComponentActivity() {
             }
             val uri = FileProvider.getUriForFile(
                 this,
-                "$packageName.provider",
+                "$packageName.crash-provider",
                 report,
             )
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
