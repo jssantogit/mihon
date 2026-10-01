@@ -714,7 +714,7 @@ internal fun parseCanonicalTitleOpenRoute(
 
     return canonicalTitleId
         ?.takeIf(String::isNotBlank)
-        ?.let(MainActivityCanonicalTitleRoute::Open)
+        ?.let { MainActivityCanonicalTitleRoute.Open(it) }
         ?: MainActivityCanonicalTitleRoute.IgnoreInvalid
 }
 
