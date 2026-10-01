@@ -29,8 +29,6 @@ class DiagnosticCaptureState(
     context: Context,
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    private val json = Json { ignoreUnknownKeys = true }
-
     @Synchronized
     fun start(durationMillis: Long = DEFAULT_CAPTURE_DURATION_MILLIS): ActiveDiagnosticCapture {
         require(durationMillis in MIN_CAPTURE_DURATION_MILLIS..MAX_CAPTURE_DURATION_MILLIS)
@@ -104,16 +102,7 @@ class DiagnosticCaptureState(
 
     fun filterForExport(structuredHistory: String): String {
         val window = latestWindow() ?: return structuredHistory
-        return structuredHistory.lineSequence()
-            .filter(String::isNotBlank)
-            .filter { line ->
-                val record = runCatching { json.parseToJsonElement(line).jsonObject }.getOrNull()
-                    ?: return@filter false
-                val timestamp = (record["timestampMillis"] as? JsonPrimitive)?.longOrNull
-                    ?: return@filter false
-                timestamp in window.startedAtMillis..window.endedAtMillis
-            }
-            .joinToString("\n")
+        return filterStructuredHistoryForWindow(structuredHistory, window)
     }
 
     fun describeWindow(): String? {
@@ -172,4 +161,22 @@ class DiagnosticCaptureState(
         const val MIN_CAPTURE_DURATION_MILLIS = 60_000L
         const val MAX_CAPTURE_DURATION_MILLIS = 30L * 60 * 1_000
     }
+}
+
+
+internal fun filterStructuredHistoryForWindow(
+    structuredHistory: String,
+    window: DiagnosticCaptureWindow,
+): String {
+    val json = Json { ignoreUnknownKeys = true }
+    return structuredHistory.lineSequence()
+        .filter(String::isNotBlank)
+        .filter { line ->
+            val record = runCatching { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                ?: return@filter false
+            val timestamp = (record["timestampMillis"] as? JsonPrimitive)?.longOrNull
+                ?: return@filter false
+            timestamp in window.startedAtMillis..window.endedAtMillis
+        }
+        .joinToString("\n")
 }
