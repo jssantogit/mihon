@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.Application
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -8,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Process
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -106,7 +108,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
-        if (!getProcessName().endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
+        if (!currentProcessName(base).endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
             GlobalExceptionHandler.initialize(base, CrashActivity::class.java)
         }
     }
@@ -115,7 +117,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
     override fun onCreate() {
         super<Application>.onCreate()
 
-        val process = getProcessName()
+        val process = currentProcessName(this)
         if (process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
             // CrashActivity must remain usable even when application-graph creation itself is what crashed.
             return
@@ -339,6 +341,20 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             }
         }
     }
+}
+
+private fun currentProcessName(context: Context): String {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        return Application.getProcessName()
+    }
+
+    val pid = Process.myPid()
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+    return activityManager
+        ?.runningAppProcesses
+        ?.firstOrNull { it.pid == pid }
+        ?.processName
+        ?: context.packageName
 }
 
 private const val ACTION_DISABLE_INCOGNITO_MODE = "tachi.action.DISABLE_INCOGNITO_MODE"
