@@ -23,10 +23,12 @@ import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.UserListProvider
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.UserLibraryEntry
 import tachiyomi.domain.tsuzuki.integration.model.UserLibrarySnapshot
 import tachiyomi.domain.tsuzuki.integration.model.UserListDefinition
+import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 import tachiyomi.domain.tsuzuki.model.LibraryStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
@@ -118,6 +120,39 @@ class MalIntegrationProvider private constructor(
             val details = api.getMangaDetails(externalId.requireMalId())
             listOfNotNull(details.toExternalRating())
         }
+    }
+
+    override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> = captureResult {
+        val exactId = when {
+            item.provider == integrationId.value -> item.providerId
+            else -> item.externalIds[integrationId.value]
+        }?.takeIf(String::isNotBlank)
+
+        if (exactId != null) {
+            return@captureResult api.getMangaDetails(exactId.requireMalId())
+                .toCatalogItem()
+                .toRatingMatch(verifiedIdentity = true)
+        }
+
+        val candidates = api.search(item.title)
+            .take(RATING_IDENTITY_SEARCH_LIMIT)
+            .map(TrackSearch::toCatalogItem)
+        matchRatingOnlyCandidate(item, candidates)
+            ?.toRatingMatch(verifiedIdentity = false)
+    }
+
+    private fun CatalogItem.toRatingMatch(verifiedIdentity: Boolean): CatalogRatingMatch? {
+        val score = score ?: return null
+        return CatalogRatingMatch(
+            externalId = providerId,
+            rating = ExternalRating(
+                providerId = integrationId.value,
+                label = "MAL",
+                value = score.value,
+                scaleMax = score.maxValue,
+            ),
+            verifiedIdentity = verifiedIdentity,
+        )
     }
 
     override suspend fun fetchLibrary(): Result<UserLibrarySnapshot> = captureResult {
@@ -236,6 +271,7 @@ class MalIntegrationProvider private constructor(
 
     companion object {
         private const val MAL_SCORE_MAX = 10.0
+        private const val RATING_IDENTITY_SEARCH_LIMIT = 10
 
         // MAL's manga ranking API has no trending/recently-updated mode. Keep those empty rather
         // than relabeling a different ranking, and expose only the documented ranking semantics.
