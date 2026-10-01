@@ -98,11 +98,10 @@ rootProject.name = "Tsuzuki"
 """
 
 VALID_README = """
-# Tsuzuki
-
 <picture>
 docs/brand/tsuzuki-lockup-paper.svg
 docs/brand/tsuzuki-lockup.svg
+<img alt="Tsuzuki" />
 </picture>
 
 Independent Android manga reader derived from Mihon.
@@ -343,8 +342,8 @@ class IdentityContractTest(unittest.TestCase):
         self.assertIn("rootProject.name must be Tsuzuki", check_contract(root))
 
     def test_readme_must_identify_tsuzuki(self):
-        root = self.make_repo(readme=VALID_README.replace("# Tsuzuki", "# Mihon"))
-        self.assertIn("README must identify Tsuzuki as the project", check_contract(root))
+        root = self.make_repo(readme=VALID_README.replace('alt="Tsuzuki"', 'alt="Mihon"'))
+        self.assertIn("README must identify Tsuzuki in the repository lockup", check_contract(root))
 
     def test_brand_v2_palette_is_required(self):
         root = self.make_repo(
