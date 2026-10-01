@@ -11,6 +11,7 @@ class CrashLogReportComposerTest {
             debugInfo = "debug info",
             extensionsInfo = "extensions",
             exception = "explicit exception",
+            diagnosticSummary = "summary",
             structuredHistory = "{\"schemaVersion\":1,\"recordType\":\"event\"}",
             logcat = LogcatCapture.unavailable(LogcatFailure.TIMEOUT),
         )
@@ -18,6 +19,7 @@ class CrashLogReportComposerTest {
         assertTrue(report.contains("debug info"))
         assertTrue(report.contains("extensions"))
         assertTrue(report.contains("explicit exception"))
+        assertTrue(report.contains("Diagnostic summary"))
         assertTrue(report.contains("Structured diagnostic history"))
         assertTrue(report.contains("Logcat collection partial or unavailable: timeout"))
     }
@@ -28,6 +30,7 @@ class CrashLogReportComposerTest {
             debugInfo = "debug info",
             extensionsInfo = null,
             exception = null,
+            diagnosticSummary = "summary",
             structuredHistory = "history-line",
             logcat = LogcatCapture.partial("partial logcat", LogcatFailure.EXIT_CODE),
         )
@@ -43,6 +46,7 @@ class CrashLogReportComposerTest {
             debugInfo = "debug info",
             extensionsInfo = null,
             exception = null,
+            diagnosticSummary = "summary",
             structuredHistory = "history-line",
             logcat = LogcatCapture.partial(
                 "partial logcat",
