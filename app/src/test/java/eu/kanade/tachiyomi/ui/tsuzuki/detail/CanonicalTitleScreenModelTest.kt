@@ -120,7 +120,7 @@ class CanonicalTitleScreenModelTest {
             refreshChapterEvidence = refresh,
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
         model.start("title")
         advanceUntilIdle()
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>().chapters shouldBe emptyList()
@@ -248,7 +248,7 @@ class CanonicalTitleScreenModelTest {
             resolveCanonicalMetadata = resolver,
             resolveCanonicalSourceManga = sourceResolver,
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         advanceUntilIdle()
@@ -303,7 +303,7 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         advanceUntilIdle()
@@ -391,7 +391,7 @@ class CanonicalTitleScreenModelTest {
             diagnostics = diagnostics,
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         advanceUntilIdle()
@@ -464,7 +464,7 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         advanceUntilIdle()
@@ -534,7 +534,7 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         advanceUntilIdle()
@@ -615,7 +615,7 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         runCurrent()
@@ -677,7 +677,7 @@ class CanonicalTitleScreenModelTest {
             ),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                )
+        )
 
         model.start("title")
         advanceUntilIdle()
@@ -727,7 +727,7 @@ class CanonicalTitleScreenModelTest {
                 diagnostics = diagnostics,
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
-                        )
+        )
             model.start("title")
             advanceUntilIdle()
 
