@@ -27,7 +27,6 @@ import cafe.adriel.voyager.navigator.tab.TabNavigator
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.library.LibraryTab
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeTab
 import eu.kanade.tachiyomi.ui.tsuzuki.search.TsuzukiSearchTab
 import eu.kanade.tachiyomi.ui.tsuzuki.settings.TsuzukiSettingsTab
@@ -137,9 +136,6 @@ object HomeScreen : Screen() {
                         when (tab) {
                             is Tab.Library -> {
                                 tabNavigator.current = LibraryTab
-                                tab.mangaIdToOpen?.let { mangaId ->
-                                    navigator.push(MangaScreen(mangaId))
-                                }
                             }
                         }
                     }
