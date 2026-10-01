@@ -126,10 +126,11 @@ class CrashLogUtil(
     fun getDebugInfo(): String {
         val now = Clock.System.now()
         val tz = TimeZone.currentSystemDefault()
+        val versionInfo = "${BuildConfig.VERSION_NAME} " +
+            "(${BuildConfig.COMMIT_SHA}, ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TIME})"
         return """
             App ID: ${BuildConfig.APPLICATION_ID}
-            App version: ${BuildConfig.VERSION_NAME} (
-                + "${BuildConfig.COMMIT_SHA}, ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TIME})"
+            App version: $versionInfo
             Installation ID: ${preferences.installationId.get()}
             Android version: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}; build ${Build.DISPLAY})
             Device brand: ${Build.BRAND}
