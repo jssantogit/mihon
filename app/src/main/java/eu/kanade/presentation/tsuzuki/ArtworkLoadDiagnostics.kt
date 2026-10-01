@@ -12,7 +12,22 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 
 fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
     when (event) {
-        is MangaCoverLoadEvent.Attempt -> event(
+        is MangaCoverLoadEvent.Attempt -> {
+            if (event.candidateIndex == 0) {
+                event(
+                    subsystem = DiagnosticSubsystem.ARTWORK,
+                    name = DiagnosticEventName.ARTWORK_CANDIDATES_BUILT,
+                    stage = DiagnosticStage.RENDER,
+                    outcome = if (event.candidateCount == 0) DiagnosticOutcome.EMPTY else DiagnosticOutcome.CANDIDATES,
+                    attributes = mapOf(
+                        DiagnosticAttribute.CANDIDATE_COUNT to
+                            DiagnosticAttributeValue.Number(event.candidateCount.toLong()),
+                        DiagnosticAttribute.REQUEST_DATA_PRESENT to
+                            DiagnosticAttributeValue.Flag(event.requestDataPresent),
+                    ),
+                )
+            }
+            event(
             subsystem = DiagnosticSubsystem.IMAGE,
             name = DiagnosticEventName.ARTWORK_LOAD_ATTEMPT,
             stage = DiagnosticStage.IMAGE_LOAD,
@@ -26,6 +41,7 @@ fun DiagnosticTrace.recordArtworkLoad(event: MangaCoverLoadEvent) {
                     DiagnosticAttributeValue.Flag(event.requestDataPresent),
             ),
         )
+        }
         is MangaCoverLoadEvent.Failed -> event(
             subsystem = DiagnosticSubsystem.IMAGE,
             name = DiagnosticEventName.ARTWORK_LOAD_COMPLETED,
