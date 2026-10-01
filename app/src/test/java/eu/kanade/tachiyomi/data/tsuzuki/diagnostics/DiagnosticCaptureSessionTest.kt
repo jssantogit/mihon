@@ -42,7 +42,7 @@ class DiagnosticCaptureSessionTest {
 
         verifyOrder {
             state.current()
-            recorder.record(any())
+            recorder.record(match { it.name == DiagnosticEventName.CAPTURE_SESSION_STOPPED })
             state.stop()
         }
         assertEquals(
