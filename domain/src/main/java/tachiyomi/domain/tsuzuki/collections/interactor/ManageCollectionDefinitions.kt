@@ -235,6 +235,7 @@ class ManageCollectionDefinitions internal constructor(
         }
 
         if (updates.isNotEmpty()) {
+            // Commit the visible order as one batch so nested-content updates never observe a partial reorder.
             store.upsertCollections(updates)
         }
     }
