@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
@@ -54,6 +55,7 @@ import java.util.UUID
 @Composable
 internal fun CollectionEditorScreen(
     graph: CollectionUiModel?,
+    draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onClose: () -> Unit,
@@ -76,6 +78,7 @@ internal fun CollectionEditorScreen(
                     parentFolderId = null,
                     existing = null,
                     initialDraft = null,
+                    draftPreviewState = draftPreviewState,
                     onSubmitDraft = { draft ->
                         draftFolders = draftFolders + DraftFolderEntry(
                             key = UUID.randomUUID().toString(),
@@ -99,7 +102,8 @@ internal fun CollectionEditorScreen(
                         parentFolderId = null,
                         existing = null,
                         initialDraft = entry.draft,
-                        onSubmitDraft = { draft ->
+                        draftPreviewState = draftPreviewState,
+                    onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
                                 if (it.key == route.key) it.copy(draft = draft) else it
                             }
@@ -123,6 +127,7 @@ internal fun CollectionEditorScreen(
                         existing = null,
                         initialDraft = null,
                         onSubmitDraft = null,
+                        draftPreviewState = draftPreviewState,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -141,6 +146,7 @@ internal fun CollectionEditorScreen(
                         existing = model,
                         initialDraft = null,
                         onSubmitDraft = null,
+                        draftPreviewState = draftPreviewState,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -350,6 +356,7 @@ internal fun FolderEditorScreen(
     existing: CollectionFolderUiModel?,
     initialDraft: CollectionFolderDraft?,
     onSubmitDraft: ((CollectionFolderDraft) -> Unit)?,
+    draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onClose: () -> Unit,
@@ -386,6 +393,10 @@ internal fun FolderEditorScreen(
         ListBuilderScreen(
             title = if (target is FolderListEditorTarget.New) "New List" else "Edit List",
             initial = initial,
+            previewState = draftPreviewState,
+            onPreviewDraft = { draft ->
+                onAction(CollectionsAction.PreviewDraftChanged(draft))
+            },
             onClose = { listEditor = null },
             onConfirm = { draft ->
                 when (target) {
