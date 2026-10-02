@@ -71,6 +71,8 @@ Capabilities whose exact semantics are not proven remain hidden rather than appr
 
 ## Validation
 
+Final integration PR: #89.
+
 The final Wave 8 branch contains Waves 1–7 plus the final dynamic lookup, descriptor-only UI, include/exclude, diagnostics, and global integration work.
 
 Required merge gate:
