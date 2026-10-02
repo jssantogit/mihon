@@ -189,6 +189,69 @@ class CanonicalTitleScreenModelTest {
         coVerify(exactly = 1) { refresh.executeProgressively("title", true, any()) }
     }
 
+    @Test
+    fun `detail publishes cached provider metadata before live revalidation completes`() = runTest(dispatcher) {
+        val refreshGate = CompletableDeferred<Unit>()
+        val cachedMetadata = ResolvedMetadata(
+            synopsis = ProvenancedMetadata(
+                value = "Cached synopsis",
+                providerId = IntegrationId("kitsu"),
+                attribution = "Kitsu",
+            ),
+        )
+        val resolver = mockk<ResolveCanonicalMetadata>()
+        coEvery { resolver.cached("title") } returns cachedMetadata
+        coEvery { resolver.execute("title", false) } coAnswers {
+            refreshGate.await()
+            Result.success(cachedMetadata)
+        }
+        val chapters = FakeChapterRepository(emptyList())
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getAll() } returns emptyList()
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = chapters,
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+            resolveCanonicalMetadata = resolver,
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+        )
+
+        val operation = model.start("title")
+        runCurrent()
+
+        val cachedState = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+        cachedState.description shouldBe "Cached synopsis"
+        cachedState.isRefreshing shouldBe true
+        operation.isCompleted shouldBe false
+
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+        operation.isCompleted shouldBe true
+    }
+
     // Physical regression guard: production DI must deliver canonical artwork to Detail.
     @Test
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
