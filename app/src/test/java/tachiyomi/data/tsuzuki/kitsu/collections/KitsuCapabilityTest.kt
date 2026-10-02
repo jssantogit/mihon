@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.capability.FilterExecutionMode
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
@@ -88,6 +89,42 @@ class KitsuCapabilityTest {
             QueryOperator.EQUALS,
             QueryValue.of("WEBTOON"),
         ) shouldBe false
+    }
+
+    @Test
+    fun `Kitsu descriptor exposes verified residual rating publication and popularity metadata`() {
+        val descriptor = KitsuQueryCapabilities.descriptor
+
+        descriptor.supports(
+            QueryField.RATING,
+            QueryOperator.GREATER_OR_EQUAL,
+            QueryValue.of(80.0),
+            FilterExecutionMode.RESIDUAL_EXACT,
+        ) shouldBe true
+        descriptor.supports(
+            QueryField.CHAPTER_COUNT,
+            QueryOperator.GREATER_OR_EQUAL,
+            QueryValue.of(20),
+            FilterExecutionMode.RESIDUAL_EXACT,
+        ) shouldBe true
+        descriptor.supports(
+            QueryField.VOLUME_COUNT,
+            QueryOperator.GREATER_OR_EQUAL,
+            QueryValue.of(5),
+            FilterExecutionMode.RESIDUAL_EXACT,
+        ) shouldBe true
+        descriptor.supports(
+            QueryField.START_YEAR,
+            QueryOperator.BETWEEN,
+            QueryValue.range(QueryValue.of(2000), QueryValue.of(2025)),
+            FilterExecutionMode.RESIDUAL_EXACT,
+        ) shouldBe true
+        descriptor.supports(
+            QueryField.POPULARITY,
+            QueryOperator.GREATER_OR_EQUAL,
+            QueryValue.of(1000),
+            FilterExecutionMode.RESIDUAL_EXACT,
+        ) shouldBe true
     }
 
     @Test
