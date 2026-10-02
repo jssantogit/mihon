@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.tsuzuki.collections
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
