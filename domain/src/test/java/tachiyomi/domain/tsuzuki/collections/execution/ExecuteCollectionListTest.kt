@@ -551,7 +551,10 @@ class ExecuteCollectionListTest {
             ): Boolean = false
 
             override fun canPushSort(sort: CollectionSortSelection): Boolean {
-                return sort == popularityDesc
+                return sort == CollectionSortSelection(
+                    CollectionSortKey.Standard.POPULARITY,
+                    CollectionSortDirection.DESC,
+                )
             }
         }
 
