@@ -179,11 +179,11 @@ class ExecuteCollectionListTest {
                     mode = CollectionCacheMode.NETWORK_ONLY,
                 ),
             ),
-        ).shouldBeInstanceOf<ExecuteCollectionListResult.ScanBudgetReached>()
+        ).shouldBeInstanceOf<ExecuteCollectionListResult.Page>()
 
         result.page.items.map { it.providerId } shouldContainExactly listOf("1")
         result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 3)
-        result.reason shouldBe ResidualScanBudgetReason.REMOTE_REQUESTS
+        result.page.scanBudgetReason shouldBe ResidualScanBudgetReason.REMOTE_REQUESTS
         fixture.provider.calls shouldBe 2
     }
 
