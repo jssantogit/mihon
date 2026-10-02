@@ -451,7 +451,7 @@ class CanonicalTitleScreenModel(
             _state.value = before.copy(isRefreshing = true, refreshError = null)
         }
 
-        val errors = coroutineScope {
+        val refreshResults = coroutineScope {
             val chapterRefresh = async {
                 refreshChapterEvidence.execute(
                     canonicalTitleId = canonicalTitleId,
@@ -459,10 +459,13 @@ class CanonicalTitleScreenModel(
                 ).exceptionOrNull()
             }
             val metadataRefresh = async {
-                refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull()
+                resolveCanonicalMetadata.execute(
+                    canonicalTitleId = canonicalTitleId,
+                    forceRefresh = forceChapterRefresh,
+                )
             }
 
-            val metadataError = metadataRefresh.await()
+            val metadataResult = metadataRefresh.await()
             val metadataElapsed = refreshStart.elapsedNow()
             val current = _state.value as? CanonicalTitleScreenState.Loaded
             if (current?.title?.id == canonicalTitleId) {
@@ -474,7 +477,7 @@ class CanonicalTitleScreenModel(
                         current.chapters.filterNot(CanonicalChapterDetailItem::inferredFromCount),
                         refreshedCounts,
                     ),
-                    refreshError = metadataError,
+                    refreshError = metadataResult.exceptionOrNull(),
                 )
             }
 
@@ -482,17 +485,18 @@ class CanonicalTitleScreenModel(
             logcat {
                 "TsuzukiPerf detail refresh metadataElapsed=$metadataElapsed " +
                     "chapterElapsed=${refreshStart.elapsedNow()} " +
-                    "metadataError=${metadataError != null} chapterError=${chapterError != null}"
+                    "metadataError=${metadataResult.isFailure} chapterError=${chapterError != null}"
             }
-            listOfNotNull(metadataError, chapterError)
+            metadataResult to chapterError
         }
 
         try {
             val refreshed = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
                 includeIntegrationMetadata = true,
+                integrationMetadataOverride = refreshResults.first.getOrNull(),
                 isRefreshing = false,
-                refreshError = errors.firstOrNull(),
+                refreshError = refreshResults.first.exceptionOrNull() ?: refreshResults.second,
             )
             logcat {
                 "TsuzukiPerf detail ready chapters=${refreshed.chapters.size} " +
@@ -526,6 +530,7 @@ class CanonicalTitleScreenModel(
     private suspend fun loadLocalState(
         canonicalTitleId: String,
         includeIntegrationMetadata: Boolean,
+        integrationMetadataOverride: ResolvedMetadata? = null,
         isRefreshing: Boolean,
         refreshError: Throwable? = null,
     ): CanonicalTitleScreenState.Loaded {
@@ -595,7 +600,7 @@ class CanonicalTitleScreenModel(
         }
 
         val integrationMetadata = if (includeIntegrationMetadata) {
-            try {
+            integrationMetadataOverride ?: try {
                 resolveCanonicalMetadata
                     .execute(canonicalTitleId)
                     .getOrNull()

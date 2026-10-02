@@ -1,0 +1,35 @@
+CREATE TABLE tsuzuki_metadata_snapshot(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    configuration_fingerprint TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    refreshed_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+getTsuzukiMetadataSnapshot:
+SELECT *
+FROM tsuzuki_metadata_snapshot
+WHERE canonical_title_id = :canonicalTitleId
+LIMIT 1;
+
+upsertTsuzukiMetadataSnapshot:
+INSERT INTO tsuzuki_metadata_snapshot(
+    canonical_title_id,
+    configuration_fingerprint,
+    payload_json,
+    refreshed_at
+)
+VALUES (
+    :canonicalTitleId,
+    :configurationFingerprint,
+    :payloadJson,
+    :refreshedAt
+)
+ON CONFLICT(canonical_title_id) DO UPDATE SET
+    configuration_fingerprint = excluded.configuration_fingerprint,
+    payload_json = excluded.payload_json,
+    refreshed_at = excluded.refreshed_at;
+
+deleteTsuzukiMetadataSnapshot:
+DELETE FROM tsuzuki_metadata_snapshot
+WHERE canonical_title_id = :canonicalTitleId;
