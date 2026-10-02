@@ -1342,7 +1342,7 @@ private fun CollectionFilterCapability.rangeExpression(
     minimum: String,
     maximum: String,
     decimal: Boolean,
-): QueryExpression? {
+): QueryExpression.Predicate? {
     val min = minimum.takeIf(String::isNotBlank)?.let { if (decimal) it.toDoubleOrNull() else it.toLongOrNull() }
     val max = maximum.takeIf(String::isNotBlank)?.let { if (decimal) it.toDoubleOrNull() else it.toLongOrNull() }
     val minValue = when (min) {
