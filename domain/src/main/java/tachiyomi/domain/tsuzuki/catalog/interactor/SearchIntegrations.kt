@@ -149,22 +149,33 @@ class SearchIntegrations(
         val publishMutex = Mutex()
 
         val itemGate = Semaphore(ITEM_ENRICHMENT_CONCURRENCY)
-        val enrichedItems = items.toMutableList()
-        items.indices
+        val preparedItems = items.map { item ->
+            item.withRatingScores(item.activeScores(activeProviderIds))
+        }
+        preparedItems.forEachIndexed { index, prepared ->
+            if (prepared != items[index]) {
+                onItem(index, prepared)
+            }
+        }
+
+        val enrichedItems = preparedItems.toMutableList()
+        preparedItems.indices
             .map { index ->
                 async {
                     val enriched = itemGate.withPermit {
                         enrichRatingItem(
-                            item = items[index],
-                            candidates = items,
+                            item = preparedItems[index],
+                            candidates = preparedItems,
                             providers = providers,
                             activeProviderIds = activeProviderIds,
                             configurationFingerprint = configurationFingerprint,
                             semaphore = semaphore,
                         )
                     }
-                    publishMutex.withLock {
-                        onItem(index, enriched)
+                    if (enriched != preparedItems[index]) {
+                        publishMutex.withLock {
+                            onItem(index, enriched)
+                        }
                     }
                     index to enriched
                 }
@@ -184,10 +195,7 @@ class SearchIntegrations(
         configurationFingerprint: String,
         semaphore: Semaphore,
     ): CatalogItem = coroutineScope {
-        val existingScores = item.scores
-            .ifEmpty { listOfNotNull(item.score) }
-            .filter { score -> score.provider in activeProviderIds }
-            .distinctBy(CatalogScore::provider)
+        val existingScores = item.activeScores(activeProviderIds)
         val existingProviders = existingScores.map(CatalogScore::provider).toSet()
         val providersNeedingRating = providers.filterNot { provider ->
             provider.integrationId.value in existingProviders
@@ -268,29 +276,7 @@ class SearchIntegrations(
                 ),
             )
 
-        identifiedItem.copy(
-            score = scores.firstOrNull(),
-            scores = scores,
-            tsuzukiRating = if (
-                registry.isGlobalCapabilityActive(
-                    TSUZUKI_INTEGRATION_ID,
-                    IntegrationCapability.RATINGS,
-                )
-            ) {
-                ComputeTsuzukiRating(
-                    scores.map { score ->
-                        TsuzukiRatingSource(
-                            providerId = score.provider,
-                            value = score.value,
-                            maxValue = score.maxValue,
-                            voteCount = score.voteCount,
-                            identityEvidence = score.identityEvidence,
-                        )
-                    },
-                )
-            } else {
-                null
-            },
+        identifiedItem.withRatingScores(scores).copy(
             externalIds = buildMap {
                 putAll(identifiedItem.externalIds)
                 matches
@@ -301,6 +287,47 @@ class SearchIntegrations(
             },
         )
     }
+
+    private fun CatalogItem.activeScores(activeProviderIds: Set<String>): List<CatalogScore> =
+        scores
+            .ifEmpty { listOfNotNull(score) }
+            .filter { score -> score.provider in activeProviderIds }
+            .distinctBy(CatalogScore::provider)
+            .sortedWith(
+                compareBy<CatalogScore>(
+                    { score ->
+                        RATING_PROVIDER_ORDER.indexOf(score.provider)
+                            .takeIf { index -> index >= 0 }
+                            ?: Int.MAX_VALUE
+                    },
+                    CatalogScore::provider,
+                ),
+            )
+
+    private fun CatalogItem.withRatingScores(scores: List<CatalogScore>): CatalogItem = copy(
+        score = scores.firstOrNull(),
+        scores = scores,
+        tsuzukiRating = if (
+            registry.isGlobalCapabilityActive(
+                TSUZUKI_INTEGRATION_ID,
+                IntegrationCapability.RATINGS,
+            )
+        ) {
+            ComputeTsuzukiRating(
+                scores.map { score ->
+                    TsuzukiRatingSource(
+                        providerId = score.provider,
+                        value = score.value,
+                        maxValue = score.maxValue,
+                        voteCount = score.voteCount,
+                        identityEvidence = score.identityEvidence,
+                    )
+                },
+            )
+        } else {
+            null
+        },
+    )
 
     private fun localRatingMatch(
         item: CatalogItem,
