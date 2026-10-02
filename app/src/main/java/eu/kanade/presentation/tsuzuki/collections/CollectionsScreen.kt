@@ -56,7 +56,6 @@ import mihon.icons.materialsymbols.rounded.DragHandle
 import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.draggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
@@ -586,7 +585,7 @@ private fun CollectionsOverviewCard(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
-                    imageVector = MaterialSymbols.Add,
+                    imageVector = MaterialSymbols.Rounded.Add,
                     contentDescription = null,
                 )
                 Text(
@@ -652,7 +651,7 @@ private fun CollectionCard(
                 Box {
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(
-                            imageVector = MaterialSymbols.MoreVert,
+                            imageVector = MaterialSymbols.Rounded.MoreVert,
                             contentDescription = "Collection actions",
                         )
                     }
@@ -740,7 +739,7 @@ private fun CollectionCard(
                         onClick = { onEdit(EditorDialog.RenameCollection(collection)) },
                     ) {
                         Icon(
-                            imageVector = MaterialSymbols.Edit,
+                            imageVector = MaterialSymbols.Rounded.Edit,
                             contentDescription = "Rename collection",
                         )
                     }
@@ -762,7 +761,7 @@ private fun CollectionReorderHandle(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = MaterialSymbols.DragHandle,
+            imageVector = MaterialSymbols.Rounded.DragHandle,
             contentDescription = "Drag to reorder collection",
             tint = if (enabled) {
                 MaterialTheme.colorScheme.onSurfaceVariant
