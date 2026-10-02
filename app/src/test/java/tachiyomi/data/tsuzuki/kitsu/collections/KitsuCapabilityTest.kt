@@ -96,7 +96,7 @@ class KitsuCapabilityTest {
         val descriptor = KitsuQueryCapabilities.descriptor
 
         descriptor.supports(
-            QueryField.RATING,
+            QueryField.SCORE,
             QueryOperator.GREATER_OR_EQUAL,
             QueryValue.of(80.0),
             FilterExecutionMode.RESIDUAL_EXACT,
