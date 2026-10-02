@@ -401,9 +401,17 @@ class ExecuteCollectionListTest {
         override val providerId: String = "fake"
 
         override val capabilities: ProviderQueryCapabilities = object : ProviderQueryCapabilities {
-            override val providerId: String = "fake"
-            override val supportsOffsetPaging: Boolean = true
-            override val maxPageSize: Int = maxProviderPageSize
+            override val descriptor: CollectionProviderDescriptor = CollectionProviderDescriptor(
+                providerId = "fake",
+                displayName = "Fake",
+                scope = CollectionProviderScope.GLOBAL,
+                filters = emptyList(),
+                sorts = emptyList(),
+                paging = CollectionPagingCapability(
+                    mode = CollectionPagingMode.OFFSET,
+                    maxPageSize = maxProviderPageSize,
+                ),
+            )
 
             override fun canPushPredicate(
                 field: QueryField,
@@ -411,7 +419,7 @@ class ExecuteCollectionListTest {
                 value: QueryValue,
             ): Boolean = false
 
-            override fun canPushSort(sort: CatalogSort): Boolean {
+            override fun canPushSort(sort: CollectionSortSelection): Boolean {
                 return sort == popularityDesc
             }
         }
