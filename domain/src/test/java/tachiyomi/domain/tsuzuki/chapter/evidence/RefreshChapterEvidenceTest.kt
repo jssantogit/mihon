@@ -103,6 +103,53 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `refresh publishes deterministic provider stages before later provider completes`() = runTest {
+        val secondGate = CompletableDeferred<Unit>()
+        val chapters = FakeCanonicalChapterRepository()
+        val stages = mutableListOf<List<String>>()
+        val slowProvider = object : ChapterEvidenceProvider {
+            override val producerId: String = "second"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                secondGate.await()
+                return Result.success(
+                    listOf(editorialEvidence("e2", "2", "Chapter 2", producerId)),
+                )
+            }
+        }
+        val refresh = refresh(
+            chapters = chapters,
+            providers = listOf(
+                provider(
+                    "first",
+                    Result.success(listOf(editorialEvidence("e1", "1", "Chapter 1", "first"))),
+                ),
+                slowProvider,
+            ),
+        )
+
+        val operation = async {
+            refresh.execute(
+                canonicalTitleId = "canonical-title",
+                onStageReconciled = {
+                    stages += chapters.getByCanonicalTitleId("canonical-title").map { it.displayNumber }
+                },
+            )
+        }
+        runCurrent()
+
+        stages shouldContainExactly listOf(listOf("1"))
+        operation.isCompleted shouldBe false
+
+        secondGate.complete(Unit)
+        operation.await().isSuccess shouldBe true
+        stages shouldContainExactly listOf(
+            listOf("1"),
+            listOf("1", "2"),
+        )
+    }
+
+    @Test
     fun `chapter evidence refresh works with zero source mappings`() = runTest {
         val chapters = FakeCanonicalChapterRepository()
         val refresh = refresh(
