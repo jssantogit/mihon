@@ -53,4 +53,7 @@ interface ProviderQueryCapabilities {
 
     val maxPageSize: Int?
         get() = descriptor.paging.maxPageSize
+
+    val preferredPageSize: Int?
+        get() = descriptor.paging.preferredPageSize
 }
