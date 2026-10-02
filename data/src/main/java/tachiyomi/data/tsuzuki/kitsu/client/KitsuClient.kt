@@ -23,6 +23,8 @@ interface KitsuClient {
         limit: Int,
         sort: String?,
         status: String?,
+        genres: List<String> = emptyList(),
+        subtype: String? = null,
     ): Result<KitsuMangaResponse>
 
     suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse>
