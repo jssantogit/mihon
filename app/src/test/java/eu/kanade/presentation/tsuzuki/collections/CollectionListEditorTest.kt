@@ -68,6 +68,39 @@ class CollectionListEditorTest {
     }
 
     @Test
+    fun `draft provider selection survives editor round trip`() {
+        val draft = CollectionListDraft(
+            title = "Draft",
+            query = null,
+            sort = CatalogSort.POPULARITY_DESC,
+            layoutType = null,
+            providerId = "mangaupdates",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.providerId shouldBe "mangaupdates"
+        editor.toDraftOrNull()!!.providerId shouldBe "mangaupdates"
+    }
+
+    @Test
+    fun `quick builder genre include and exclude round trip semantically`() {
+        val editor = ListEditorState.empty().copy(
+            title = "Genres",
+            includeGenre = "Action",
+            excludeGenre = "Hentai",
+        )
+
+        val draft = editor.toDraftOrNull()!!
+        val reopened = ListEditorState.fromDraft(draft)
+
+        reopened.filtersEditable shouldBe true
+        reopened.includeGenre shouldBe "Action"
+        reopened.excludeGenre shouldBe "Hentai"
+        reopened.toDraftOrNull()!!.query!!.normalize() shouldBe draft.query!!.normalize()
+    }
+
+    @Test
     fun `advanced any query is preserved exactly when visual editor cannot represent it`() {
         val query = QueryExpression.Any(
             QueryExpression.Predicate(
