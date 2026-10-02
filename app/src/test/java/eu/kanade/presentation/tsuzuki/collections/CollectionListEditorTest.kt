@@ -3,9 +3,11 @@ package eu.kanade.presentation.tsuzuki.collections
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -54,14 +56,20 @@ class CollectionListEditorTest {
         val draft = CollectionListDraft(
             title = "Draft",
             query = query,
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        ),
             layoutType = "list",
         )
 
         val editor = ListEditorState.fromDraft(draft)
 
         editor.title shouldBe "Draft"
-        editor.sort shouldBe CatalogSort.RATING_DESC
+        editor.sort shouldBe CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        )
         editor.layoutType shouldBe "list"
         editor.status shouldBe "ONGOING"
         editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
@@ -72,7 +80,7 @@ class CollectionListEditorTest {
         val draft = CollectionListDraft(
             title = "Draft",
             query = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             layoutType = null,
             providerId = "mangaupdates",
         )
@@ -124,10 +132,16 @@ class CollectionListEditorTest {
         editor.preservedQuery shouldBe query
         editor.copy(
             title = "Renamed",
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        ),
         ).toDraftOrNull()!!.let { draft ->
             draft.title shouldBe "Renamed"
-            draft.sort shouldBe CatalogSort.RATING_DESC
+            draft.sort shouldBe CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        )
             draft.query shouldBe query
         }
     }
@@ -153,7 +167,7 @@ class CollectionListEditorTest {
         title = "List",
         providerId = "kitsu",
         query = query,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         sortOrder = 0,
         origin = CollectionOrigin.USER,
         createdAt = 1,
