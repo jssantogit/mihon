@@ -47,6 +47,10 @@ interface MangaUpdatesIntegrationApi {
 
     suspend fun getMangaDetails(id: Long): TrackSearch
 
+    suspend fun lookupGenres(): List<Pair<String, String>> = emptyList()
+
+    suspend fun lookupCategories(query: String): List<Pair<String, String>> = emptyList()
+
     suspend fun collectionSearch(
         query: MangaUpdatesCollectionQuery,
     ): MangaUpdatesCollectionPage = MangaUpdatesCollectionPage(
@@ -101,6 +105,12 @@ class MangaUpdates(id: Long) : BaseTracker(id, "MangaUpdates"), DeletableTracker
         override suspend fun getMangaDetails(id: Long): TrackSearch =
             api.getSeriesDetails(id)?.toTrackSearch(this@MangaUpdates.id)
                 ?: error("MangaUpdates title not found: $id")
+
+        override suspend fun lookupGenres(): List<Pair<String, String>> =
+            api.lookupGenres()
+
+        override suspend fun lookupCategories(query: String): List<Pair<String, String>> =
+            api.lookupCategories(query)
 
         override suspend fun collectionSearch(
             query: MangaUpdatesCollectionQuery,
