@@ -1,6 +1,7 @@
 package tachiyomi.domain.tsuzuki.collections.execution
 
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
+import tachiyomi.domain.tsuzuki.collections.capability.ResidualScanPolicy
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import java.util.concurrent.CancellationException
 
@@ -15,6 +16,8 @@ object ResidualPaginator {
         logicalPageSize: Int,
         cursor: ResidualPageCursor = ResidualPageCursor(),
         maxProviderPageSize: Int? = null,
+        scanPolicy: ResidualScanPolicy = ResidualScanPolicy.DEFAULT,
+        clock: () -> Long = System::currentTimeMillis,
         fetcher: CatalogPageFetcher,
     ): ResidualPageResult {
         require(logicalPageSize > 0) { "Logical page size must be positive" }
@@ -31,11 +34,34 @@ object ResidualPaginator {
 
         val accepted = mutableListOf<tachiyomi.domain.tsuzuki.catalog.model.CatalogItem>()
         var rawOffset = cursor.rawOffset
+        var rawItemsScanned = 0
+        var remoteRequests = 0
+        val startedAt = clock()
         val seenRawPageSignatures = mutableSetOf<String>()
 
         while (accepted.size < logicalPageSize) {
+            budgetReason(
+                scanPolicy = scanPolicy,
+                rawItemsScanned = rawItemsScanned,
+                remoteRequests = remoteRequests,
+                elapsedMillis = clock() - startedAt,
+            )?.let { reason ->
+                return budgetReached(
+                    items = accepted,
+                    rawOffset = rawOffset,
+                    reason = reason,
+                    rawItemsScanned = rawItemsScanned,
+                    remoteRequests = remoteRequests,
+                )
+            }
+
             val remaining = logicalPageSize - accepted.size
-            val requestLimit = minOf(remaining, maxProviderPageSize ?: remaining)
+            val remainingRawBudget = scanPolicy.maxRawItemsPerLogicalPage - rawItemsScanned
+            val requestLimit = minOf(
+                remaining,
+                maxProviderPageSize ?: remaining,
+                remainingRawBudget,
+            )
 
             val result = try {
                 fetcher.fetch(rawOffset, requestLimit)
@@ -53,6 +79,7 @@ object ResidualPaginator {
                 return ResidualPageResult.ProviderFailure(failure)
             }
 
+            remoteRequests += 1
             val page = result.getOrThrow()
 
             if (page.items.size > requestLimit) {
@@ -92,6 +119,7 @@ object ResidualPaginator {
             }
 
             rawOffset += page.items.size
+            rawItemsScanned += page.items.size
 
             if (page.totalCount != null && rawOffset >= page.totalCount && page.hasNextPage) {
                 return ResidualPageResult.PaginationInvariantFailure(
@@ -107,10 +135,53 @@ object ResidualPaginator {
             if (!page.hasNextPage) {
                 return success(accepted, nextCursor = null)
             }
+
+            budgetReason(
+                scanPolicy = scanPolicy,
+                rawItemsScanned = rawItemsScanned,
+                remoteRequests = remoteRequests,
+                elapsedMillis = clock() - startedAt,
+            )?.let { reason ->
+                return budgetReached(
+                    items = accepted,
+                    rawOffset = rawOffset,
+                    reason = reason,
+                    rawItemsScanned = rawItemsScanned,
+                    remoteRequests = remoteRequests,
+                )
+            }
         }
 
         error("Residual pagination loop exited without returning a page")
     }
+
+    private fun budgetReason(
+        scanPolicy: ResidualScanPolicy,
+        rawItemsScanned: Int,
+        remoteRequests: Int,
+        elapsedMillis: Long,
+    ): ResidualScanBudgetReason? = when {
+        rawItemsScanned >= scanPolicy.maxRawItemsPerLogicalPage -> ResidualScanBudgetReason.RAW_ITEMS
+        remoteRequests >= scanPolicy.maxRemoteRequestsPerLogicalPage -> ResidualScanBudgetReason.REMOTE_REQUESTS
+        elapsedMillis >= scanPolicy.maxElapsedMillis -> ResidualScanBudgetReason.ELAPSED_TIME
+        else -> null
+    }
+
+    private fun budgetReached(
+        items: List<tachiyomi.domain.tsuzuki.catalog.model.CatalogItem>,
+        rawOffset: Int,
+        reason: ResidualScanBudgetReason,
+        rawItemsScanned: Int,
+        remoteRequests: Int,
+    ): ResidualPageResult.BudgetReached = ResidualPageResult.BudgetReached(
+        page = LogicalCatalogPage(
+            items = items.toList(),
+            nextCursor = ResidualPageCursor(rawOffset),
+        ),
+        reason = reason,
+        rawItemsScanned = rawItemsScanned,
+        remoteRequests = remoteRequests,
+    )
 
     private fun success(
         items: List<tachiyomi.domain.tsuzuki.catalog.model.CatalogItem>,
