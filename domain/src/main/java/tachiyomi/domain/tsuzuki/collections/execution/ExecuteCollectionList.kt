@@ -150,12 +150,9 @@ class ExecuteCollectionList internal constructor(
                 list = list,
                 page = result.page,
             )
-            is ResidualPageResult.BudgetReached -> ExecuteCollectionListResult.ScanBudgetReached(
+            is ResidualPageResult.BudgetReached -> ExecuteCollectionListResult.Page(
                 list = list,
                 page = result.page,
-                reason = result.reason,
-                rawItemsScanned = result.rawItemsScanned,
-                remoteRequests = result.remoteRequests,
             )
             is ResidualPageResult.UnsupportedResidual -> {
                 ExecuteCollectionListResult.UnsupportedResidual(result.reasons)
