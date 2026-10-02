@@ -46,6 +46,11 @@ import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
+import tachiyomi.domain.tsuzuki.collections.model.SortDirectionMode
+import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
+import tachiyomi.domain.tsuzuki.collections.query.QueryField
+import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
+import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 @Composable
 internal fun ListBuilderScreen(
@@ -144,6 +149,10 @@ private fun QuickListBuilder(
     previewState: CollectionDraftPreviewState,
     modifier: Modifier = Modifier,
 ) {
+    val descriptor = providerDescriptors.firstOrNull { it.providerId == editor.providerId }
+    val quickFilters = descriptor?.filters?.filter { it.placement == FilterPlacement.QUICK }.orEmpty()
+    val sortOptions = descriptor?.uiSortSelections().orEmpty()
+
     LazyColumn(
         modifier = modifier,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -187,23 +196,42 @@ private fun QuickListBuilder(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EditorSectionLabel("SOURCE")
                 EditorSurface {
-                    val sources = remember(editor.providerId) {
-                        (listOf(editor.providerId) + SUPPORTED_LIST_PROVIDER_IDS).distinct()
-                    }
+                    val sources = (
+                        providerDescriptors.map(CollectionProviderDescriptor::providerId) +
+                            editor.providerId
+                        ).distinct()
                     BuilderDropdown(
                         label = "Catalog source",
                         current = editor.providerId,
                         options = sources,
-                        display = ::providerDisplayName,
-                        onSelect = { onEditorChange(editor.copy(providerId = it)) },
-                        enabled = editor.filtersEditable,
+                        display = { providerId ->
+                            providerDescriptors
+                                .firstOrNull { it.providerId == providerId }
+                                ?.displayName
+                                ?: providerDisplayName(providerId)
+                        },
+                        onSelect = { selected ->
+                            if (selected != editor.providerId) {
+                                onEditorChange(
+                                    editor.copy(
+                                        providerId = selected,
+                                        sort = providerDescriptors
+                                            .firstOrNull { it.providerId == selected }
+                                            ?.uiSortSelections()
+                                            ?.firstOrNull()
+                                            ?: editor.sort,
+                                    ),
+                                )
+                            }
+                        },
+                        enabled = editor.filtersEditable && sources.isNotEmpty(),
                     )
-                    if (sources.size == 1) {
+                    if (descriptor == null) {
                         Text(
-                            text = "Only Kitsu has an executable Collections adapter today. " +
-                                "The source selector is provider-aware so additional adapters can be added without redesigning this screen.",
+                            text = "This provider is not currently registered for Collections execution. " +
+                                "The saved definition is preserved, but Preview cannot execute it.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(top = 8.dp),
                         )
                     }
@@ -233,59 +261,97 @@ private fun QuickListBuilder(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EditorSectionLabel("QUICK FILTERS")
                 EditorSurface {
-                    QuickChoiceRow(
-                        label = "Status",
-                        options = listOf(
-                            QuickChoice("Any", null),
-                            QuickChoice("Ongoing", "ONGOING"),
-                            QuickChoice("Complete", "COMPLETED"),
-                        ),
-                        selected = editor.status,
-                        enabled = editor.filtersEditable,
-                        onSelect = { onEditorChange(editor.copy(status = it)) },
-                    )
-                    BuilderDropdown(
-                        label = "Type",
-                        current = editor.format ?: "Any",
-                        options = listOf("Any") + providerFormatOptions(editor.providerId),
-                        display = { it.prettyEnumName() },
-                        onSelect = {
-                            onEditorChange(editor.copy(format = it.takeUnless { value -> value == "Any" }))
-                        },
-                        enabled = editor.filtersEditable,
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.includeGenre,
-                        onValueChange = {
-                            if (editor.filtersEditable) {
-                                onEditorChange(editor.copy(includeGenre = it))
-                            }
-                        },
-                        enabled = editor.filtersEditable,
-                        label = { Text("Genre contains") },
-                        placeholder = { Text("e.g. Action") },
-                        singleLine = true,
-                    )
-                    BuilderNumericField(
-                        label = "Minimum rating",
-                        value = editor.minScore,
-                        enabled = editor.filtersEditable,
-                        allowDecimal = true,
-                        onValueChange = { onEditorChange(editor.copy(minScore = it)) },
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
-                    BuilderDropdown(
-                        label = "Sort",
-                        current = editor.sort,
-                        options = SUPPORTED_SORTS,
-                        display = ::sortDisplayName,
-                        onSelect = { onEditorChange(editor.copy(sort = it)) },
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
+                    val statusCapability = quickFilters.firstOrNull { it.field == QueryField.STATUS }
+                    statusCapability?.staticStringOptions()?.let { options ->
+                        QuickChoiceRow(
+                            label = "Status",
+                            options = listOf(QuickChoice("Any", null)) + options.map { option ->
+                                QuickChoice(option.first, option.second)
+                            },
+                            selected = editor.status,
+                            enabled = editor.filtersEditable,
+                            onSelect = { onEditorChange(editor.copy(status = it)) },
+                        )
+                    }
+
+                    val typeCapability = quickFilters.firstOrNull { it.field == QueryField.WORK_TYPE }
+                    typeCapability?.staticStringOptions()?.let { options ->
+                        BuilderDropdown(
+                            label = "Type",
+                            current = editor.format ?: "Any",
+                            options = listOf("Any") + options.map { it.second },
+                            display = { value ->
+                                if (value == "Any") value else {
+                                    options.firstOrNull { it.second == value }?.first ?: value.prettyEnumName()
+                                }
+                            },
+                            onSelect = {
+                                onEditorChange(editor.copy(format = it.takeUnless { value -> value == "Any" }))
+                            },
+                            enabled = editor.filtersEditable,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                    }
+
+                    if (quickFilters.any { it.field == QueryField.GENRE }) {
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.includeGenre,
+                            onValueChange = {
+                                if (editor.filtersEditable) {
+                                    onEditorChange(editor.copy(includeGenre = it))
+                                }
+                            },
+                            enabled = editor.filtersEditable,
+                            label = { Text("Genre") },
+                            placeholder = { Text("e.g. Action") },
+                            singleLine = true,
+                        )
+                    }
+
+                    if (quickFilters.any { it.field == QueryField.SCORE || it.field == QueryField.RATING }) {
+                        BuilderNumericField(
+                            label = "Minimum rating",
+                            value = editor.minScore,
+                            enabled = editor.filtersEditable,
+                            allowDecimal = true,
+                            onValueChange = { onEditorChange(editor.copy(minScore = it)) },
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                    }
+
+                    quickFilters
+                        .filterNot { it.field in LEGACY_RENDERED_FIELDS }
+                        .forEach { capability ->
+                            DescriptorFilterControl(
+                                capability = capability,
+                                editor = editor,
+                                onEditorChange = onEditorChange,
+                                modifier = Modifier.padding(top = 10.dp),
+                            )
+                        }
+
+                    if (sortOptions.isNotEmpty()) {
+                        val selectedSort = editor.sort.takeIf { it in sortOptions } ?: sortOptions.first()
+                        BuilderDropdown(
+                            label = "Sort",
+                            current = selectedSort,
+                            options = sortOptions,
+                            display = { sort -> descriptor?.sortDisplayName(sort) ?: sortDisplayName(sort) },
+                            onSelect = { onEditorChange(editor.copy(sort = it)) },
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                    }
+
+                    if (quickFilters.isEmpty() && sortOptions.isEmpty()) {
+                        Text(
+                            text = "This provider does not expose Quick filters.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
