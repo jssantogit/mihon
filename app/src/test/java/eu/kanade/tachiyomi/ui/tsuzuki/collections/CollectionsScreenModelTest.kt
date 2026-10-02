@@ -130,6 +130,14 @@ class CollectionsScreenModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 1) {
+            manager.createUserFolder(
+                collectionId = createdCollection.id,
+                title = "Trending",
+                sortOrder = 0,
+                parentFolderId = null,
+            )
+        }
+        coVerify(exactly = 1) {
             manager.createUserList(
                 collectionId = createdCollection.id,
                 folderId = createdFolder.id,

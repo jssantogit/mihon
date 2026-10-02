@@ -282,6 +282,8 @@ class ManageCollectionDefinitionsTest {
                 orderedFolderIds = listOf("second"),
             )
         }
+
+        store.getFolders(collection.id).map { it.id } shouldContainExactly listOf("first", "second")
     }
 
     @Test
