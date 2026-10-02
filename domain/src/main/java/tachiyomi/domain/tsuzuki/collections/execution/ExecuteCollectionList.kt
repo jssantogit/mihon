@@ -4,7 +4,7 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.cache.CacheFreshness
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheKey
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheLookup
@@ -125,7 +125,7 @@ class ExecuteCollectionList internal constructor(
         provider: CollectionQueryProvider,
         pushdownExpression: QueryExpression?,
         residualExpression: QueryExpression?,
-        remoteSort: CatalogSort,
+        remoteSort: CollectionSortSelection,
     ): ExecuteCollectionListResult {
         val result = ResidualPaginator.loadPage(
             residualExpression = residualExpression,
@@ -168,7 +168,7 @@ class ExecuteCollectionList internal constructor(
     private suspend fun loadRawPage(
         provider: CollectionQueryProvider,
         pushdownExpression: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         offset: Int,
         limit: Int,
         policy: CollectionExecutionCachePolicy,
@@ -224,7 +224,7 @@ class ExecuteCollectionList internal constructor(
         key: CatalogCacheKey,
         provider: CollectionQueryProvider,
         pushdownExpression: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         offset: Int,
         limit: Int,
         policy: CollectionExecutionCachePolicy,
@@ -249,7 +249,7 @@ class ExecuteCollectionList internal constructor(
         key: CatalogCacheKey,
         provider: CollectionQueryProvider,
         pushdownExpression: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         offset: Int,
         limit: Int,
         policy: CollectionExecutionCachePolicy,
