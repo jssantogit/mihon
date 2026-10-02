@@ -1,9 +1,9 @@
 package eu.kanade.presentation.tsuzuki.collections
 
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
-import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
