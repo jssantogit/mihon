@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -212,6 +213,123 @@ class CatalogScreenModelTest {
 
         enrichmentGate.complete(Unit)
         advanceUntilIdle()
+        searchJob.isCompleted shouldBe true
+    }
+
+    @Test
+    fun `late results from an older search never replace the newer query`() = runTest(testDispatcher) {
+        val oldGate = CompletableDeferred<Unit>()
+        val provider = object : CatalogCapabilityProvider {
+            override val integrationId = IntegrationId("fake")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                return when (query.query) {
+                    "Alpha" -> {
+                        withContext(NonCancellable) { oldGate.await() }
+                        Result.success(CatalogPage(listOf(CatalogItem("fake", "a", "Alpha")), false))
+                    }
+                    "Beta" -> Result.success(CatalogPage(listOf(CatalogItem("fake", "b", "Beta")), false))
+                    else -> Result.success(CatalogPage(emptyList(), false))
+                }
+            }
+
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
+
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
+
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), false))
+        }
+        val screenModel = createScreenModel(provider)
+        advanceUntilIdle()
+
+        val oldSearch = screenModel.search("Alpha")
+        runCurrent()
+        val newSearch = screenModel.search("Beta")
+        runCurrent()
+
+        val newest = screenModel.state.value
+        newest.shouldBeInstanceOf<CatalogScreenState.Success>()
+        newest.searchQuery shouldBe "Beta"
+        newest.searchResults.map { it.title } shouldBe listOf("Beta")
+        newSearch.isCompleted shouldBe true
+
+        oldGate.complete(Unit)
+        advanceUntilIdle()
+
+        val finalState = screenModel.state.value
+        finalState.shouldBeInstanceOf<CatalogScreenState.Success>()
+        finalState.searchQuery shouldBe "Beta"
+        finalState.searchResults.map { it.title } shouldBe listOf("Beta")
+        oldSearch.isCompleted shouldBe true
+    }
+
+    @Test
+    fun `search publishes each enriched item without waiting for the whole page`() = runTest(testDispatcher) {
+        val secondRatingGate = CompletableDeferred<Unit>()
+        val fakeProvider = FakeCatalogProvider(
+            searchResult = Result.success(
+                CatalogPage(
+                    listOf(
+                        CatalogItem(
+                            provider = "fake",
+                            providerId = "1",
+                            title = "Work One",
+                            externalIds = mapOf("mal" to "m1"),
+                        ),
+                        CatalogItem(
+                            provider = "fake",
+                            providerId = "2",
+                            title = "Work Two",
+                            externalIds = mapOf("mal" to "m2"),
+                        ),
+                    ),
+                    false,
+                ),
+            ),
+        )
+        val ratings = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+                val externalId = item.externalIds["mal"] ?: return Result.success(null)
+                if (externalId == "m2") secondRatingGate.await()
+                return Result.success(
+                    CatalogRatingMatch(
+                        externalId = externalId,
+                        rating = ExternalRating(
+                            providerId = "mal",
+                            label = "MAL",
+                            value = if (externalId == "m1") 8.1 else 8.2,
+                            scaleMax = 10.0,
+                        ),
+                    ),
+                )
+            }
+        }
+        val screenModel = createScreenModel(fakeProvider, ratingProviders = listOf(ratings))
+        advanceUntilIdle()
+
+        val searchJob = screenModel.search("Work")
+        runCurrent()
+
+        val partial = screenModel.state.value
+        partial.shouldBeInstanceOf<CatalogScreenState.Success>()
+        partial.searchResults[0].scores.map { it.provider } shouldBe listOf("mal")
+        partial.searchResults[1].scores shouldBe emptyList()
+        searchJob.isCompleted shouldBe false
+
+        secondRatingGate.complete(Unit)
+        advanceUntilIdle()
+
+        val complete = screenModel.state.value
+        complete.shouldBeInstanceOf<CatalogScreenState.Success>()
+        complete.searchResults.map { item -> item.scores.single().value } shouldBe listOf(8.1, 8.2)
         searchJob.isCompleted shouldBe true
     }
 
