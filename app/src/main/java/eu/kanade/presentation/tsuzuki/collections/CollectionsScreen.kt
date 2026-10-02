@@ -1032,7 +1032,7 @@ private fun ListRow(
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(
-                        text = "${list.providerId} • ${list.sort.name}",
+                        text = "${list.providerId} • ${list.sort.cacheKey}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
