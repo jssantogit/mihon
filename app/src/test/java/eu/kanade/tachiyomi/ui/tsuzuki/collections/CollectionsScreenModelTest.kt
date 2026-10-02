@@ -15,10 +15,13 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.interactor.ExportCollections
 import tachiyomi.domain.tsuzuki.collections.interactor.ImportCollections
 import tachiyomi.domain.tsuzuki.collections.interactor.ManageCollectionDefinitions
+import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
+import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
@@ -36,6 +39,108 @@ class CollectionsScreenModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `new collection persists draft folders and lists in their editor order`() = runTest(dispatcher) {
+        val store = mockk<CollectionStore>()
+        every { store.observeCollections() } returns flowOf(emptyList())
+
+        val manager = mockk<ManageCollectionDefinitions>()
+        val createdCollection = collection(id = "created", sortOrder = 0)
+        val createdFolder = CollectionFolder(
+            id = "folder",
+            collectionId = createdCollection.id,
+            parentFolderId = null,
+            title = "Trending",
+            origin = CollectionOrigin.USER,
+            sortOrder = 0,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val createdList = CollectionList(
+            id = "list",
+            collectionId = createdCollection.id,
+            folderId = createdFolder.id,
+            title = "Top rated",
+            providerId = "kitsu",
+            query = null,
+            sort = CatalogSort.RATING_DESC,
+            layoutType = "list",
+            sortOrder = 0,
+            origin = CollectionOrigin.USER,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+
+        coEvery {
+            manager.createUserCollection(
+                title = "Discover",
+                sortOrder = 0,
+            )
+        } returns createdCollection
+        coEvery {
+            manager.createUserFolder(
+                collectionId = createdCollection.id,
+                title = "Trending",
+                sortOrder = 0,
+                parentFolderId = null,
+            )
+        } returns createdFolder
+        coEvery {
+            manager.createUserList(
+                collectionId = createdCollection.id,
+                folderId = createdFolder.id,
+                title = "Top rated",
+                providerId = "kitsu",
+                query = null,
+                sort = CatalogSort.RATING_DESC,
+                sortOrder = 0,
+                layoutType = "list",
+            )
+        } returns createdList
+
+        val model = CollectionsScreenModel(
+            store = store,
+            manager = manager,
+            exportCollections = mockk(),
+            importCollections = mockk(),
+            executeCollectionList = mockk<ExecuteCollectionList>(),
+        )
+        advanceUntilIdle()
+
+        model.dispatch(
+            CollectionsAction.CreateCollection(
+                title = "Discover",
+                folders = listOf(
+                    CollectionFolderDraft(
+                        title = "Trending",
+                        lists = listOf(
+                            CollectionListDraft(
+                                title = "Top rated",
+                                query = null,
+                                sort = CatalogSort.RATING_DESC,
+                                layoutType = "list",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            manager.createUserList(
+                collectionId = createdCollection.id,
+                folderId = createdFolder.id,
+                title = "Top rated",
+                providerId = "kitsu",
+                query = null,
+                sort = CatalogSort.RATING_DESC,
+                sortOrder = 0,
+                layoutType = "list",
+            )
+        }
     }
 
     @Test
