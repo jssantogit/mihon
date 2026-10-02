@@ -164,12 +164,14 @@ object ShikimoriCollectionCapabilities : ProviderQueryCapabilities {
             expression.value,
         )
         is QueryExpression.Not -> {
-            val predicate = expression.expression as? QueryExpression.Predicate ?: return false
-            predicate.field in NEGATABLE_FIELDS && canPushPredicate(
-                predicate.field,
-                predicate.operator,
-                predicate.value,
-            )
+            val predicate = expression.expression as? QueryExpression.Predicate
+            predicate != null &&
+                predicate.field in NEGATABLE_FIELDS &&
+                canPushPredicate(
+                    predicate.field,
+                    predicate.operator,
+                    predicate.value,
+                )
         }
         is QueryExpression.All -> {
             expression.expressions.all(::canPushExpression) &&
@@ -259,7 +261,7 @@ object ShikimoriCollectionCompiler {
                     }
                 }
                 is QueryExpression.Not -> collect(term.expression, negative = true)
-                is QueryExpression.All -> term.expressions.forEach(::collect)
+                is QueryExpression.All -> term.expressions.forEach { child -> collect(child) }
                 is QueryExpression.Any -> error("ANY cannot reach Shikimori compiler")
             }
         }
