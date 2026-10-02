@@ -109,6 +109,43 @@ class CollectionListEditorTest {
     }
 
     @Test
+    fun `provider custom simple predicate stays editable and round trips through extra terms`() {
+        val query = QueryExpression.Predicate(
+            QueryField.Custom("hikka.only_translated"),
+            QueryOperator.EQUALS,
+            QueryValue.of(true),
+        )
+        val draft = CollectionListDraft(
+            title = "Translated",
+            query = query,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "hikka",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(query)
+        editor.toDraftOrNull()!!.query shouldBe query
+    }
+
+    @Test
+    fun `simple standard field outside legacy controls stays editable as extra term`() {
+        val query = QueryExpression.Predicate(
+            QueryField.PUBLISHER,
+            QueryOperator.EQUALS,
+            QueryValue.of("Shueisha"),
+        )
+
+        val editor = ListEditorState.from(list(query))
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(query)
+        editor.toDraftOrNull()!!.query shouldBe query
+    }
+
+    @Test
     fun `advanced any query is preserved exactly when visual editor cannot represent it`() {
         val query = QueryExpression.Any(
             QueryExpression.Predicate(
@@ -147,11 +184,11 @@ class CollectionListEditorTest {
     }
 
     @Test
-    fun `unsupported simple field is preserved instead of dropped`() {
+    fun `unsupported simple operator remains preserved instead of dropped`() {
         val query = QueryExpression.Predicate(
             QueryField.GENRE,
-            QueryOperator.EQUALS,
-            QueryValue.of("Action"),
+            QueryOperator.BETWEEN,
+            QueryValue.range(QueryValue.of("Action"), QueryValue.of("Drama")),
         )
 
         val editor = ListEditorState.from(list(query))
