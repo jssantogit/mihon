@@ -188,6 +188,57 @@ class ExecuteCollectionListTest {
     }
 
     @Test
+    fun `draft execution reuses provider planner residual paging and cache contract`() = runTest {
+        val fixture = fixture(
+            dataset = listOf(
+                item("1", chapterCount = 1),
+                item("2", chapterCount = 101),
+                item("3", chapterCount = 102),
+            ),
+            maxProviderPageSize = 2,
+        )
+
+        val result = fixture.executor.executeDraft(
+            ExecuteCollectionDraftRequest(
+                draft = CollectionListDraftExecution(
+                    providerId = "fake",
+                    query = QueryExpression.Predicate(
+                        QueryField.CHAPTER_COUNT,
+                        QueryOperator.GREATER_THAN,
+                        QueryValue.of(100),
+                    ),
+                    sort = popularityDesc,
+                ),
+                pageSize = 2,
+                cachePolicy = CollectionExecutionCachePolicy(
+                    mode = CollectionCacheMode.NETWORK_ONLY,
+                ),
+            ),
+        ).shouldBeInstanceOf<ExecuteCollectionDraftResult.Page>()
+
+        result.page.items.map { it.providerId } shouldContainExactly listOf("2", "3")
+        fixture.provider.calls shouldBe 2
+        fixture.store.getList("list") shouldBe null
+    }
+
+    @Test
+    fun `draft execution fails explicitly for unavailable provider without persistence`() = runTest {
+        val fixture = fixture()
+
+        fixture.executor.executeDraft(
+            ExecuteCollectionDraftRequest(
+                draft = CollectionListDraftExecution(
+                    providerId = "missing",
+                    query = null,
+                    sort = popularityDesc,
+                ),
+            ),
+        ) shouldBe ExecuteCollectionDraftResult.ProviderUnavailable("missing")
+
+        fixture.provider.calls shouldBe 0
+    }
+
+    @Test
     fun `fresh memory cache avoids provider fetch`() = runTest {
         val fixture = fixture(now = 1_050)
         fixture.store.putGraph(list())
