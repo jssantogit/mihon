@@ -26,6 +26,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionListDraftExecution
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderRegistry
@@ -127,6 +128,11 @@ sealed interface CollectionsAction {
     data class RefreshList(val listId: String) : CollectionsAction
     data class LoadMore(val listId: String) : CollectionsAction
     data class PreviewDraftChanged(val draft: CollectionListDraft?) : CollectionsAction
+    data class FilterLookupRequested(
+        val providerId: String,
+        val lookupId: String,
+        val query: String,
+    ) : CollectionsAction
 }
 
 @Immutable
@@ -160,6 +166,31 @@ sealed interface CollectionDraftPreviewState {
 }
 
 @Immutable
+data class CollectionFilterLookupKey(
+    val providerId: String,
+    val lookupId: String,
+)
+
+@Immutable
+sealed interface CollectionFilterLookupState {
+    data object Idle : CollectionFilterLookupState
+
+    data class Loading(
+        val query: String,
+    ) : CollectionFilterLookupState
+
+    data class Ready(
+        val query: String,
+        val options: List<FilterOption>,
+    ) : CollectionFilterLookupState
+
+    data class Error(
+        val query: String,
+        val message: String,
+    ) : CollectionFilterLookupState
+}
+
+@Immutable
 sealed interface CollectionsTransferState {
     data object Idle : CollectionsTransferState
 
@@ -189,6 +220,7 @@ sealed interface CollectionsScreenState {
         val draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
         val providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
         val providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
+        val filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState> = emptyMap(),
     ) : CollectionsScreenState
 
     data class Error(
@@ -214,8 +246,11 @@ class CollectionsScreenModel(
         MutableStateFlow<Map<String, CollectionListRuntimeState>>(emptyMap())
     private val draftPreviewState =
         MutableStateFlow<CollectionDraftPreviewState>(CollectionDraftPreviewState.Idle)
+    private val filterLookupStates =
+        MutableStateFlow<Map<CollectionFilterLookupKey, CollectionFilterLookupState>>(emptyMap())
     private val visibleListIds = mutableSetOf<String>()
     private val listJobs = mutableMapOf<String, Job>()
+    private val lookupJobs = mutableMapOf<CollectionFilterLookupKey, Job>()
     private var draftPreviewJob: Job? = null
 
     private val collectionsFlow: Flow<List<CollectionUiModel>> = store.observeCollections()
@@ -241,7 +276,8 @@ class CollectionsScreenModel(
         transferState,
         listRuntimeStates,
         draftPreviewState,
-    ) { collections, transfer, runtimes, preview ->
+        filterLookupStates,
+    ) { collections, transfer, runtimes, preview, lookups ->
         CollectionsScreenState.Ready(
             collections = collections,
             transferState = transfer,
@@ -251,6 +287,7 @@ class CollectionsScreenModel(
                 .sortedBy(CollectionProviderDescriptor::displayName),
             providerCapabilities = providerRegistry.all()
                 .associate { provider -> provider.providerId to provider.capabilities },
+            filterLookupStates = lookups,
         ) as CollectionsScreenState
     }
         .catch { error ->
@@ -313,6 +350,54 @@ class CollectionsScreenModel(
             is CollectionsAction.RefreshList -> refreshList(action.listId)
             is CollectionsAction.LoadMore -> loadMore(action.listId)
             is CollectionsAction.PreviewDraftChanged -> previewDraft(action.draft)
+            is CollectionsAction.FilterLookupRequested -> requestFilterLookup(
+                providerId = action.providerId,
+                lookupId = action.lookupId,
+                query = action.query,
+            )
+        }
+    }
+
+    private fun requestFilterLookup(
+        providerId: String,
+        lookupId: String,
+        query: String,
+    ) {
+        val key = CollectionFilterLookupKey(providerId, lookupId)
+        lookupJobs.remove(key)?.cancel()
+        filterLookupStates.value = filterLookupStates.value + (
+            key to CollectionFilterLookupState.Loading(query)
+            )
+
+        val job = viewModelScope.launch {
+            delay(FILTER_LOOKUP_DEBOUNCE_MILLIS)
+            val result = providerRegistry.lookupValues(
+                providerId = providerId,
+                lookupId = lookupId,
+                query = query.takeIf(String::isNotBlank),
+            )
+            filterLookupStates.value = filterLookupStates.value + (
+                key to result.fold(
+                    onSuccess = { options ->
+                        CollectionFilterLookupState.Ready(
+                            query = query,
+                            options = options,
+                        )
+                    },
+                    onFailure = { error ->
+                        CollectionFilterLookupState.Error(
+                            query = query,
+                            message = error.message ?: "Filter options could not be loaded",
+                        )
+                    },
+                )
+                )
+        }
+        lookupJobs[key] = job
+        job.invokeOnCompletion {
+            if (lookupJobs[key] === job) {
+                lookupJobs.remove(key)
+            }
         }
     }
 
