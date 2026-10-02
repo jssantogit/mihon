@@ -78,7 +78,7 @@ class CatalogCacheTest {
                     CollectionSortDirection.DESC,
                 ),
             )
-        ) shouldBe false
+            ) shouldBe false
         (base == base.copy(rawOffset = 20)) shouldBe false
         (base == base.copy(pageSize = 10)) shouldBe false
     }
