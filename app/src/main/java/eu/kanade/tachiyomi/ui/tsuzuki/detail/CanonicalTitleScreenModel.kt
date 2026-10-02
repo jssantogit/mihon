@@ -533,6 +533,7 @@ class CanonicalTitleScreenModel(
                 canonicalTitleId = canonicalTitleId,
                 includeIntegrationMetadata = true,
                 integrationMetadataOverride = refreshResults.first.getOrNull(),
+                allowSourceNetwork = false,
                 isRefreshing = false,
                 refreshError = refreshResults.first.exceptionOrNull() ?: refreshResults.second,
             )

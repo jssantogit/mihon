@@ -62,6 +62,8 @@ class TsuzukiHomeScreenModel(
     private val eventChannel = Channel<TsuzukiHomeEvent>(Channel.BUFFERED)
     val events = eventChannel.receiveAsFlow()
 
+    private val importedLegacyProgressTitles = mutableSetOf<String>()
+
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
@@ -111,8 +113,11 @@ class TsuzukiHomeScreenModel(
                 libraryItems
             }.collectLatest { libraryItems ->
                 for (item in libraryItems) {
+                    val titleId = item.title.id
+                    if (titleId in importedLegacyProgressTitles) continue
                     try {
-                        importLegacyCanonicalProgress.execute(item.title.id)
+                        importLegacyCanonicalProgress.execute(titleId)
+                        importedLegacyProgressTitles += titleId
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Throwable) {
