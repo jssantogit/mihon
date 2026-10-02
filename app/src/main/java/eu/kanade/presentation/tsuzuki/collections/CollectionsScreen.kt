@@ -1,5 +1,6 @@
 package eu.kanade.presentation.tsuzuki.collections
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,6 +96,20 @@ fun CollectionsScreen(
     }
     val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
 
+    val navigateWithinCollections: () -> Unit = {
+        when {
+            selectedListId != null -> selectedListId = null
+            selectedFolderId != null -> selectedFolderId = null
+            selectedCollectionId != null -> selectedCollectionId = null
+            else -> navigateUp()
+        }
+    }
+
+    BackHandler(
+        enabled = selectedListId != null || selectedFolderId != null || selectedCollectionId != null,
+        onBack = navigateWithinCollections,
+    )
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -103,14 +118,7 @@ fun CollectionsScreen(
                     ?: selectedFolder?.folder?.title
                     ?: selectedCollection?.collection?.title
                     ?: "Collections",
-                navigateUp = {
-                    when {
-                        selectedListId != null -> selectedListId = null
-                        selectedFolderId != null -> selectedFolderId = null
-                        selectedCollectionId != null -> selectedCollectionId = null
-                        else -> navigateUp()
-                    }
-                },
+                navigateUp = navigateWithinCollections,
                 actions = {
                     AppBarActions(
                         listOf(
@@ -442,18 +450,12 @@ private fun CollectionsReadyContent(
                             reorderHandleModifier = if (reorderEnabled) {
                                 Modifier.draggableHandle(
                                     onDragStopped = {
-                                        val sourceIndex = collections.indexOfFirst {
-                                            it.collection.id == graph.collection.id
-                                        }
-                                        val targetIndex = displayedCollections.indexOfFirst {
-                                            it.collection.id == graph.collection.id
-                                        }
-                                        val delta = targetIndex - sourceIndex
-                                        if (sourceIndex >= 0 && targetIndex >= 0 && delta != 0) {
+                                        val persistedOrder = collections.map { it.collection.id }
+                                        val displayedOrder = displayedCollections.map { it.collection.id }
+                                        if (displayedOrder != persistedOrder) {
                                             onAction(
-                                                CollectionsAction.MoveCollection(
-                                                    graph.collection,
-                                                    delta.toLong(),
+                                                CollectionsAction.ReorderCollections(
+                                                    orderedCollectionIds = displayedOrder,
                                                 ),
                                             )
                                         }
