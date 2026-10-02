@@ -1,9 +1,9 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.collections
 
+import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
-import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,15 +18,15 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
-import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftRequest
-import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftResult
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapability
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
 import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderRegistry
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftRequest
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftResult
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.execution.LogicalCatalogPage
 import tachiyomi.domain.tsuzuki.collections.interactor.ExportCollections
@@ -39,8 +39,8 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
-import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
+import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CollectionsScreenModelTest {
