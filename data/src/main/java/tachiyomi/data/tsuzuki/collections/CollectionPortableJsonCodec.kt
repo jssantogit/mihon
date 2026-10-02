@@ -17,10 +17,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.portable.CURRENT_PORTABLE_COLLECTIONS_SCHEMA_VERSION
 import tachiyomi.domain.tsuzuki.collections.portable.CollectionPortableCodec
@@ -86,7 +86,7 @@ class CollectionPortableJsonCodec : CollectionPortableCodec {
     override fun decode(encoded: String): PortableCollectionsDocument {
         val root = json.parseToJsonElement(encoded).jsonObject
         val schemaVersion = root.required("schemaVersion").jsonPrimitive.int
-        require(schemaVersion == CURRENT_PORTABLE_COLLECTIONS_SCHEMA_VERSION) {
+        require(schemaVersion in SUPPORTED_PORTABLE_SCHEMA_VERSIONS) {
             "Unsupported portable Collections schemaVersion: $schemaVersion"
         }
 
@@ -94,7 +94,7 @@ class CollectionPortableJsonCodec : CollectionPortableCodec {
             schemaVersion = schemaVersion,
             collections = root.required("collections").jsonArray.map { decodeCollection(it.jsonObject) },
             folders = root.required("folders").jsonArray.map { decodeFolder(it.jsonObject) },
-            lists = root.required("lists").jsonArray.map { decodeList(it.jsonObject) },
+            lists = root.required("lists").jsonArray.map { decodeList(it.jsonObject, schemaVersion) },
         )
     }
 
@@ -166,7 +166,13 @@ class CollectionPortableJsonCodec : CollectionPortableCodec {
                 json.parseToJsonElement(CollectionQueryJsonCodec.encode(query)),
             )
         }
-        put("sort", list.sort.name)
+        put(
+            "sort",
+            buildJsonObject {
+                put("key", list.sort.stableKey)
+                list.sort.direction?.let { put("direction", it.name) }
+            },
+        )
         list.layoutType?.let { put("layoutType", it) }
         put("sortOrder", list.sortOrder)
         put("enabled", list.enabled)
@@ -178,7 +184,25 @@ class CollectionPortableJsonCodec : CollectionPortableCodec {
         list.deletedAt?.let { put("deletedAt", it) }
     }
 
-    private fun decodeList(jsonObject: JsonObject): CollectionList {
+    private fun decodeList(
+        jsonObject: JsonObject,
+        documentSchemaVersion: Int,
+    ): CollectionList {
+        val sort = when (documentSchemaVersion) {
+            1 -> CollectionSortSelection.fromStorage(
+                stableKey = jsonObject.string("sort"),
+                direction = null,
+            )
+            CURRENT_PORTABLE_COLLECTIONS_SCHEMA_VERSION -> {
+                val sortObject = jsonObject.required("sort").jsonObject
+                CollectionSortSelection.fromStorage(
+                    stableKey = sortObject.string("key"),
+                    direction = sortObject.stringOrNull("direction"),
+                )
+            }
+            else -> error("Unsupported portable Collections schemaVersion: $documentSchemaVersion")
+        }
+
         return CollectionList(
             id = jsonObject.string("id"),
             collectionId = jsonObject.string("collectionId"),
@@ -186,7 +210,7 @@ class CollectionPortableJsonCodec : CollectionPortableCodec {
             title = jsonObject.string("title"),
             providerId = jsonObject.string("providerId"),
             query = jsonObject["query"]?.let(::decodeQuery),
-            sort = CatalogSort.valueOf(jsonObject.string("sort")),
+            sort = sort,
             layoutType = jsonObject.stringOrNull("layoutType"),
             sortOrder = jsonObject.long("sortOrder"),
             enabled = jsonObject.required("enabled").jsonPrimitive.content.toBooleanStrict(),
@@ -217,4 +241,8 @@ class CollectionPortableJsonCodec : CollectionPortableCodec {
     private fun JsonObject.long(name: String): Long = required(name).jsonPrimitive.long
 
     private fun JsonObject.longOrNull(name: String): Long? = this[name]?.jsonPrimitive?.longOrNull
+
+    private companion object {
+        val SUPPORTED_PORTABLE_SCHEMA_VERSIONS = setOf(1, CURRENT_PORTABLE_COLLECTIONS_SCHEMA_VERSION)
+    }
 }
