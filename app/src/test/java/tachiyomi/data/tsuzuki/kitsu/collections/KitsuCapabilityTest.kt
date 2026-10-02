@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.planner.QueryPlanner
 import tachiyomi.domain.tsuzuki.collections.planner.SortPlan
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -15,6 +18,23 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 class KitsuCapabilityTest {
+
+    private val popularityDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.POPULARITY,
+        CollectionSortDirection.DESC,
+    )
+    private val ratingDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.RATING,
+        CollectionSortDirection.DESC,
+    )
+    private val updatedDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.UPDATED,
+        CollectionSortDirection.DESC,
+    )
+    private val relevance = CollectionSortSelection(
+        CollectionSortKey.Standard.RELEVANCE,
+        direction = null,
+    )
 
     private val ongoing = QueryExpression.Predicate(
         field = QueryField.STATUS,
@@ -119,10 +139,10 @@ class KitsuCapabilityTest {
             QueryValue.of("cancelled"),
         ) shouldBe false
 
-        KitsuQueryCapabilities.canPushSort(CatalogSort.POPULARITY_DESC) shouldBe true
-        KitsuQueryCapabilities.canPushSort(CatalogSort.RATING_DESC) shouldBe true
-        KitsuQueryCapabilities.canPushSort(CatalogSort.UPDATED_DESC) shouldBe true
-        KitsuQueryCapabilities.canPushSort(CatalogSort.RELEVANCE) shouldBe false
+        KitsuQueryCapabilities.canPushSort(popularityDesc) shouldBe true
+        KitsuQueryCapabilities.canPushSort(ratingDesc) shouldBe true
+        KitsuQueryCapabilities.canPushSort(updatedDesc) shouldBe true
+        KitsuQueryCapabilities.canPushSort(relevance) shouldBe false
     }
 
     @Test
@@ -134,7 +154,7 @@ class KitsuCapabilityTest {
         )
         val queryExpression = QueryExpression.All(text, manga, romance)
 
-        val plan = QueryPlanner.plan(queryExpression, KitsuQueryCapabilities, CatalogSort.RATING_DESC)
+        val plan = QueryPlanner.plan(queryExpression, KitsuQueryCapabilities, ratingDesc)
 
         plan.pushdownExpression shouldBe QueryExpression.All(manga, romance).normalize()
         plan.residualExpression shouldBe text
@@ -205,7 +225,7 @@ class KitsuCapabilityTest {
         shouldThrow<IllegalArgumentException> {
             KitsuQueryCompiler.compile(
                 pushdownExpression = ongoing,
-                sort = CatalogSort.RELEVANCE,
+                sort = relevance,
             )
         }
     }
