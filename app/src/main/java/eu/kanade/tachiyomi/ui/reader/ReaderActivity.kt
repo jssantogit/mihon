@@ -85,6 +85,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.webgpu.WebGpuViewer
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentBindingLinkScreenModel
 import eu.kanade.tachiyomi.ui.tsuzuki.content.ContentSelectorScreenModel
+import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleActivity
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.readerBackgroundColor
@@ -751,7 +752,7 @@ class ReaderActivity : BaseActivity() {
             )
         ) {
             is ReaderTitleDetailsRoute.Canonical -> {
-                MainActivity.openCanonicalTitleIntent(this, route.canonicalTitleId)
+                CanonicalTitleActivity.newIntent(this, route.canonicalTitleId)
                     ?.let(::startActivity)
             }
             is ReaderTitleDetailsRoute.Legacy -> {
