@@ -11,6 +11,33 @@ import kotlinx.coroutines.flow.combine
 import tachiyomi.i18n.MR
 import tachiyomi.domain.track.model.Track as DomainTrack
 
+data class BangumiCollectionQuery(
+    val keyword: String = "",
+    val sort: String,
+    val tags: List<String> = emptyList(),
+    val metaTags: List<String> = emptyList(),
+    val airDate: List<String> = emptyList(),
+    val rating: List<String> = emptyList(),
+    val ratingCount: List<String> = emptyList(),
+    val rank: List<String> = emptyList(),
+    val nsfw: Boolean? = null,
+    val offset: Int,
+    val limit: Int,
+) {
+    init {
+        require(sort in setOf("match", "heat", "rank", "score")) {
+            "Unsupported Bangumi search sort: $sort"
+        }
+        require(offset >= 0) { "Bangumi offset must be non-negative" }
+        require(limit in 1..50) { "Bangumi limit must be between 1 and 50" }
+    }
+}
+
+data class BangumiCollectionPage(
+    val items: List<TrackSearch>,
+    val total: Int,
+)
+
 interface BangumiIntegrationApi {
     suspend fun search(query: String): List<TrackSearch>
 
@@ -19,6 +46,9 @@ interface BangumiIntegrationApi {
         offset: Int,
         limit: Int,
     ): List<TrackSearch>
+
+    suspend fun collectionSearch(query: BangumiCollectionQuery): BangumiCollectionPage =
+        BangumiCollectionPage(emptyList(), total = 0)
 
     suspend fun getMangaDetails(id: Int): TrackSearch
 }
@@ -44,6 +74,9 @@ class Bangumi(id: Long) : BaseTracker(id, "Bangumi") {
             limit: Int,
         ): List<TrackSearch> =
             api.browse(sort, offset, limit)
+
+        override suspend fun collectionSearch(query: BangumiCollectionQuery): BangumiCollectionPage =
+            api.collectionSearch(query)
 
         override suspend fun getMangaDetails(id: Int): TrackSearch =
             api.getMangaDetails(id) ?: error("Bangumi title not found: $id")
