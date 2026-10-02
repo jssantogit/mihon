@@ -1,7 +1,6 @@
 package eu.kanade.presentation.tsuzuki.collections
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -38,8 +38,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
@@ -57,6 +55,9 @@ import mihon.icons.materialsymbols.rounded.Add
 import mihon.icons.materialsymbols.rounded.DragHandle
 import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.draggableHandle
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
@@ -387,9 +388,21 @@ private fun CollectionsReadyContent(
     val selectedCollection = collections.firstOrNull { it.collection.id == selectedCollectionId }
     val selectedFolder = selectedCollection?.folders?.firstOrNull { it.folder.id == selectedFolderId }
     val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
+    var displayedCollections by remember(collections) { mutableStateOf(collections) }
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val fromIndex = from.index - COLLECTION_LIST_HEADER_COUNT
+        val toIndex = to.index - COLLECTION_LIST_HEADER_COUNT
+        if (fromIndex in displayedCollections.indices && toIndex in displayedCollections.indices) {
+            displayedCollections = displayedCollections.toMutableList().apply {
+                add(toIndex, removeAt(fromIndex))
+            }
+        }
+    }
 
     LazyColumn(
         modifier = modifier,
+        state = lazyListState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -412,14 +425,43 @@ private fun CollectionsReadyContent(
                     }
                 }
 
-                collections.forEachIndexed { index, graph ->
-                    item(key = "collection:${graph.collection.id}") {
+                items(
+                    items = displayedCollections,
+                    key = { graph -> "collection:${graph.collection.id}" },
+                ) { graph ->
+                    val itemKey = "collection:${graph.collection.id}"
+                    val reorderEnabled = displayedCollections.size > 1
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = itemKey,
+                        enabled = reorderEnabled,
+                    ) { isDragging ->
                         CollectionCard(
                             graph = graph,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < collections.lastIndex,
-                            onMove = { delta ->
-                                onAction(CollectionsAction.MoveCollection(graph.collection, delta))
+                            isDragging = isDragging,
+                            reorderEnabled = reorderEnabled,
+                            reorderHandleModifier = if (reorderEnabled) {
+                                Modifier.draggableHandle(
+                                    onDragStopped = {
+                                        val sourceIndex = collections.indexOfFirst {
+                                            it.collection.id == graph.collection.id
+                                        }
+                                        val targetIndex = displayedCollections.indexOfFirst {
+                                            it.collection.id == graph.collection.id
+                                        }
+                                        val delta = targetIndex - sourceIndex
+                                        if (sourceIndex >= 0 && targetIndex >= 0 && delta != 0) {
+                                            onAction(
+                                                CollectionsAction.MoveCollection(
+                                                    graph.collection,
+                                                    delta.toLong(),
+                                                ),
+                                            )
+                                        }
+                                    },
+                                )
+                            } else {
+                                Modifier
                             },
                             onEdit = onEdit,
                             onDelete = onDelete,
@@ -559,9 +601,9 @@ private fun CollectionsOverviewCard(
 @Composable
 private fun CollectionCard(
     graph: CollectionUiModel,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMove: (Long) -> Unit,
+    isDragging: Boolean,
+    reorderEnabled: Boolean,
+    reorderHandleModifier: Modifier,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onDuplicate: () -> Unit,
@@ -578,6 +620,9 @@ private fun CollectionCard(
             .clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDragging) 6.dp else 0.dp,
         ),
         shape = MaterialTheme.shapes.extraLarge,
     ) {
@@ -686,9 +731,8 @@ private fun CollectionCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CollectionReorderHandle(
-                    canMoveUp = canMoveUp,
-                    canMoveDown = canMoveDown,
-                    onMove = onMove,
+                    modifier = reorderHandleModifier,
+                    enabled = reorderEnabled,
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 if (collection.origin == CollectionOrigin.USER) {
@@ -708,39 +752,13 @@ private fun CollectionCard(
 
 @Composable
 private fun CollectionReorderHandle(
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMove: (Long) -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
 ) {
-    val threshold = with(LocalDensity.current) { COLLECTION_DRAG_THRESHOLD.toPx() }
-    val enabled = canMoveUp || canMoveDown
-    val dragModifier = if (enabled) {
-        Modifier.pointerInput(canMoveUp, canMoveDown) {
-            var dragDistance = 0f
-            detectVerticalDragGestures(
-                onDragStart = { dragDistance = 0f },
-                onDragCancel = { dragDistance = 0f },
-                onDragEnd = {
-                    when {
-                        dragDistance <= -threshold && canMoveUp -> onMove(-1L)
-                        dragDistance >= threshold && canMoveDown -> onMove(1L)
-                    }
-                    dragDistance = 0f
-                },
-                onVerticalDrag = { change, dragAmount ->
-                    change.consume()
-                    dragDistance += dragAmount
-                },
-            )
-        }
-    } else {
-        Modifier
-    }
-
     Box(
         modifier = Modifier
             .size(48.dp)
-            .then(dragModifier),
+            .then(modifier),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -1469,8 +1487,8 @@ private data class DeleteTarget(
     val systemOwned: Boolean,
 )
 
+private const val COLLECTION_LIST_HEADER_COUNT = 1
 private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
-private val COLLECTION_DRAG_THRESHOLD = 40.dp
 
 private val SUPPORTED_SORTS = listOf(
     CatalogSort.POPULARITY_DESC,
