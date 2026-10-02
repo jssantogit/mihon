@@ -119,8 +119,6 @@ internal fun CollectionEditorScreen(
                         draftPreviewState = draftPreviewState,
                         filterLookupStates = filterLookupStates,
                         onFilterLookup = onFilterLookup,
-                    filterLookupStates = filterLookupStates,
-                    onFilterLookup = onFilterLookup,
                         onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
                                 if (it.key == route.key) it.copy(draft = draft) else it
@@ -150,8 +148,6 @@ internal fun CollectionEditorScreen(
                         draftPreviewState = draftPreviewState,
                         filterLookupStates = filterLookupStates,
                         onFilterLookup = onFilterLookup,
-                    filterLookupStates = filterLookupStates,
-                    onFilterLookup = onFilterLookup,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -175,8 +171,6 @@ internal fun CollectionEditorScreen(
                         draftPreviewState = draftPreviewState,
                         filterLookupStates = filterLookupStates,
                         onFilterLookup = onFilterLookup,
-                    filterLookupStates = filterLookupStates,
-                    onFilterLookup = onFilterLookup,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -389,6 +383,8 @@ internal fun FolderEditorScreen(
     providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState> = emptyMap(),
+    onFilterLookup: (String, String, String) -> Unit = { _, _, _ -> },
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onClose: () -> Unit,
