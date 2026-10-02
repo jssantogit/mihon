@@ -148,16 +148,16 @@ fun CollectionsScreen(
                     providerDescriptors = readyState?.providerDescriptors.orEmpty(),
                     providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                     draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
-                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
-                onFilterLookup = { providerId, lookupId, query ->
-                    onAction(
-                        CollectionsAction.FilterLookupRequested(
-                            providerId = providerId,
-                            lookupId = lookupId,
-                            query = query,
-                        ),
-                    )
-                },
+                    filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                    onFilterLookup = { providerId, lookupId, query ->
+                        onAction(
+                            CollectionsAction.FilterLookupRequested(
+                                providerId = providerId,
+                                lookupId = lookupId,
+                                query = query,
+                            ),
+                        )
+                    },
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
                     onClose = { editor = null },
@@ -203,16 +203,16 @@ fun CollectionsScreen(
                     providerDescriptors = readyState?.providerDescriptors.orEmpty(),
                     providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                     draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
-                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
-                onFilterLookup = { providerId, lookupId, query ->
-                    onAction(
-                        CollectionsAction.FilterLookupRequested(
-                            providerId = providerId,
-                            lookupId = lookupId,
-                            query = query,
-                        ),
-                    )
-                },
+                    filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                    onFilterLookup = { providerId, lookupId, query ->
+                        onAction(
+                            CollectionsAction.FilterLookupRequested(
+                                providerId = providerId,
+                                lookupId = lookupId,
+                                query = query,
+                            ),
+                        )
+                    },
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
                     onClose = { editor = null },
