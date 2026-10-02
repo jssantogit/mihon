@@ -184,7 +184,7 @@ class CollectionListEditorTest {
     }
 
     @Test
-    fun `unsupported simple operator remains preserved instead of dropped`() {
+    fun `unfamiliar simple predicate remains editable without semantic rewrite`() {
         val query = QueryExpression.Predicate(
             QueryField.GENRE,
             QueryOperator.BETWEEN,
@@ -193,7 +193,8 @@ class CollectionListEditorTest {
 
         val editor = ListEditorState.from(list(query))
 
-        editor.filtersEditable shouldBe false
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(query)
         editor.toDraftOrNull()!!.query shouldBe query
     }
 
