@@ -1,6 +1,5 @@
 package tachiyomi.domain.tsuzuki.collections.model
 
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
 enum class CollectionOrigin {
@@ -59,7 +58,7 @@ data class CollectionList(
     val title: String,
     val providerId: String,
     val query: QueryExpression?,
-    val sort: CatalogSort,
+    val sort: CollectionSortSelection,
     val layoutType: String? = null,
     val sortOrder: Long,
     val enabled: Boolean = true,
@@ -83,4 +82,4 @@ data class CollectionList(
     }
 }
 
-const val CURRENT_COLLECTION_SCHEMA_VERSION: Int = 1
+const val CURRENT_COLLECTION_SCHEMA_VERSION: Int = 2
