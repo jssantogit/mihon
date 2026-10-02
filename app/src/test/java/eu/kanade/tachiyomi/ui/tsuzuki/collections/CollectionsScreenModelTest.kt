@@ -271,9 +271,9 @@ class CollectionsScreenModelTest {
                 providerId = "mangaupdates",
                 query = null,
                 sort = CollectionSortSelection(
-                CollectionSortKey.Standard.RATING,
-                CollectionSortDirection.DESC,
-            ),
+                    CollectionSortKey.Standard.RATING,
+                    CollectionSortDirection.DESC,
+                ),
                 sortOrder = 0,
                 layoutType = "list",
             )
