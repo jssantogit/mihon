@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuGenreResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuImage
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaAttributes
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
@@ -473,6 +474,9 @@ class KitsuCatalogProviderTest {
             lastSearchSubtype = subtype
             return searchResult
         }
+
+        override suspend fun getGenres(query: String?): Result<KitsuGenreResponse> =
+            Result.success(KitsuGenreResponse())
 
         override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> {
             lastTrendingLimit = limit
