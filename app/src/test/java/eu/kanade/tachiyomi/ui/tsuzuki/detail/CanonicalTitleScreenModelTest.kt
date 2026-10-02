@@ -209,6 +209,12 @@ class CanonicalTitleScreenModelTest {
         val chapters = FakeChapterRepository(emptyList())
         val downloads = mockk<CanonicalDownloadRepository>()
         coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
+        val sourceResolver = mockk<ResolveCanonicalSourceManga>()
+        coEvery {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = false)
+        } returns null
+        val artworkResolver = mockk<ResolveCanonicalArtwork>()
+        coEvery { artworkResolver.execute("title") } returns null
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -236,8 +242,8 @@ class CanonicalTitleScreenModelTest {
                 ),
             ),
             resolveCanonicalMetadata = resolver,
-            resolveCanonicalSourceManga = mockk(relaxed = true),
-            resolveCanonicalArtwork = mockk(relaxed = true),
+            resolveCanonicalSourceManga = sourceResolver,
+            resolveCanonicalArtwork = artworkResolver,
         )
 
         val operation = model.start("title")
@@ -247,6 +253,10 @@ class CanonicalTitleScreenModelTest {
         cachedState.description shouldBe "Cached synopsis"
         cachedState.isRefreshing shouldBe true
         operation.isCompleted shouldBe false
+        coVerify(exactly = 1) {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = false)
+        }
+        coVerify(exactly = 1) { artworkResolver.execute("title") }
 
         refreshGate.complete(Unit)
         advanceUntilIdle()
