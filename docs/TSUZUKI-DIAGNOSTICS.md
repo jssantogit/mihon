@@ -113,3 +113,14 @@ The emergency crash screen can share the persisted stack trace without requiring
 
 The persistent crash record is local-only and bounded to one latest stack trace. It is never uploaded automatically. Like the pre-existing explicit exception and supplemental Logcat sections, a stack trace may contain third-party free text; users should review a report before sharing it.
 
+## Collections query diagnostics
+
+Collections/List Builder execution uses the same local-only structured diagnostic pipeline. The runtime records only the execution boundary needed to investigate provider/filter failures:
+
+- `collection_query_planned` identifies that a provider-backed query reached an executable plan;
+- `collection_execution_completed` records success, partial bounded-scan completion, cache miss, rejection, provider failure, or cancellation;
+- attributes are limited to the allowlisted provider id and bounded result item count;
+- the query AST, filter text, List name, manga titles, lookup search text, provider response bodies, URLs, credentials, and exception messages are not recorded.
+
+Draft Preview and persisted List execution share the same planner/runtime, so the diagnostic outcome describes the same execution contract for both paths. A residual scan that reaches its provider-defined budget is reported as a partial result rather than provider exhaustion.
+
