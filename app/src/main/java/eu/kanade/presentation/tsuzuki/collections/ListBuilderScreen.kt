@@ -44,10 +44,10 @@ import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapabilit
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderSwitchPlan
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderSwitchPlanner
-import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
 import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
 import tachiyomi.domain.tsuzuki.collections.capability.MultiValueMode
+import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
@@ -922,7 +922,7 @@ private fun DescriptorFilterControl(
                 editor = editor,
                 onEditorChange = onEditorChange,
                 lookupState = filterLookupStates[
-                    CollectionFilterLookupKey(editor.providerId, source.lookupId)
+                    CollectionFilterLookupKey(editor.providerId, source.lookupId),
                 ],
                 onFilterLookup = onFilterLookup,
                 modifier = modifier,
