@@ -994,5 +994,6 @@ class CollectionsScreenModel(
         const val LIST_PAGE_SIZE = 6
         const val DRAFT_PREVIEW_PAGE_SIZE = 6
         const val DRAFT_PREVIEW_DEBOUNCE_MILLIS = 300L
+        const val FILTER_LOOKUP_DEBOUNCE_MILLIS = 250L
     }
 }
