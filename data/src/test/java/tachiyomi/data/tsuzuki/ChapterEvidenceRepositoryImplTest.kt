@@ -138,6 +138,30 @@ class ChapterEvidenceRepositoryImplTest {
     }
 
     @Test
+    fun `reconciliation reuses its title evidence snapshot during persistence`() = runBlocking<Unit> {
+        val reconciler = ReconcileChapterEvidence(
+            ParseCanonicalChapterLabel(),
+            chapterRepository,
+            evidenceRepository,
+        )
+
+        queryCounter.reset()
+        reconciler.execute(
+            "title-1",
+            listOf(
+                editorialEvidence(
+                    id = "reconcile-1",
+                    label = "Chapter 1",
+                    key = "source-1",
+                ),
+            ),
+        )
+
+        queryCounter.executeQueryCount shouldBe 2
+        evidenceRepository.getByCanonicalTitleId("title-1") shouldHaveSize 1
+    }
+
+    @Test
     fun `support snapshot returns unique mapped chapter ids without per evidence queries`() = runBlocking<Unit> {
         chapterRepository.upsert(chapter("chapter-1", 1))
         chapterRepository.upsert(chapter("chapter-2", 2))
