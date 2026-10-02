@@ -189,7 +189,7 @@ class CanonicalLibraryScreenModel private constructor(
                                 )?.coverUrl
                                 val sourceCover = try {
                                     resolveCanonicalSourceManga
-                                        ?.execute(item.id)
+                                        ?.execute(item.id, allowNetwork = false)
                                         ?.asMangaCover()
                                 } catch (error: CancellationException) {
                                     throw error
