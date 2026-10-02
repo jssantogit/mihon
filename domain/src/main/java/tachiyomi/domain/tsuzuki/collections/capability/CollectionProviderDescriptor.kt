@@ -157,6 +157,12 @@ data class CollectionSortCapability(
             SortDirectionMode.ASC_DESC -> require(defaultDirection != null) {
                 "Bidirectional Collection sort '${key.stableId}' requires a default direction"
             }
+            SortDirectionMode.ASC_ONLY -> require(defaultDirection == CollectionSortDirection.ASC) {
+                "Ascending-only Collection sort '${key.stableId}' must default to ASC"
+            }
+            SortDirectionMode.DESC_ONLY -> require(defaultDirection == CollectionSortDirection.DESC) {
+                "Descending-only Collection sort '${key.stableId}' must default to DESC"
+            }
             SortDirectionMode.FIXED_NATIVE -> require(defaultDirection == null) {
                 "Fixed native Collection sort '${key.stableId}' cannot declare a direction"
             }
