@@ -315,6 +315,23 @@ class MangaUpdatesCollectionQueryProvider private constructor(
     override val providerId: String = "mangaupdates"
     override val capabilities: ProviderQueryCapabilities = MangaUpdatesCollectionCapabilities
 
+    override suspend fun lookupValues(
+        lookupId: String,
+        query: String?,
+    ): Result<List<FilterOption>> = runCatching {
+        when (lookupId) {
+            "mangaupdates.genres" -> api.lookupGenres()
+            "mangaupdates.categories" -> api.lookupCategories(query.orEmpty())
+            else -> return super.lookupValues(lookupId, query)
+        }.map { (label, value) ->
+            FilterOption(
+                id = value,
+                label = label,
+                value = QueryValue.of(value),
+            )
+        }
+    }
+
     override suspend fun fetch(
         pushdownExpression: QueryExpression?,
         sort: CollectionSortSelection,
