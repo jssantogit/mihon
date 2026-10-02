@@ -60,6 +60,7 @@ data class CollectionListDraft(
     val query: QueryExpression?,
     val sort: CatalogSort,
     val layoutType: String?,
+    val providerId: String = "kitsu",
 )
 
 @Immutable
@@ -251,6 +252,7 @@ class CollectionsScreenModel(
                 query = action.draft.query,
                 sort = action.draft.sort,
                 layoutType = action.draft.layoutType,
+                providerId = action.draft.providerId,
             )
             is CollectionsAction.UpdateList -> updateList(
                 list = action.list,
@@ -258,6 +260,7 @@ class CollectionsScreenModel(
                 query = action.draft.query,
                 sort = action.draft.sort,
                 layoutType = action.draft.layoutType,
+                providerId = action.draft.providerId,
             )
             is CollectionsAction.SetListEnabled -> setListEnabled(action.listId, action.enabled)
             is CollectionsAction.DuplicateList -> duplicateList(action.listId)
@@ -296,7 +299,7 @@ class CollectionsScreenModel(
                     collectionId = collection.id,
                     folderId = folder.id,
                     title = listDraft.title,
-                    providerId = "kitsu",
+                    providerId = listDraft.providerId,
                     query = listDraft.query,
                     sort = listDraft.sort,
                     sortOrder = listIndex.toLong(),
@@ -351,7 +354,7 @@ class CollectionsScreenModel(
                 collectionId = collectionId,
                 folderId = folder.id,
                 title = listDraft.title,
-                providerId = "kitsu",
+                providerId = listDraft.providerId,
                 query = listDraft.query,
                 sort = listDraft.sort,
                 sortOrder = index.toLong(),
@@ -415,6 +418,7 @@ class CollectionsScreenModel(
         query: QueryExpression?,
         sort: CatalogSort,
         layoutType: String?,
+        providerId: String,
     ) = launchAction {
         val folder = currentCollections()
             .flatMap { it.folders }
@@ -425,7 +429,7 @@ class CollectionsScreenModel(
             collectionId = collectionId,
             folderId = folderId,
             title = title,
-            providerId = "kitsu",
+            providerId = providerId,
             query = query,
             sort = sort,
             sortOrder = nextOrder,
@@ -439,6 +443,7 @@ class CollectionsScreenModel(
         query: QueryExpression?,
         sort: CatalogSort,
         layoutType: String?,
+        providerId: String,
     ) = launchAction {
         manager.updateUserList(
             list.copy(
@@ -446,6 +451,7 @@ class CollectionsScreenModel(
                 query = query,
                 sort = sort,
                 layoutType = layoutType,
+                providerId = providerId,
             ),
         )
         invalidateList(list.id)
