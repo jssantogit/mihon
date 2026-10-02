@@ -37,26 +37,39 @@ class SearchIntegrations(
     suspend fun execute(query: CatalogQuery): List<CatalogItem> =
         enrichRatings(executeBase(query))
 
-    suspend fun executeBase(query: CatalogQuery): List<CatalogItem> =
-        executeBaseProgressively(query) { }
+    suspend fun executeBase(query: CatalogQuery): List<CatalogItem> {
+        val providers = registry.searchProviders()
+        if (providers.isEmpty()) return emptyList()
+        val cacheKey = baseSearchCacheKey(query, providers.map { it.integrationId.value })
+        return baseSearchCache.getOrFetch(cacheKey) {
+            computeBase(query, providers) { }
+        }
+    }
 
     suspend fun executeBaseProgressively(
         query: CatalogQuery,
         onItems: suspend (List<CatalogItem>) -> Unit,
-    ): List<CatalogItem> = coroutineScope {
+    ): List<CatalogItem> {
         val providers = registry.searchProviders()
-        if (providers.isEmpty()) return@coroutineScope emptyList()
-
-        val cacheKey = BaseCatalogSearchCache.Key(
-            query = query,
-            providerIds = providers.map { it.integrationId.value },
-            configurationFingerprint = registry.configurationFingerprint(),
-        )
+        if (providers.isEmpty()) return emptyList()
+        val cacheKey = baseSearchCacheKey(query, providers.map { it.integrationId.value })
         baseSearchCache.get(cacheKey)?.let { cached ->
             onItems(cached)
-            return@coroutineScope cached
+            return cached
         }
 
+        val loaded = computeBase(query, providers, onItems)
+        if (loaded.cacheable) {
+            baseSearchCache.put(cacheKey, loaded.items)
+        }
+        return loaded.items
+    }
+
+    private suspend fun computeBase(
+        query: CatalogQuery,
+        providers: List<tachiyomi.domain.tsuzuki.integration.SearchProvider>,
+        onItems: suspend (List<CatalogItem>) -> Unit,
+    ): BaseCatalogSearchCache.LoadResult = coroutineScope {
         val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
         var complete = true
         val pending = providers.mapIndexed { index, provider ->
@@ -87,11 +100,20 @@ class SearchIntegrations(
                 .let(::mergeCatalogItemsByVerifiedIdentity)
             onItems(merged)
         }
-        if (complete) {
-            baseSearchCache.put(cacheKey, merged)
-        }
-        merged
+        BaseCatalogSearchCache.LoadResult(
+            items = merged,
+            cacheable = complete,
+        )
     }
+
+    private fun baseSearchCacheKey(
+        query: CatalogQuery,
+        providerIds: List<String>,
+    ) = BaseCatalogSearchCache.Key(
+        query = query,
+        providerIds = providerIds,
+        configurationFingerprint = registry.configurationFingerprint(),
+    )
 
     /**
      * Ratings describe the canonical work, not the catalog that happened to list it.
