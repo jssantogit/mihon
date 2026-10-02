@@ -38,6 +38,12 @@ class ListBuilderDescriptorTest {
     }
 
     @Test
+    fun `no registered provider never fabricates a fallback source`() {
+        listBuilderProviderIds(emptyList(), "") shouldBe emptyList()
+        listBuilderProviderIds(emptyList(), "legacy") shouldBe listOf("legacy")
+    }
+
+    @Test
     fun `providers expose different quick fields without common denominator filtering`() {
         val kitsu = descriptor(
             "kitsu",
