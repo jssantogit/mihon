@@ -17,7 +17,7 @@ object ResidualPaginator {
         cursor: ResidualPageCursor = ResidualPageCursor(),
         maxProviderPageSize: Int? = null,
         scanPolicy: ResidualScanPolicy = ResidualScanPolicy.DEFAULT,
-        clock: () -> Long = System::currentTimeMillis,
+        clock: () -> Long = { System.currentTimeMillis() },
         fetcher: CatalogPageFetcher,
     ): ResidualPageResult {
         require(logicalPageSize > 0) { "Logical page size must be positive" }
@@ -177,6 +177,7 @@ object ResidualPaginator {
         page = LogicalCatalogPage(
             items = items.toList(),
             nextCursor = ResidualPageCursor(rawOffset),
+            scanBudgetReason = reason,
         ),
         reason = reason,
         rawItemsScanned = rawItemsScanned,
