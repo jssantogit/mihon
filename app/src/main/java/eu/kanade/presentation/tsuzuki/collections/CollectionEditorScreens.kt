@@ -103,7 +103,7 @@ internal fun CollectionEditorScreen(
                         existing = null,
                         initialDraft = entry.draft,
                         draftPreviewState = draftPreviewState,
-                    onSubmitDraft = { draft ->
+                        onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
                                 if (it.key == route.key) it.copy(draft = draft) else it
                             }
