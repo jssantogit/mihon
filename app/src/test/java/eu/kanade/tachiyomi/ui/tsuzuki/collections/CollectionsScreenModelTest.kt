@@ -62,6 +62,7 @@ class CollectionsScreenModelTest {
         val descriptors = listOf(descriptor("kitsu", "Kitsu"), descriptor("mal", "MyAnimeList"))
         val registry = mockk<CollectionQueryProviderRegistry>()
         every { registry.descriptors() } returns descriptors
+        every { registry.all() } returns emptyList()
 
         val model = CollectionsScreenModel(
             store = store,
@@ -340,6 +341,7 @@ class CollectionsScreenModelTest {
     private fun mockRegistry(): CollectionQueryProviderRegistry {
         val registry = mockk<CollectionQueryProviderRegistry>()
         every { registry.descriptors() } returns listOf(descriptor("kitsu", "Kitsu"))
+        every { registry.all() } returns emptyList()
         return registry
     }
 
