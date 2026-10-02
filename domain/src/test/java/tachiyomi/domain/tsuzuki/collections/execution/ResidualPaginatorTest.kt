@@ -165,15 +165,15 @@ class ResidualPaginatorTest {
                 maxElapsedMillis = 60_000,
             ),
             fetcher = datasetFetcher(
-                item("1", 1),
+                item("1", 101),
                 item("2", 2),
                 item("3", 3),
-                item("4", 101),
+                item("4", 102),
                 onFetch = { _, _ -> calls++ },
             ),
         ).shouldBeInstanceOf<ResidualPageResult.BudgetReached>()
 
-        result.page.items shouldBe emptyList()
+        result.page.items.map { it.providerId } shouldContainExactly listOf("1")
         result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 3)
         result.reason shouldBe ResidualScanBudgetReason.REMOTE_REQUESTS
         result.remoteRequests shouldBe 2
