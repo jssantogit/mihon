@@ -35,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 
 @Composable
 internal fun ListBuilderScreen(
@@ -735,13 +737,24 @@ private fun providerDisplayName(providerId: String): String = when (providerId.l
     else -> providerId
 }
 
-private fun sortDisplayName(sort: CatalogSort): String = when (sort) {
-    CatalogSort.POPULARITY_DESC -> "Popularity (High to Low)"
-    CatalogSort.POPULARITY_ASC -> "Popularity (Low to High)"
-    CatalogSort.RATING_DESC -> "Rating (High to Low)"
-    CatalogSort.RATING_ASC -> "Rating (Low to High)"
-    CatalogSort.UPDATED_DESC -> "Recently Updated"
-    else -> sort.name.prettyEnumName()
+private fun sortDisplayName(sort: CollectionSortSelection): String = when (sort.key) {
+    CollectionSortKey.Standard.POPULARITY -> when (sort.direction) {
+        CollectionSortDirection.DESC -> "Popularity (High to Low)"
+        CollectionSortDirection.ASC -> "Popularity (Low to High)"
+        null -> "Popularity"
+    }
+    CollectionSortKey.Standard.RATING -> when (sort.direction) {
+        CollectionSortDirection.DESC -> "Rating (High to Low)"
+        CollectionSortDirection.ASC -> "Rating (Low to High)"
+        null -> "Rating"
+    }
+    CollectionSortKey.Standard.UPDATED -> when (sort.direction) {
+        CollectionSortDirection.DESC -> "Recently Updated"
+        CollectionSortDirection.ASC -> "Oldest Updated"
+        null -> "Updated"
+    }
+    CollectionSortKey.Standard.RELEVANCE -> "Relevance"
+    is CollectionSortKey.Provider -> sort.key.nativeId.prettyEnumName()
 }
 
 private fun String.prettyEnumName(): String = lowercase()
