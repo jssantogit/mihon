@@ -250,6 +250,28 @@ class ResidualEvaluatorTest {
     }
 
     @Test
+    fun `missing expanded metadata remains unknown instead of false`() {
+        val target = item()
+
+        evaluate(
+            predicate(QueryField.START_DATE, QueryOperator.GREATER_OR_EQUAL, QueryValue.of("2020-01-01")),
+            target,
+        ) shouldBe TruthValue.UNKNOWN
+        evaluate(
+            predicate(QueryField.PUBLISHER, QueryOperator.EQUALS, QueryValue.of("Shueisha")),
+            target,
+        ) shouldBe TruthValue.UNKNOWN
+        evaluate(
+            predicate(QueryField.COUNTRY, QueryOperator.EQUALS, QueryValue.of("JP")),
+            target,
+        ) shouldBe TruthValue.UNKNOWN
+        evaluate(
+            predicate(QueryField.RANK, QueryOperator.LESS_THAN, QueryValue.of(100.0)),
+            target,
+        ) shouldBe TruthValue.UNKNOWN
+    }
+
+    @Test
     fun `no residual expression is pass through`() {
         ResidualEvaluator.support(null) shouldBe ResidualSupport.Supported
         evaluate(null, item()) shouldBe TruthValue.TRUE
