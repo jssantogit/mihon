@@ -1,6 +1,6 @@
 package tachiyomi.domain.tsuzuki.collections.planner
 
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
 /**
@@ -34,14 +34,14 @@ sealed interface SortPlan {
     /**
      * The requested sort is natively supported by the provider and guarantees global ordering across pages.
      */
-    data class RemoteExact(val sort: CatalogSort) : SortPlan
+    data class RemoteExact(val sort: CollectionSortSelection) : SortPlan
 
     /**
      * The requested sort cannot be executed remotely for global ordering.
      * Note: In-memory sorting of paginated results cannot guarantee global ordering.
      */
     data class UnsupportedForGlobalOrdering(
-        val requestedSort: CatalogSort,
-        val fallbackRemoteSort: CatalogSort = CatalogSort.POPULARITY_DESC,
+        val requestedSort: CollectionSortSelection,
+        val fallbackRemoteSort: CollectionSortSelection = CollectionSortSelection.DEFAULT,
     ) : SortPlan
 }
