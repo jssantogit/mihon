@@ -38,6 +38,11 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionSortCapability
+import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
+import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
@@ -46,6 +51,7 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 internal fun ListBuilderScreen(
     title: String,
     initial: ListEditorState,
+    providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     previewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onPreviewDraft: (CollectionListDraft?) -> Unit = {},
     onClose: () -> Unit,
@@ -109,6 +115,7 @@ internal fun ListBuilderScreen(
             AdvancedListFilters(
                 editor = editor,
                 onEditorChange = { editor = it },
+                descriptor = providerDescriptors.firstOrNull { it.providerId == editor.providerId },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -118,6 +125,7 @@ internal fun ListBuilderScreen(
                 editor = editor,
                 onEditorChange = { editor = it },
                 onAdvanced = { advanced = true },
+                providerDescriptors = providerDescriptors,
                 previewState = previewState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -132,6 +140,7 @@ private fun QuickListBuilder(
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
     onAdvanced: () -> Unit,
+    providerDescriptors: List<CollectionProviderDescriptor>,
     previewState: CollectionDraftPreviewState,
     modifier: Modifier = Modifier,
 ) {
@@ -402,6 +411,7 @@ private fun QuickListBuilder(
 private fun AdvancedListFilters(
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
+    descriptor: CollectionProviderDescriptor?,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
