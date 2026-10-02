@@ -331,9 +331,9 @@ class ResidualPaginatorTest {
     fun `unsupported residual semantics fail before provider fetch`() = runTest {
         var calls = 0
         val unsupported = QueryExpression.Predicate(
-            field = QueryField.AUTHOR,
+            field = QueryField.IN_LIBRARY,
             operator = QueryOperator.EQUALS,
-            value = QueryValue.of("Author"),
+            value = QueryValue.of(true),
         )
 
         val result = ResidualPaginator.loadPage(
