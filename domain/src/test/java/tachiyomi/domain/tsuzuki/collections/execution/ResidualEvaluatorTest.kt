@@ -172,6 +172,84 @@ class ResidualEvaluatorTest {
     }
 
     @Test
+    fun `verified dates expose start year release year and inclusive date ranges`() {
+        val target = item(
+            startDate = "2021-04-09",
+            endDate = "2024-01-15",
+        )
+
+        evaluate(
+            predicate(QueryField.START_YEAR, QueryOperator.EQUALS, QueryValue.of(2021)),
+            target,
+        ) shouldBe TruthValue.TRUE
+        evaluate(
+            predicate(QueryField.RELEASE_YEAR, QueryOperator.GREATER_OR_EQUAL, QueryValue.of(2020)),
+            target,
+        ) shouldBe TruthValue.TRUE
+        evaluate(
+            predicate(
+                QueryField.START_DATE,
+                QueryOperator.BETWEEN,
+                QueryValue.range(QueryValue.of("2021-01-01"), QueryValue.of("2021-12-31")),
+            ),
+            target,
+        ) shouldBe TruthValue.TRUE
+        evaluate(
+            predicate(QueryField.END_DATE, QueryOperator.LESS_THAN, QueryValue.of("2025-01-01")),
+            target,
+        ) shouldBe TruthValue.TRUE
+    }
+
+    @Test
+    fun `verified people publishing and taxonomy collections are residual evaluable`() {
+        val target = item(
+            authors = listOf("ONE"),
+            artists = listOf("Yusuke Murata"),
+            publishers = listOf("Shueisha"),
+            magazines = listOf("Weekly Shonen Jump"),
+            categories = listOf("Award Winning"),
+            demographics = listOf("Shounen"),
+        )
+
+        evaluate(predicate(QueryField.AUTHOR, QueryOperator.EQUALS, QueryValue.of("one")), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.ARTIST, QueryOperator.CONTAINS, QueryValue.of("YUSUKE MURATA")), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.PUBLISHER, QueryOperator.EQUALS, QueryValue.of("shueisha")), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.MAGAZINE, QueryOperator.EQUALS, QueryValue.of("weekly shonen jump")), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.CATEGORY, QueryOperator.EQUALS, QueryValue.of("award winning")), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.DEMOGRAPHIC, QueryOperator.EQUALS, QueryValue.of("shounen")), target) shouldBe
+            TruthValue.TRUE
+    }
+
+    @Test
+    fun `country popularity favorites and rank preserve missing as unknown`() {
+        val target = item(
+            country = "JP",
+            popularity = 120_000,
+            favorites = 8_000,
+            rank = 42.5,
+        )
+
+        evaluate(predicate(QueryField.COUNTRY, QueryOperator.EQUALS, QueryValue.of("jp")), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.POPULARITY, QueryOperator.GREATER_THAN, QueryValue.of(100_000)), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.FAVORITES, QueryOperator.BETWEEN, QueryValue.range(QueryValue.of(1), QueryValue.of(10_000))), target) shouldBe
+            TruthValue.TRUE
+        evaluate(predicate(QueryField.RANK, QueryOperator.LESS_OR_EQUAL, QueryValue.of(50.0)), target) shouldBe
+            TruthValue.TRUE
+
+        evaluate(
+            predicate(QueryField.POPULARITY, QueryOperator.GREATER_THAN, QueryValue.of(1)),
+            item(popularity = null),
+        ) shouldBe TruthValue.UNKNOWN
+    }
+
+    @Test
     fun `no residual expression is pass through`() {
         ResidualEvaluator.support(null) shouldBe ResidualSupport.Supported
         evaluate(null, item()) shouldBe TruthValue.TRUE
@@ -211,6 +289,18 @@ class ResidualEvaluatorTest {
         score: Double? = null,
         genres: List<String> = emptyList(),
         tags: List<String> = emptyList(),
+        authors: List<String> = emptyList(),
+        artists: List<String> = emptyList(),
+        publishers: List<String> = emptyList(),
+        magazines: List<String> = emptyList(),
+        categories: List<String> = emptyList(),
+        demographics: List<String> = emptyList(),
+        country: String? = null,
+        popularity: Long? = null,
+        favorites: Long? = null,
+        rank: Double? = null,
+        startDate: String? = null,
+        endDate: String? = null,
         chapterCount: Int? = null,
         volumeCount: Int? = null,
     ): CatalogItem = CatalogItem(
@@ -220,8 +310,20 @@ class ResidualEvaluatorTest {
         status = status,
         format = format,
         score = score?.let { CatalogScore(provider = "fake", value = it) },
+        authors = authors,
+        artists = artists,
         genres = genres,
         tags = tags,
+        publishers = publishers,
+        magazines = magazines,
+        categories = categories,
+        demographics = demographics,
+        country = country,
+        popularity = popularity,
+        favorites = favorites,
+        rank = rank,
+        startDate = startDate,
+        endDate = endDate,
         chapterCount = chapterCount,
         volumeCount = volumeCount,
     )
