@@ -2,7 +2,9 @@ package tachiyomi.domain.tsuzuki.collections.capability
 
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.SortDirectionMode
+import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
@@ -61,8 +63,25 @@ data class CollectionProviderDescriptor(
             (executionMode == null || executionMode in capability.execution)
     }
 
+    fun supports(
+        predicate: QueryExpression.Predicate,
+        executionMode: FilterExecutionMode? = null,
+    ): Boolean = filters.any { capability ->
+        capability.accepts(predicate, executionMode)
+    }
+
+    fun supportsResidual(expression: QueryExpression): Boolean = when (expression) {
+        is QueryExpression.Predicate -> supports(expression, FilterExecutionMode.RESIDUAL_EXACT)
+        is QueryExpression.All -> expression.expressions.all(::supportsResidual)
+        is QueryExpression.Any -> expression.expressions.all(::supportsResidual)
+        is QueryExpression.Not -> supportsResidual(expression.expression)
+    }
+
     fun sort(key: CollectionSortKey): CollectionSortCapability? =
         sorts.firstOrNull { it.key == key }
+
+    fun supports(sort: CollectionSortSelection): Boolean =
+        sort(sort.key)?.accepts(sort) == true
 }
 
 enum class CollectionProviderScope {
@@ -84,6 +103,16 @@ data class CollectionFilterCapability(
         require(id.isNotBlank()) { "Collection filter id cannot be blank" }
         require(operators.isNotEmpty()) { "Collection filter $id must support at least one operator" }
         require(execution.isNotEmpty()) { "Collection filter $id must declare at least one execution mode" }
+    }
+
+    fun accepts(
+        predicate: QueryExpression.Predicate,
+        executionMode: FilterExecutionMode? = null,
+    ): Boolean {
+        return field == predicate.field &&
+            predicate.operator in operators &&
+            (executionMode == null || executionMode in execution) &&
+            valueSource.accepts(predicate.value)
     }
 }
 
@@ -168,6 +197,17 @@ data class CollectionSortCapability(
             }
         }
     }
+
+    fun accepts(selection: CollectionSortSelection): Boolean {
+        if (selection.key != key) return false
+
+        return when (directionMode) {
+            SortDirectionMode.ASC_DESC -> selection.direction != null
+            SortDirectionMode.ASC_ONLY -> selection.direction == CollectionSortDirection.ASC
+            SortDirectionMode.DESC_ONLY -> selection.direction == CollectionSortDirection.DESC
+            SortDirectionMode.FIXED_NATIVE -> selection.direction == null
+        }
+    }
 }
 
 enum class CollectionPagingMode {
@@ -230,4 +270,41 @@ data class CollectionRequestBudget(
             "Collection request budget must define at least one limit"
         }
     }
+}
+
+private fun FilterValueSource.accepts(value: QueryValue): Boolean = when (this) {
+    is FilterValueSource.Static -> values.any { it.value == value }
+    is FilterValueSource.RemoteLookup,
+    FilterValueSource.FreeText,
+    -> value is QueryValue.StringValue
+
+    FilterValueSource.IntegerRange -> value.isIntegerCompatible()
+    FilterValueSource.DecimalRange -> value.isDecimalCompatible()
+    FilterValueSource.DateRange -> value.isDateCompatible()
+    FilterValueSource.BooleanToggle -> value is QueryValue.BooleanValue
+}
+
+private fun QueryValue.isIntegerCompatible(): Boolean = when (this) {
+    is QueryValue.IntegerValue -> true
+    is QueryValue.RangeValue -> lower is QueryValue.IntegerValue && upper is QueryValue.IntegerValue
+    else -> false
+}
+
+private fun QueryValue.isDecimalCompatible(): Boolean = when (this) {
+    is QueryValue.IntegerValue,
+    is QueryValue.DoubleValue,
+    -> true
+
+    is QueryValue.RangeValue -> {
+        val numericLower = lower is QueryValue.IntegerValue || lower is QueryValue.DoubleValue
+        val numericUpper = upper is QueryValue.IntegerValue || upper is QueryValue.DoubleValue
+        numericLower && numericUpper
+    }
+    else -> false
+}
+
+private fun QueryValue.isDateCompatible(): Boolean = when (this) {
+    is QueryValue.StringValue -> true
+    is QueryValue.RangeValue -> lower is QueryValue.StringValue && upper is QueryValue.StringValue
+    else -> false
 }
