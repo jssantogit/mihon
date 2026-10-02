@@ -697,7 +697,7 @@ class CanonicalTitleScreenModel(
             isRefreshing = isRefreshing,
             refreshError = refreshError,
         ).let { local ->
-            integrationMetadata?.let(local::withIntegrationMetadata) ?: local
+            integrationMetadata?.let { metadata -> local.withIntegrationMetadata(metadata) } ?: local
         }
         val cacheReason = if (isRefreshing) {
             ChapterInventoryDiagnosticReason.CACHE_SNAPSHOT
