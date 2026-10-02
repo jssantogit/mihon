@@ -2,8 +2,10 @@ package eu.kanade.presentation.tsuzuki.collections
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,13 +13,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -32,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
@@ -43,6 +50,13 @@ import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionsAction
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionsScreenState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionsTransferState
+import mihon.icons.materialsymbols.MaterialSymbols
+import mihon.icons.materialsymbols.rounded.Add
+import mihon.icons.materialsymbols.rounded.DragHandle
+import mihon.icons.materialsymbols.rounded.Edit
+import mihon.icons.materialsymbols.rounded.MoreVert
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
@@ -98,11 +112,6 @@ fun CollectionsScreen(
                     }
                 },
                 actions = {
-                    TextButton(
-                        onClick = { editor = EditorDialog.CreateCollection },
-                    ) {
-                        Text("New")
-                    }
                     AppBarActions(
                         listOf(
                             AppBar.OverflowAction(
@@ -378,29 +387,86 @@ private fun CollectionsReadyContent(
     val selectedCollection = collections.firstOrNull { it.collection.id == selectedCollectionId }
     val selectedFolder = selectedCollection?.folders?.firstOrNull { it.folder.id == selectedFolderId }
     val selectedList = selectedFolder?.lists?.firstOrNull { it.id == selectedListId }
+    var displayedCollections by remember(collections) { mutableStateOf(collections) }
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val fromIndex = from.index - COLLECTION_LIST_HEADER_COUNT
+        val toIndex = to.index - COLLECTION_LIST_HEADER_COUNT
+        if (fromIndex in displayedCollections.indices && toIndex in displayedCollections.indices) {
+            displayedCollections = displayedCollections.toMutableList().apply {
+                add(toIndex, removeAt(fromIndex))
+            }
+        }
+    }
 
     LazyColumn(
         modifier = modifier,
+        state = lazyListState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when {
             selectedCollection == null -> {
+                item(key = "collections_overview") {
+                    CollectionsOverviewCard(
+                        collections = collections,
+                        onCreate = { onEdit(EditorDialog.CreateCollection) },
+                    )
+                }
+
                 if (collections.isEmpty()) {
                     item(key = "empty") {
                         Text(
                             text = "No Collections yet. Create one to organize catalog queries.",
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                collections.forEach { graph ->
-                    item(key = "collection:${graph.collection.id}") {
-                        CollectionHeader(
+
+                items(
+                    items = displayedCollections,
+                    key = { graph -> "collection:${graph.collection.id}" },
+                ) { graph ->
+                    val itemKey = "collection:${graph.collection.id}"
+                    val reorderEnabled = displayedCollections.size > 1
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = itemKey,
+                        enabled = reorderEnabled,
+                    ) { isDragging ->
+                        CollectionCard(
                             graph = graph,
-                            onAction = onAction,
+                            isDragging = isDragging,
+                            reorderEnabled = reorderEnabled,
+                            reorderHandleModifier = if (reorderEnabled) {
+                                Modifier.draggableHandle(
+                                    onDragStopped = {
+                                        val sourceIndex = collections.indexOfFirst {
+                                            it.collection.id == graph.collection.id
+                                        }
+                                        val targetIndex = displayedCollections.indexOfFirst {
+                                            it.collection.id == graph.collection.id
+                                        }
+                                        val delta = targetIndex - sourceIndex
+                                        if (sourceIndex >= 0 && targetIndex >= 0 && delta != 0) {
+                                            onAction(
+                                                CollectionsAction.MoveCollection(
+                                                    graph.collection,
+                                                    delta.toLong(),
+                                                ),
+                                            )
+                                        }
+                                    },
+                                )
+                            } else {
+                                Modifier
+                            },
                             onEdit = onEdit,
                             onDelete = onDelete,
+                            onDuplicate = {
+                                onAction(CollectionsAction.DuplicateCollection(graph.collection.id))
+                            },
                             onOpen = { onOpenCollection(graph.collection.id) },
                         )
                     }
@@ -487,14 +553,66 @@ private fun CollectionsReadyContent(
 }
 
 @Composable
-private fun CollectionHeader(
+private fun CollectionsOverviewCard(
+    collections: List<CollectionUiModel>,
+    onCreate: () -> Unit,
+) {
+    val folderCount = collections.sumOf { it.folders.size }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        shape = MaterialTheme.shapes.extraLarge,
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "YOUR COLLECTIONS",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "${countLabel(collections.size, "collection")} · ${countLabel(folderCount, "folder")}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = onCreate,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = MaterialSymbols.Rounded.Add,
+                    contentDescription = null,
+                )
+                Text(
+                    text = "New collection",
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionCard(
     graph: CollectionUiModel,
-    onAction: (CollectionsAction) -> Unit,
+    isDragging: Boolean,
+    reorderEnabled: Boolean,
+    reorderHandleModifier: Modifier,
     onEdit: (EditorDialog) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
+    onDuplicate: () -> Unit,
     onOpen: () -> Unit,
 ) {
     val collection = graph.collection
+    val previewFolders = graph.folders.take(COLLECTION_PREVIEW_FOLDER_COUNT)
+    val hiddenFolderCount = graph.folders.size - previewFolders.size
+    var menuExpanded by remember(collection.id) { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -502,75 +620,165 @@ private fun CollectionHeader(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDragging) 6.dp else 0.dp,
+        ),
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     Text(
                         text = collection.title,
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = if (collection.origin == CollectionOrigin.SYSTEM) "Built-in" else "User Collection",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = countLabel(graph.folders.size, "folder"),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
-                if (collection.origin == CollectionOrigin.USER) {
-                    TextButton(
-                        onClick = {
-                            onEdit(
-                                EditorDialog.CreateFolder(
-                                    collectionId = collection.id,
-                                    parentFolderId = null,
-                                ),
-                            )
-                        },
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.MoreVert,
+                            contentDescription = "Collection actions",
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
                     ) {
-                        Text("+ Folder")
+                        if (collection.origin == CollectionOrigin.USER) {
+                            DropdownMenuItem(
+                                text = { Text("New folder") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onEdit(
+                                        EditorDialog.CreateFolder(
+                                            collectionId = collection.id,
+                                            parentFolderId = null,
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Duplicate") },
+                            onClick = {
+                                menuExpanded = false
+                                onDuplicate()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (collection.origin == CollectionOrigin.SYSTEM) "Hide" else "Delete")
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete(
+                                    DeleteTarget(
+                                        action = CollectionsAction.DeleteCollection(collection.id),
+                                        systemOwned = collection.origin == CollectionOrigin.SYSTEM,
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+
+            if (previewFolders.isEmpty()) {
+                Text(
+                    text = "No folders yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = previewFolders.joinToString(separator = " · ") { it.folder.title },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (hiddenFolderCount > 0) {
+                        Text(
+                            text = "+$hiddenFolderCount more",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                CollectionReorderHandle(
+                    modifier = reorderHandleModifier,
+                    enabled = reorderEnabled,
+                )
+                Spacer(modifier = Modifier.weight(1f))
                 if (collection.origin == CollectionOrigin.USER) {
-                    TextButton(onClick = { onEdit(EditorDialog.RenameCollection(collection)) }) {
-                        Text("Rename")
-                    }
-                }
-                TextButton(onClick = { onAction(CollectionsAction.DuplicateCollection(collection.id)) }) {
-                    Text("Duplicate")
-                }
-                TextButton(onClick = { onAction(CollectionsAction.MoveCollection(collection, -1)) }) {
-                    Text("↑")
-                }
-                TextButton(onClick = { onAction(CollectionsAction.MoveCollection(collection, 1)) }) {
-                    Text("↓")
-                }
-                TextButton(
-                    onClick = {
-                        onDelete(
-                            DeleteTarget(
-                                action = CollectionsAction.DeleteCollection(collection.id),
-                                systemOwned = collection.origin == CollectionOrigin.SYSTEM,
-                            ),
+                    IconButton(
+                        onClick = { onEdit(EditorDialog.RenameCollection(collection)) },
+                    ) {
+                        Icon(
+                            imageVector = MaterialSymbols.Rounded.Edit,
+                            contentDescription = "Rename collection",
                         )
-                    },
-                ) {
-                    Text(if (collection.origin == CollectionOrigin.SYSTEM) "Hide" else "Delete")
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CollectionReorderHandle(
+    modifier: Modifier,
+    enabled: Boolean,
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .then(modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = MaterialSymbols.Rounded.DragHandle,
+            contentDescription = "Drag to reorder collection",
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+            },
+        )
+    }
+}
+
+private fun countLabel(
+    count: Int,
+    singular: String,
+): String = if (count == 1) {
+    "1 $singular"
+} else {
+    "$count ${singular}s"
 }
 
 @Composable
@@ -1277,6 +1485,9 @@ private data class DeleteTarget(
     val action: CollectionsAction,
     val systemOwned: Boolean,
 )
+
+private const val COLLECTION_LIST_HEADER_COUNT = 1
+private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
 
 private val SUPPORTED_SORTS = listOf(
     CatalogSort.POPULARITY_DESC,

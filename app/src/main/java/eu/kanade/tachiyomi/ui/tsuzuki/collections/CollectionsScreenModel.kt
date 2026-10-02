@@ -275,18 +275,27 @@ class CollectionsScreenModel(
         delta: Long,
     ) = launchAction {
         val ordered = currentCollections().map { it.collection }
-        val index = ordered.indexOfFirst { it.id == collection.id }
-        val neighborIndex = neighborIndex(index, ordered.size, delta) ?: return@launchAction
-        val neighbor = ordered[neighborIndex]
+        val currentIndex = ordered.indexOfFirst { it.id == collection.id }
+        if (currentIndex < 0 || delta == 0L) return@launchAction
 
-        manager.reorderCollection(
-            collectionId = neighbor.id,
-            sortOrder = collection.sortOrder,
-        )
-        manager.reorderCollection(
-            collectionId = collection.id,
-            sortOrder = neighbor.sortOrder,
-        )
+        val targetIndex = (currentIndex + delta)
+            .coerceIn(0L, ordered.lastIndex.toLong())
+            .toInt()
+        if (targetIndex == currentIndex) return@launchAction
+
+        val sortOrders = ordered.map(TsuzukiCollection::sortOrder).sorted()
+        val reordered = ordered.toMutableList().apply {
+            add(targetIndex, removeAt(currentIndex))
+        }
+        reordered.forEachIndexed { index, item ->
+            val targetSortOrder = sortOrders[index]
+            if (item.sortOrder != targetSortOrder) {
+                manager.reorderCollection(
+                    collectionId = item.id,
+                    sortOrder = targetSortOrder,
+                )
+            }
+        }
     }
 
     fun createFolder(

@@ -99,6 +99,7 @@ class TsuzukiSearchScreenModel(
 
     private var operation: Job? = null
     private var operationGeneration = 0L
+
     // Shared by every Discover block so a single screen load cannot fan out provider requests without a bound.
     private val discoveryRequestGate = Semaphore(DISCOVER_NETWORK_CONCURRENCY)
 
