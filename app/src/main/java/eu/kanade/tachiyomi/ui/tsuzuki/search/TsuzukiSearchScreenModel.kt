@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -97,6 +99,7 @@ class TsuzukiSearchScreenModel(
 
     private var operation: Job? = null
     private var operationGeneration = 0L
+    private val discoveryRequestGate = Semaphore(DISCOVER_NETWORK_CONCURRENCY)
 
     init {
         loadDiscover()
@@ -397,7 +400,9 @@ class TsuzukiSearchScreenModel(
         val pending = providers.mapIndexed { index, provider ->
             async {
                 val items = try {
-                    val result = request(provider)
+                    val result = discoveryRequestGate.withPermit {
+                        request(provider)
+                    }
                     val error = result.exceptionOrNull()
                     if (error is CancellationException) throw error
                     result.getOrElse { emptyPage() }.items
@@ -444,5 +449,6 @@ class TsuzukiSearchScreenModel(
     private companion object {
         const val DISCOVER_LIMIT = 20
         const val DISCOVER_REQUEST_COUNT = 5
+        const val DISCOVER_NETWORK_CONCURRENCY = 4
     }
 }
