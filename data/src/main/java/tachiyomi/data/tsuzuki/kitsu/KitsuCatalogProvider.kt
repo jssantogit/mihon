@@ -186,6 +186,8 @@ class KitsuCatalogProvider(
                 .toMap(),
             genres = emptyList(),
             tags = emptyList(),
+            popularity = attr.userCount?.toLong(),
+            favorites = attr.favoritesCount?.toLong(),
             startDate = attr.startDate,
             endDate = attr.endDate,
             chapterCount = attr.chapterCount,
