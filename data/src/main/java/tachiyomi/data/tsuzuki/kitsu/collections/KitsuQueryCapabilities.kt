@@ -82,7 +82,7 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
             ),
             CollectionFilterCapability(
                 id = "rating",
-                field = QueryField.RATING,
+                field = QueryField.SCORE,
                 placement = FilterPlacement.QUICK,
                 operators = setOf(
                     QueryOperator.GREATER_OR_EQUAL,
