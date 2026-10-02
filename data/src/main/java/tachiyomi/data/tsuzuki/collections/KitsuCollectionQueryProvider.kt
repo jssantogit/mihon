@@ -7,7 +7,7 @@ import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
 import tachiyomi.data.tsuzuki.kitsu.collections.KitsuQueryCapabilities
 import tachiyomi.data.tsuzuki.kitsu.collections.KitsuQueryCompiler
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProvider
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -23,7 +23,7 @@ class KitsuCollectionQueryProvider(
 
     override suspend fun fetch(
         pushdownExpression: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         offset: Int,
         limit: Int,
     ): Result<CatalogPage> {
