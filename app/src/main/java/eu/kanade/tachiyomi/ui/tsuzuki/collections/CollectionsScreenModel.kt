@@ -10,6 +10,7 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,10 +25,15 @@ import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
+import tachiyomi.domain.tsuzuki.collections.execution.CollectionListDraftExecution
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftRequest
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftResult
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionListRequest
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionListResult
 import tachiyomi.domain.tsuzuki.collections.execution.ResidualPageCursor
+import tachiyomi.domain.tsuzuki.collections.execution.ResidualScanBudgetReason
 import tachiyomi.domain.tsuzuki.collections.interactor.ExportCollections
 import tachiyomi.domain.tsuzuki.collections.interactor.ImportCollections
 import tachiyomi.domain.tsuzuki.collections.interactor.ImportCollectionsResult
@@ -117,6 +123,7 @@ sealed interface CollectionsAction {
     data class ListVisibilityChanged(val listId: String, val visible: Boolean) : CollectionsAction
     data class RefreshList(val listId: String) : CollectionsAction
     data class LoadMore(val listId: String) : CollectionsAction
+    data class PreviewDraftChanged(val draft: CollectionListDraft?) : CollectionsAction
 }
 
 @Immutable
@@ -132,6 +139,21 @@ sealed interface CollectionListRuntimeState {
     data class Error(
         val message: String,
     ) : CollectionListRuntimeState
+}
+
+@Immutable
+sealed interface CollectionDraftPreviewState {
+    data object Idle : CollectionDraftPreviewState
+    data object Loading : CollectionDraftPreviewState
+
+    data class Content(
+        val items: List<CatalogItem>,
+        val scanBudgetReason: ResidualScanBudgetReason? = null,
+    ) : CollectionDraftPreviewState
+
+    data class Error(
+        val message: String,
+    ) : CollectionDraftPreviewState
 }
 
 @Immutable
@@ -161,6 +183,7 @@ sealed interface CollectionsScreenState {
         val collections: List<CollectionUiModel>,
         val transferState: CollectionsTransferState,
         val listRuntimeStates: Map<String, CollectionListRuntimeState>,
+        val draftPreviewState: CollectionDraftPreviewState,
     ) : CollectionsScreenState
 
     data class Error(
@@ -177,13 +200,17 @@ class CollectionsScreenModel(
     private val exportCollections: ExportCollections,
     private val importCollections: ImportCollections,
     private val executeCollectionList: ExecuteCollectionList,
+    private val executeCollectionDraft: ExecuteCollectionDraft,
 ) : ViewModel() {
 
     private val transferState = MutableStateFlow<CollectionsTransferState>(CollectionsTransferState.Idle)
     private val listRuntimeStates =
         MutableStateFlow<Map<String, CollectionListRuntimeState>>(emptyMap())
+    private val draftPreviewState =
+        MutableStateFlow<CollectionDraftPreviewState>(CollectionDraftPreviewState.Idle)
     private val visibleListIds = mutableSetOf<String>()
     private val listJobs = mutableMapOf<String, Job>()
+    private var draftPreviewJob: Job? = null
 
     private val collectionsFlow: Flow<List<CollectionUiModel>> = store.observeCollections()
         .flatMapLatest { collections ->
@@ -207,11 +234,13 @@ class CollectionsScreenModel(
         collectionsFlow,
         transferState,
         listRuntimeStates,
-    ) { collections, transfer, runtimes ->
+        draftPreviewState,
+    ) { collections, transfer, runtimes, preview ->
         CollectionsScreenState.Ready(
             collections = collections,
             transferState = transfer,
             listRuntimeStates = runtimes,
+            draftPreviewState = preview,
         ) as CollectionsScreenState
     }
         .catch { error ->
@@ -273,6 +302,69 @@ class CollectionsScreenModel(
             is CollectionsAction.ListVisibilityChanged -> setListVisible(action.listId, action.visible)
             is CollectionsAction.RefreshList -> refreshList(action.listId)
             is CollectionsAction.LoadMore -> loadMore(action.listId)
+            is CollectionsAction.PreviewDraftChanged -> previewDraft(action.draft)
+        }
+    }
+
+    private fun previewDraft(draft: CollectionListDraft?) {
+        draftPreviewJob?.cancel()
+        draftPreviewJob = null
+
+        if (draft == null) {
+            draftPreviewState.value = CollectionDraftPreviewState.Idle
+            return
+        }
+
+        draftPreviewState.value = CollectionDraftPreviewState.Loading
+        val job = viewModelScope.launch {
+            delay(DRAFT_PREVIEW_DEBOUNCE_MILLIS)
+
+            val result = executeCollectionDraft.execute(
+                ExecuteCollectionDraftRequest(
+                    draft = CollectionListDraftExecution(
+                        providerId = draft.providerId,
+                        query = draft.query,
+                        sort = draft.sort,
+                    ),
+                    pageSize = DRAFT_PREVIEW_PAGE_SIZE,
+                    cachePolicy = CollectionExecutionCachePolicy(
+                        mode = CollectionCacheMode.CACHE_FIRST,
+                    ),
+                    priority = QuerySchedulePriority.VISIBLE,
+                ),
+            )
+
+            draftPreviewState.value = when (result) {
+                is ExecuteCollectionDraftResult.Page -> CollectionDraftPreviewState.Content(
+                    items = result.page.items,
+                    scanBudgetReason = result.page.scanBudgetReason,
+                )
+                is ExecuteCollectionDraftResult.ProviderUnavailable -> CollectionDraftPreviewState.Error(
+                    "Provider '${result.providerId}' is unavailable",
+                )
+                is ExecuteCollectionDraftResult.UnsupportedGlobalSort -> CollectionDraftPreviewState.Error(
+                    "Sort ${result.sort.cacheKey} is not supported globally by this provider",
+                )
+                is ExecuteCollectionDraftResult.UnsupportedResidual -> CollectionDraftPreviewState.Error(
+                    result.reasons.joinToString(separator = "; "),
+                )
+                ExecuteCollectionDraftResult.CacheMiss -> CollectionDraftPreviewState.Error(
+                    "No cached data is available",
+                )
+                is ExecuteCollectionDraftResult.ProviderFailure -> CollectionDraftPreviewState.Error(
+                    result.cause.message ?: "Provider request failed",
+                )
+                is ExecuteCollectionDraftResult.PaginationInvariantFailure -> CollectionDraftPreviewState.Error(
+                    result.reason,
+                )
+            }
+        }
+
+        draftPreviewJob = job
+        job.invokeOnCompletion {
+            if (draftPreviewJob === job) {
+                draftPreviewJob = null
+            }
         }
     }
 
@@ -615,7 +707,7 @@ class CollectionsScreenModel(
 
                     is ExecuteCollectionListResult.UnsupportedGlobalSort -> {
                         CollectionListRuntimeState.Error(
-                            "Sort ${result.sort.name} is not supported globally by this provider",
+                            "Sort ${result.sort.cacheKey} is not supported globally by this provider",
                         )
                     }
 
@@ -805,5 +897,7 @@ class CollectionsScreenModel(
 
     private companion object {
         const val LIST_PAGE_SIZE = 6
+        const val DRAFT_PREVIEW_PAGE_SIZE = 6
+        const val DRAFT_PREVIEW_DEBOUNCE_MILLIS = 300L
     }
 }
