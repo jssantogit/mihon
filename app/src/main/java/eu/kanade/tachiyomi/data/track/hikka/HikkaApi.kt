@@ -18,6 +18,11 @@ import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.jsonMime
 import eu.kanade.tachiyomi.network.parseAs
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -68,6 +73,18 @@ class HikkaApi(
 
     suspend fun searchManga(query: String): List<TrackSearch> =
         searchPublic(query).map { it.toTrack(trackerId) }
+
+    override suspend fun lookupGenres(): List<Pair<String, String>> = withIOContext {
+        val element = with(json) {
+            client.newCall(GET("$BASE_API_URL/genres"))
+                .awaitSuccess()
+                .parseAs<JsonElement>()
+        }
+        element.lookupPairs(
+            labelKeys = listOf("name_ua", "name", "title", "label"),
+            valueKeys = listOf("slug", "name", "id"),
+        )
+    }
 
     override suspend fun searchPublic(query: String): List<HKManga> =
         collectionSearch(
@@ -264,6 +281,34 @@ class HikkaApi(
 
     private fun requireClientSecret(): String =
         clientSecretProvider().trim().ifBlank { throw HikkaCredentialsMissing() }
+
+    private fun JsonElement.lookupPairs(
+        labelKeys: List<String>,
+        valueKeys: List<String>,
+    ): List<Pair<String, String>> {
+        val elements = when (this) {
+            is JsonArray -> this
+            is JsonObject -> values.firstOrNull { it is JsonArray } as? JsonArray ?: JsonArray(emptyList())
+            else -> JsonArray(emptyList())
+        }
+        return elements.mapNotNull { entry ->
+            when (entry) {
+                is JsonPrimitive -> entry.contentOrNull
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { it to it }
+                is JsonObject -> {
+                    val label = labelKeys.asSequence()
+                        .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
+                        .firstOrNull(String::isNotBlank)
+                    val value = valueKeys.asSequence()
+                        .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
+                        .firstOrNull(String::isNotBlank)
+                    if (label != null && value != null) label to value else null
+                }
+                else -> null
+            }
+        }.distinctBy { it.second }
+    }
 
     companion object {
         const val BASE_API_URL = "https://api.hikka.io"
