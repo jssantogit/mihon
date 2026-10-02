@@ -105,211 +105,220 @@ fun CollectionsScreen(
         }
     }
 
-    BackHandler(
-        enabled = selectedListId != null || selectedFolderId != null || selectedCollectionId != null,
-        onBack = navigateWithinCollections,
-    )
+    val currentEditor = editor
+    val editedCollectionGraph = (currentEditor as? EditorDialog.RenameCollection)
+        ?.let { target ->
+            readyState?.collections?.firstOrNull { it.collection.id == target.collection.id }
+        }
+    val editedFolderModel = (currentEditor as? EditorDialog.RenameFolder)
+        ?.let { target ->
+            readyState?.collections
+                ?.asSequence()
+                ?.flatMap { it.folders.asSequence() }
+                ?.firstOrNull { it.folder.id == target.folder.id }
+        }
 
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            AppBar(
-                title = selectedList?.title
-                    ?: selectedFolder?.folder?.title
-                    ?: selectedCollection?.collection?.title
-                    ?: "Collections",
-                navigateUp = navigateWithinCollections,
-                actions = {
-                    AppBarActions(
-                        listOf(
-                            AppBar.OverflowAction(
-                                title = "Import",
-                                onClick = onImportRequest,
-                            ),
-                            AppBar.OverflowAction(
-                                title = "Export",
-                                onClick = onExportRequest,
-                            ),
-                        ),
-                    )
-                },
+    val fullScreenEditorRendered = when (currentEditor) {
+        EditorDialog.CreateCollection -> {
+            CollectionEditorScreen(
+                graph = null,
+                onAction = onAction,
+                onDelete = { deleteTarget = it },
+                onClose = { editor = null },
             )
-        },
-    ) { padding ->
-        when (state) {
-            CollectionsScreenState.Loading -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
+            true
+        }
 
-            is CollectionsScreenState.Error -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = state.message,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-
-            is CollectionsScreenState.Ready -> {
-                CollectionsReadyContent(
-                    collections = state.collections,
-                    transferState = state.transferState,
-                    listRuntimeStates = state.listRuntimeStates,
+        is EditorDialog.RenameCollection -> {
+            editedCollectionGraph?.let { graph ->
+                CollectionEditorScreen(
+                    graph = graph,
                     onAction = onAction,
-                    onEdit = { editor = it },
                     onDelete = { deleteTarget = it },
-                    selectedCollectionId = selectedCollectionId,
-                    selectedFolderId = selectedFolderId,
-                    selectedListId = selectedListId,
-                    onOpenCollection = {
-                        selectedCollectionId = it
-                        selectedFolderId = null
-                        selectedListId = null
-                    },
-                    onOpenFolder = {
-                        selectedFolderId = it
-                        selectedListId = null
-                    },
-                    onOpenList = { selectedListId = it },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                    onClose = { editor = null },
                 )
+            } != null
+        }
 
-                when (val transfer = state.transferState) {
-                    CollectionsTransferState.Idle,
-                    is CollectionsTransferState.ExportReady,
-                    -> Unit
+        is EditorDialog.CreateFolder -> {
+            FolderEditorScreen(
+                collectionId = currentEditor.collectionId,
+                parentFolderId = currentEditor.parentFolderId,
+                existing = null,
+                initialDraft = null,
+                onSubmitDraft = null,
+                onAction = onAction,
+                onDelete = { deleteTarget = it },
+                onClose = { editor = null },
+            )
+            true
+        }
 
-                    CollectionsTransferState.Working -> {
-                        AlertDialog(
-                            onDismissRequest = {},
-                            confirmButton = {},
-                            title = { Text("Collections") },
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    CircularProgressIndicator()
-                                    Text("Working…")
-                                }
-                            },
+        is EditorDialog.RenameFolder -> {
+            editedFolderModel?.let { model ->
+                FolderEditorScreen(
+                    collectionId = model.folder.collectionId,
+                    parentFolderId = model.folder.parentFolderId,
+                    existing = model,
+                    initialDraft = null,
+                    onSubmitDraft = null,
+                    onAction = onAction,
+                    onDelete = { deleteTarget = it },
+                    onClose = { editor = null },
+                )
+            } != null
+        }
+
+        else -> false
+    }
+
+    if (!fullScreenEditorRendered) {
+        BackHandler(
+            enabled = selectedListId != null || selectedFolderId != null || selectedCollectionId != null,
+            onBack = navigateWithinCollections,
+        )
+
+        Scaffold(
+            modifier = modifier,
+            topBar = {
+                AppBar(
+                    title = selectedList?.title
+                        ?: selectedFolder?.folder?.title
+                        ?: selectedCollection?.collection?.title
+                        ?: "Collections",
+                    navigateUp = navigateWithinCollections,
+                    actions = {
+                        AppBarActions(
+                            listOf(
+                                AppBar.OverflowAction(
+                                    title = "Import",
+                                    onClick = onImportRequest,
+                                ),
+                                AppBar.OverflowAction(
+                                    title = "Export",
+                                    onClick = onExportRequest,
+                                ),
+                            ),
+                        )
+                    },
+                )
+            },
+        ) { padding ->
+            when (state) {
+                CollectionsScreenState.Loading -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+
+                is CollectionsScreenState.Error -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = state.message,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
+                }
 
-                    is CollectionsTransferState.ImportSucceeded -> {
-                        AlertDialog(
-                            onDismissRequest = onDismissTransferState,
-                            confirmButton = {
-                                TextButton(onClick = onDismissTransferState) {
-                                    Text("OK")
-                                }
-                            },
-                            title = { Text("Import complete") },
-                            text = {
-                                Text(
-                                    "Imported ${transfer.result.collectionIds.size} collection(s), " +
-                                        "${transfer.result.folderCount} folder(s), and " +
-                                        "${transfer.result.listCount} list(s). " +
-                                        "${transfer.result.remappedIdCount} id(s) were remapped.",
-                                )
-                            },
-                        )
-                    }
+                is CollectionsScreenState.Ready -> {
+                    CollectionsReadyContent(
+                        collections = state.collections,
+                        transferState = state.transferState,
+                        listRuntimeStates = state.listRuntimeStates,
+                        onAction = onAction,
+                        onEdit = { editor = it },
+                        onDelete = { deleteTarget = it },
+                        selectedCollectionId = selectedCollectionId,
+                        selectedFolderId = selectedFolderId,
+                        selectedListId = selectedListId,
+                        onOpenCollection = {
+                            selectedCollectionId = it
+                            selectedFolderId = null
+                            selectedListId = null
+                        },
+                        onOpenFolder = {
+                            selectedFolderId = it
+                            selectedListId = null
+                        },
+                        onOpenList = { selectedListId = it },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                    )
 
-                    is CollectionsTransferState.Error -> {
-                        AlertDialog(
-                            onDismissRequest = onDismissTransferState,
-                            confirmButton = {
-                                TextButton(onClick = onDismissTransferState) {
-                                    Text("OK")
-                                }
-                            },
-                            title = { Text("Collections error") },
-                            text = { Text(transfer.message) },
-                        )
+                    when (val transfer = state.transferState) {
+                        CollectionsTransferState.Idle,
+                        is CollectionsTransferState.ExportReady,
+                        -> Unit
+
+                        CollectionsTransferState.Working -> {
+                            AlertDialog(
+                                onDismissRequest = {},
+                                confirmButton = {},
+                                title = { Text("Collections") },
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        CircularProgressIndicator()
+                                        Text("Working…")
+                                    }
+                                },
+                            )
+                        }
+
+                        is CollectionsTransferState.ImportSucceeded -> {
+                            AlertDialog(
+                                onDismissRequest = onDismissTransferState,
+                                confirmButton = {
+                                    TextButton(onClick = onDismissTransferState) {
+                                        Text("OK")
+                                    }
+                                },
+                                title = { Text("Import complete") },
+                                text = {
+                                    Text(
+                                        "Imported ${transfer.result.collectionIds.size} collection(s), " +
+                                            "${transfer.result.folderCount} folder(s), and " +
+                                            "${transfer.result.listCount} list(s). " +
+                                            "${transfer.result.remappedIdCount} id(s) were remapped.",
+                                    )
+                                },
+                            )
+                        }
+
+                        is CollectionsTransferState.Error -> {
+                            AlertDialog(
+                                onDismissRequest = onDismissTransferState,
+                                confirmButton = {
+                                    TextButton(onClick = onDismissTransferState) {
+                                        Text("OK")
+                                    }
+                                },
+                                title = { Text("Collections error") },
+                                text = { Text(transfer.message) },
+                            )
+                        }
                     }
                 }
             }
         }
-    }
 
-    editor?.let { dialog ->
-        when (dialog) {
-            EditorDialog.CreateCollection -> {
-                TextEditorDialog(
-                    title = "New Collection",
-                    label = "Name",
-                    initialValue = "",
-                    onDismiss = { editor = null },
-                    onConfirm = { title ->
-                        onAction(CollectionsAction.CreateCollection(title))
-                        editor = null
-                    },
-                )
-            }
-
-            is EditorDialog.RenameCollection -> {
-                TextEditorDialog(
-                    title = "Rename Collection",
-                    label = "Name",
-                    initialValue = dialog.collection.title,
-                    onDismiss = { editor = null },
-                    onConfirm = { title ->
-                        onAction(CollectionsAction.RenameCollection(dialog.collection, title))
-                        editor = null
-                    },
-                )
-            }
-
-            is EditorDialog.CreateFolder -> {
-                TextEditorDialog(
-                    title = if (dialog.parentFolderId == null) "New Folder" else "New Subfolder",
-                    label = "Name",
-                    initialValue = "",
-                    onDismiss = { editor = null },
-                    onConfirm = { title ->
-                        onAction(
-                            CollectionsAction.CreateFolder(
-                                collectionId = dialog.collectionId,
-                                parentFolderId = dialog.parentFolderId,
-                                title = title,
-                            ),
-                        )
-                        editor = null
-                    },
-                )
-            }
-
-            is EditorDialog.RenameFolder -> {
-                TextEditorDialog(
-                    title = "Rename Folder",
-                    label = "Name",
-                    initialValue = dialog.folder.title,
-                    onDismiss = { editor = null },
-                    onConfirm = { title ->
-                        onAction(CollectionsAction.RenameFolder(dialog.folder, title))
-                        editor = null
-                    },
-                )
-            }
-
+        when (val dialog = editor) {
             is EditorDialog.CreateList -> {
                 ListEditorDialog(
                     title = "New List",
@@ -339,6 +348,8 @@ fun CollectionsScreen(
                     },
                 )
             }
+
+            else -> Unit
         }
     }
 
@@ -1067,44 +1078,7 @@ private fun ListRow(
 }
 
 @Composable
-private fun TextEditorDialog(
-    title: String,
-    label: String,
-    initialValue: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var value by remember(initialValue) { mutableStateOf(initialValue) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(
-                enabled = value.isNotBlank(),
-                onClick = { onConfirm(value.trim()) },
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-        title = { Text(title) },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                label = { Text(label) },
-                singleLine = true,
-            )
-        },
-    )
-}
-
-@Composable
-private fun ListEditorDialog(
+internal fun ListEditorDialog(
     title: String,
     initial: ListEditorState,
     onDismiss: () -> Unit,
@@ -1396,6 +1370,22 @@ internal data class ListEditorState(
                 filtersEditable = parsed != null,
             )
         }
+
+        fun fromDraft(draft: CollectionListDraft): ListEditorState {
+            val parsed = parseSimpleQuery(draft.query)
+            return ListEditorState(
+                title = draft.title,
+                sort = draft.sort,
+                layoutType = draft.layoutType,
+                status = parsed?.status,
+                format = parsed?.format,
+                minScore = parsed?.minScore.orEmpty(),
+                minChapters = parsed?.minChapters.orEmpty(),
+                minVolumes = parsed?.minVolumes.orEmpty(),
+                preservedQuery = if (parsed == null) draft.query else null,
+                filtersEditable = parsed != null,
+            )
+        }
     }
 }
 
@@ -1483,7 +1473,7 @@ private sealed interface EditorDialog {
     data class EditList(val list: CollectionList) : EditorDialog
 }
 
-private data class DeleteTarget(
+internal data class DeleteTarget(
     val action: CollectionsAction,
     val systemOwned: Boolean,
 )
