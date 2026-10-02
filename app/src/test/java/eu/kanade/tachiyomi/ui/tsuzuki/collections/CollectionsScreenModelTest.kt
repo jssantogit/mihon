@@ -3,7 +3,9 @@ package eu.kanade.tachiyomi.ui.tsuzuki.collections
 import io.mockk.coEvery
 import io.mockk.coVerifyOrder
 import io.mockk.every
+import io.mockk.firstArg
 import io.mockk.mockk
+import io.mockk.secondArg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
