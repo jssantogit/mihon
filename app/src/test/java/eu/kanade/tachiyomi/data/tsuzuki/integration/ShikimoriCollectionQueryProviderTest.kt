@@ -8,6 +8,7 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -81,6 +82,33 @@ class ShikimoriCollectionQueryProviderTest {
         query.franchise shouldBe "berserk"
         query.censored shouldBe false
         query.order shouldBe "popularity"
+    }
+
+    @Test
+    fun `provider exposes Shikimori genre and publisher lookups through shared gate`() = runTest {
+        var gateCalls = 0
+        val gate = ShikimoriRequestGate(
+            nowMillis = { 0L },
+            pause = {},
+            onPermit = { gateCalls++ },
+        )
+        val api = object : ShikimoriIntegrationApi {
+            override suspend fun searchPublic(query: String): List<TrackSearch> = emptyList()
+            override suspend fun getMangaDetailsPublic(id: Int): TrackSearch? = null
+            override suspend fun lookupGenres(): List<Pair<String, String>> =
+                listOf("Romance" to "1", "Action" to "2")
+            override suspend fun lookupPublishers(): List<Pair<String, String>> =
+                listOf("Shueisha" to "4", "Kodansha" to "5")
+        }
+        val provider = ShikimoriCollectionQueryProvider.forTest(api, gate)
+
+        provider.lookupValues("shikimori.genres", "roma").getOrThrow() shouldContainExactly listOf(
+            FilterOption("1", "Romance", QueryValue.of("1")),
+        )
+        provider.lookupValues("shikimori.publishers", "shuei").getOrThrow() shouldContainExactly listOf(
+            FilterOption("4", "Shueisha", QueryValue.of("4")),
+        )
+        gateCalls shouldBe 2
     }
 
     @Test
