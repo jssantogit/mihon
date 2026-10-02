@@ -85,6 +85,47 @@ class ShikimoriCollectionQueryProviderTest {
     }
 
     @Test
+    fun `compiler combines native include and exclude values for the same field`() {
+        val expression = QueryExpression.All(
+            QueryExpression.Predicate(
+                QueryField.GENRE,
+                QueryOperator.EQUALS,
+                QueryValue.of("1"),
+            ),
+            QueryExpression.Not(
+                QueryExpression.Predicate(
+                    QueryField.GENRE,
+                    QueryOperator.EQUALS,
+                    QueryValue.of("2"),
+                ),
+            ),
+            QueryExpression.Predicate(
+                QueryField.PUBLISHER,
+                QueryOperator.EQUALS,
+                QueryValue.of("4"),
+            ),
+            QueryExpression.Not(
+                QueryExpression.Predicate(
+                    QueryField.PUBLISHER,
+                    QueryOperator.EQUALS,
+                    QueryValue.of("5"),
+                ),
+            ),
+        )
+
+        val query = ShikimoriCollectionCompiler.compile(
+            expression = expression,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Provider("shikimori", "popularity"),
+                direction = null,
+            ),
+        )
+
+        query.genre shouldBe "1,!2"
+        query.publisher shouldBe "4,!5"
+    }
+
+    @Test
     fun `provider exposes Shikimori genre and publisher lookups through shared gate`() = runTest {
         var gateCalls = 0
         val gate = ShikimoriRequestGate(
