@@ -112,6 +112,86 @@ class ResolveCanonicalSourceMangaContentBindingTest {
         resolved?.url shouldBe "/boku-no-hero"
     }
 
+    @Test
+    fun `cached source resolution never requests provider details`() = runTest {
+        val titleRepository = mockk<CanonicalTitleRepository>()
+        coEvery { titleRepository.getById(TITLE_ID) } returns CanonicalTitle(
+            id = TITLE_ID,
+            displayTitle = "Boku no Hero Academia",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val mappingRepository = mockk<SourceTitleMappingRepository>()
+        coEvery { mappingRepository.getByCanonicalTitleId(TITLE_ID) } returns emptyList()
+        val bindingRepository = FakeContentBindingRepository(
+            ContentBinding(
+                id = "binding-local-only",
+                canonicalTitleId = TITLE_ID,
+                addonId = AddonId("mihon"),
+                providerTitleKey = "10:/boku-no-hero",
+                matchConfidence = 1.0,
+                verifiedByUser = true,
+                availability = ContentBindingAvailability.AVAILABLE,
+                runtimePayload = byteArrayOf(1),
+                createdAt = 1L,
+                updatedAt = 2L,
+            ),
+        )
+        var detailsCalls = 0
+        val gateway = object : ReadingSourceGateway {
+            override suspend fun listInstalled(language: String): List<ReadingSourceDescriptor> = emptyList()
+
+            override suspend fun search(
+                sourceId: Long,
+                query: String,
+            ): Result<List<ReadingSourceCandidate>> = Result.success(emptyList())
+
+            override suspend fun restoreMaterializedCandidate(
+                runtimePayload: ByteArray,
+                fallbackTitle: String,
+            ): Result<ReadingSourceCandidate> = Result.success(
+                ReadingSourceCandidate(
+                    sourceId = 10L,
+                    sourceName = "Bound source",
+                    language = "pt-BR",
+                    sourceUrl = "/boku-no-hero",
+                    title = fallbackTitle,
+                    thumbnailUrl = null,
+                    author = null,
+                    artist = null,
+                    description = null,
+                    genres = null,
+                    status = 0L,
+                ),
+            )
+
+            override suspend fun getDetails(
+                candidate: ReadingSourceCandidate,
+            ): Result<ReadingSourceCandidate> {
+                detailsCalls++
+                return Result.success(candidate.copy(description = "network details"))
+            }
+
+            override suspend fun materialize(
+                candidate: ReadingSourceCandidate,
+            ): Result<MaterializedReadingSource> = error("Not used")
+        }
+
+        val resolved = ResolveCanonicalSourceManga(
+            canonicalTitleRepository = titleRepository,
+            sourceTitleMappingRepository = mappingRepository,
+            mangaRepository = mockk(),
+            networkToLocalManga = mockk(),
+            readingSourceGateway = gateway,
+            contentBindingRepository = bindingRepository,
+            structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
+        ).execute(TITLE_ID, allowNetwork = false)
+
+        resolved shouldBe null
+        detailsCalls shouldBe 0
+    }
+
     private class FakeContentBindingRepository(
         private val binding: ContentBinding,
     ) : ContentBindingRepository {
