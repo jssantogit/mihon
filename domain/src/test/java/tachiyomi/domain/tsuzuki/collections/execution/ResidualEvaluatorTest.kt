@@ -211,7 +211,7 @@ class ResidualEvaluatorTest {
             demographics = listOf("Shounen"),
         )
 
-        evaluate(predicate(QueryField.IN_LIBRARY, QueryOperator.EQUALS, QueryValue.of("one")), target) shouldBe
+        evaluate(predicate(QueryField.AUTHOR, QueryOperator.EQUALS, QueryValue.of("one")), target) shouldBe
             TruthValue.TRUE
         evaluate(predicate(QueryField.ARTIST, QueryOperator.CONTAINS, QueryValue.of("YUSUKE MURATA")), target) shouldBe
             TruthValue.TRUE
