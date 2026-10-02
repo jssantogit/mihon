@@ -25,6 +25,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
@@ -43,12 +46,23 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 internal fun ListBuilderScreen(
     title: String,
     initial: ListEditorState,
+    previewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+    onPreviewDraft: (CollectionListDraft?) -> Unit = {},
     onClose: () -> Unit,
     onConfirm: (CollectionListDraft) -> Unit,
 ) {
     var editor by remember(initial) { mutableStateOf(initial) }
     var advanced by remember(initial) { mutableStateOf(false) }
     val draft = editor.toDraftOrNull()
+
+    LaunchedEffect(draft) {
+        onPreviewDraft(draft)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            onPreviewDraft(null)
+        }
+    }
 
     BackHandler {
         if (advanced) {
@@ -104,6 +118,7 @@ internal fun ListBuilderScreen(
                 editor = editor,
                 onEditorChange = { editor = it },
                 onAdvanced = { advanced = true },
+                previewState = previewState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -117,6 +132,7 @@ private fun QuickListBuilder(
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
     onAdvanced: () -> Unit,
+    previewState: CollectionDraftPreviewState,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -324,13 +340,58 @@ private fun QuickListBuilder(
                         },
                         style = MaterialTheme.typography.titleSmall,
                     )
-                    Text(
-                        text = "The structural preview surface is ready. Live preview of an unsaved query " +
-                            "will be wired when draft execution is exposed by the Collections runtime; no fake result count is shown.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                    when (previewState) {
+                        CollectionDraftPreviewState.Idle -> {
+                            Text(
+                                text = "Preview becomes available when the current draft is executable.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        CollectionDraftPreviewState.Loading -> {
+                            Text(
+                                text = "Loading preview…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        is CollectionDraftPreviewState.Content -> {
+                            if (previewState.items.isEmpty()) {
+                                Text(
+                                    text = "No matching titles in this bounded preview window.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            } else {
+                                previewState.items.take(PREVIEW_TITLE_LIMIT).forEach { item ->
+                                    Text(
+                                        text = item.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                            }
+                            if (previewState.scanBudgetReason != null) {
+                                Text(
+                                    text = "Preview scan limit reached; more remote candidates remain.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
+                        }
+                        is CollectionDraftPreviewState.Error -> {
+                            Text(
+                                text = previewState.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -762,3 +823,5 @@ private fun String.prettyEnumName(): String = lowercase()
     .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
 private val SUPPORTED_LIST_PROVIDER_IDS = listOf("kitsu")
+
+private const val PREVIEW_TITLE_LIMIT = 4
