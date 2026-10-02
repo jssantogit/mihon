@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.cache.BaseCatalogSearchCache
 import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -499,7 +500,10 @@ class SearchIntegrationsTest {
                 return Result.success(page(CatalogItem("second", "2", "Two")))
             }
         }
-        val search = SearchIntegrations(registry(first, second))
+        val search = SearchIntegrations(
+            registry = registry(first, second),
+            baseSearchCache = BaseCatalogSearchCache(scope = this),
+        )
 
         val results = withTimeout(1_000) {
             search.execute(CatalogQuery(query = "query"))
