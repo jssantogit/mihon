@@ -276,14 +276,6 @@ class RefreshChapterEvidence private constructor(
                 }
             }
 
-            val initialBindings = try {
-                discoverReadableTitle?.execute(canonicalTitleId)?.getOrNull().orEmpty()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                emptyList()
-            }
-
             val collections = coroutineScope {
                 val initialAddons = async {
                     collectAddonEvidence(canonicalTitleId) { batch ->
@@ -294,8 +286,27 @@ class RefreshChapterEvidence private constructor(
                     reconcileStage(batch.evidence)
                 }
                 var addonEvidence = initialAddons.await()
+                val knownBindingIds = addonEvidence.bindingIds.toMutableSet()
 
-                val knownBindingIds = initialBindings.mapTo(linkedSetOf(), ContentBinding::id)
+                if (addonEvidence.observedChapterCount == 0) {
+                    val discovered = try {
+                        discoverReadableTitle?.execute(canonicalTitleId)?.getOrNull().orEmpty()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
+                    val newBindings = discovered.filter { it.id !in knownBindingIds }
+                    if (newBindings.isNotEmpty()) {
+                        knownBindingIds += newBindings.map(ContentBinding::id)
+                        addonEvidence = addonEvidence.merge(
+                            collectAddonEvidence(canonicalTitleId) { batch ->
+                                reconcileStage(batch.evidence, batch.pendingSnapshots)
+                            },
+                        )
+                    }
+                }
+
                 var broadenAttempt = 0
                 while (
                     addonEvidence.observedChapterCount == 0 &&
@@ -617,6 +628,7 @@ class RefreshChapterEvidence private constructor(
                                         )
                                         AddonEvidenceCollection(
                                             evidence = accepted,
+                                            bindingIds = bindings.mapTo(linkedSetOf(), ContentBinding::id),
                                             observedBindingCount = batch.observedBindingCount,
                                             observedChapterCount = batch.observedChapterCount,
                                             pendingSnapshots = batch.pendingSnapshots,
@@ -630,7 +642,10 @@ class RefreshChapterEvidence private constructor(
                                             addonId = provider.addonId.value,
                                             outcome = error.toDiagnosticOutcome(),
                                         )
-                                        AddonEvidenceCollection(complete = false)
+                                        AddonEvidenceCollection(
+                                            bindingIds = bindings.mapTo(linkedSetOf(), ContentBinding::id),
+                                            complete = false,
+                                        )
                                     },
                                 )
                             } catch (error: CancellationException) {
@@ -759,6 +774,7 @@ class RefreshChapterEvidence private constructor(
 
     private data class AddonEvidenceCollection(
         val evidence: List<ChapterEvidence> = emptyList(),
+        val bindingIds: Set<String> = emptySet(),
         val observedBindingCount: Int = 0,
         val observedChapterCount: Int = 0,
         val pendingSnapshots: List<ChapterRefreshSnapshot> = emptyList(),
@@ -776,6 +792,7 @@ class RefreshChapterEvidence private constructor(
 
             return AddonEvidenceCollection(
                 evidence = mergedEvidence.values.toList(),
+                bindingIds = bindingIds + other.bindingIds,
                 observedBindingCount = observedBindingCount + other.observedBindingCount,
                 observedChapterCount = observedChapterCount + other.observedChapterCount,
                 pendingSnapshots = mergedSnapshots.values.toList(),
