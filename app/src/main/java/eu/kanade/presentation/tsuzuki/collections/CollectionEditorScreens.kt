@@ -105,6 +105,7 @@ internal fun CollectionEditorScreen(
                         parentFolderId = null,
                         existing = null,
                         initialDraft = entry.draft,
+                        providerDescriptors = providerDescriptors,
                         draftPreviewState = draftPreviewState,
                         onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
