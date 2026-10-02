@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
@@ -24,6 +25,8 @@ import tachiyomi.domain.tsuzuki.integration.RatingsProvider
 import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 import tachiyomi.domain.tsuzuki.integration.cache.InFlightCanonicalMetadataResolution
+import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
+import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
@@ -106,15 +109,42 @@ class ResolveCanonicalMetadataCachingTest {
         counts.values.single().provider shouldBe "kitsu"
     }
 
+    @Test
+    fun `forced metadata refresh reuses cached supplemental rating`() = runTest {
+        val provider = CountingMetadataProvider()
+        val ratings = CountingRatingsProvider()
+        val resolver = resolver(
+            provider = provider,
+            snapshots = FakeSnapshotRepository(),
+            ratingProviders = listOf(ratings),
+            clock = { 30_000L },
+            scope = backgroundScope,
+        )
+
+        resolver.execute(TITLE_ID, forceRefresh = true).getOrThrow()
+        resolver.execute(TITLE_ID, forceRefresh = true).getOrThrow()
+
+        provider.calls shouldBe 2
+        ratings.calls shouldBe 1
+    }
+
     private fun resolver(
         provider: CountingMetadataProvider,
         snapshots: FakeSnapshotRepository,
         counts: FakeReportedChapterCountRepository = FakeReportedChapterCountRepository(),
+        ratingProviders: List<RatingsProvider> = emptyList(),
         clock: () -> Long,
         scope: CoroutineScope,
+        ratingCache: RatingEnrichmentCache = RatingEnrichmentCache(
+            scope = scope,
+            clock = { 0L },
+            positiveTtlMillis = 60_000L,
+            negativeTtlMillis = 1_000L,
+            maxEntries = 32,
+        ),
     ) = ResolveCanonicalMetadata(
         canonicalTitleRepository = FakeCanonicalTitleRepository(),
-        registry = FakeRegistry(provider),
+        registry = FakeRegistry(provider, ratingProviders),
         titleArtworkRepository = mockk(relaxed = true),
         diagnosticRecorder = NoOpStructuredDiagnosticRecorder,
         snapshotRepository = snapshots,
@@ -122,6 +152,7 @@ class ResolveCanonicalMetadataCachingTest {
         reportedChapterCountRepository = counts,
         clock = clock,
         metadataTtlMillis = 15_000L,
+        ratingEnrichmentCache = ratingCache,
     )
 
     private class CountingMetadataProvider(
@@ -146,6 +177,7 @@ class ResolveCanonicalMetadataCachingTest {
 
     private class FakeRegistry(
         private val provider: MetadataProvider,
+        private val ratingProviders: List<RatingsProvider> = emptyList(),
     ) : IntegrationRegistry {
         override fun configurationFingerprint(): String = "cfg"
         override fun searchProviders(): List<SearchProvider> = emptyList()
@@ -153,12 +185,36 @@ class ResolveCanonicalMetadataCachingTest {
         override fun metadataProviders(): List<MetadataProvider> = listOf(provider)
         override fun metadataProviders(capability: IntegrationCapability): List<MetadataProvider> = listOf(provider)
         override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
-        override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+        override fun ratingsProviders(): List<RatingsProvider> = ratingProviders
         override fun trackingProviders(): List<TrackingProvider> = emptyList()
         override fun isGlobalCapabilityActive(
             integrationId: IntegrationId,
             capability: IntegrationCapability,
         ): Boolean = integrationId == provider.integrationId
+    }
+
+    private class CountingRatingsProvider : RatingsProvider {
+        override val integrationId = IntegrationId("mal")
+        var calls = 0
+
+        override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+            Result.success(emptyList())
+
+        override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+            calls++
+            return Result.success(
+                CatalogRatingMatch(
+                    externalId = "m1",
+                    rating = ExternalRating(
+                        providerId = "mal",
+                        label = "MAL",
+                        value = 8.4,
+                        scaleMax = 10.0,
+                    ),
+                    verifiedIdentity = false,
+                ),
+            )
+        }
     }
 
     private class FakeSnapshotRepository(
