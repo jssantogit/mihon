@@ -247,7 +247,7 @@ object ResidualEvaluator {
 
         QueryField.Standard.POPULARITY ->
             item.popularity
-                ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.toDouble())) }
+                ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
                 ?: FieldValue.Missing
 
         QueryField.Standard.FAVORITES ->
