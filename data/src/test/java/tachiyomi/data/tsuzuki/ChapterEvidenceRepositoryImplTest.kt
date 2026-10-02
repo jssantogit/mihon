@@ -25,6 +25,7 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite
+import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.evidence.ReconcileChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
@@ -199,6 +200,11 @@ class ChapterEvidenceRepositoryImplTest {
             override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>) =
                 evidenceRepository.upsertBatch(writes.take(1)).also {
                     error("Injected failure after first evidence write")
+                }
+
+            override suspend fun upsertResolvedBatch(values: List<PersistedChapterEvidence>) =
+                evidenceRepository.upsertResolvedBatch(values.take(1)).also {
+                    error("Injected failure after first resolved evidence write")
                 }
         }
         val reconciler = ReconcileChapterEvidence(
