@@ -294,6 +294,29 @@ class KitsuCatalogProviderTest {
     }
 
     @Test
+    fun `Kitsu projects user and favorite counts for residual Collections filters`() = runTest {
+        val resource = KitsuMangaResource(
+            id = "1",
+            type = "manga",
+            attributes = KitsuMangaAttributes(
+                canonicalTitle = "Title",
+                userCount = 42_000,
+                favoritesCount = 1_500,
+            ),
+        )
+        val provider = KitsuCatalogProvider(
+            FakeKitsuClient(
+                detailResult = Result.success(KitsuSingleMangaResponse(data = resource)),
+            ),
+        )
+
+        val item = provider.getDetails("1").getOrThrow()
+
+        item.popularity shouldBe 42_000L
+        item.favorites shouldBe 1_500L
+    }
+
+    @Test
     fun `cover and banner image extraction follows fallback cascade`() = runTest {
         val fakeClient = FakeKitsuClient()
         val provider = KitsuCatalogProvider(fakeClient)
