@@ -16,7 +16,16 @@ interface ProviderQueryCapabilities {
     val providerId: String
         get() = descriptor.providerId
 
-    fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean
+    fun canPushPredicate(
+        field: QueryField,
+        operator: QueryOperator,
+        value: QueryValue,
+    ): Boolean = descriptor.supports(
+        field = field,
+        operator = operator,
+        value = value,
+        executionMode = FilterExecutionMode.REMOTE_EXACT,
+    )
 
     /**
      * Returns true only when the provider can represent the complete expression with exact semantics.
@@ -37,7 +46,7 @@ interface ProviderQueryCapabilities {
         -> false
     }
 
-    fun canPushSort(sort: CollectionSortSelection): Boolean
+    fun canPushSort(sort: CollectionSortSelection): Boolean = descriptor.supports(sort)
 
     val supportsOffsetPaging: Boolean
         get() = descriptor.paging.mode == CollectionPagingMode.OFFSET
