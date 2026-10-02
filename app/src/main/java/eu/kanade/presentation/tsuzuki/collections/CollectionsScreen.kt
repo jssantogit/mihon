@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListRuntimeState
@@ -122,6 +123,7 @@ fun CollectionsScreen(
         EditorDialog.CreateCollection -> {
             CollectionEditorScreen(
                 graph = null,
+                draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                 onAction = onAction,
                 onDelete = { deleteTarget = it },
                 onClose = { editor = null },
@@ -133,6 +135,7 @@ fun CollectionsScreen(
             editedCollectionGraph?.let { graph ->
                 CollectionEditorScreen(
                     graph = graph,
+                    draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
                     onClose = { editor = null },
@@ -147,6 +150,7 @@ fun CollectionsScreen(
                 existing = null,
                 initialDraft = null,
                 onSubmitDraft = null,
+                draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                 onAction = onAction,
                 onDelete = { deleteTarget = it },
                 onClose = { editor = null },
@@ -162,6 +166,7 @@ fun CollectionsScreen(
                     existing = model,
                     initialDraft = null,
                     onSubmitDraft = null,
+                    draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
                     onClose = { editor = null },
@@ -173,6 +178,10 @@ fun CollectionsScreen(
             ListBuilderScreen(
                 title = "New List",
                 initial = ListEditorState.empty(),
+                previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                onPreviewDraft = { draft ->
+                    onAction(CollectionsAction.PreviewDraftChanged(draft))
+                },
                 onClose = { editor = null },
                 onConfirm = { draft ->
                     onAction(
@@ -192,6 +201,10 @@ fun CollectionsScreen(
             ListBuilderScreen(
                 title = "Edit List",
                 initial = ListEditorState.from(currentEditor.list),
+                previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                onPreviewDraft = { draft ->
+                    onAction(CollectionsAction.PreviewDraftChanged(draft))
+                },
                 onClose = { editor = null },
                 onConfirm = { draft ->
                     onAction(CollectionsAction.UpdateList(currentEditor.list, draft))
