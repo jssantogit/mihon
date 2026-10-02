@@ -254,6 +254,44 @@ class ManageCollectionDefinitions internal constructor(
         ).also { store.upsertCollection(it) }
     }
 
+    suspend fun reorderUserFolders(
+        collectionId: String,
+        parentFolderId: String?,
+        orderedFolderIds: List<String>,
+    ) {
+        val current = store.getFolders(collectionId)
+            .filter { it.origin == CollectionOrigin.USER && it.parentFolderId == parentFolderId }
+            .sortedWith(compareBy<CollectionFolder> { it.sortOrder }.thenBy { it.id })
+
+        require(orderedFolderIds.size == current.size) {
+            "Folder reorder must include every active user sibling exactly once"
+        }
+        require(orderedFolderIds.distinct().size == orderedFolderIds.size) {
+            "Folder reorder cannot contain duplicate ids"
+        }
+
+        val byId = current.associateBy(CollectionFolder::id)
+        require(orderedFolderIds.all(byId::containsKey)) {
+            "Folder reorder contains an unknown or non-user Folder"
+        }
+
+        val sortOrders = current.map(CollectionFolder::sortOrder).sorted()
+        val now = clock()
+        orderedFolderIds.forEachIndexed { index, id ->
+            val folder = byId.getValue(id)
+            val targetSortOrder = sortOrders[index]
+            if (folder.sortOrder != targetSortOrder) {
+                store.upsertFolder(
+                    folder.copy(
+                        sortOrder = targetSortOrder,
+                        revision = folder.revision + 1,
+                        updatedAt = now,
+                    ),
+                )
+            }
+        }
+    }
+
     suspend fun reorderFolder(
         folderId: String,
         sortOrder: Long,
@@ -266,6 +304,43 @@ class ManageCollectionDefinitions internal constructor(
             revision = existing.revision + 1,
             updatedAt = clock(),
         ).also { store.upsertFolder(it) }
+    }
+
+    suspend fun reorderUserLists(
+        folderId: String,
+        orderedListIds: List<String>,
+    ) {
+        val current = store.getLists(folderId)
+            .filter { it.origin == CollectionOrigin.USER }
+            .sortedWith(compareBy<CollectionList> { it.sortOrder }.thenBy { it.id })
+
+        require(orderedListIds.size == current.size) {
+            "List reorder must include every active user List exactly once"
+        }
+        require(orderedListIds.distinct().size == orderedListIds.size) {
+            "List reorder cannot contain duplicate ids"
+        }
+
+        val byId = current.associateBy(CollectionList::id)
+        require(orderedListIds.all(byId::containsKey)) {
+            "List reorder contains an unknown or non-user List"
+        }
+
+        val sortOrders = current.map(CollectionList::sortOrder).sorted()
+        val now = clock()
+        orderedListIds.forEachIndexed { index, id ->
+            val list = byId.getValue(id)
+            val targetSortOrder = sortOrders[index]
+            if (list.sortOrder != targetSortOrder) {
+                store.upsertList(
+                    list.copy(
+                        sortOrder = targetSortOrder,
+                        revision = list.revision + 1,
+                        updatedAt = now,
+                    ),
+                )
+            }
+        }
     }
 
     suspend fun reorderList(
