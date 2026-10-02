@@ -212,9 +212,9 @@ class CollectionsScreenModelTest {
                 providerId = "mangaupdates",
                 query = null,
                 sort = CollectionSortSelection(
-                CollectionSortKey.Standard.RATING,
-                CollectionSortDirection.DESC,
-            ),
+                    CollectionSortKey.Standard.RATING,
+                    CollectionSortDirection.DESC,
+                ),
                 sortOrder = 0,
                 layoutType = "list",
             )
@@ -242,9 +242,9 @@ class CollectionsScreenModelTest {
                                 title = "Top rated",
                                 query = null,
                                 sort = CollectionSortSelection(
-                CollectionSortKey.Standard.RATING,
-                CollectionSortDirection.DESC,
-            ),
+                                    CollectionSortKey.Standard.RATING,
+                                    CollectionSortDirection.DESC,
+                                ),
                                 layoutType = "list",
                                 providerId = "mangaupdates",
                             ),
