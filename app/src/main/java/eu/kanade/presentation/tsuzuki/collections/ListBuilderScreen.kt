@@ -1079,11 +1079,15 @@ private fun RemoteLookupFilterControl(
                                 selected = selectedPositive,
                                 enabled = editor.filtersEditable,
                                 onClick = {
-                                    val predicate = if (selectedPositive) null else QueryExpression.Predicate(
-                                        field = capability.field,
-                                        operator = capability.preferredScalarOperator(),
-                                        value = option.value,
-                                    )
+                                    val predicate = if (selectedPositive) {
+                                        null
+                                    } else {
+                                        QueryExpression.Predicate(
+                                            field = capability.field,
+                                            operator = capability.preferredScalarOperator(),
+                                            value = option.value,
+                                        )
+                                    }
                                     onEditorChange(
                                         if (capability.multiValueMode == MultiValueMode.ALL) {
                                             editor.toggleFieldPredicate(
@@ -1113,11 +1117,15 @@ private fun RemoteLookupFilterControl(
                                     selected = selectedNegative,
                                     enabled = editor.filtersEditable,
                                     onClick = {
-                                        val predicate = if (selectedNegative) null else QueryExpression.Predicate(
-                                            field = capability.field,
-                                            operator = capability.preferredScalarOperator(),
-                                            value = option.value,
-                                        )
+                                        val predicate = if (selectedNegative) {
+                                            null
+                                        } else {
+                                            QueryExpression.Predicate(
+                                                field = capability.field,
+                                                operator = capability.preferredScalarOperator(),
+                                                value = option.value,
+                                            )
+                                        }
                                         onEditorChange(
                                             editor.replaceFieldTerm(
                                                 field = capability.field,
