@@ -73,7 +73,10 @@ class TsuzukiHomeScreenModel(
                 artworkByTitle[item.canonicalTitleId].orEmpty(),
             )
             val sourceManga = try {
-                resolveCanonicalSourceManga.execute(item.canonicalTitleId)
+                resolveCanonicalSourceManga.execute(
+                    canonicalTitleId = item.canonicalTitleId,
+                    allowNetwork = false,
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {

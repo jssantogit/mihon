@@ -82,22 +82,30 @@ class SearchIntegrations(
         val semaphore = Semaphore(RATING_LOOKUP_CONCURRENCY)
         val publishMutex = Mutex()
 
-        items.mapIndexed { index, item ->
-            async {
-                val enriched = enrichRatingItem(
-                    item = item,
-                    candidates = items,
-                    providers = providers,
-                    activeProviderIds = activeProviderIds,
-                    configurationFingerprint = configurationFingerprint,
-                    semaphore = semaphore,
-                )
-                publishMutex.withLock {
-                    onItem(index, enriched)
+        val enrichedItems = items.toMutableList()
+        items.indices
+            .chunked(ITEM_ENRICHMENT_CONCURRENCY)
+            .forEach { indices ->
+                indices.map { index ->
+                    async {
+                        val enriched = enrichRatingItem(
+                            item = items[index],
+                            candidates = items,
+                            providers = providers,
+                            activeProviderIds = activeProviderIds,
+                            configurationFingerprint = configurationFingerprint,
+                            semaphore = semaphore,
+                        )
+                        publishMutex.withLock {
+                            onItem(index, enriched)
+                        }
+                        index to enriched
+                    }
+                }.awaitAll().forEach { (index, enriched) ->
+                    enrichedItems[index] = enriched
                 }
-                enriched
             }
-        }.awaitAll()
+        enrichedItems
     }
 
     private suspend fun enrichRatingItem(
@@ -257,6 +265,7 @@ class SearchIntegrations(
 
     private companion object {
         const val RATING_LOOKUP_CONCURRENCY = 4
+        const val ITEM_ENRICHMENT_CONCURRENCY = 3
         val RATING_PROVIDER_ORDER = listOf("mal", "kitsu", "mangaupdates", "bangumi", "shikimori", "hikka")
     }
 }
