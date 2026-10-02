@@ -8,7 +8,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -44,14 +46,14 @@ class CatalogCacheTest {
         val first = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = QueryExpression.All(status, genre),
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             rawOffset = 0,
             pageSize = 20,
         )
         val second = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = QueryExpression.All(genre, status),
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             rawOffset = 0,
             pageSize = 20,
         )
@@ -64,12 +66,15 @@ class CatalogCacheTest {
         val base = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             rawOffset = 0,
             pageSize = 20,
         )
 
-        (base == base.copy(sort = CatalogSort.RATING_DESC)) shouldBe false
+        (base == base.copy(sort = CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        ))) shouldBe false
         (base == base.copy(rawOffset = 20)) shouldBe false
         (base == base.copy(pageSize = 10)) shouldBe false
     }
@@ -175,7 +180,7 @@ class CatalogCacheTest {
     private fun key(offset: Int = 0): CatalogCacheKey = CatalogCacheKey(
         providerId = "fake",
         normalizedQueryKey = CatalogCacheKey.NO_QUERY_KEY,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         rawOffset = offset,
         pageSize = 20,
     )
