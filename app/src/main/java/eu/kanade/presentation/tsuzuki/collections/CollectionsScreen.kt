@@ -1406,8 +1406,13 @@ private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
 
     for (term in terms) {
         val predicate = term.predicate
-        if (!seen.add(predicate.field to term.negated)) return null
         val value = predicate.value
+        val repeatableExactGenre =
+            !term.negated &&
+                predicate.field == QueryField.GENRE &&
+                predicate.operator == QueryOperator.EQUALS &&
+                value is QueryValue.StringValue
+        if (!seen.add(predicate.field to term.negated) && !repeatableExactGenre) return null
 
         result = when {
             !term.negated &&
