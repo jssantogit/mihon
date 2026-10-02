@@ -24,12 +24,12 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
+import tachiyomi.domain.tsuzuki.integration.cache.InFlightCanonicalMetadataResolution
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.RatingIdentityEvidence
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
-import tachiyomi.domain.tsuzuki.integration.cache.InFlightCanonicalMetadataResolution
 import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRatingSource
 import tachiyomi.domain.tsuzuki.integration.repository.CanonicalMetadataSnapshot
 import tachiyomi.domain.tsuzuki.integration.repository.CanonicalMetadataSnapshotRepository
