@@ -410,6 +410,58 @@ class TsuzukiSearchScreenModelTest {
     }
 
     @Test
+    fun `discover shares one bounded provider request window across all blocks`() = runTest(dispatcher) {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("all")
+
+            private suspend fun block(kind: String): Result<CatalogPage> {
+                started += kind
+                release.await()
+                return Result.success(
+                    CatalogPage(
+                        items = listOf(CatalogItem("all", kind, kind)),
+                        hasNextPage = false,
+                    ),
+                )
+            }
+
+            override suspend fun trending(offset: Int, limit: Int) = block("trending")
+            override suspend fun popular(offset: Int, limit: Int) = block("popular")
+            override suspend fun topRated(offset: Int, limit: Int) = block("top")
+            override suspend fun favorites(offset: Int, limit: Int) = block("favorites")
+            override suspend fun recentlyUpdated(offset: Int, limit: Int) = block("recent")
+        }
+        val registry = object : IntegrationRegistry {
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(provider)
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+
+        dispatcher.scheduler.runCurrent()
+
+        started.size shouldBe 4
+
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+    }
+
+    @Test
     fun `search requests integration setup when no search provider is enabled`() = runTest(dispatcher) {
         val registry = emptyRegistry()
         val model = TsuzukiSearchScreenModel(
