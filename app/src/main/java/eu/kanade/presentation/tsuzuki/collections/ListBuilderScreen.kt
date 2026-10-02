@@ -196,10 +196,10 @@ private fun QuickListBuilder(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EditorSectionLabel("SOURCE")
                 EditorSurface {
-                    val sources = (
-                        providerDescriptors.map(CollectionProviderDescriptor::providerId) +
-                            editor.providerId
-                        ).distinct()
+                    val sources = listBuilderProviderIds(
+                        descriptors = providerDescriptors,
+                        currentProviderId = editor.providerId,
+                    )
                     BuilderDropdown(
                         label = "Catalog source",
                         current = editor.providerId,
@@ -979,7 +979,7 @@ private fun DescriptorFilterControl(
     }
 }
 
-private fun CollectionProviderDescriptor.uiSortSelections(): List<CollectionSortSelection> =
+internal fun CollectionProviderDescriptor.uiSortSelections(): List<CollectionSortSelection> =
     sorts.flatMap { capability ->
         when (capability.directionMode) {
             SortDirectionMode.ASC_DESC -> {
@@ -1020,6 +1020,20 @@ private fun CollectionProviderDescriptor.sortDisplayName(
         else -> capability.label
     }
 }
+
+internal fun listBuilderProviderIds(
+    descriptors: List<CollectionProviderDescriptor>,
+    currentProviderId: String,
+): List<String> = (
+    descriptors.map(CollectionProviderDescriptor::providerId) +
+        currentProviderId.takeIf(String::isNotBlank).orEmpty()
+    ).filter(String::isNotBlank).distinct()
+
+internal fun CollectionProviderDescriptor.visibleFilterFields(
+    placement: FilterPlacement,
+): List<QueryField> = filters
+    .filter { it.placement == placement }
+    .map(CollectionFilterCapability::field)
 
 private fun CollectionFilterCapability.staticStringOptions(): List<Pair<String, String>>? {
     val source = valueSource as? FilterValueSource.Static ?: return null
