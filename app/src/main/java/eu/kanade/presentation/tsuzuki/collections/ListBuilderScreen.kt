@@ -1508,5 +1508,4 @@ private fun String.prettyEnumName(): String = lowercase()
     .replace('_', ' ')
     .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
-
 private const val PREVIEW_TITLE_LIMIT = 4
