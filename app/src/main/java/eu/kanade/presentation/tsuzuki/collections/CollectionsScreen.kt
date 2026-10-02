@@ -122,6 +122,7 @@ fun CollectionsScreen(
             CollectionEditorScreen(
                 graph = null,
                 providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                 draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                 onAction = onAction,
                 onDelete = { deleteTarget = it },
@@ -135,6 +136,7 @@ fun CollectionsScreen(
                 CollectionEditorScreen(
                     graph = graph,
                     providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                    providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                     draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
@@ -151,6 +153,7 @@ fun CollectionsScreen(
                 initialDraft = null,
                 onSubmitDraft = null,
                 providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                 draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                 onAction = onAction,
                 onDelete = { deleteTarget = it },
@@ -168,6 +171,7 @@ fun CollectionsScreen(
                     initialDraft = null,
                     onSubmitDraft = null,
                     providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                    providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                     draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
@@ -181,6 +185,7 @@ fun CollectionsScreen(
                 title = "New List",
                 initial = ListEditorState.empty(),
                 providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                 previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                 onPreviewDraft = { draft ->
                     onAction(CollectionsAction.PreviewDraftChanged(draft))
@@ -205,6 +210,7 @@ fun CollectionsScreen(
                 title = "Edit List",
                 initial = ListEditorState.from(currentEditor.list),
                 providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                 previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
                 onPreviewDraft = { draft ->
                     onAction(CollectionsAction.PreviewDraftChanged(draft))
