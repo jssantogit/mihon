@@ -44,7 +44,7 @@ object QueryPlanner {
         } else {
             SortPlan.UnsupportedForGlobalOrdering(
                 requestedSort = requestedSort,
-                fallbackRemoteSort = CatalogSort.POPULARITY_DESC,
+                fallbackRemoteSort = CollectionSortSelection.DEFAULT,
             )
         }
     }
