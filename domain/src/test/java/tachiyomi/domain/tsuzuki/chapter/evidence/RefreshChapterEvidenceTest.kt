@@ -150,6 +150,51 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `later fast provider publishes before earlier slow provider completes`() = runTest {
+        val firstGate = CompletableDeferred<Unit>()
+        val chapters = FakeCanonicalChapterRepository()
+        val stages = mutableListOf<List<String>>()
+        val slowFirst = object : ChapterEvidenceProvider {
+            override val producerId: String = "slow-first"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                firstGate.await()
+                return Result.success(
+                    listOf(editorialEvidence("slow-1", "1", "Chapter 1", producerId)),
+                )
+            }
+        }
+        val fastSecond = provider(
+            "fast-second",
+            Result.success(listOf(editorialEvidence("fast-2", "2", "Chapter 2", "fast-second"))),
+        )
+        val refresh = refresh(
+            chapters = chapters,
+            providers = listOf(slowFirst, fastSecond),
+        )
+
+        val operation = async {
+            refresh.executeProgressively(
+                canonicalTitleId = "canonical-title",
+                onStageReconciled = {
+                    stages += chapters.getByCanonicalTitleId("canonical-title").map { it.displayNumber }
+                },
+            )
+        }
+        runCurrent()
+
+        stages shouldContainExactly listOf(listOf("2"))
+        operation.isCompleted shouldBe false
+
+        firstGate.complete(Unit)
+        operation.await().isSuccess shouldBe true
+        stages shouldContainExactly listOf(
+            listOf("2"),
+            listOf("1", "2"),
+        )
+    }
+
+    @Test
     fun `chapter evidence refresh works with zero source mappings`() = runTest {
         val chapters = FakeCanonicalChapterRepository()
         val refresh = refresh(
