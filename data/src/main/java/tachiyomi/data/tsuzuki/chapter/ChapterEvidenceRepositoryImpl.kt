@@ -81,6 +81,35 @@ class ChapterEvidenceRepositoryImpl(
         listOf(ChapterEvidenceWrite(evidence, mappedCanonicalChapterId)),
     ).single()
 
+    override suspend fun upsertResolvedBatch(
+        values: List<PersistedChapterEvidence>,
+    ): List<PersistedChapterEvidence> = database.transactionWithResult {
+        if (values.isEmpty()) return@transactionWithResult emptyList()
+        val canonicalTitleIds = values.map { it.evidence.canonicalTitleId }.distinct()
+        require(canonicalTitleIds.size == 1) { "Resolved chapter evidence batch must belong to one canonical title" }
+
+        values.map { persisted ->
+            val evidence = persisted.evidence
+            database.tsuzuki_chapter_evidenceQueries.upsertTsuzukiChapterEvidence(
+                id = evidence.id,
+                canonicalTitleId = evidence.canonicalTitleId,
+                producerKind = evidence.producerKind.name,
+                producerId = evidence.producerId,
+                externalChapterKey = evidence.externalChapterKey,
+                rawLabel = evidence.rawLabel,
+                rawNumber = evidence.rawNumber,
+                volume = evidence.volume?.toLong(),
+                title = evidence.title,
+                observedAt = evidence.observedAt,
+                confidence = evidence.confidence,
+                authorityClass = evidence.authority.name,
+                mappedCanonicalChapterId = persisted.mappedCanonicalChapterId,
+                rawMetadata = persisted.rawMetadata,
+            )
+            persisted
+        }
+    }
+
     override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>): List<PersistedChapterEvidence> =
         database.transactionWithResult {
             if (writes.isEmpty()) return@transactionWithResult emptyList()

@@ -206,7 +206,7 @@ class ReconcileChapterEvidence internal constructor(
             }
         }
         val chapterUpserts = linkedMapOf<String, CanonicalChapter>()
-        val evidenceUpserts = mutableListOf<ChapterEvidenceWrite>()
+        val evidenceUpserts = mutableListOf<PersistedChapterEvidence>()
 
         fun indexChapter(chapter: CanonicalChapter) {
             if (!chapter.identity.isSpecific) return
@@ -267,7 +267,7 @@ class ReconcileChapterEvidence internal constructor(
             reconciliationIndex.replace(previous = existing, current = persisted)
             persistedEvidence[stableId] = persisted
             if (externalKey != null) persistedEvidenceByExternalKey[externalKey] = persisted
-            evidenceUpserts += ChapterEvidenceWrite(observation, mappedCanonicalChapterId)
+            evidenceUpserts += persisted
         }
 
         val initialChapterCount = chapters.size
@@ -544,7 +544,7 @@ class ReconcileChapterEvidence internal constructor(
         }
 
         canonicalChapterRepository.upsertBatch(chapterUpserts.values.toList(), emptyList())
-        val persistedWrites = evidenceRepository.upsertBatch(evidenceUpserts)
+        val persistedWrites = evidenceRepository.upsertResolvedBatch(evidenceUpserts)
         persistedWrites.forEach { persisted ->
             persistedEvidence[persisted.evidence.id] = persisted
         }

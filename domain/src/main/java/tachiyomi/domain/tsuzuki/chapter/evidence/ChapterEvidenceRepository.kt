@@ -56,4 +56,20 @@ interface ChapterEvidenceRepository {
 
     suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>): List<PersistedChapterEvidence> =
         writes.map { write -> upsert(write.evidence, write.mappedCanonicalChapterId) }
+
+    /**
+     * Persists evidence whose stable id and raw metadata were already resolved from a title snapshot.
+     *
+     * The default preserves compatibility for in-memory/fake repositories. SQL-backed repositories
+     * may override this to avoid reloading the same title snapshot during reconciliation persistence.
+     */
+    suspend fun upsertResolvedBatch(values: List<PersistedChapterEvidence>): List<PersistedChapterEvidence> =
+        upsertBatch(
+            values.map { value ->
+                ChapterEvidenceWrite(
+                    evidence = value.evidence,
+                    mappedCanonicalChapterId = value.mappedCanonicalChapterId,
+                )
+            },
+        )
 }
