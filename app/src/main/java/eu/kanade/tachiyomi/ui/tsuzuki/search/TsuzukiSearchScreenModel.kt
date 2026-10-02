@@ -9,9 +9,9 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -235,6 +236,11 @@ class TsuzukiSearchScreenModel(
                             discoverBlock(
                                 kind = DiscoverKind.TRENDING,
                                 providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
                             ) { provider ->
                                 provider.trending(offset = 0, limit = DISCOVER_LIMIT)
                             },
@@ -245,6 +251,11 @@ class TsuzukiSearchScreenModel(
                             discoverBlock(
                                 kind = DiscoverKind.POPULAR,
                                 providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
                             ) { provider ->
                                 provider.popular(offset = 0, limit = DISCOVER_LIMIT)
                             },
@@ -255,6 +266,11 @@ class TsuzukiSearchScreenModel(
                             discoverBlock(
                                 kind = DiscoverKind.TOP_RATED,
                                 providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
                             ) { provider ->
                                 provider.topRated(offset = 0, limit = DISCOVER_LIMIT)
                             },
@@ -265,6 +281,11 @@ class TsuzukiSearchScreenModel(
                             discoverBlock(
                                 kind = DiscoverKind.FAVORITES,
                                 providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
                             ) { provider ->
                                 provider.favorites(offset = 0, limit = DISCOVER_LIMIT)
                             },
@@ -275,6 +296,11 @@ class TsuzukiSearchScreenModel(
                             discoverBlock(
                                 kind = DiscoverKind.RECENTLY_UPDATED,
                                 providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
                             ) { provider ->
                                 provider.recentlyUpdated(offset = 0, limit = DISCOVER_LIMIT)
                             },
@@ -364,29 +390,50 @@ class TsuzukiSearchScreenModel(
     private suspend fun discoverBlock(
         kind: DiscoverKind,
         providers: List<DiscoveryProvider>,
+        onPartial: suspend (DiscoverBlock) -> Unit = {},
         request: suspend (DiscoveryProvider) -> Result<CatalogPage>,
-    ): DiscoverBlock {
-        val items = coroutineScope {
-            providers.map { provider ->
-                async {
-                    try {
-                        val result = request(provider)
-                        val error = result.exceptionOrNull()
-                        if (error is CancellationException) throw error
-                        result.getOrElse { emptyPage() }.items
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
+    ): DiscoverBlock = coroutineScope {
+        val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
+        val pending = providers.mapIndexed { index, provider ->
+            async {
+                val items = try {
+                    val result = request(provider)
+                    val error = result.exceptionOrNull()
+                    if (error is CancellationException) throw error
+                    result.getOrElse { emptyPage() }.items
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    emptyList()
                 }
-            }.awaitAll().flatten()
-        }.let(::mergeCatalogItemsByVerifiedIdentity)
+                index to items
+            }
+        }.toMutableList()
 
-        return DiscoverBlock(
-            kind = kind,
-            items = items,
-        )
+        var block = DiscoverBlock(kind = kind, items = emptyList())
+        while (pending.isNotEmpty()) {
+            val (completed, result) = awaitNext(pending)
+            pending.remove(completed)
+            val (index, items) = result
+            providerItems[index] = items
+            block = DiscoverBlock(
+                kind = kind,
+                items = providerItems
+                    .filterNotNull()
+                    .flatten()
+                    .let(::mergeCatalogItemsByVerifiedIdentity),
+            )
+            onPartial(block)
+        }
+        block
+    }
+
+    private suspend fun <T> awaitNext(
+        pending: List<Deferred<T>>,
+    ): Pair<Deferred<T>, T> = select {
+        pending.forEach { deferred ->
+            deferred.onAwait { value -> deferred to value }
+        }
     }
 
     private fun emptyPage() = CatalogPage(
