@@ -21,7 +21,7 @@ Collections now uses one provider-capability contract for UI exposure and execut
 | Kitsu | Registered | Native offset | Genres | Reference descriptor. Only exact remote/residual capabilities are exposed. |
 | MangaUpdates | Registered | Page API normalized to raw offset | Genres, categories | Rich manga-native filters and provider sorts. Unproven remote year syntax is not fabricated. |
 | Hikka | Registered | One-based page API normalized to raw offset | Genres | Independent MAL/Hikka score ranges and native sorts. Multi-genre behavior remains conservative until exact semantics are proven. |
-| Shikimori | Registered | Page/limit normalized to raw offset | Genres, publishers | Include/exclude semantics and the shared 5 req/s + 90 req/min request gate are preserved. |
+| Shikimori | Registered | Page/limit normalized to raw offset | Genres, publishers | Native include/exclude values can coexist for the same field; the shared 5 req/s + 90 req/min request gate is preserved. |
 | MyAnimeList | Registered | Ranked offset streams | — | Top/popularity/favorites candidate streams plus bounded exact residual filtering. |
 | Bangumi | Registered | Raw Book stream filtered through eligible-offset normalization | — | Manga eligibility is applied without losing raw paging position, avoiding the old pre-pagination discard bug. |
 
@@ -32,7 +32,7 @@ The List Builder no longer carries a hard-coded common provider/filter list.
 - Source choices come from registered descriptors.
 - Quick and Advanced controls are generated from the selected descriptor.
 - Static, boolean, numeric/date range, free-text, and remote-lookup value sources use the same descriptor contract.
-- `INCLUDE_EXCLUDE` controls keep positive and negative predicates independently.
+- `INCLUDE_EXCLUDE` controls keep positive and negative predicates independently; Kitsu `ALL` genre lookups preserve multiple positive predicates.
 - Remote lookup state is threaded through root and nested Collection/Folder/List editors.
 - Preview is real execution, debounced, and stale requests are cancelled.
 - A residual scan budget stop returns partial results with a continuation cursor instead of pretending provider exhaustion or spinning indefinitely.
