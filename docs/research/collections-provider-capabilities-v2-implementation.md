@@ -34,6 +34,7 @@ The List Builder no longer carries a hard-coded common provider/filter list.
 - Static, boolean, numeric/date range, free-text, and remote-lookup value sources use the same descriptor contract.
 - `INCLUDE_EXCLUDE` controls keep positive and negative predicates independently; Kitsu `ALL` genre lookups preserve multiple positive predicates.
 - Remote lookup state is threaded through root and nested Collection/Folder/List editors.
+- Blank MangaUpdates category searches stay local and do not issue an empty remote category query.
 - Preview is real execution, debounced, and stale requests are cancelled.
 - A residual scan budget stop returns partial results with a continuation cursor instead of pretending provider exhaustion or spinning indefinitely.
 
