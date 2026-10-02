@@ -101,7 +101,7 @@ class CanonicalLibraryScreenModelTest {
         val artworkRepository = mockk<TitleArtworkRepository>()
         every { artworkRepository.observeAll() } returns MutableStateFlow(emptyList())
         val refreshUserLibraries = mockk<RefreshUserLibraries>()
-        coEvery { refreshUserLibraries.refreshConnected() } returns Unit
+        coEvery { refreshUserLibraries.refreshConnected() } returns emptyMap()
 
         val screenModel = CanonicalLibraryScreenModel(
             observeUnifiedLibrary = observeUnifiedLibrary,
