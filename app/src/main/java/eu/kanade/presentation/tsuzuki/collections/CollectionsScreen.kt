@@ -26,7 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -58,7 +57,6 @@ import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
