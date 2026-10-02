@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -15,7 +16,12 @@ import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftRequest
+import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftResult
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
+import tachiyomi.domain.tsuzuki.collections.execution.LogicalCatalogPage
 import tachiyomi.domain.tsuzuki.collections.interactor.ExportCollections
 import tachiyomi.domain.tsuzuki.collections.interactor.ImportCollections
 import tachiyomi.domain.tsuzuki.collections.interactor.ManageCollectionDefinitions
@@ -114,6 +120,7 @@ class CollectionsScreenModelTest {
             exportCollections = mockk(),
             importCollections = mockk(),
             executeCollectionList = mockk<ExecuteCollectionList>(),
+            executeCollectionDraft = mockk<ExecuteCollectionDraft>(),
         )
         advanceUntilIdle()
 
@@ -186,6 +193,7 @@ class CollectionsScreenModelTest {
             exportCollections = mockk(),
             importCollections = mockk(),
             executeCollectionList = mockk<ExecuteCollectionList>(),
+            executeCollectionDraft = mockk<ExecuteCollectionDraft>(),
         )
         advanceUntilIdle()
 
@@ -199,6 +207,101 @@ class CollectionsScreenModelTest {
         coVerify(exactly = 1) {
             manager.reorderUserCollections(listOf("third", "first", "second"))
         }
+    }
+
+    @Test
+    fun `draft preview debounces edits and cancels stale draft before execution`() = runTest(dispatcher) {
+        val store = mockk<CollectionStore>()
+        every { store.observeCollections() } returns flowOf(emptyList())
+        val executeDraft = mockk<ExecuteCollectionDraft>()
+        coEvery { executeDraft.execute(any()) } returns ExecuteCollectionDraftResult.Page(
+            LogicalCatalogPage(
+                items = listOf(
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = "1",
+                        title = "Preview",
+                    ),
+                ),
+                nextCursor = null,
+            ),
+        )
+
+        val model = CollectionsScreenModel(
+            store = store,
+            manager = mockk(),
+            exportCollections = mockk(),
+            importCollections = mockk(),
+            executeCollectionList = mockk(),
+            executeCollectionDraft = executeDraft,
+        )
+        advanceUntilIdle()
+
+        val first = CollectionListDraft(
+            title = "First",
+            query = null,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "kitsu",
+        )
+        val second = first.copy(title = "Second")
+
+        model.dispatch(CollectionsAction.PreviewDraftChanged(first))
+        advanceTimeBy(100)
+        model.dispatch(CollectionsAction.PreviewDraftChanged(second))
+        advanceTimeBy(299)
+
+        coVerify(exactly = 0) { executeDraft.execute(any()) }
+
+        advanceTimeBy(1)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            executeDraft.execute(
+                match<ExecuteCollectionDraftRequest> { request ->
+                    request.draft.providerId == "kitsu" &&
+                        request.draft.sort == CollectionSortSelection.DEFAULT
+                },
+            )
+        }
+        val ready = model.state.value as CollectionsScreenState.Ready
+        val preview = ready.draftPreviewState as CollectionDraftPreviewState.Content
+        preview.items.map { it.providerId } shouldBe listOf("1")
+    }
+
+    @Test
+    fun `clearing draft preview cancels pending work and returns idle`() = runTest(dispatcher) {
+        val store = mockk<CollectionStore>()
+        every { store.observeCollections() } returns flowOf(emptyList())
+        val executeDraft = mockk<ExecuteCollectionDraft>()
+
+        val model = CollectionsScreenModel(
+            store = store,
+            manager = mockk(),
+            exportCollections = mockk(),
+            importCollections = mockk(),
+            executeCollectionList = mockk(),
+            executeCollectionDraft = executeDraft,
+        )
+        advanceUntilIdle()
+
+        model.dispatch(
+            CollectionsAction.PreviewDraftChanged(
+                CollectionListDraft(
+                    title = "Draft",
+                    query = null,
+                    sort = CollectionSortSelection.DEFAULT,
+                    layoutType = null,
+                ),
+            ),
+        )
+        advanceTimeBy(100)
+        model.dispatch(CollectionsAction.PreviewDraftChanged(null))
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { executeDraft.execute(any()) }
+        val ready = model.state.value as CollectionsScreenState.Ready
+        ready.draftPreviewState shouldBe CollectionDraftPreviewState.Idle
     }
 
     private fun collection(
