@@ -472,6 +472,73 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `existing readable addon inventory skips title discovery`() = runTest {
+        val addonId = AddonId("preferred-addon")
+        val binding = ContentBinding(
+            id = "existing-binding",
+            canonicalTitleId = "canonical-title",
+            addonId = addonId,
+            providerTitleKey = "42:/death-note",
+            matchConfidence = 1.0,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val discover = mockk<DiscoverReadableTitle>()
+        coEvery { discover.execute("canonical-title", any()) } returns Result.success(listOf(binding))
+        val probe = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(
+                    listOf(
+                        ChapterEvidence(
+                            id = "addon-evidence-1",
+                            canonicalTitleId = canonicalTitleId,
+                            producerKind = ProducerKind.ADDON,
+                            producerId = addonId.value,
+                            externalChapterKey = "42:chapter-1",
+                            rawLabel = "Chapter 1",
+                            rawNumber = 1.0,
+                            volume = null,
+                            title = null,
+                            observedAt = 10L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                    ),
+                )
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery {
+            resolver.existingBindingsForRefresh("canonical-title", addonId)
+        } returns Result.success(listOf(binding))
+        val refresh = RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = FakeCanonicalChapterRepository(),
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+            discoverReadableTitle = discover,
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+
+        coVerify(exactly = 0) { discover.execute("canonical-title", any()) }
+    }
+
+    @Test
     fun `empty existing addon inventory broadens binding discovery and reprobes`() = runTest {
         val staleAddon = AddonId("stale")
         val readableAddon = AddonId("readable")
