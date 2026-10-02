@@ -252,7 +252,7 @@ object ResidualEvaluator {
 
         QueryField.Standard.FAVORITES ->
             item.favorites
-                ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.toDouble())) }
+                ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
                 ?: FieldValue.Missing
 
         QueryField.Standard.RANK ->
