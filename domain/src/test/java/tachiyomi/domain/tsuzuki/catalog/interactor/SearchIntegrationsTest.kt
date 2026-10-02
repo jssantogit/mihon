@@ -424,6 +424,93 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `base search publishes a fast provider before a slow sibling finishes`() = runTest {
+        val slowRelease = CompletableDeferred<Unit>()
+        val fast = object : SearchProvider {
+            override val integrationId = IntegrationId("fast")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> =
+                Result.success(page(CatalogItem("fast", "1", "Fast")))
+        }
+        val slow = object : SearchProvider {
+            override val integrationId = IntegrationId("slow")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                slowRelease.await()
+                return Result.success(page(CatalogItem("slow", "2", "Slow")))
+            }
+        }
+        val search = SearchIntegrations(registry(fast, slow))
+        val published = mutableListOf<List<String>>()
+
+        val operation = async {
+            search.executeBaseProgressively(CatalogQuery(query = "work")) { items ->
+                published += items.map(CatalogItem::providerId)
+            }
+        }
+        runCurrent()
+
+        published.last() shouldContainExactly listOf("1")
+        operation.isCompleted shouldBe false
+
+        slowRelease.complete(Unit)
+
+        operation.await().map(CatalogItem::providerId) shouldContainExactly listOf("1", "2")
+        published.last() shouldContainExactly listOf("1", "2")
+    }
+
+    @Test
+    fun `rating enrichment fills a freed item slot without waiting for a slow sibling`() = runTest {
+        val slowRelease = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                started += item.providerId
+                if (item.providerId == "1") {
+                    slowRelease.await()
+                }
+                return Result.success(emptyMap())
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+            ratingEnrichmentCache = RatingEnrichmentCache(
+                scope = this,
+                clock = { 0L },
+                positiveTtlMillis = 60_000L,
+                negativeTtlMillis = 60_000L,
+                maxEntries = 32,
+            ),
+        )
+        val items = (1..6).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = index.toString(),
+                title = "Work $index",
+            )
+        }
+
+        val operation = async {
+            search.enrichRatingsProgressively(items) { _, _ -> }
+        }
+        runCurrent()
+
+        started shouldContainExactly listOf("1", "2", "3", "4", "5", "6")
+        operation.isCompleted shouldBe false
+
+        slowRelease.complete(Unit)
+        operation.await()
+    }
+
+    @Test
     fun `progressive rating enrichment prioritizes a bounded first item window`() = runTest {
         val release = CompletableDeferred<Unit>()
         val started = mutableListOf<String>()
