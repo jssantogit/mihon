@@ -2,16 +2,16 @@ package tachiyomi.domain.tsuzuki.chapter.evidence
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeRefresh
@@ -461,13 +461,10 @@ class RefreshChapterEvidence private constructor(
         onBatch: suspend (EvidenceCollection) -> Unit = {},
     ): EvidenceCollection = coroutineScope {
         val providers = registry.chapterEvidenceProviders()
-        if (providers.isEmpty()) return@coroutineScope EvidenceCollection()
-
         val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
-        val completed = Channel<EvidenceCollection>(capacity = providers.size)
-        providers.forEach { provider ->
-            launch {
-                val batch = gate.withPermit {
+        val pending = providers.map { provider ->
+            async {
+                gate.withPermit {
                     try {
                         provider.evidenceFor(canonicalTitleId)
                             .fold(
@@ -502,17 +499,14 @@ class RefreshChapterEvidence private constructor(
                         EvidenceCollection(emptyList(), complete = false)
                     }
                 }
-                completed.send(batch)
             }
         }
 
         var accumulated = EvidenceCollection()
-        repeat(providers.size) {
-            val batch = completed.receive()
+        awaitInCompletionOrder(pending) { batch ->
             onBatch(batch)
             accumulated = accumulated.merge(batch)
         }
-        completed.close()
         accumulated
     }
 
@@ -650,18 +644,10 @@ class RefreshChapterEvidence private constructor(
                     }
                 }
             var accumulated = AddonEvidenceCollection()
-            val completed = Channel<AddonEvidenceCollection>(capacity = results.size)
-            results.forEach { deferred ->
-                launch {
-                    completed.send(deferred.await())
-                }
-            }
-            repeat(results.size) {
-                val batch = completed.receive()
+            awaitInCompletionOrder(results) { batch ->
                 onBatch(batch)
                 accumulated = accumulated.merge(batch)
             }
-            completed.close()
             accumulated
         }
     }
@@ -681,6 +667,22 @@ class RefreshChapterEvidence private constructor(
             throw error
         } catch (error: Throwable) {
             Result.failure(error)
+        }
+    }
+
+    private suspend fun <T> awaitInCompletionOrder(
+        deferreds: List<Deferred<T>>,
+        onCompleted: suspend (T) -> Unit,
+    ) {
+        val pending = deferreds.toMutableList()
+        while (pending.isNotEmpty()) {
+            val (completed, value) = select<Pair<Deferred<T>, T>> {
+                pending.forEach { deferred ->
+                    deferred.onAwait { result -> deferred to result }
+                }
+            }
+            pending.remove(completed)
+            onCompleted(value)
         }
     }
 
