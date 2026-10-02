@@ -227,6 +227,16 @@ fun CollectionsScreen(
                 providerDescriptors = readyState?.providerDescriptors.orEmpty(),
                 providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                 previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                onFilterLookup = { providerId, lookupId, query ->
+                    onAction(
+                        CollectionsAction.FilterLookupRequested(
+                            providerId = providerId,
+                            lookupId = lookupId,
+                            query = query,
+                        ),
+                    )
+                },
                 onPreviewDraft = { draft ->
                     onAction(CollectionsAction.PreviewDraftChanged(draft))
                 },
@@ -252,6 +262,16 @@ fun CollectionsScreen(
                 providerDescriptors = readyState?.providerDescriptors.orEmpty(),
                 providerCapabilities = readyState?.providerCapabilities.orEmpty(),
                 previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                onFilterLookup = { providerId, lookupId, query ->
+                    onAction(
+                        CollectionsAction.FilterLookupRequested(
+                            providerId = providerId,
+                            lookupId = lookupId,
+                            query = query,
+                        ),
+                    )
+                },
                 onPreviewDraft = { draft ->
                     onAction(CollectionsAction.PreviewDraftChanged(draft))
                 },
