@@ -1,6 +1,7 @@
 package tachiyomi.data.tsuzuki.collections
 
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
@@ -14,6 +15,7 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
 @Inject
 @SingleIn(AppScope::class)
+@ContributesIntoSet(AppScope::class)
 class KitsuCollectionQueryProvider(
     private val provider: KitsuCatalogProvider,
 ) : CollectionQueryProvider {
