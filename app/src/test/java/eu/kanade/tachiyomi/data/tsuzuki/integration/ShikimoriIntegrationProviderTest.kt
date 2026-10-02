@@ -61,7 +61,7 @@ class ShikimoriIntegrationProviderTest {
     @Test
     fun `shikimori rating gate enforces second and minute budgets`() = runTest {
         var now = 0L
-        val gate = ShikimoriRatingRequestGate(
+        val gate = ShikimoriRequestGate(
             nowMillis = { now },
             pause = { delayMillis -> now += delayMillis },
         )
