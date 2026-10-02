@@ -9,10 +9,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import tachiyomi.data.tsuzuki.collections.CollectionQueryJsonCodec
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.sync.model.SyncDocumentEnvelope
@@ -247,7 +247,8 @@ class CollectionsSyncAdapter(
                 "queryJson",
                 query?.let(CollectionQueryJsonCodec::encode)?.let(::JsonPrimitive) ?: JsonNull,
             )
-            put("sort", sort.name)
+            put("sort", sort.stableKey)
+            put("sortDirection", sort.direction?.name?.let(::JsonPrimitive) ?: JsonNull)
             put("layoutType", layoutType?.let(::JsonPrimitive) ?: JsonNull)
             put("sortOrder", sortOrder)
             put("enabled", enabled)
@@ -292,7 +293,10 @@ class CollectionsSyncAdapter(
                 title = fields.requiredString("title"),
                 providerId = fields.requiredString("providerId"),
                 queryJson = fields.optionalString("queryJson"),
-                sort = CatalogSort.valueOf(fields.requiredString("sort")),
+                sort = CollectionSortSelection.fromStorage(
+                    stableKey = fields.requiredString("sort"),
+                    direction = fields.optionalString("sortDirection"),
+                ),
                 layoutType = fields.optionalString("layoutType"),
                 sortOrder = fields.requiredLong("sortOrder"),
                 enabled = fields.requiredBoolean("enabled"),
@@ -382,7 +386,7 @@ class CollectionsSyncAdapter(
             val title: String,
             val providerId: String,
             val queryJson: String?,
-            val sort: CatalogSort,
+            val sort: CollectionSortSelection,
             val layoutType: String?,
             val sortOrder: Long,
             val enabled: Boolean,
@@ -393,7 +397,7 @@ class CollectionsSyncAdapter(
     }
 
     private companion object {
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
         const val RECORD_TYPE_COLLECTION = "collection"
         const val RECORD_TYPE_FOLDER = "folder"
         const val RECORD_TYPE_LIST = "list"
