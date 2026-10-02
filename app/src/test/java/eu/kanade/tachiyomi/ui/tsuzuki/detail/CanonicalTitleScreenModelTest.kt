@@ -99,7 +99,7 @@ class CanonicalTitleScreenModelTest {
         val downloads = mockk<CanonicalDownloadRepository>()
         coEvery { downloads.getAll() } returns emptyList()
         val refresh = mockk<RefreshChapterEvidence>()
-        coEvery { refresh.execute("title") } returns Result.success(Unit)
+        coEvery { refresh.executeProgressively("title", false, any()) } returns Result.success(Unit)
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -144,14 +144,14 @@ class CanonicalTitleScreenModelTest {
 
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters.single().chapter.id shouldBe "chapter-after-binding"
-        coVerify(exactly = 1) { refresh.execute("title") }
+        coVerify(exactly = 1) { refresh.executeProgressively("title", false, any()) }
     }
 
     @Test
     fun `explicit Detail refresh forces chapter revalidation while normal open does not`() = runTest(dispatcher) {
         val chapters = FakeChapterRepository(emptyList())
         val refresh = mockk<RefreshChapterEvidence>()
-        coEvery { refresh.execute("title", any()) } returns Result.success(Unit)
+        coEvery { refresh.executeProgressively("title", any(), any()) } returns Result.success(Unit)
         val downloads = mockk<CanonicalDownloadRepository>()
         coEvery { downloads.getAll() } returns emptyList()
         val model = CanonicalTitleScreenModel(
@@ -180,13 +180,13 @@ class CanonicalTitleScreenModelTest {
 
         model.start("title")
         advanceUntilIdle()
-        coVerify(exactly = 1) { refresh.execute("title", false) }
-        coVerify(exactly = 0) { refresh.execute("title", true) }
+        coVerify(exactly = 1) { refresh.executeProgressively("title", false, any()) }
+        coVerify(exactly = 0) { refresh.executeProgressively("title", true, any()) }
 
         model.refresh()
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { refresh.execute("title", true) }
+        coVerify(exactly = 1) { refresh.executeProgressively("title", true, any()) }
     }
 
     // Physical regression guard: production DI must deliver canonical artwork to Detail.

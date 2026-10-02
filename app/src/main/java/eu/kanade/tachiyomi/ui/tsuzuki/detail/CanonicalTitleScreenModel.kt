@@ -454,7 +454,7 @@ class CanonicalTitleScreenModel(
 
         val refreshResults = coroutineScope {
             val chapterRefresh = async {
-                refreshChapterEvidence.execute(
+                refreshChapterEvidence.executeProgressively(
                     canonicalTitleId = canonicalTitleId,
                     forceRefresh = forceChapterRefresh,
                     onStageReconciled = {

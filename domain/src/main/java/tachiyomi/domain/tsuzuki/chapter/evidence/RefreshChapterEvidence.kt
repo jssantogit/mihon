@@ -181,7 +181,26 @@ class RefreshChapterEvidence private constructor(
     suspend fun execute(
         canonicalTitleId: String,
         forceRefresh: Boolean = false,
-        onStageReconciled: suspend () -> Unit = {},
+    ): Result<Unit> = executeInternal(
+        canonicalTitleId = canonicalTitleId,
+        forceRefresh = forceRefresh,
+        onStageReconciled = {},
+    )
+
+    suspend fun executeProgressively(
+        canonicalTitleId: String,
+        forceRefresh: Boolean = false,
+        onStageReconciled: suspend () -> Unit,
+    ): Result<Unit> = executeInternal(
+        canonicalTitleId = canonicalTitleId,
+        forceRefresh = forceRefresh,
+        onStageReconciled = onStageReconciled,
+    )
+
+    private suspend fun executeInternal(
+        canonicalTitleId: String,
+        forceRefresh: Boolean,
+        onStageReconciled: suspend () -> Unit,
     ): Result<Unit> {
         val trace = DiagnosticTrace.start(
             recorder = structuredDiagnostics,

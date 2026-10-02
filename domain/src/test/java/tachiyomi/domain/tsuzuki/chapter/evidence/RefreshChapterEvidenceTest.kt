@@ -129,7 +129,7 @@ class RefreshChapterEvidenceTest {
         )
 
         val operation = async {
-            refresh.execute(
+            refresh.executeProgressively(
                 canonicalTitleId = "canonical-title",
                 onStageReconciled = {
                     stages += chapters.getByCanonicalTitleId("canonical-title").map { it.displayNumber }
