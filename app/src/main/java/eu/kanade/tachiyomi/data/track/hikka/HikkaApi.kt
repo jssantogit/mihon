@@ -69,42 +69,92 @@ class HikkaApi(
     suspend fun searchManga(query: String): List<TrackSearch> =
         searchPublic(query).map { it.toTrack(trackerId) }
 
-    override suspend fun searchPublic(query: String): List<HKManga> {
+    override suspend fun searchPublic(query: String): List<HKManga> =
+        collectionSearch(
+            HikkaCollectionQuery(
+                query = query,
+                sort = "score:desc",
+                page = 1,
+                size = 50,
+            ),
+        ).items
+
+    override suspend fun collectionSearch(query: HikkaCollectionQuery): HikkaCollectionPage {
         return withIOContext {
             val url = "$BASE_API_URL/manga".toUri().buildUpon()
-                .appendQueryParameter("page", "1")
-                .appendQueryParameter("size", "50")
+                .appendQueryParameter("page", query.page.toString())
+                .appendQueryParameter("size", query.size.toString())
                 .build()
 
             val payload = buildJsonObject {
-                put("media_type", buildJsonArray { })
-                put("status", buildJsonArray { })
-                put("only_translated", false)
-                put("magazines", buildJsonArray { })
-                put("genres", buildJsonArray { })
+                query.yearFrom?.let { from ->
+                    put(
+                        "years",
+                        buildJsonArray {
+                            add(from)
+                            add(query.yearTo ?: from)
+                        },
+                    )
+                }
+                put(
+                    "media_type",
+                    buildJsonArray {
+                        query.mediaTypes.forEach(::add)
+                    },
+                )
+                put(
+                    "status",
+                    buildJsonArray {
+                        query.statuses.forEach(::add)
+                    },
+                )
+                put("only_translated", query.onlyTranslated ?: false)
+                put(
+                    "magazines",
+                    buildJsonArray {
+                        query.magazines.forEach(::add)
+                    },
+                )
+                put(
+                    "genres",
+                    buildJsonArray {
+                        query.genres.forEach(::add)
+                    },
+                )
                 put(
                     "score",
                     buildJsonArray {
-                        add(0)
-                        add(10)
+                        add(query.malScoreFrom ?: 0.0)
+                        add(query.malScoreTo ?: 10.0)
                     },
                 )
-                put("query", query)
+                put(
+                    "native_score",
+                    buildJsonArray {
+                        add(query.nativeScoreFrom ?: 0.0)
+                        add(query.nativeScoreTo ?: 10.0)
+                    },
+                )
+                put("query", query.query.orEmpty())
                 put(
                     "sort",
                     buildJsonArray {
-                        add("score:desc")
-                        add("scored_by:desc")
+                        add(query.sort)
                     },
                 )
             }
 
-            with(json) {
+            val response = with(json) {
                 client.newCall(POST(url.toString(), body = payload.toString().toRequestBody(jsonMime)))
                     .awaitSuccess()
                     .parseAs<HKMangaPagination>()
-                    .list
             }
+            HikkaCollectionPage(
+                items = response.list,
+                page = response.pagination.page,
+                pages = response.pagination.pages,
+                total = response.pagination.total,
+            )
         }
     }
 
