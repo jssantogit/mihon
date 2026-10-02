@@ -291,7 +291,7 @@ private fun QuickListBuilder(
                         )
                         Text(
                             text = if (editor.filtersEditable) {
-                                "Genres, tags, chapters, volumes, and full work type options."
+                                "Genres, chapters, volumes, ratings, and provider-specific options."
                             } else {
                                 "Inspect the preserved query state without rewriting it."
                             },
