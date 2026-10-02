@@ -25,7 +25,9 @@ import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionListDraftExecution
+import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderRegistry
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftRequest
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftResult
@@ -184,6 +186,7 @@ sealed interface CollectionsScreenState {
         val transferState: CollectionsTransferState,
         val listRuntimeStates: Map<String, CollectionListRuntimeState>,
         val draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+        val providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     ) : CollectionsScreenState
 
     data class Error(
@@ -201,6 +204,7 @@ class CollectionsScreenModel(
     private val importCollections: ImportCollections,
     private val executeCollectionList: ExecuteCollectionList,
     private val executeCollectionDraft: ExecuteCollectionDraft,
+    private val providerRegistry: CollectionQueryProviderRegistry,
 ) : ViewModel() {
 
     private val transferState = MutableStateFlow<CollectionsTransferState>(CollectionsTransferState.Idle)
@@ -241,6 +245,8 @@ class CollectionsScreenModel(
             transferState = transfer,
             listRuntimeStates = runtimes,
             draftPreviewState = preview,
+            providerDescriptors = providerRegistry.descriptors()
+                .sortedBy(CollectionProviderDescriptor::displayName),
         ) as CollectionsScreenState
     }
         .catch { error ->
