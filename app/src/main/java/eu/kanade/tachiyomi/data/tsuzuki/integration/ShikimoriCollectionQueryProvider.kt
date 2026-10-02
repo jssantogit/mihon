@@ -178,15 +178,23 @@ object ShikimoriCollectionCapabilities : ProviderQueryCapabilities {
                 expression.expressions
                     .mapNotNull { term ->
                         when (term) {
-                            is QueryExpression.Predicate -> term.field
-                            is QueryExpression.Not -> (term.expression as? QueryExpression.Predicate)?.field
+                            is QueryExpression.Predicate -> Triple(term.field, false, term)
+                            is QueryExpression.Not -> {
+                                val predicate = term.expression as? QueryExpression.Predicate
+                                predicate?.let { Triple(it.field, true, it) }
+                            }
                             else -> null
                         }
                     }
-                    .groupingBy { it }
-                    .eachCount()
-                    .values
-                    .none { it > 1 }
+                    .groupBy { it.first }
+                    .all { (field, terms) ->
+                        when {
+                            terms.size == 1 -> true
+                            field !in NEGATABLE_FIELDS -> false
+                            terms.size != 2 -> false
+                            else -> terms.map { it.second }.toSet() == setOf(false, true)
+                        }
+                    }
         }
         is QueryExpression.Any -> false
     }
@@ -242,17 +250,32 @@ object ShikimoriCollectionCompiler {
                     val prefix = if (negative) "!" else ""
                     when (term.field) {
                         QueryField.WORK_TYPE ->
-                            kind = prefix + mapKind((term.value as QueryValue.StringValue).value)
+                            kind = appendNativeFilter(
+                                kind,
+                                prefix + mapKind((term.value as QueryValue.StringValue).value),
+                            )
                         QueryField.STATUS ->
-                            status = prefix + mapStatus((term.value as QueryValue.StringValue).value)
+                            status = appendNativeFilter(
+                                status,
+                                prefix + mapStatus((term.value as QueryValue.StringValue).value),
+                            )
                         QueryField.START_YEAR -> season = seasonValue(term)
                         QueryField.SCORE -> score = term.value.integerValue()
                         QueryField.GENRE ->
-                            genre = prefix + (term.value as QueryValue.StringValue).value
+                            genre = appendNativeFilter(
+                                genre,
+                                prefix + (term.value as QueryValue.StringValue).value,
+                            )
                         QueryField.PUBLISHER ->
-                            publisher = prefix + (term.value as QueryValue.StringValue).value
+                            publisher = appendNativeFilter(
+                                publisher,
+                                prefix + (term.value as QueryValue.StringValue).value,
+                            )
                         QueryField.Custom("shikimori.franchise") ->
-                            franchise = prefix + (term.value as QueryValue.StringValue).value
+                            franchise = appendNativeFilter(
+                                franchise,
+                                prefix + (term.value as QueryValue.StringValue).value,
+                            )
                         QueryField.Custom("shikimori.censored") ->
                             censored = (term.value as QueryValue.BooleanValue).value
                         QueryField.Custom("shikimori.query") ->
@@ -283,6 +306,12 @@ object ShikimoriCollectionCompiler {
             search = search,
         )
     }
+
+    private fun appendNativeFilter(
+        current: String?,
+        value: String,
+    ): String = listOfNotNull(current, value)
+        .joinToString(",")
 
     private fun mapKind(value: String): String = when (value.uppercase()) {
         CatalogItemFormat.MANGA.name -> "manga"
