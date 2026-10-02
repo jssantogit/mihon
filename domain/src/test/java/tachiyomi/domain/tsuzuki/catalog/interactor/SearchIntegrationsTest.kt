@@ -545,6 +545,47 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `native provider score skips redundant identity resolution`() = runTest {
+        var resolveCalls = 0
+        var ratingCalls = 0
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                resolveCalls++
+                return Result.success(mapOf("mal" to "unexpected"))
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> {
+                ratingCalls++
+                return Result.success(emptyList())
+            }
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("mal", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+        )
+        val item = CatalogItem(
+            provider = "mal",
+            providerId = "42",
+            title = "Work",
+            score = CatalogScore(
+                provider = "mal",
+                value = 8.7,
+                maxValue = 10.0,
+            ),
+        )
+
+        val enriched = search.enrichRatings(listOf(item)).single()
+
+        enriched.scores.single().value shouldBe 8.7
+        resolveCalls shouldBe 0
+        ratingCalls shouldBe 0
+    }
+
+    @Test
     fun `rating enrichment fills a freed item slot without waiting for a slow sibling`() = runTest {
         val slowRelease = CompletableDeferred<Unit>()
         val started = mutableListOf<String>()
