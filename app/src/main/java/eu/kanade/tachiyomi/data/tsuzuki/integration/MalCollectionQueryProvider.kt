@@ -154,7 +154,8 @@ object MalCollectionCapabilities : ProviderQueryCapabilities {
 
     private const val PROVIDER_ID = "mal"
     private const val RANKING_PAGE_SIZE = 100
-    private val RANGE_OPERATORS = setOf(
+    private val RANGE_OPERATORS
+        get() = setOf(
         QueryOperator.EQUALS,
         QueryOperator.GREATER_OR_EQUAL,
         QueryOperator.LESS_OR_EQUAL,
