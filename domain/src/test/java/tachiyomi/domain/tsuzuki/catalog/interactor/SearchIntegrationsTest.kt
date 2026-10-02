@@ -328,6 +328,60 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `repeated base search reuses the completed provider result`() = runTest {
+        var calls = 0
+        val provider = object : SearchProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                calls++
+                return Result.success(page(CatalogItem("kitsu", "1", "Work")))
+            }
+        }
+        val search = SearchIntegrations(registry(provider))
+        val query = CatalogQuery(query = "Work")
+
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1")
+
+        calls shouldBe 1
+    }
+
+    @Test
+    fun `partial base search failure is not cached as a complete query result`() = runTest {
+        var healthyCalls = 0
+        var flakyCalls = 0
+        val healthy = object : SearchProvider {
+            override val integrationId = IntegrationId("healthy")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                healthyCalls++
+                return Result.success(page(CatalogItem("healthy", "1", "Healthy")))
+            }
+        }
+        val flaky = object : SearchProvider {
+            override val integrationId = IntegrationId("flaky")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                flakyCalls++
+                return if (flakyCalls == 1) {
+                    Result.failure(IllegalStateException("temporary"))
+                } else {
+                    Result.success(page(CatalogItem("flaky", "2", "Recovered")))
+                }
+            }
+        }
+        val search = SearchIntegrations(registry(healthy, flaky))
+        val query = CatalogQuery(query = "Work")
+
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1", "2")
+
+        healthyCalls shouldBe 2
+        flakyCalls shouldBe 2
+    }
+
+    @Test
     fun `same provider and title with distinct external identities remain distinct`() = runTest {
         val search = SearchIntegrations(
             registry(
