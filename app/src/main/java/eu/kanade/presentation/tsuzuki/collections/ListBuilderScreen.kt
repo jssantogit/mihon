@@ -353,79 +353,16 @@ private fun QuickListBuilder(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EditorSectionLabel("QUICK FILTERS")
                 EditorSurface {
-                    val statusCapability = quickFilters.firstOrNull { it.field == QueryField.STATUS }
-                    statusCapability?.staticStringOptions()?.let { options ->
-                        QuickChoiceRow(
-                            label = "Status",
-                            options = listOf(QuickChoice("Any", null)) + options.map { option ->
-                                QuickChoice(option.first, option.second)
-                            },
-                            selected = editor.status,
-                            enabled = editor.filtersEditable,
-                            onSelect = { onEditorChange(editor.copy(status = it)) },
-                        )
-                    }
-
-                    val typeCapability = quickFilters.firstOrNull { it.field == QueryField.WORK_TYPE }
-                    typeCapability?.staticStringOptions()?.let { options ->
-                        BuilderDropdown(
-                            label = "Type",
-                            current = editor.format ?: "Any",
-                            options = listOf("Any") + options.map { it.second },
-                            display = { value ->
-                                if (value == "Any") value else {
-                                    options.firstOrNull { it.second == value }?.first ?: value.prettyEnumName()
-                                }
-                            },
-                            onSelect = {
-                                onEditorChange(editor.copy(format = it.takeUnless { value -> value == "Any" }))
-                            },
-                            enabled = editor.filtersEditable,
+                    quickFilters.forEach { capability ->
+                        DescriptorFilterControl(
+                            capability = capability,
+                            editor = editor,
+                            onEditorChange = onEditorChange,
+                            filterLookupStates = filterLookupStates,
+                            onFilterLookup = onFilterLookup,
                             modifier = Modifier.padding(top = 10.dp),
                         )
                     }
-
-                    if (quickFilters.any { it.field == QueryField.GENRE }) {
-                        OutlinedTextField(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp),
-                            value = editor.includeGenre,
-                            onValueChange = {
-                                if (editor.filtersEditable) {
-                                    onEditorChange(editor.copy(includeGenre = it))
-                                }
-                            },
-                            enabled = editor.filtersEditable,
-                            label = { Text("Genre") },
-                            placeholder = { Text("e.g. Action") },
-                            singleLine = true,
-                        )
-                    }
-
-                    if (quickFilters.any { it.field == QueryField.SCORE || it.field == QueryField.RATING }) {
-                        BuilderNumericField(
-                            label = "Minimum rating",
-                            value = editor.minScore,
-                            enabled = editor.filtersEditable,
-                            allowDecimal = true,
-                            onValueChange = { onEditorChange(editor.copy(minScore = it)) },
-                            modifier = Modifier.padding(top = 10.dp),
-                        )
-                    }
-
-                    quickFilters
-                        .filterNot { it.field in LEGACY_RENDERED_FIELDS }
-                        .forEach { capability ->
-                            DescriptorFilterControl(
-                                capability = capability,
-                                editor = editor,
-                                onEditorChange = onEditorChange,
-                                filterLookupStates = filterLookupStates,
-                                onFilterLookup = onFilterLookup,
-                                modifier = Modifier.padding(top = 10.dp),
-                            )
-                        }
 
                     if (sortOptions.isNotEmpty()) {
                         val selectedSort = editor.sort.takeIf { it in sortOptions } ?: sortOptions.first()
@@ -616,103 +553,10 @@ private fun AdvancedListFilters(
                 ?.filter { it.placement == FilterPlacement.ADVANCED }
                 .orEmpty()
 
-            if (advancedCapabilities.any { it.field == QueryField.CHAPTER_COUNT || it.field == QueryField.VOLUME_COUNT }) {
-                item(key = "publication") {
-                    AdvancedSection("PUBLICATION") {
-                        if (advancedCapabilities.any { it.field == QueryField.CHAPTER_COUNT }) {
-                            BuilderNumericField(
-                                label = "Minimum chapters",
-                                value = editor.minChapters,
-                                onValueChange = { onEditorChange(editor.copy(minChapters = it)) },
-                            )
-                        }
-                        if (advancedCapabilities.any { it.field == QueryField.VOLUME_COUNT }) {
-                            BuilderNumericField(
-                                label = "Minimum volumes",
-                                value = editor.minVolumes,
-                                onValueChange = { onEditorChange(editor.copy(minVolumes = it)) },
-                                modifier = Modifier.padding(top = 10.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (advancedCapabilities.any { it.field == QueryField.GENRE || it.field == QueryField.TAG }) {
-                item(key = "genres_tags") {
-                    AdvancedSection("GENRES & TAGS") {
-                        if (advancedCapabilities.any { it.field == QueryField.GENRE }) {
-                            OutlinedTextField(
-                                modifier = Modifier.fillMaxWidth(),
-                                value = editor.includeGenre,
-                                onValueChange = { onEditorChange(editor.copy(includeGenre = it)) },
-                                label = { Text("Include genre") },
-                                singleLine = true,
-                            )
-                            val genreCapability = advancedCapabilities.firstOrNull { it.field == QueryField.GENRE }
-                            if (
-                                genreCapability?.multiValueMode ==
-                                tachiyomi.domain.tsuzuki.collections.capability.MultiValueMode.INCLUDE_EXCLUDE
-                            ) {
-                                OutlinedTextField(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 10.dp),
-                                    value = editor.excludeGenre,
-                                    onValueChange = { onEditorChange(editor.copy(excludeGenre = it)) },
-                                    label = { Text("Exclude genre") },
-                                    singleLine = true,
-                                )
-                            }
-                        }
-                        if (advancedCapabilities.any { it.field == QueryField.TAG }) {
-                            OutlinedTextField(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 10.dp),
-                                value = editor.includeTag,
-                                onValueChange = { onEditorChange(editor.copy(includeTag = it)) },
-                                label = { Text("Include tag") },
-                                singleLine = true,
-                            )
-                            val tagCapability = advancedCapabilities.firstOrNull { it.field == QueryField.TAG }
-                            if (
-                                tagCapability?.multiValueMode ==
-                                tachiyomi.domain.tsuzuki.collections.capability.MultiValueMode.INCLUDE_EXCLUDE
-                            ) {
-                                OutlinedTextField(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 10.dp),
-                                    value = editor.excludeTag,
-                                    onValueChange = { onEditorChange(editor.copy(excludeTag = it)) },
-                                    label = { Text("Exclude tag") },
-                                    singleLine = true,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (advancedCapabilities.any { it.field == QueryField.SCORE || it.field == QueryField.RATING }) {
-                item(key = "ratings") {
-                    AdvancedSection("RATINGS") {
-                        BuilderNumericField(
-                            label = "Minimum rating",
-                            value = editor.minScore,
-                            allowDecimal = true,
-                            onValueChange = { onEditorChange(editor.copy(minScore = it)) },
-                        )
-                    }
-                }
-            }
-
-            val extraCapabilities = advancedCapabilities.filterNot { it.field in LEGACY_RENDERED_FIELDS }
-            if (extraCapabilities.isNotEmpty()) {
+            if (advancedCapabilities.isNotEmpty()) {
                 item(key = "provider_options") {
-                    AdvancedSection("PROVIDER OPTIONS") {
-                        extraCapabilities.forEachIndexed { index, capability ->
+                    AdvancedSection("FILTERS") {
+                        advancedCapabilities.forEachIndexed { index, capability ->
                             DescriptorFilterControl(
                                 capability = capability,
                                 editor = editor,
@@ -983,9 +827,10 @@ private fun DescriptorFilterControl(
                         allowDecimal = source == FilterValueSource.DecimalRange,
                         onValueChange = { value ->
                             onEditorChange(
-                                editor.replaceExtraField(
-                                    capability.field,
-                                    capability.rangeExpression(
+                                editor.replaceFieldTerm(
+                                    field = capability.field,
+                                    negated = false,
+                                    predicate = capability.rangeExpression(
                                         minimum = value,
                                         maximum = range.second,
                                         decimal = source == FilterValueSource.DecimalRange,
@@ -1002,9 +847,10 @@ private fun DescriptorFilterControl(
                         allowDecimal = source == FilterValueSource.DecimalRange,
                         onValueChange = { value ->
                             onEditorChange(
-                                editor.replaceExtraField(
-                                    capability.field,
-                                    capability.rangeExpression(
+                                editor.replaceFieldTerm(
+                                    field = capability.field,
+                                    negated = false,
+                                    predicate = capability.rangeExpression(
                                         minimum = range.first,
                                         maximum = value,
                                         decimal = source == FilterValueSource.DecimalRange,
@@ -1027,9 +873,10 @@ private fun DescriptorFilterControl(
                     value = range.first,
                     onValueChange = { value ->
                         onEditorChange(
-                            editor.replaceExtraField(
-                                capability.field,
-                                capability.stringRangeExpression(value, range.second),
+                            editor.replaceFieldTerm(
+                                field = capability.field,
+                                negated = false,
+                                predicate = capability.stringRangeExpression(value, range.second),
                             ),
                         )
                     },
@@ -1044,9 +891,10 @@ private fun DescriptorFilterControl(
                     value = range.second,
                     onValueChange = { value ->
                         onEditorChange(
-                            editor.replaceExtraField(
-                                capability.field,
-                                capability.stringRangeExpression(range.first, value),
+                            editor.replaceFieldTerm(
+                                field = capability.field,
+                                negated = false,
+                                predicate = capability.stringRangeExpression(range.first, value),
                             ),
                         )
                     },
