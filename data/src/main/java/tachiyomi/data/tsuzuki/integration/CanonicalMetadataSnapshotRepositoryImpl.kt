@@ -18,7 +18,12 @@ class CanonicalMetadataSnapshotRepositoryImpl(
 
     override suspend fun get(canonicalTitleId: String): CanonicalMetadataSnapshot? {
         val row = database.tsuzuki_metadata_snapshotQueries
-            .getTsuzukiMetadataSnapshot(canonicalTitleId) { titleId, configurationFingerprint, payloadJson, refreshedAt ->
+            .getTsuzukiMetadataSnapshot(canonicalTitleId) {
+                    titleId,
+                    configurationFingerprint,
+                    payloadJson,
+                    refreshedAt,
+                ->
                 SnapshotRow(titleId, configurationFingerprint, payloadJson, refreshedAt)
             }
             .awaitAsOneOrNull()

@@ -3,10 +3,10 @@ package tachiyomi.domain.tsuzuki.integration.interactor
 import io.kotest.matchers.shouldBe
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.test.backgroundScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -58,6 +58,7 @@ class ResolveCanonicalMetadataCachingTest {
             provider = provider,
             snapshots = snapshots,
             clock = { 1_500L },
+            scope = backgroundScope,
         )
 
         resolver.execute(TITLE_ID).getOrThrow().title?.value shouldBe "Cached"
@@ -72,7 +73,7 @@ class ResolveCanonicalMetadataCachingTest {
             provider = provider,
             snapshots = FakeSnapshotRepository(),
             clock = { 10_000L },
-            inFlight = InFlightCanonicalMetadataResolution(backgroundScope),
+            scope = backgroundScope,
         )
 
         val first = async { resolver.execute(TITLE_ID).getOrThrow() }
@@ -95,6 +96,7 @@ class ResolveCanonicalMetadataCachingTest {
             snapshots = FakeSnapshotRepository(),
             counts = counts,
             clock = { 20_000L },
+            scope = backgroundScope,
         )
 
         resolver.execute(TITLE_ID, forceRefresh = true).getOrThrow()
@@ -109,14 +111,14 @@ class ResolveCanonicalMetadataCachingTest {
         snapshots: FakeSnapshotRepository,
         counts: FakeReportedChapterCountRepository = FakeReportedChapterCountRepository(),
         clock: () -> Long,
-        inFlight: InFlightCanonicalMetadataResolution = InFlightCanonicalMetadataResolution(backgroundScope),
+        scope: CoroutineScope,
     ) = ResolveCanonicalMetadata(
         canonicalTitleRepository = FakeCanonicalTitleRepository(),
         registry = FakeRegistry(provider),
         titleArtworkRepository = mockk(relaxed = true),
         diagnosticRecorder = NoOpStructuredDiagnosticRecorder,
         snapshotRepository = snapshots,
-        inFlightResolution = inFlight,
+        inFlightResolution = InFlightCanonicalMetadataResolution(scope),
         reportedChapterCountRepository = counts,
         clock = clock,
         metadataTtlMillis = 15_000L,
