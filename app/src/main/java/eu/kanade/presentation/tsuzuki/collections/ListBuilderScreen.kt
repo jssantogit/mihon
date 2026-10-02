@@ -786,6 +786,372 @@ private fun ActiveFiltersCard(
 }
 
 @Composable
+private fun DescriptorFilterControl(
+    capability: CollectionFilterCapability,
+    editor: ListEditorState,
+    onEditorChange: (ListEditorState) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val predicate = editor.extraTerms
+        .asSequence()
+        .mapNotNull { it as? QueryExpression.Predicate }
+        .firstOrNull { it.field == capability.field }
+
+    when (val source = capability.valueSource) {
+        is FilterValueSource.Static -> {
+            val options = source.values
+                .mapNotNull { option ->
+                    val value = option.value as? QueryValue.StringValue ?: return@mapNotNull null
+                    option.label to value.value
+                }
+            if (options.isNotEmpty()) {
+                val current = (predicate?.value as? QueryValue.StringValue)?.value ?: "Any"
+                BuilderDropdown(
+                    label = capability.id.prettyEnumName(),
+                    current = current,
+                    options = listOf("Any") + options.map { it.second },
+                    display = { value ->
+                        if (value == "Any") value else options.firstOrNull { it.second == value }?.first ?: value
+                    },
+                    onSelect = { selected ->
+                        onEditorChange(
+                            editor.replaceExtraField(
+                                capability.field,
+                                selected.takeUnless { it == "Any" }?.let { value ->
+                                    QueryExpression.Predicate(
+                                        field = capability.field,
+                                        operator = capability.preferredScalarOperator(),
+                                        value = QueryValue.of(value),
+                                    )
+                                },
+                            ),
+                        )
+                    },
+                    modifier = modifier,
+                    enabled = editor.filtersEditable,
+                )
+            }
+        }
+
+        FilterValueSource.BooleanToggle -> {
+            val selected = (predicate?.value as? QueryValue.BooleanValue)?.value == true
+            FilterChip(
+                selected = selected,
+                onClick = {
+                    onEditorChange(
+                        editor.replaceExtraField(
+                            capability.field,
+                            if (selected) {
+                                null
+                            } else {
+                                QueryExpression.Predicate(
+                                    field = capability.field,
+                                    operator = capability.preferredScalarOperator(),
+                                    value = QueryValue.of(true),
+                                )
+                            },
+                        ),
+                    )
+                },
+                enabled = editor.filtersEditable,
+                label = { Text(capability.id.prettyEnumName()) },
+                modifier = modifier,
+            )
+        }
+
+        FilterValueSource.IntegerRange,
+        FilterValueSource.DecimalRange,
+        -> {
+            val range = predicate.toNumericBounds()
+            Column(modifier = modifier) {
+                Text(capability.id.prettyEnumName(), style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BuilderNumericField(
+                        label = "Min",
+                        value = range.first,
+                        enabled = editor.filtersEditable,
+                        allowDecimal = source == FilterValueSource.DecimalRange,
+                        onValueChange = { value ->
+                            onEditorChange(
+                                editor.replaceExtraField(
+                                    capability.field,
+                                    capability.rangeExpression(
+                                        minimum = value,
+                                        maximum = range.second,
+                                        decimal = source == FilterValueSource.DecimalRange,
+                                    ),
+                                ),
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    BuilderNumericField(
+                        label = "Max",
+                        value = range.second,
+                        enabled = editor.filtersEditable,
+                        allowDecimal = source == FilterValueSource.DecimalRange,
+                        onValueChange = { value ->
+                            onEditorChange(
+                                editor.replaceExtraField(
+                                    capability.field,
+                                    capability.rangeExpression(
+                                        minimum = range.first,
+                                        maximum = value,
+                                        decimal = source == FilterValueSource.DecimalRange,
+                                    ),
+                                ),
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        FilterValueSource.DateRange -> {
+            val range = predicate.toStringBounds()
+            Column(modifier = modifier) {
+                Text(capability.id.prettyEnumName(), style = MaterialTheme.typography.labelMedium)
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = range.first,
+                    onValueChange = { value ->
+                        onEditorChange(
+                            editor.replaceExtraField(
+                                capability.field,
+                                capability.stringRangeExpression(value, range.second),
+                            ),
+                        )
+                    },
+                    enabled = editor.filtersEditable,
+                    label = { Text("From (YYYY-MM-DD)") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    value = range.second,
+                    onValueChange = { value ->
+                        onEditorChange(
+                            editor.replaceExtraField(
+                                capability.field,
+                                capability.stringRangeExpression(range.first, value),
+                            ),
+                        )
+                    },
+                    enabled = editor.filtersEditable,
+                    label = { Text("To (YYYY-MM-DD)") },
+                    singleLine = true,
+                )
+            }
+        }
+
+        FilterValueSource.FreeText,
+        is FilterValueSource.RemoteLookup,
+        -> {
+            val value = (predicate?.value as? QueryValue.StringValue)?.value.orEmpty()
+            OutlinedTextField(
+                modifier = modifier.fillMaxWidth(),
+                value = value,
+                onValueChange = { candidate ->
+                    onEditorChange(
+                        editor.replaceExtraField(
+                            capability.field,
+                            candidate.trim().takeIf(String::isNotEmpty)?.let {
+                                QueryExpression.Predicate(
+                                    field = capability.field,
+                                    operator = capability.preferredScalarOperator(),
+                                    value = QueryValue.of(it),
+                                )
+                            },
+                        ),
+                    )
+                },
+                enabled = editor.filtersEditable,
+                label = { Text(capability.id.prettyEnumName()) },
+                singleLine = true,
+            )
+        }
+    }
+}
+
+private fun CollectionProviderDescriptor.uiSortSelections(): List<CollectionSortSelection> =
+    sorts.flatMap { capability ->
+        when (capability.directionMode) {
+            SortDirectionMode.ASC_DESC -> {
+                val default = requireNotNull(capability.defaultDirection)
+                val alternate = if (default == CollectionSortDirection.DESC) {
+                    CollectionSortDirection.ASC
+                } else {
+                    CollectionSortDirection.DESC
+                }
+                listOf(
+                    CollectionSortSelection(capability.key, default),
+                    CollectionSortSelection(capability.key, alternate),
+                )
+            }
+            SortDirectionMode.ASC_ONLY -> listOf(
+                CollectionSortSelection(capability.key, CollectionSortDirection.ASC),
+            )
+            SortDirectionMode.DESC_ONLY -> listOf(
+                CollectionSortSelection(capability.key, CollectionSortDirection.DESC),
+            )
+            SortDirectionMode.FIXED_NATIVE -> listOf(
+                CollectionSortSelection(capability.key, direction = null),
+            )
+        }
+    }.distinct()
+
+private fun CollectionProviderDescriptor.sortDisplayName(
+    selection: CollectionSortSelection,
+): String {
+    val capability = sorts.firstOrNull { it.key == selection.key }
+        ?: return sortDisplayName(selection)
+    return when (capability.directionMode) {
+        SortDirectionMode.ASC_DESC -> when (selection.direction) {
+            CollectionSortDirection.DESC -> "${capability.label} (High to Low)"
+            CollectionSortDirection.ASC -> "${capability.label} (Low to High)"
+            null -> capability.label
+        }
+        else -> capability.label
+    }
+}
+
+private fun CollectionFilterCapability.staticStringOptions(): List<Pair<String, String>>? {
+    val source = valueSource as? FilterValueSource.Static ?: return null
+    return source.values.mapNotNull { option ->
+        val stringValue = option.value as? QueryValue.StringValue ?: return@mapNotNull null
+        option.label to stringValue.value
+    }
+}
+
+private fun CollectionFilterCapability.preferredScalarOperator(): QueryOperator = when {
+    QueryOperator.EQUALS in operators -> QueryOperator.EQUALS
+    QueryOperator.CONTAINS in operators -> QueryOperator.CONTAINS
+    QueryOperator.GREATER_OR_EQUAL in operators -> QueryOperator.GREATER_OR_EQUAL
+    else -> operators.first()
+}
+
+private fun ListEditorState.replaceExtraField(
+    field: QueryField,
+    expression: QueryExpression?,
+): ListEditorState {
+    val remaining = extraTerms.filterNot { term -> term.fieldOrNull() == field }
+    return copy(
+        extraTerms = if (expression == null) remaining else remaining + expression,
+    )
+}
+
+private fun QueryExpression.fieldOrNull(): QueryField? = when (this) {
+    is QueryExpression.Predicate -> field
+    is QueryExpression.Not -> (expression as? QueryExpression.Predicate)?.field
+    else -> null
+}
+
+private fun QueryExpression.Predicate?.toNumericBounds(): Pair<String, String> {
+    if (this == null) return "" to ""
+    return when (operator) {
+        QueryOperator.GREATER_THAN,
+        QueryOperator.GREATER_OR_EQUAL,
+        QueryOperator.EQUALS,
+        -> value.numericText().orEmpty() to ""
+        QueryOperator.LESS_THAN,
+        QueryOperator.LESS_OR_EQUAL,
+        -> "" to value.numericText().orEmpty()
+        QueryOperator.BETWEEN -> {
+            val range = value as? QueryValue.RangeValue ?: return "" to ""
+            range.lower.numericText().orEmpty() to range.upper.numericText().orEmpty()
+        }
+        else -> "" to ""
+    }
+}
+
+private fun QueryExpression.Predicate?.toStringBounds(): Pair<String, String> {
+    if (this == null) return "" to ""
+    return when (operator) {
+        QueryOperator.GREATER_THAN,
+        QueryOperator.GREATER_OR_EQUAL,
+        QueryOperator.EQUALS,
+        -> (value as? QueryValue.StringValue)?.value.orEmpty() to ""
+        QueryOperator.LESS_THAN,
+        QueryOperator.LESS_OR_EQUAL,
+        -> "" to (value as? QueryValue.StringValue)?.value.orEmpty()
+        QueryOperator.BETWEEN -> {
+            val range = value as? QueryValue.RangeValue ?: return "" to ""
+            (range.lower as? QueryValue.StringValue)?.value.orEmpty() to
+                (range.upper as? QueryValue.StringValue)?.value.orEmpty()
+        }
+        else -> "" to ""
+    }
+}
+
+private fun CollectionFilterCapability.rangeExpression(
+    minimum: String,
+    maximum: String,
+    decimal: Boolean,
+): QueryExpression? {
+    val min = minimum.takeIf(String::isNotBlank)?.let { if (decimal) it.toDoubleOrNull() else it.toLongOrNull() }
+    val max = maximum.takeIf(String::isNotBlank)?.let { if (decimal) it.toDoubleOrNull() else it.toLongOrNull() }
+    val minValue = when (min) {
+        is Double -> QueryValue.of(min)
+        is Long -> QueryValue.of(min)
+        else -> null
+    }
+    val maxValue = when (max) {
+        is Double -> QueryValue.of(max)
+        is Long -> QueryValue.of(max)
+        else -> null
+    }
+    return when {
+        minValue != null && maxValue != null && QueryOperator.BETWEEN in operators ->
+            QueryExpression.Predicate(field, QueryOperator.BETWEEN, QueryValue.range(minValue, maxValue))
+        minValue != null && QueryOperator.GREATER_OR_EQUAL in operators ->
+            QueryExpression.Predicate(field, QueryOperator.GREATER_OR_EQUAL, minValue)
+        maxValue != null && QueryOperator.LESS_OR_EQUAL in operators ->
+            QueryExpression.Predicate(field, QueryOperator.LESS_OR_EQUAL, maxValue)
+        else -> null
+    }
+}
+
+private fun CollectionFilterCapability.stringRangeExpression(
+    minimum: String,
+    maximum: String,
+): QueryExpression? {
+    val min = minimum.trim().takeIf(String::isNotEmpty)?.let(QueryValue::of)
+    val max = maximum.trim().takeIf(String::isNotEmpty)?.let(QueryValue::of)
+    return when {
+        min != null && max != null && QueryOperator.BETWEEN in operators ->
+            QueryExpression.Predicate(field, QueryOperator.BETWEEN, QueryValue.range(min, max))
+        min != null && QueryOperator.GREATER_OR_EQUAL in operators ->
+            QueryExpression.Predicate(field, QueryOperator.GREATER_OR_EQUAL, min)
+        max != null && QueryOperator.LESS_OR_EQUAL in operators ->
+            QueryExpression.Predicate(field, QueryOperator.LESS_OR_EQUAL, max)
+        else -> null
+    }
+}
+
+private fun QueryValue.numericText(): String? = when (this) {
+    is QueryValue.IntegerValue -> value.toString()
+    is QueryValue.DoubleValue -> value.toString()
+    else -> null
+}
+
+private val LEGACY_RENDERED_FIELDS = setOf(
+    QueryField.STATUS,
+    QueryField.WORK_TYPE,
+    QueryField.GENRE,
+    QueryField.TAG,
+    QueryField.SCORE,
+    QueryField.RATING,
+    QueryField.CHAPTER_COUNT,
+    QueryField.VOLUME_COUNT,
+)
+
+@Composable
 private fun <T> BuilderDropdown(
     label: String,
     current: T,
