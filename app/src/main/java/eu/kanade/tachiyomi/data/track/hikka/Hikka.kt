@@ -236,8 +236,45 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
     }
 }
 
+data class HikkaCollectionQuery(
+    val yearFrom: Int? = null,
+    val yearTo: Int? = null,
+    val mediaTypes: List<String> = emptyList(),
+    val statuses: List<String> = emptyList(),
+    val onlyTranslated: Boolean? = null,
+    val magazines: List<String> = emptyList(),
+    val genres: List<String> = emptyList(),
+    val malScoreFrom: Double? = null,
+    val malScoreTo: Double? = null,
+    val nativeScoreFrom: Double? = null,
+    val nativeScoreTo: Double? = null,
+    val query: String? = null,
+    val sort: String,
+    val page: Int,
+    val size: Int,
+) {
+    init {
+        require(page >= 1) { "Hikka page must be one-based" }
+        require(size > 0) { "Hikka page size must be positive" }
+    }
+}
+
+data class HikkaCollectionPage(
+    val items: List<HKManga>,
+    val page: Int,
+    val pages: Int,
+    val total: Int,
+)
+
 interface HikkaIntegrationApi {
     suspend fun searchPublic(query: String): List<HKManga>
 
     suspend fun getMangaDetailsPublic(slug: String): HKManga?
+
+    suspend fun collectionSearch(query: HikkaCollectionQuery): HikkaCollectionPage = HikkaCollectionPage(
+        items = emptyList(),
+        page = query.page,
+        pages = query.page,
+        total = 0,
+    )
 }
