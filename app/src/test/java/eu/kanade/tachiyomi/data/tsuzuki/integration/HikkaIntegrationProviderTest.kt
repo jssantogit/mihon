@@ -7,7 +7,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.SearchProvider
 
 class HikkaIntegrationProviderTest {
 
@@ -29,6 +31,8 @@ class HikkaIntegrationProviderTest {
             ),
         )
 
+        (provider as Any is SearchProvider) shouldBe true
+        (provider as Any is MetadataProvider) shouldBe true
         (provider as Any is RatingsProvider) shouldBe true
 
         val match = (provider as RatingsProvider).ratingFor(
