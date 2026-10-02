@@ -160,7 +160,6 @@ class ResolveCanonicalMetadata private constructor(
     }
 
     private suspend fun resolveLive(canonicalTitleId: String): Result<ResolvedMetadata> {
-
         val trace = DiagnosticTrace.start(
             recorder = diagnosticRecorder,
             workflow = DiagnosticWorkflow.METADATA_RESOLUTION,

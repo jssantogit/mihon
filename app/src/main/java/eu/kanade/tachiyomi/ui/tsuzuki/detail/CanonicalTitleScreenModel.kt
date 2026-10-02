@@ -43,6 +43,7 @@ import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadS
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRating
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
