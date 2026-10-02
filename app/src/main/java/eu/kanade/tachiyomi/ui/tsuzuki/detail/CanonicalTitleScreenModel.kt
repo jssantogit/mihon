@@ -429,9 +429,40 @@ class CanonicalTitleScreenModel(
                 includeIntegrationMetadata = false,
                 isRefreshing = true,
             )
+            val cachedIntegrationMetadata = try {
+                resolveCanonicalMetadata.cached(canonicalTitleId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+            if (cachedIntegrationMetadata != null && this.canonicalTitleId == canonicalTitleId) {
+                val cachedState = loadLocalState(
+                    canonicalTitleId = canonicalTitleId,
+                    includeIntegrationMetadata = true,
+                    integrationMetadataOverride = cachedIntegrationMetadata,
+                    isRefreshing = true,
+                )
+                val current = (_state.value as? CanonicalTitleScreenState.Loaded)
+                    ?.takeIf { it.title.id == canonicalTitleId }
+                _state.value = if (current == null) {
+                    cachedState
+                } else {
+                    cachedState.copy(
+                        libraryEntry = current.libraryEntry,
+                        libraryMutationInProgress = current.libraryMutationInProgress,
+                        libraryMutationError = current.libraryMutationError,
+                        downloadInProgressChapterId = current.downloadInProgressChapterId,
+                        downloadSelectionChapterId = current.downloadSelectionChapterId,
+                        downloadError = current.downloadError,
+                        chapterActionError = current.chapterActionError,
+                    )
+                }
+            }
             logcat {
                 "TsuzukiPerf detail cached chapters=" +
                     "${(_state.value as? CanonicalTitleScreenState.Loaded)?.chapters?.size ?: 0} " +
+                    "metadata=${cachedIntegrationMetadata != null} " +
                     "elapsed=${initialStart.elapsedNow()}"
             }
             refreshInBackground(canonicalTitleId, forceChapterRefresh = false)

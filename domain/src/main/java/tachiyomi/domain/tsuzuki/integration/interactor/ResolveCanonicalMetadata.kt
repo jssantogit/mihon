@@ -123,6 +123,15 @@ class ResolveCanonicalMetadata private constructor(
         constructorMarker = Unit,
     )
 
+    suspend fun cached(canonicalTitleId: String): ResolvedMetadata? {
+        registry.awaitReady()
+        val configurationFingerprint = registry.configurationFingerprint()
+        return snapshotRepository
+            ?.get(canonicalTitleId)
+            ?.takeIf { snapshot -> snapshot.configurationFingerprint == configurationFingerprint }
+            ?.metadata
+    }
+
     suspend fun execute(
         canonicalTitleId: String,
         forceRefresh: Boolean = false,
