@@ -244,18 +244,24 @@ class DefaultIntegrationRegistryTest {
     }
 
     @Test
-    fun `verified shikimori and hikka ratings are globally scoped without unlocking catalog`() = runTest {
-        val shikimori = FakeRatingsProvider("shikimori")
-        val hikka = FakeRatingsProvider("hikka")
+    fun `shikimori and hikka catalog policies are globally allowed when enabled`() = runTest {
+        val shikimoriRating = FakeRatingsProvider("shikimori")
+        val hikkaRating = FakeRatingsProvider("hikka")
+        val shikimoriSearch = FakeSearchProvider("shikimori")
+        val hikkaSearch = FakeSearchProvider("hikka")
+        val shikimoriMetadata = FakeMetadataProvider("shikimori")
+        val hikkaMetadata = FakeMetadataProvider("hikka")
         val registry = registry(
             scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
             settings = MutableStateFlow(fakeSettings("shikimori" to true, "hikka" to true)),
-            ratingsProviders = setOf(shikimori, hikka),
-            searchProviders = setOf(FakeSearchProvider("shikimori"), FakeSearchProvider("hikka")),
-            metadataProviders = setOf(FakeMetadataProvider("shikimori"), FakeMetadataProvider("hikka")),
+            ratingsProviders = setOf(shikimoriRating, hikkaRating),
+            searchProviders = setOf(shikimoriSearch, hikkaSearch),
+            metadataProviders = setOf(shikimoriMetadata, hikkaMetadata),
         )
 
         registry.ratingsProviders().map { it.integrationId.value }.toSet() shouldBe setOf("shikimori", "hikka")
+        registry.searchProviders().map { it.integrationId.value }.toSet() shouldBe setOf("shikimori", "hikka")
+        registry.metadataProviders().map { it.integrationId.value }.toSet() shouldBe setOf("shikimori", "hikka")
 
         listOf("shikimori", "hikka").forEach { id ->
             registry.isGlobalCapabilityActive(
@@ -265,11 +271,11 @@ class DefaultIntegrationRegistryTest {
             registry.isGlobalCapabilityActive(
                 IntegrationId(id),
                 IntegrationCapability.SEARCH,
-            ) shouldBe false
+            ) shouldBe true
             registry.isGlobalCapabilityActive(
                 IntegrationId(id),
                 IntegrationCapability.METADATA_BASIC,
-            ) shouldBe false
+            ) shouldBe true
         }
     }
 
