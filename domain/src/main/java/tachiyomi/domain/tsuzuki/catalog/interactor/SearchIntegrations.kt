@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import tachiyomi.domain.tsuzuki.catalog.cache.BaseCatalogSearchCache
 import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -30,6 +31,7 @@ import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 class SearchIntegrations(
     private val registry: IntegrationRegistry,
     private val ratingEnrichmentCache: RatingEnrichmentCache = RatingEnrichmentCache(),
+    private val baseSearchCache: BaseCatalogSearchCache = BaseCatalogSearchCache(),
 ) {
 
     suspend fun execute(query: CatalogQuery): List<CatalogItem> =
@@ -45,15 +47,28 @@ class SearchIntegrations(
         val providers = registry.searchProviders()
         if (providers.isEmpty()) return@coroutineScope emptyList()
 
+        val cacheKey = BaseCatalogSearchCache.Key(
+            query = query,
+            providerIds = providers.map { it.integrationId.value },
+            configurationFingerprint = registry.configurationFingerprint(),
+        )
+        baseSearchCache.get(cacheKey)?.let { cached ->
+            onItems(cached)
+            return@coroutineScope cached
+        }
+
         val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
+        var complete = true
         val pending = providers.mapIndexed { index, provider ->
             async {
                 val result = provider.search(query)
                 val error = result.exceptionOrNull()
                 if (error is CancellationException) throw error
-                index to result
-                    .getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }
-                    .items
+                Triple(
+                    index,
+                    result.getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }.items,
+                    result.isSuccess,
+                )
             }
         }.toMutableList()
 
@@ -61,7 +76,8 @@ class SearchIntegrations(
         while (pending.isNotEmpty()) {
             val (completed, result) = awaitNext(pending)
             pending.remove(completed)
-            val (index, items) = result
+            val (index, items, succeeded) = result
+            complete = complete && succeeded
             providerItems[index] = items
             merged = providerItems
                 .filterNotNull()
@@ -70,6 +86,9 @@ class SearchIntegrations(
                 // Title similarity alone remains intentionally insufficient.
                 .let(::mergeCatalogItemsByVerifiedIdentity)
             onItems(merged)
+        }
+        if (complete) {
+            baseSearchCache.put(cacheKey, merged)
         }
         merged
     }
