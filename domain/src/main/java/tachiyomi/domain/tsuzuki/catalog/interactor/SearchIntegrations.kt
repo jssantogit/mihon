@@ -2,15 +2,15 @@ package tachiyomi.domain.tsuzuki.catalog.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.selects.select
 import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -45,24 +45,23 @@ class SearchIntegrations(
         val providers = registry.searchProviders()
         if (providers.isEmpty()) return@coroutineScope emptyList()
 
-        val completed = Channel<Pair<Int, List<CatalogItem>>>(providers.size)
         val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
-        providers.forEachIndexed { index, provider ->
-            launch {
+        val pending = providers.mapIndexed { index, provider ->
+            async {
                 val result = provider.search(query)
                 val error = result.exceptionOrNull()
                 if (error is CancellationException) throw error
-                completed.send(
-                    index to result
-                        .getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }
-                        .items,
-                )
+                index to result
+                    .getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }
+                    .items
             }
-        }
+        }.toMutableList()
 
         var merged = emptyList<CatalogItem>()
-        repeat(providers.size) {
-            val (index, items) = completed.receive()
+        while (pending.isNotEmpty()) {
+            val (completed, result) = awaitNext(pending)
+            pending.remove(completed)
+            val (index, items) = result
             providerItems[index] = items
             merged = providerItems
                 .filterNotNull()
@@ -289,6 +288,14 @@ class SearchIntegrations(
         val error = exceptionOrNull()
         if (error is CancellationException) throw error
         return getOrNull()
+    }
+
+    private suspend fun <T> awaitNext(
+        pending: List<Deferred<T>>,
+    ): Pair<Deferred<T>, T> = select {
+        pending.forEach { deferred ->
+            deferred.onAwait { value -> deferred to value }
+        }
     }
 
     private companion object {
