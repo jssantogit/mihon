@@ -505,12 +505,19 @@ class RefreshChapterEvidence private constructor(
             }
         }
 
-        var accumulated = EvidenceCollection()
+        val evidenceById = linkedMapOf<String, ChapterEvidence>()
+        var complete = true
         awaitInCompletionOrder(pending) { batch ->
             onBatch(batch)
-            accumulated = accumulated.merge(batch)
+            batch.evidence.forEach { observation ->
+                evidenceById.putIfAbsent(observation.id, observation)
+            }
+            complete = complete && batch.complete
         }
-        accumulated
+        EvidenceCollection(
+            evidence = evidenceById.values.toList(),
+            complete = complete,
+        )
     }
 
     private suspend fun collectAddonEvidence(
@@ -646,12 +653,30 @@ class RefreshChapterEvidence private constructor(
                         }
                     }
                 }
-            var accumulated = AddonEvidenceCollection()
+            val evidenceById = linkedMapOf<String, ChapterEvidence>()
+            val snapshotsByScope = linkedMapOf<String, ChapterRefreshSnapshot>()
+            var observedBindingCount = 0
+            var observedChapterCount = 0
+            var complete = true
             awaitInCompletionOrder(results) { batch ->
                 onBatch(batch)
-                accumulated = accumulated.merge(batch)
+                batch.evidence.forEach { observation ->
+                    evidenceById.putIfAbsent(observation.id, observation)
+                }
+                batch.pendingSnapshots.forEach { snapshot ->
+                    snapshotsByScope[snapshot.scopeKey] = snapshot
+                }
+                observedBindingCount += batch.observedBindingCount
+                observedChapterCount += batch.observedChapterCount
+                complete = complete && batch.complete
             }
-            accumulated
+            AddonEvidenceCollection(
+                evidence = evidenceById.values.toList(),
+                observedBindingCount = observedBindingCount,
+                observedChapterCount = observedChapterCount,
+                pendingSnapshots = snapshotsByScope.values.toList(),
+                complete = complete,
+            )
         }
     }
 
@@ -719,10 +744,17 @@ class RefreshChapterEvidence private constructor(
         val evidence: List<ChapterEvidence> = emptyList(),
         val complete: Boolean = true,
     ) {
-        fun merge(other: EvidenceCollection): EvidenceCollection = EvidenceCollection(
-            evidence = (evidence + other.evidence).distinctBy(ChapterEvidence::id),
-            complete = complete && other.complete,
-        )
+        fun merge(other: EvidenceCollection): EvidenceCollection {
+            if (other.evidence.isEmpty()) return copy(complete = complete && other.complete)
+            if (evidence.isEmpty()) return other.copy(complete = complete && other.complete)
+            val merged = LinkedHashMap<String, ChapterEvidence>(evidence.size + other.evidence.size)
+            evidence.forEach { observation -> merged.putIfAbsent(observation.id, observation) }
+            other.evidence.forEach { observation -> merged.putIfAbsent(observation.id, observation) }
+            return EvidenceCollection(
+                evidence = merged.values.toList(),
+                complete = complete && other.complete,
+            )
+        }
     }
 
     private data class AddonEvidenceCollection(
@@ -732,16 +764,24 @@ class RefreshChapterEvidence private constructor(
         val pendingSnapshots: List<ChapterRefreshSnapshot> = emptyList(),
         val complete: Boolean = true,
     ) {
-        fun merge(other: AddonEvidenceCollection): AddonEvidenceCollection = AddonEvidenceCollection(
-            evidence = (evidence + other.evidence).distinctBy(ChapterEvidence::id),
-            observedBindingCount = observedBindingCount + other.observedBindingCount,
-            observedChapterCount = observedChapterCount + other.observedChapterCount,
-            pendingSnapshots = (pendingSnapshots + other.pendingSnapshots)
-                .associateBy(ChapterRefreshSnapshot::scopeKey)
-                .values
-                .toList(),
-            complete = complete && other.complete,
-        )
+        fun merge(other: AddonEvidenceCollection): AddonEvidenceCollection {
+            val mergedEvidence = LinkedHashMap<String, ChapterEvidence>(evidence.size + other.evidence.size)
+            evidence.forEach { observation -> mergedEvidence.putIfAbsent(observation.id, observation) }
+            other.evidence.forEach { observation -> mergedEvidence.putIfAbsent(observation.id, observation) }
+
+            val mergedSnapshots =
+                LinkedHashMap<String, ChapterRefreshSnapshot>(pendingSnapshots.size + other.pendingSnapshots.size)
+            pendingSnapshots.forEach { snapshot -> mergedSnapshots[snapshot.scopeKey] = snapshot }
+            other.pendingSnapshots.forEach { snapshot -> mergedSnapshots[snapshot.scopeKey] = snapshot }
+
+            return AddonEvidenceCollection(
+                evidence = mergedEvidence.values.toList(),
+                observedBindingCount = observedBindingCount + other.observedBindingCount,
+                observedChapterCount = observedChapterCount + other.observedChapterCount,
+                pendingSnapshots = mergedSnapshots.values.toList(),
+                complete = complete && other.complete,
+            )
+        }
     }
 
     private fun recordRefreshOutcome(
