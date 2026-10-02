@@ -12,6 +12,8 @@ interface IntegrationRegistry {
 
     fun manifests(): List<IntegrationManifest> = emptyList()
 
+    fun configurationFingerprint(): String = ""
+
     fun isGlobalCapabilityActive(
         integrationId: IntegrationId,
         capability: IntegrationCapability,

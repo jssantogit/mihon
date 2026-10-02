@@ -5,9 +5,13 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.cache.BaseCatalogSearchCache
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
@@ -282,6 +286,134 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `rating enrichment reuses cached provider result across repeated pages`() = runTest {
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+            var ratingCalls = 0
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+                ratingCalls++
+                return Result.success(
+                    CatalogRatingMatch(
+                        externalId = "m1",
+                        rating = ExternalRating(
+                            providerId = "mal",
+                            label = "MAL",
+                            value = 8.4,
+                            scaleMax = 10.0,
+                        ),
+                    ),
+                )
+            }
+        }
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Work",
+            externalIds = mapOf("mal" to "m1"),
+        )
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("kitsu", Result.success(page(item))),
+                ratingProviders = listOf(provider),
+            ),
+        )
+
+        search.enrichRatings(listOf(item)).single().scores.single().value shouldBe 8.4
+        search.enrichRatings(listOf(item)).single().scores.single().value shouldBe 8.4
+
+        provider.ratingCalls shouldBe 1
+    }
+
+    @Test
+    fun `repeated base search reuses the completed provider result`() = runTest {
+        var calls = 0
+        val provider = object : SearchProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                calls++
+                return Result.success(page(CatalogItem("kitsu", "1", "Work")))
+            }
+        }
+        val search = SearchIntegrations(registry(provider))
+        val query = CatalogQuery(query = "Work")
+
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1")
+
+        calls shouldBe 1
+    }
+
+    @Test
+    fun `concurrent identical base searches share one provider request`() = runTest {
+        var calls = 0
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val provider = object : SearchProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                calls++
+                entered.complete(Unit)
+                release.await()
+                return Result.success(page(CatalogItem("kitsu", "1", "Work")))
+            }
+        }
+        val search = SearchIntegrations(registry(provider))
+        val query = CatalogQuery(query = "Work")
+
+        val first = async { search.executeBase(query) }
+        entered.await()
+        val second = async { search.executeBase(query) }
+        runCurrent()
+
+        calls shouldBe 1
+
+        release.complete(Unit)
+        first.await().map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        second.await().map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        calls shouldBe 1
+    }
+
+    @Test
+    fun `partial base search failure is not cached as a complete query result`() = runTest {
+        var healthyCalls = 0
+        var flakyCalls = 0
+        val healthy = object : SearchProvider {
+            override val integrationId = IntegrationId("healthy")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                healthyCalls++
+                return Result.success(page(CatalogItem("healthy", "1", "Healthy")))
+            }
+        }
+        val flaky = object : SearchProvider {
+            override val integrationId = IntegrationId("flaky")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                flakyCalls++
+                return if (flakyCalls == 1) {
+                    Result.failure(IllegalStateException("temporary"))
+                } else {
+                    Result.success(page(CatalogItem("flaky", "2", "Recovered")))
+                }
+            }
+        }
+        val search = SearchIntegrations(registry(healthy, flaky))
+        val query = CatalogQuery(query = "Work")
+
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        search.executeBase(query).map(CatalogItem::providerId) shouldContainExactly listOf("1", "2")
+
+        healthyCalls shouldBe 2
+        flakyCalls shouldBe 2
+    }
+
+    @Test
     fun `same provider and title with distinct external identities remain distinct`() = runTest {
         val search = SearchIntegrations(
             registry(
@@ -368,13 +500,306 @@ class SearchIntegrationsTest {
                 return Result.success(page(CatalogItem("second", "2", "Two")))
             }
         }
-        val search = SearchIntegrations(registry(first, second))
+        val search = SearchIntegrations(
+            registry = registry(first, second),
+            baseSearchCache = BaseCatalogSearchCache(scope = this),
+        )
 
         val results = withTimeout(1_000) {
             search.execute(CatalogQuery(query = "query"))
         }
 
         results.size shouldBe 2
+    }
+
+    @Test
+    fun `base search publishes a fast provider before a slow sibling finishes`() = runTest {
+        val slowRelease = CompletableDeferred<Unit>()
+        val fast = object : SearchProvider {
+            override val integrationId = IntegrationId("fast")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> =
+                Result.success(page(CatalogItem("fast", "1", "Fast")))
+        }
+        val slow = object : SearchProvider {
+            override val integrationId = IntegrationId("slow")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                slowRelease.await()
+                return Result.success(page(CatalogItem("slow", "2", "Slow")))
+            }
+        }
+        val search = SearchIntegrations(registry(fast, slow))
+        val published = mutableListOf<List<String>>()
+
+        val operation = async {
+            search.executeBaseProgressively(CatalogQuery(query = "work")) { items ->
+                published += items.map(CatalogItem::providerId)
+            }
+        }
+        runCurrent()
+
+        published.last() shouldContainExactly listOf("1")
+        operation.isCompleted shouldBe false
+
+        slowRelease.complete(Unit)
+
+        operation.await().map(CatalogItem::providerId) shouldContainExactly listOf("1", "2")
+        published.last() shouldContainExactly listOf("1", "2")
+    }
+
+    @Test
+    fun `native provider score skips redundant identity resolution`() = runTest {
+        var resolveCalls = 0
+        var ratingCalls = 0
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                resolveCalls++
+                return Result.success(mapOf("mal" to "unexpected"))
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> {
+                ratingCalls++
+                return Result.success(emptyList())
+            }
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("mal", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+        )
+        val item = CatalogItem(
+            provider = "mal",
+            providerId = "42",
+            title = "Work",
+            score = CatalogScore(
+                provider = "mal",
+                value = 8.7,
+                maxValue = 10.0,
+            ),
+        )
+
+        val enriched = search.enrichRatings(listOf(item)).single()
+
+        enriched.scores.single().value shouldBe 8.7
+        resolveCalls shouldBe 0
+        ratingCalls shouldBe 0
+    }
+
+    @Test
+    fun `existing provider ratings publish Tsuzuki aggregate before slow supplemental rating`() = runTest {
+        val supplementalStarted = CompletableDeferred<Unit>()
+        val supplementalRelease = CompletableDeferred<Unit>()
+        val mal = FakeRatingsProvider("mal", emptyMap())
+        val kitsu = FakeRatingsProvider("kitsu", emptyMap())
+        val hikka = object : RatingsProvider {
+            override val integrationId = IntegrationId("hikka")
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+                supplementalStarted.complete(Unit)
+                supplementalRelease.await()
+                return Result.success(null)
+            }
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(mal, kitsu, hikka),
+            ),
+            ratingEnrichmentCache = RatingEnrichmentCache(
+                scope = this,
+                clock = { 0L },
+                positiveTtlMillis = 60_000L,
+                negativeTtlMillis = 60_000L,
+                maxEntries = 32,
+            ),
+        )
+        val item = CatalogItem(
+            provider = "fake",
+            providerId = "1",
+            title = "Work",
+            scores = listOf(
+                CatalogScore(provider = "mal", value = 8.0, maxValue = 10.0),
+                CatalogScore(provider = "kitsu", value = 80.0, maxValue = 100.0),
+            ),
+        )
+        val published = mutableListOf<CatalogItem>()
+
+        val operation = async {
+            search.enrichRatingsProgressively(listOf(item)) { _, updated ->
+                published += updated
+            }
+        }
+        supplementalStarted.await()
+        runCurrent()
+
+        published.last().tsuzukiRating?.sourceCount shouldBe 2
+        operation.isCompleted shouldBe false
+
+        supplementalRelease.complete(Unit)
+        operation.await()
+    }
+
+    @Test
+    fun `rating enrichment fills a freed item slot without waiting for a slow sibling`() = runTest {
+        val slowRelease = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                started += item.providerId
+                if (item.providerId == "1") {
+                    slowRelease.await()
+                }
+                return Result.success(emptyMap())
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+            ratingEnrichmentCache = RatingEnrichmentCache(
+                scope = this,
+                clock = { 0L },
+                positiveTtlMillis = 60_000L,
+                negativeTtlMillis = 60_000L,
+                maxEntries = 32,
+            ),
+        )
+        val items = (1..6).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = index.toString(),
+                title = "Work $index",
+            )
+        }
+
+        val operation = async {
+            search.enrichRatingsProgressively(items) { _, _ -> }
+        }
+        runCurrent()
+
+        started shouldContainExactly listOf("1", "2", "3", "4", "5", "6")
+        operation.isCompleted shouldBe false
+
+        slowRelease.complete(Unit)
+        operation.await()
+    }
+
+    @Test
+    fun `progressive rating enrichment prioritizes a bounded first item window`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                started += item.providerId
+                release.await()
+                return Result.success(emptyMap())
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val cache = RatingEnrichmentCache(
+            scope = this,
+            clock = { 0L },
+            positiveTtlMillis = 60_000L,
+            negativeTtlMillis = 60_000L,
+            maxEntries = 32,
+        )
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+            ratingEnrichmentCache = cache,
+        )
+        val items = (1..6).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = index.toString(),
+                title = "Work $index",
+            )
+        }
+
+        val operation = async {
+            search.enrichRatingsProgressively(items) { _, _ -> }
+        }
+        runCurrent()
+
+        started shouldContainExactly listOf("1", "2", "3")
+
+        release.complete(Unit)
+        operation.await().map(CatalogItem::providerId) shouldContainExactly
+            listOf("1", "2", "3", "4", "5", "6")
+    }
+
+    @Test
+    fun `concurrent enrichment calls share one item backpressure window`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                started += item.providerId
+                release.await()
+                return Result.success(emptyMap())
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+            ratingEnrichmentCache = RatingEnrichmentCache(
+                scope = this,
+                clock = { 0L },
+                positiveTtlMillis = 60_000L,
+                negativeTtlMillis = 60_000L,
+                maxEntries = 32,
+            ),
+        )
+        val firstItems = (1..3).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = "first-$index",
+                title = "First $index",
+            )
+        }
+        val secondItems = (1..3).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = "second-$index",
+                title = "Second $index",
+            )
+        }
+
+        val first = async { search.enrichRatingsProgressively(firstItems) { _, _ -> } }
+        val second = async { search.enrichRatingsProgressively(secondItems) { _, _ -> } }
+        runCurrent()
+
+        started.size shouldBe 3
+
+        release.complete(Unit)
+        first.await()
+        second.await()
     }
 
     @Test
@@ -403,6 +828,7 @@ class SearchIntegrationsTest {
         ratingProviders: List<RatingsProvider> = emptyList(),
         tsuzukiRatingsEnabled: Boolean = true,
     ) = object : IntegrationRegistry {
+        override fun configurationFingerprint(): String = "cfg"
         override fun searchProviders(): List<SearchProvider> = providers.toList()
         override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
         override fun metadataProviders(): List<MetadataProvider> = emptyList()

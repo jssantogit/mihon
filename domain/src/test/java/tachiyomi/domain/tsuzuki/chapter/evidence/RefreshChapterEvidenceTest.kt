@@ -32,6 +32,8 @@ import tachiyomi.domain.tsuzuki.chapter.diagnostics.NoOpChapterInventoryDiagnost
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.CanonicalChapter
 import tachiyomi.domain.tsuzuki.chapter.model.ChapterVariant
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshot
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.chapter.repository.CanonicalChapterRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
@@ -62,6 +64,134 @@ import java.net.SocketTimeoutException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RefreshChapterEvidenceTest {
+
+    @Test
+    fun `fresh chapter snapshot skips provider until forced refresh`() = runTest {
+        var providerCalls = 0
+        var now = 1_000L
+        val snapshots = FakeChapterRefreshSnapshotRepository()
+        val chapters = FakeCanonicalChapterRepository()
+        val evidenceRepository = FakeChapterEvidenceRepository()
+        val provider = object : ChapterEvidenceProvider {
+            override val producerId = "editorial"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                providerCalls++
+                return Result.success(emptyList())
+            }
+        }
+        val refresh = RefreshChapterEvidence(
+            registry = registry(listOf(provider)),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = evidenceRepository,
+            ),
+            refreshSnapshots = snapshots,
+            clock = { now },
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        providerCalls shouldBe 1
+
+        now += 1_000L
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        providerCalls shouldBe 1
+
+        refresh.execute("canonical-title", forceRefresh = true).isSuccess shouldBe true
+        providerCalls shouldBe 2
+    }
+
+    @Test
+    fun `refresh publishes deterministic provider stages before later provider completes`() = runTest {
+        val secondGate = CompletableDeferred<Unit>()
+        val chapters = FakeCanonicalChapterRepository()
+        val stages = mutableListOf<List<String>>()
+        val slowProvider = object : ChapterEvidenceProvider {
+            override val producerId: String = "second"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                secondGate.await()
+                return Result.success(
+                    listOf(editorialEvidence("e2", "2", "Chapter 2", producerId)),
+                )
+            }
+        }
+        val refresh = refresh(
+            chapters = chapters,
+            providers = listOf(
+                provider(
+                    "first",
+                    Result.success(listOf(editorialEvidence("e1", "1", "Chapter 1", "first"))),
+                ),
+                slowProvider,
+            ),
+        )
+
+        val operation = async {
+            refresh.executeProgressively(
+                canonicalTitleId = "canonical-title",
+                onStageReconciled = {
+                    stages += chapters.getByCanonicalTitleId("canonical-title").map { it.displayNumber }
+                },
+            )
+        }
+        runCurrent()
+
+        stages shouldContainExactly listOf(listOf("1"))
+        operation.isCompleted shouldBe false
+
+        secondGate.complete(Unit)
+        operation.await().isSuccess shouldBe true
+        stages shouldContainExactly listOf(
+            listOf("1"),
+            listOf("1", "2"),
+        )
+    }
+
+    @Test
+    fun `later fast provider publishes before earlier slow provider completes`() = runTest {
+        val firstGate = CompletableDeferred<Unit>()
+        val chapters = FakeCanonicalChapterRepository()
+        val stages = mutableListOf<List<String>>()
+        val slowFirst = object : ChapterEvidenceProvider {
+            override val producerId: String = "slow-first"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                firstGate.await()
+                return Result.success(
+                    listOf(editorialEvidence("slow-1", "1", "Chapter 1", producerId)),
+                )
+            }
+        }
+        val fastSecond = provider(
+            "fast-second",
+            Result.success(listOf(editorialEvidence("fast-2", "2", "Chapter 2", "fast-second"))),
+        )
+        val refresh = refresh(
+            chapters = chapters,
+            providers = listOf(slowFirst, fastSecond),
+        )
+
+        val operation = async {
+            refresh.executeProgressively(
+                canonicalTitleId = "canonical-title",
+                onStageReconciled = {
+                    stages += chapters.getByCanonicalTitleId("canonical-title").map { it.displayNumber }
+                },
+            )
+        }
+        runCurrent()
+
+        stages shouldContainExactly listOf(listOf("2"))
+        operation.isCompleted shouldBe false
+
+        firstGate.complete(Unit)
+        operation.await().isSuccess shouldBe true
+        stages.size shouldBe 2
+        stages.first() shouldContainExactly listOf("2")
+        stages.last().toSet() shouldBe setOf("1", "2")
+    }
 
     @Test
     fun `chapter evidence refresh works with zero source mappings`() = runTest {
@@ -342,6 +472,73 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `existing readable addon inventory skips title discovery`() = runTest {
+        val addonId = AddonId("preferred-addon")
+        val binding = ContentBinding(
+            id = "existing-binding",
+            canonicalTitleId = "canonical-title",
+            addonId = addonId,
+            providerTitleKey = "42:/death-note",
+            matchConfidence = 1.0,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val discover = mockk<DiscoverReadableTitle>()
+        coEvery { discover.execute("canonical-title", any()) } returns Result.success(listOf(binding))
+        val probe = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(
+                    listOf(
+                        ChapterEvidence(
+                            id = "addon-evidence-1",
+                            canonicalTitleId = canonicalTitleId,
+                            producerKind = ProducerKind.ADDON,
+                            producerId = addonId.value,
+                            externalChapterKey = "42:chapter-1",
+                            rawLabel = "Chapter 1",
+                            rawNumber = 1.0,
+                            volume = null,
+                            title = null,
+                            observedAt = 10L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                    ),
+                )
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(probe)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery {
+            resolver.existingBindingsForRefresh("canonical-title", addonId)
+        } returns Result.success(listOf(binding))
+        val refresh = RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = FakeCanonicalChapterRepository(),
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+            discoverReadableTitle = discover,
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+
+        coVerify(exactly = 0) { discover.execute("canonical-title", any()) }
+    }
+
+    @Test
     fun `empty existing addon inventory broadens binding discovery and reprobes`() = runTest {
         val staleAddon = AddonId("stale")
         val readableAddon = AddonId("readable")
@@ -566,6 +763,100 @@ class RefreshChapterEvidenceTest {
 
         pending.await().isSuccess shouldBe true
         concurrent shouldBe 0
+    }
+
+    @Test
+    fun `fast Add-on stage publishes before slow integration completes`() = runTest {
+        val integrationGate = CompletableDeferred<Unit>()
+        val canonicalTitleId = "canonical-title"
+        val addonId = AddonId("fast-addon")
+        val chapters = FakeCanonicalChapterRepository()
+        val stages = mutableListOf<List<String>>()
+
+        val slowIntegration = object : ChapterEvidenceProvider {
+            override val producerId: String = "slow-editorial"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                integrationGate.await()
+                return Result.success(
+                    listOf(editorialEvidence("editorial-1", "1", "Chapter 1", producerId)),
+                )
+            }
+        }
+        val fastAddon = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(
+                    listOf(
+                        ChapterEvidence(
+                            id = "addon-2",
+                            canonicalTitleId = canonicalTitleId,
+                            producerKind = ProducerKind.ADDON,
+                            producerId = addonId.value,
+                            externalChapterKey = "42:chapter-2",
+                            rawLabel = "Chapter 2",
+                            rawNumber = 2.0,
+                            volume = null,
+                            title = null,
+                            observedAt = 10L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                    ),
+                )
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(fastAddon)
+        }
+        val binding = ContentBinding(
+            id = "fast-binding",
+            canonicalTitleId = canonicalTitleId,
+            addonId = addonId,
+            providerTitleKey = "42:/fast-title",
+            matchConfidence = 1.0,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery {
+            resolver.existingBindingsForRefresh(canonicalTitleId, addonId)
+        } returns Result.success(listOf(binding))
+        val refresh = RefreshChapterEvidence(
+            registry = registry(listOf(slowIntegration)),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+        )
+
+        val operation = async {
+            refresh.executeProgressively(
+                canonicalTitleId = canonicalTitleId,
+                onStageReconciled = {
+                    stages += chapters.getByCanonicalTitleId(canonicalTitleId).map { it.displayNumber }
+                },
+            )
+        }
+        runCurrent()
+
+        stages shouldContainExactly listOf(listOf("2"))
+        operation.isCompleted shouldBe false
+
+        integrationGate.complete(Unit)
+        operation.await().isSuccess shouldBe true
+        stages.size shouldBe 2
+        stages.first() shouldContainExactly listOf("2")
+        stages.last().toSet() shouldBe setOf("1", "2")
     }
 
     @Test
@@ -892,7 +1183,26 @@ class RefreshChapterEvidenceTest {
         val resolver = mockk<ResolveContentBinding>()
         onResolver(resolver)
         val bindingResult: Result<List<ContentBinding>> = bindingError?.let { Result.failure(it) }
-            ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
+            ?: Result.success(
+                if (bindingAvailable) {
+                    listOf(
+                        ContentBinding(
+                            id = "fixture-binding",
+                            canonicalTitleId = "canonical-title",
+                            addonId = addonId,
+                            providerTitleKey = "1:/fixture",
+                            matchConfidence = 1.0,
+                            verifiedByUser = true,
+                            availability = ContentBindingAvailability.AVAILABLE,
+                            runtimePayload = byteArrayOf(1),
+                            createdAt = 1L,
+                            updatedAt = 1L,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                },
+            )
         coEvery { resolver.existingBindingsForRefresh("canonical-title", addonId) } returns bindingResult
 
         return RefreshChapterEvidence(
@@ -974,6 +1284,24 @@ class RefreshChapterEvidenceTest {
         }
 
         override fun report(): String = events.joinToString("\n")
+    }
+
+    private class FakeChapterRefreshSnapshotRepository : ChapterRefreshSnapshotRepository {
+        private val values = linkedMapOf<Pair<String, String>, ChapterRefreshSnapshot>()
+
+        override suspend fun get(canonicalTitleId: String, scopeKey: String): ChapterRefreshSnapshot? =
+            values[canonicalTitleId to scopeKey]
+
+        override suspend fun upsertIfNewer(snapshot: ChapterRefreshSnapshot): ChapterRefreshSnapshot {
+            val key = snapshot.canonicalTitleId to snapshot.scopeKey
+            val existing = values[key]
+            if (existing == null || snapshot.observedAt > existing.observedAt ||
+                (snapshot.observedAt == existing.observedAt && snapshot.fingerprint == existing.fingerprint)
+            ) {
+                values[key] = snapshot
+            }
+            return values.getValue(key)
+        }
     }
 
     private class FakeChapterEvidenceRepository : ChapterEvidenceRepository {

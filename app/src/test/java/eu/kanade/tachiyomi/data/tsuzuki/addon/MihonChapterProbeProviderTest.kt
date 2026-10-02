@@ -16,6 +16,8 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterSnapshot
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshot
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
@@ -23,6 +25,51 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 
 class MihonChapterProbeProviderTest {
+
+    @Test
+    fun `unchanged inventory returns no evidence and reports unchanged binding`() = runTest {
+        val binding = binding()
+        val snapshots = object : ChapterRefreshSnapshotRepository {
+            private val values = linkedMapOf<Pair<String, String>, ChapterRefreshSnapshot>()
+
+            override suspend fun get(canonicalTitleId: String, scopeKey: String): ChapterRefreshSnapshot? =
+                values[canonicalTitleId to scopeKey]
+
+            override suspend fun upsertIfNewer(snapshot: ChapterRefreshSnapshot): ChapterRefreshSnapshot {
+                values[snapshot.canonicalTitleId to snapshot.scopeKey] = snapshot
+                return snapshot
+            }
+        }
+        val inventory = SourceChapterInventory(
+            sourceMappingId = binding.id,
+            sourceId = 7L,
+            canonicalTitleId = "title",
+            chapters = listOf(snapshot(binding.id, 7L, "/chapter/1", "Chapter 1", 1.0)),
+            mihonMangaId = 99L,
+            language = "en",
+            sourceUrl = "/work",
+            fetchStartedAtMillis = 100L,
+        )
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { Result.success(inventory) },
+            refreshSnapshots = snapshots,
+        )
+
+        val first = provider.probeRefresh("title").getOrThrow()
+        first.evidence.size shouldBe 1
+        first.unchangedBindingCount shouldBe 0
+        first.pendingSnapshots.size shouldBe 1
+        snapshots.upsertIfNewer(first.pendingSnapshots.single())
+
+        val second = provider.probeRefresh("title").getOrThrow()
+        second.evidence shouldBe emptyList()
+        second.unchangedBindingCount shouldBe 1
+        second.pendingSnapshots shouldBe emptyList()
+        second.observedBindingCount shouldBe 1
+    }
 
     @Test
     fun `targeted probe only requests the chosen enabled binding`() = runTest {

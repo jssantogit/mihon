@@ -27,25 +27,35 @@ internal fun observedAddonCoverage(
     evidence: List<PersistedChapterEvidence>,
     addonNames: Map<String, String>,
 ): List<ObservedAddonCoverage> {
-    val byId = chapters.associateBy(CanonicalChapter::id)
-    return evidence.asSequence()
+    val addonMappedChapterIds = evidence.asSequence()
         .filter { it.evidence.producerKind == ProducerKind.ADDON }
-        .filter { it.mappedCanonicalChapterId?.let(byId::containsKey) == true }
-        .groupBy { it.evidence.producerId }
-        .mapNotNull { (addonId, observations) ->
-            val observed = observations
-                .mapNotNull { it.mappedCanonicalChapterId?.let(byId::get) }
-                .distinctBy(CanonicalChapter::id)
-            if (observed.isEmpty()) return@mapNotNull null
-            val numbered = observed.mapNotNull(CanonicalChapter::baseNumber)
-                .filter { it >= 0 }
-            ObservedAddonCoverage(
-                addonId = addonId,
-                displayName = addonNames[addonId] ?: addonId,
-                observedChapterCount = observed.size,
-                firstKnownNumber = numbered.minOrNull(),
-                lastKnownNumber = numbered.maxOrNull(),
-            )
+        .mapNotNull { persisted ->
+            persisted.mappedCanonicalChapterId?.let { chapterId ->
+                persisted.evidence.producerId to chapterId
+            }
         }
-        .sortedWith(compareBy(ObservedAddonCoverage::displayName, ObservedAddonCoverage::addonId))
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, chapterIds) -> chapterIds.toSet() }
+    return observedAddonCoverage(chapters, addonMappedChapterIds, addonNames)
+}
+
+internal fun observedAddonCoverage(
+    chapters: List<CanonicalChapter>,
+    addonMappedChapterIds: Map<String, Set<String>>,
+    addonNames: Map<String, String>,
+): List<ObservedAddonCoverage> {
+    val byId = chapters.associateBy(CanonicalChapter::id)
+    return addonMappedChapterIds.mapNotNull { (addonId, chapterIds) ->
+        val observed = chapterIds.mapNotNull(byId::get)
+        if (observed.isEmpty()) return@mapNotNull null
+        val numbered = observed.mapNotNull(CanonicalChapter::baseNumber)
+            .filter { it >= 0 }
+        ObservedAddonCoverage(
+            addonId = addonId,
+            displayName = addonNames[addonId] ?: addonId,
+            observedChapterCount = observed.size,
+            firstKnownNumber = numbered.minOrNull(),
+            lastKnownNumber = numbered.maxOrNull(),
+        )
+    }.sortedWith(compareBy(ObservedAddonCoverage::displayName, ObservedAddonCoverage::addonId))
 }

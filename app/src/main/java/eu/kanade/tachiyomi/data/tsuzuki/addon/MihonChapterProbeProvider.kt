@@ -9,6 +9,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.addon.AddonId
+import tachiyomi.domain.tsuzuki.addon.ChapterProbeRefresh
+import tachiyomi.domain.tsuzuki.addon.RefreshAwareChapterProbeProvider
 import tachiyomi.domain.tsuzuki.addon.TargetedChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticFailures
@@ -25,10 +27,14 @@ import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterLabel
 import tachiyomi.domain.tsuzuki.chapter.interactor.ParseCanonicalChapterVolume
 import tachiyomi.domain.tsuzuki.chapter.model.SourceChapterInventory
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterInventoryFingerprint
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshot
+import tachiyomi.domain.tsuzuki.chapter.refresh.ChapterRefreshSnapshotRepository
 import tachiyomi.domain.tsuzuki.content.ContentBinding
 import tachiyomi.domain.tsuzuki.content.ContentBindingAvailability
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import java.util.UUID
+import kotlin.time.Clock
 import kotlin.time.TimeSource
 
 class MihonChapterProbeProvider internal constructor(
@@ -39,25 +45,38 @@ class MihonChapterProbeProvider internal constructor(
     private val diagnostics: ChapterInventoryDiagnostics = NoOpChapterInventoryDiagnostics,
     private val enabledSourceIds: (suspend () -> Set<Long>)? = null,
     private val volumeParser: ParseCanonicalChapterVolume = ParseCanonicalChapterVolume(),
-) : TargetedChapterProbeProvider {
+    private val refreshSnapshots: ChapterRefreshSnapshotRepository? = null,
+) : TargetedChapterProbeProvider, RefreshAwareChapterProbeProvider {
 
     override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
-        probeSelected(canonicalTitleId, bindingId = null)
+        probeSelected(canonicalTitleId, bindingId = null, skipUnchanged = false)
+            .map(ChapterProbeRefresh::evidence)
+
+    override suspend fun probeRefresh(canonicalTitleId: String): Result<ChapterProbeRefresh> =
+        probeSelected(canonicalTitleId, bindingId = null, skipUnchanged = true)
+
+    override suspend fun refreshConfigurationFingerprint(): String {
+        val allowedSourceIds = enabledSourceIds?.invoke()
+        return configurationFingerprint(allowedSourceIds)
+    }
 
     override suspend fun probeBinding(binding: ContentBinding): Result<List<ChapterEvidence>> {
         if (binding.addonId != addonId || binding.canonicalTitleId.isBlank()) {
             return Result.failure(IllegalArgumentException("Binding belongs to another Add-on or title"))
         }
-        return probeSelected(binding.canonicalTitleId, binding.id)
+        return probeSelected(binding.canonicalTitleId, binding.id, skipUnchanged = false)
+            .map(ChapterProbeRefresh::evidence)
     }
 
     private suspend fun probeSelected(
         canonicalTitleId: String,
         bindingId: String?,
-    ): Result<List<ChapterEvidence>> {
+        skipUnchanged: Boolean,
+    ): Result<ChapterProbeRefresh> {
         val totalStart = TimeSource.Monotonic.markNow()
         return try {
             val allowedSourceIds = enabledSourceIds?.invoke()
+            val providerConfigurationFingerprint = configurationFingerprint(allowedSourceIds)
             val bindings = contentBindingRepository.getByTitle(canonicalTitleId)
                 .filter { binding ->
                     binding.addonId == addonId &&
@@ -82,7 +101,7 @@ class MihonChapterProbeProvider internal constructor(
                     elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
                     reasons = mapOf(ChapterInventoryDiagnosticReason.NO_BINDING to 1),
                 )
-                return Result.success(emptyList())
+                return Result.success(ChapterProbeRefresh(evidence = emptyList()))
             }
 
             val fetchGate = Semaphore(MAX_CONCURRENT_INVENTORY_FETCHES)
@@ -103,9 +122,12 @@ class MihonChapterProbeProvider internal constructor(
             }
 
             val evidence = mutableListOf<ChapterEvidence>()
+            val pendingSnapshots = mutableListOf<ChapterRefreshSnapshot>()
             val labels = mutableListOf<String>()
             val reasons = mutableMapOf<ChapterInventoryDiagnosticReason, Int>()
             var received = 0
+            var observedChapterCount = 0
+            var unchangedBindingCount = 0
             var discardedForMissingIdentity = 0
             var lowConfidence = 0
             val sourceIds = mutableSetOf<Long>()
@@ -141,12 +163,35 @@ class MihonChapterProbeProvider internal constructor(
                     continue
                 }
                 successfulInventoryCount++
-                // Cache replay keeps the gateway's fetch-start. Older inventories
-                // without provenance use the oldest timestamp, not processing time.
                 val observedAt = inventory.fetchStartedAtMillis ?: 0L
                 received += inventory.chapters.size
+                observedChapterCount += inventory.chapters.size
                 sourceIds += inventory.sourceId
                 languages += inventory.language
+
+                val fingerprint = if (skipUnchanged && refreshSnapshots != null) {
+                    ChapterInventoryFingerprint.compute(inventory)
+                } else {
+                    null
+                }
+                if (fingerprint != null) {
+                    val repository = checkNotNull(refreshSnapshots)
+                    val scopeKey = ChapterRefreshSnapshot.bindingScope(binding.id)
+                    val existing = repository.get(canonicalTitleId, scopeKey)
+                    if (existing?.fingerprint == fingerprint) {
+                        unchangedBindingCount++
+                        continue
+                    }
+                    pendingSnapshots += ChapterRefreshSnapshot(
+                        canonicalTitleId = canonicalTitleId,
+                        scopeKey = scopeKey,
+                        fingerprint = fingerprint,
+                        configurationFingerprint = providerConfigurationFingerprint,
+                        observedAt = observedAt,
+                        refreshedAt = Clock.System.now().toEpochMilliseconds(),
+                        itemCount = inventory.chapters.size,
+                    )
+                }
 
                 for (snapshot in inventory.chapters) {
                     if (snapshot.sourceChapterId.isBlank()) {
@@ -215,7 +260,15 @@ class MihonChapterProbeProvider internal constructor(
             if (evidence.isEmpty() && firstFailure != null) {
                 Result.failure(firstFailure)
             } else {
-                Result.success(uniqueEvidence)
+                Result.success(
+                    ChapterProbeRefresh(
+                        evidence = uniqueEvidence,
+                        observedBindingCount = successfulInventoryCount,
+                        observedChapterCount = observedChapterCount,
+                        unchangedBindingCount = unchangedBindingCount,
+                        pendingSnapshots = pendingSnapshots,
+                    ),
+                )
             }
         } catch (error: CancellationException) {
             if (error is kotlinx.coroutines.TimeoutCancellationException) {
@@ -233,6 +286,16 @@ class MihonChapterProbeProvider internal constructor(
                 elapsedMillis = totalStart.elapsedNow().inWholeMilliseconds,
             )
             Result.failure(error)
+        }
+    }
+
+    private fun configurationFingerprint(allowedSourceIds: Set<Long>?): String = buildString {
+        append(addonId.value)
+        append('|')
+        if (allowedSourceIds == null) {
+            append('*')
+        } else {
+            append(allowedSourceIds.sorted().joinToString(","))
         }
     }
 

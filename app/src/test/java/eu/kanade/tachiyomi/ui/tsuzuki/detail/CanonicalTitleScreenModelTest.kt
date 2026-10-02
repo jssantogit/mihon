@@ -98,9 +98,9 @@ class CanonicalTitleScreenModelTest {
         val chapters = FakeChapterRepository(emptyList())
         val evidence = FakeEvidenceRepository()
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.getAll() } returns emptyList()
+        coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
         val refresh = mockk<RefreshChapterEvidence>()
-        coEvery { refresh.execute("title") } returns Result.success(Unit)
+        coEvery { refresh.executeProgressively("title", false, any()) } returns Result.success(Unit)
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -120,7 +120,7 @@ class CanonicalTitleScreenModelTest {
             addonRepository = FakeAddonRepository(),
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -145,14 +145,131 @@ class CanonicalTitleScreenModelTest {
 
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters.single().chapter.id shouldBe "chapter-after-binding"
-        coVerify(exactly = 1) { refresh.execute("title") }
+        coVerify(exactly = 1) { refresh.executeProgressively("title", false, any()) }
+    }
+
+    @Test
+    fun `explicit Detail refresh forces chapter revalidation while normal open does not`() = runTest(dispatcher) {
+        val chapters = FakeChapterRepository(emptyList())
+        val refresh = mockk<RefreshChapterEvidence>()
+        coEvery { refresh.executeProgressively("title", any(), any()) } returns Result.success(Unit)
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = refresh,
+            resolveCanonicalMetadata = emptyMetadataResolver(),
+            resolveCanonicalSourceManga = mockk(relaxed = true),
+            resolveCanonicalArtwork = mockk(relaxed = true),
+        )
+
+        model.start("title")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { refresh.executeProgressively("title", false, any()) }
+        coVerify(exactly = 0) { refresh.executeProgressively("title", true, any()) }
+
+        model.refresh()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { refresh.executeProgressively("title", true, any()) }
+    }
+
+    @Test
+    fun `detail publishes cached provider metadata before live revalidation completes`() = runTest(dispatcher) {
+        val refreshGate = CompletableDeferred<Unit>()
+        val cachedMetadata = ResolvedMetadata(
+            synopsis = ProvenancedMetadata(
+                value = "Cached synopsis",
+                providerId = IntegrationId("kitsu"),
+                attribution = "Kitsu",
+            ),
+        )
+        val resolver = mockk<ResolveCanonicalMetadata>()
+        coEvery { resolver.cached("title") } returns cachedMetadata
+        coEvery { resolver.execute("title", false) } coAnswers {
+            refreshGate.await()
+            Result.success(cachedMetadata)
+        }
+        val chapters = FakeChapterRepository(emptyList())
+        val downloads = mockk<CanonicalDownloadRepository>()
+        coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
+        val sourceResolver = mockk<ResolveCanonicalSourceManga>()
+        coEvery {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = false)
+        } returns null
+        val artworkResolver = mockk<ResolveCanonicalArtwork>()
+        coEvery { artworkResolver.execute("title") } returns null
+        val model = CanonicalTitleScreenModel(
+            canonicalTitleRepository = FakeTitleRepository(),
+            canonicalLibraryRepository = FakeLibraryRepository(),
+            canonicalChapterRepository = chapters,
+            materializeInferredChapter = mockk(relaxed = true),
+            chapterEvidenceRepository = FakeEvidenceRepository(),
+            canonicalReadingRepository = FakeReadingRepository(),
+            getCanonicalChapterDownloadState = GetCanonicalChapterDownloadState(
+                canonicalChapterRepository = chapters,
+                canonicalDownloadGateway = object : CanonicalDownloadGateway {
+                    override suspend fun isDownloaded(variant: ChapterVariant): Boolean = false
+                },
+            ),
+            downloadCanonicalChapter = mockk(relaxed = true),
+            canonicalDownloadRepository = downloads,
+            reportedChapterCountRepository = FakeReportedChapterCountRepository(),
+            addonRepository = FakeAddonRepository(),
+            refreshReportedChapterCounts = metadataRefresh(),
+            refreshChapterEvidence = RefreshChapterEvidence(
+                registry = emptyRegistry(),
+                reconcileChapterEvidence = ReconcileChapterEvidence(
+                    parser = ParseCanonicalChapterLabel(),
+                    canonicalChapterRepository = chapters,
+                    evidenceRepository = FakeEvidenceRepository(),
+                ),
+            ),
+            resolveCanonicalMetadata = resolver,
+            resolveCanonicalSourceManga = sourceResolver,
+            resolveCanonicalArtwork = artworkResolver,
+        )
+
+        val operation = model.start("title")
+        runCurrent()
+
+        val cachedState = model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
+        cachedState.description shouldBe "Cached synopsis"
+        cachedState.isRefreshing shouldBe true
+        operation.isCompleted shouldBe false
+        coVerify(exactly = 1) {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = false)
+        }
+        coVerify(exactly = 1) { artworkResolver.execute("title") }
+
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+        operation.isCompleted shouldBe true
     }
 
     // Physical regression guard: production DI must deliver canonical artwork to Detail.
     @Test
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
         val sourceResolver = mockk<ResolveCanonicalSourceManga>()
-        coEvery { sourceResolver.execute("title") } returns Manga.create().copy(
+        coEvery {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = false)
+        } returns Manga.create().copy(
             id = 77L,
             source = 10L,
             url = "/dandadan",
@@ -281,6 +398,9 @@ class CanonicalTitleScreenModelTest {
         state.endDate shouldBe "2001"
         state.editorialVolumeCount shouldBe 18
         state.metadataSources shouldBe listOf("MangaUpdates", "MyAnimeList")
+        coVerify(exactly = 0) {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = true)
+        }
     }
 
     @Test
@@ -312,7 +432,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -401,7 +521,7 @@ class CanonicalTitleScreenModelTest {
             refreshReportedChapterCounts = metadataRefresh(),
             refreshChapterEvidence = refresh,
             diagnostics = diagnostics,
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -438,17 +558,9 @@ class CanonicalTitleScreenModelTest {
             ),
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.getAll() } returns listOf(
-            CanonicalDownloadArtifact(
-                canonicalChapterId = "chapter-37",
-                localUri = "content://downloads/chapter-37",
-                format = "DIRECTORY",
-                originatingAddonId = null,
-                originatingOptionKey = null,
-                completedAt = 100L,
-                checksum = null,
-            ),
-        )
+        coEvery {
+            downloads.getChapterIdsByCanonicalTitle("title")
+        } returns setOf("chapter-37")
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -475,7 +587,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -519,7 +631,7 @@ class CanonicalTitleScreenModelTest {
             preferredAddonId = null,
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.getAll() } returns emptyList()
+        coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -546,7 +658,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -562,7 +674,7 @@ class CanonicalTitleScreenModelTest {
     }
 
     @Test
-    fun `detail bounds legacy download checks for large chapter lists`() = runTest(dispatcher) {
+    fun `detail does not probe every legacy download while rendering canonical chapters`() = runTest(dispatcher) {
         val chapterList = (1..24).map { index ->
             CanonicalChapter(
                 id = "chapter-$index",
@@ -588,11 +700,9 @@ class CanonicalTitleScreenModelTest {
                 )
             },
         )
-        val releaseChecks = CompletableDeferred<Unit>()
-        var concurrent = 0
-        var peak = 0
+        var legacyChecks = 0
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.getAll() } returns emptyList()
+        coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -604,14 +714,8 @@ class CanonicalTitleScreenModelTest {
                 canonicalChapterRepository = chapterRepo,
                 canonicalDownloadGateway = object : CanonicalDownloadGateway {
                     override suspend fun isDownloaded(variant: ChapterVariant): Boolean {
-                        concurrent++
-                        peak = maxOf(peak, concurrent)
-                        try {
-                            releaseChecks.await()
-                            return false
-                        } finally {
-                            concurrent--
-                        }
+                        legacyChecks++
+                        return false
                     }
                 },
             ),
@@ -628,22 +732,17 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
 
         model.start("title")
-        runCurrent()
-        model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
-            .chapters.size shouldBe 24
-        peak shouldBe 8
-
-        releaseChecks.complete(Unit)
         advanceUntilIdle()
-        concurrent shouldBe 0
+
         model.state.value.shouldBeInstanceOf<CanonicalTitleScreenState.Loaded>()
             .chapters.size shouldBe 24
+        legacyChecks shouldBe 0
     }
 
     @Test
@@ -664,7 +763,7 @@ class CanonicalTitleScreenModelTest {
             ),
         )
         val downloads = mockk<CanonicalDownloadRepository>()
-        coEvery { downloads.getAll() } returns emptyList()
+        coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
         val model = CanonicalTitleScreenModel(
             canonicalTitleRepository = FakeTitleRepository(),
             canonicalLibraryRepository = FakeLibraryRepository(),
@@ -691,7 +790,7 @@ class CanonicalTitleScreenModelTest {
                     evidenceRepository = FakeEvidenceRepository(),
                 ),
             ),
-            resolveCanonicalMetadata = mockk(relaxed = true),
+            resolveCanonicalMetadata = emptyMetadataResolver(),
             resolveCanonicalSourceManga = mockk(relaxed = true),
             resolveCanonicalArtwork = mockk(relaxed = true),
         )
@@ -712,7 +811,7 @@ class CanonicalTitleScreenModelTest {
                 listOf(ReportedChapterCount("title", "kitsu", 108, 1L)),
             )
             val downloads = mockk<CanonicalDownloadRepository>()
-            coEvery { downloads.getAll() } returns emptyList()
+            coEvery { downloads.getChapterIdsByCanonicalTitle("title") } returns emptySet()
             val diagnostics = RecordingChapterInventoryDiagnostics().apply { start("title") }
             val materializer = MaterializeInferredChapter(chapters, ChapterMutationGate())
             val model = CanonicalTitleScreenModel(
@@ -742,7 +841,7 @@ class CanonicalTitleScreenModelTest {
                     ),
                 ),
                 diagnostics = diagnostics,
-                resolveCanonicalMetadata = mockk(relaxed = true),
+                resolveCanonicalMetadata = emptyMetadataResolver(),
                 resolveCanonicalSourceManga = mockk(relaxed = true),
                 resolveCanonicalArtwork = mockk(relaxed = true),
             )
@@ -871,6 +970,11 @@ class CanonicalTitleScreenModelTest {
             progress: CanonicalChapterProgress,
             history: CanonicalChapterHistoryUpdate?,
         ) = Unit
+    }
+
+    private fun emptyMetadataResolver(): ResolveCanonicalMetadata = mockk {
+        coEvery { cached(any()) } returns null
+        coEvery { execute(any(), any()) } returns Result.success(ResolvedMetadata())
     }
 
     private class FakeEvidenceRepository(

@@ -4,6 +4,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -55,7 +57,7 @@ class TsuzukiSearchScreenModelTest {
     fun `initial discover waits for registry readiness and loads without a prior search`() = runTest(dispatcher) {
         val registry = DelayedRegistry()
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
@@ -113,7 +115,7 @@ class TsuzukiSearchScreenModelTest {
             override fun trackingProviders(): List<TrackingProvider> = emptyList()
         }
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
@@ -194,7 +196,7 @@ class TsuzukiSearchScreenModelTest {
             override fun trackingProviders(): List<TrackingProvider> = emptyList()
         }
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
@@ -212,10 +214,258 @@ class TsuzukiSearchScreenModelTest {
     }
 
     @Test
+    fun `search publishes fast provider results before slow provider completes`() = runTest(dispatcher) {
+        val slowRelease = CompletableDeferred<Unit>()
+        val registry = object : IntegrationRegistry {
+            private val fast = object : SearchProvider {
+                override val integrationId = IntegrationId("fast")
+
+                override suspend fun search(query: tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery) =
+                    Result.success(
+                        CatalogPage(
+                            items = listOf(CatalogItem("fast", "1", "Fast result")),
+                            hasNextPage = false,
+                        ),
+                    )
+            }
+            private val slow = object : SearchProvider {
+                override val integrationId = IntegrationId("slow")
+
+                override suspend fun search(
+                    query: tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery,
+                ): Result<CatalogPage> {
+                    slowRelease.await()
+                    return Result.success(
+                        CatalogPage(
+                            items = listOf(CatalogItem("slow", "2", "Slow result")),
+                            hasNextPage = false,
+                        ),
+                    )
+                }
+            }
+
+            override fun searchProviders(): List<SearchProvider> = listOf(fast, slow)
+            override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+        dispatcher.scheduler.runCurrent()
+
+        val operation = model.search("work")
+        dispatcher.scheduler.runCurrent()
+
+        val partial = model.state.value.shouldBeInstanceOf<SearchState.Results>()
+        partial.items.map(CatalogItem::providerId) shouldBe listOf("1")
+        operation.isCompleted shouldBe false
+
+        slowRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val complete = model.state.value.shouldBeInstanceOf<SearchState.Results>()
+        complete.items.map(CatalogItem::providerId) shouldBe listOf("1", "2")
+    }
+
+    @Test
+    fun `discover publishes fast blocks before a slow block completes`() = runTest(dispatcher) {
+        val popularRelease = CompletableDeferred<Unit>()
+        val registry = object : IntegrationRegistry {
+            private val discovery = object : DiscoveryProvider {
+                override val integrationId = IntegrationId("fast")
+
+                override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                    Result.success(
+                        CatalogPage(
+                            items = listOf(CatalogItem("fast", "trend", "Trending")),
+                            hasNextPage = false,
+                        ),
+                    )
+
+                override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> {
+                    popularRelease.await()
+                    return Result.success(
+                        CatalogPage(
+                            items = listOf(CatalogItem("fast", "popular", "Popular")),
+                            hasNextPage = false,
+                        ),
+                    )
+                }
+
+                override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                    Result.success(CatalogPage(emptyList(), hasNextPage = false))
+            }
+
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(discovery)
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+
+        dispatcher.scheduler.runCurrent()
+
+        val partial = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        partial.blocks.map(DiscoverBlock::kind) shouldBe listOf(DiscoverKind.TRENDING)
+
+        popularRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val complete = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        complete.blocks.map(DiscoverBlock::kind) shouldBe listOf(
+            DiscoverKind.TRENDING,
+            DiscoverKind.POPULAR,
+        )
+    }
+
+    @Test
+    fun `discover publishes a fast provider before a slow sibling in the same block`() = runTest(dispatcher) {
+        val slowRelease = CompletableDeferred<Unit>()
+        val fast = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("fast")
+
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(
+                    CatalogPage(
+                        items = listOf(CatalogItem("fast", "1", "Fast trending")),
+                        hasNextPage = false,
+                    ),
+                )
+
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+        }
+        val slow = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("slow")
+
+            override suspend fun trending(offset: Int, limit: Int): Result<CatalogPage> {
+                slowRelease.await()
+                return Result.success(
+                    CatalogPage(
+                        items = listOf(CatalogItem("slow", "2", "Slow trending")),
+                        hasNextPage = false,
+                    ),
+                )
+            }
+
+            override suspend fun popular(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+
+            override suspend fun recentlyUpdated(offset: Int, limit: Int): Result<CatalogPage> =
+                Result.success(CatalogPage(emptyList(), hasNextPage = false))
+        }
+        val registry = object : IntegrationRegistry {
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(fast, slow)
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+
+        dispatcher.scheduler.runCurrent()
+
+        val partial = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        val trending = partial.blocks.single { it.kind == DiscoverKind.TRENDING }
+        trending.items.map(CatalogItem::providerId) shouldBe listOf("1")
+
+        slowRelease.complete(Unit)
+        advanceUntilIdle()
+
+        val complete = model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+        complete.blocks.single { it.kind == DiscoverKind.TRENDING }
+            .items
+            .map(CatalogItem::providerId) shouldBe listOf("1", "2")
+    }
+
+    @Test
+    fun `discover shares one bounded provider request window across all blocks`() = runTest(dispatcher) {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : DiscoveryProvider {
+            override val integrationId = IntegrationId("all")
+
+            private suspend fun block(kind: String): Result<CatalogPage> {
+                started += kind
+                release.await()
+                return Result.success(
+                    CatalogPage(
+                        items = listOf(CatalogItem("all", kind, kind)),
+                        hasNextPage = false,
+                    ),
+                )
+            }
+
+            override suspend fun trending(offset: Int, limit: Int) = block("trending")
+            override suspend fun popular(offset: Int, limit: Int) = block("popular")
+            override suspend fun topRated(offset: Int, limit: Int) = block("top")
+            override suspend fun favorites(offset: Int, limit: Int) = block("favorites")
+            override suspend fun recentlyUpdated(offset: Int, limit: Int) = block("recent")
+        }
+        val registry = object : IntegrationRegistry {
+            override fun searchProviders(): List<SearchProvider> = emptyList()
+            override fun discoveryProviders(): List<DiscoveryProvider> = listOf(provider)
+            override fun metadataProviders(): List<MetadataProvider> = emptyList()
+            override fun chapterEvidenceProviders(): List<ChapterEvidenceProvider> = emptyList()
+            override fun ratingsProviders(): List<RatingsProvider> = emptyList()
+            override fun trackingProviders(): List<TrackingProvider> = emptyList()
+        }
+        val model = TsuzukiSearchScreenModel(
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
+            registry = registry,
+            searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
+            materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
+                MaterializeCanonicalTitle(FakeCanonicalTitleRepository()),
+                mockk(relaxed = true),
+            ),
+        )
+
+        dispatcher.scheduler.runCurrent()
+
+        started.size shouldBe 4
+
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        model.state.value.shouldBeInstanceOf<SearchState.Discover>()
+    }
+
+    @Test
     fun `search requests integration setup when no search provider is enabled`() = runTest(dispatcher) {
         val registry = emptyRegistry()
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(

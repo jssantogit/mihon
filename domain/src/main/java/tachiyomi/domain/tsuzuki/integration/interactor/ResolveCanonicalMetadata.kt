@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
 import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
@@ -24,26 +25,160 @@ import tachiyomi.domain.tsuzuki.integration.IntegrationId
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.TSUZUKI_INTEGRATION_ID
+import tachiyomi.domain.tsuzuki.integration.cache.InFlightCanonicalMetadataResolution
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.ProvenancedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.RatingIdentityEvidence
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.ResolvedRating
 import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRatingSource
+import tachiyomi.domain.tsuzuki.integration.repository.CanonicalMetadataSnapshot
+import tachiyomi.domain.tsuzuki.integration.repository.CanonicalMetadataSnapshotRepository
+import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
+import tachiyomi.domain.tsuzuki.metadata.repository.ReportedChapterCountRepository
 import tachiyomi.domain.tsuzuki.model.ExternalIdentity
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import kotlin.time.Clock
 import kotlin.time.TimeSource
 
-@Inject
-class ResolveCanonicalMetadata(
+class ResolveCanonicalMetadata private constructor(
     private val canonicalTitleRepository: CanonicalTitleRepository,
     private val registry: IntegrationRegistry,
     private val titleArtworkRepository: TitleArtworkRepository,
     private val diagnosticRecorder: StructuredDiagnosticRecorder,
+    private val snapshotRepository: CanonicalMetadataSnapshotRepository?,
+    private val inFlightResolution: InFlightCanonicalMetadataResolution?,
+    private val reportedChapterCountRepository: ReportedChapterCountRepository?,
+    private val ratingEnrichmentCache: RatingEnrichmentCache?,
+    private val clock: () -> Long,
+    private val metadataTtlMillis: Long,
+    @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
 ) {
 
-    suspend fun execute(canonicalTitleId: String): Result<ResolvedMetadata> {
+    @Inject
+    constructor(
+        canonicalTitleRepository: CanonicalTitleRepository,
+        registry: IntegrationRegistry,
+        titleArtworkRepository: TitleArtworkRepository,
+        diagnosticRecorder: StructuredDiagnosticRecorder,
+        snapshotRepository: CanonicalMetadataSnapshotRepository,
+        inFlightResolution: InFlightCanonicalMetadataResolution,
+        reportedChapterCountRepository: ReportedChapterCountRepository,
+        ratingEnrichmentCache: RatingEnrichmentCache,
+    ) : this(
+        canonicalTitleRepository = canonicalTitleRepository,
+        registry = registry,
+        titleArtworkRepository = titleArtworkRepository,
+        diagnosticRecorder = diagnosticRecorder,
+        snapshotRepository = snapshotRepository,
+        inFlightResolution = inFlightResolution,
+        reportedChapterCountRepository = reportedChapterCountRepository,
+        ratingEnrichmentCache = ratingEnrichmentCache,
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        metadataTtlMillis = DEFAULT_METADATA_TTL_MILLIS,
+        constructorMarker = Unit,
+    )
+
+    constructor(
+        canonicalTitleRepository: CanonicalTitleRepository,
+        registry: IntegrationRegistry,
+        titleArtworkRepository: TitleArtworkRepository,
+        diagnosticRecorder: StructuredDiagnosticRecorder,
+    ) : this(
+        canonicalTitleRepository = canonicalTitleRepository,
+        registry = registry,
+        titleArtworkRepository = titleArtworkRepository,
+        diagnosticRecorder = diagnosticRecorder,
+        snapshotRepository = null,
+        inFlightResolution = null,
+        reportedChapterCountRepository = null,
+        ratingEnrichmentCache = null,
+        clock = { Clock.System.now().toEpochMilliseconds() },
+        metadataTtlMillis = DEFAULT_METADATA_TTL_MILLIS,
+        constructorMarker = Unit,
+    )
+
+    internal constructor(
+        canonicalTitleRepository: CanonicalTitleRepository,
+        registry: IntegrationRegistry,
+        titleArtworkRepository: TitleArtworkRepository,
+        diagnosticRecorder: StructuredDiagnosticRecorder,
+        snapshotRepository: CanonicalMetadataSnapshotRepository,
+        inFlightResolution: InFlightCanonicalMetadataResolution,
+        reportedChapterCountRepository: ReportedChapterCountRepository,
+        clock: () -> Long,
+        metadataTtlMillis: Long,
+        ratingEnrichmentCache: RatingEnrichmentCache? = null,
+    ) : this(
+        canonicalTitleRepository = canonicalTitleRepository,
+        registry = registry,
+        titleArtworkRepository = titleArtworkRepository,
+        diagnosticRecorder = diagnosticRecorder,
+        snapshotRepository = snapshotRepository,
+        inFlightResolution = inFlightResolution,
+        reportedChapterCountRepository = reportedChapterCountRepository,
+        ratingEnrichmentCache = ratingEnrichmentCache,
+        clock = clock,
+        metadataTtlMillis = metadataTtlMillis,
+        constructorMarker = Unit,
+    )
+
+    suspend fun cached(canonicalTitleId: String): ResolvedMetadata? {
+        registry.awaitReady()
+        val configurationFingerprint = registry.configurationFingerprint()
+        return snapshotRepository
+            ?.get(canonicalTitleId)
+            ?.takeIf { snapshot -> snapshot.configurationFingerprint == configurationFingerprint }
+            ?.metadata
+    }
+
+    suspend fun execute(
+        canonicalTitleId: String,
+        forceRefresh: Boolean = false,
+    ): Result<ResolvedMetadata> {
+        registry.awaitReady()
+        val configurationFingerprint = registry.configurationFingerprint()
+        val cached = snapshotRepository
+            ?.get(canonicalTitleId)
+            ?.takeIf { it.configurationFingerprint == configurationFingerprint }
+        val now = clock()
+        if (
+            !forceRefresh &&
+            cached != null &&
+            now - cached.refreshedAt in 0 until metadataTtlMillis
+        ) {
+            return Result.success(cached.metadata)
+        }
+
+        val resolve: suspend () -> Result<ResolvedMetadata> = {
+            resolveLive(canonicalTitleId, configurationFingerprint)
+        }
+        val result = inFlightResolution?.execute(
+            canonicalTitleId = canonicalTitleId,
+            configurationFingerprint = configurationFingerprint,
+            block = resolve,
+        ) ?: resolve()
+
+        val metadata = result.getOrNull()
+        if (metadata != null) {
+            snapshotRepository?.upsertIfNewer(
+                CanonicalMetadataSnapshot(
+                    canonicalTitleId = canonicalTitleId,
+                    configurationFingerprint = configurationFingerprint,
+                    metadata = metadata,
+                    refreshedAt = now,
+                ),
+            )
+            return Result.success(metadata)
+        }
+
+        return cached?.let { Result.success(it.metadata) } ?: result
+    }
+
+    private suspend fun resolveLive(
+        canonicalTitleId: String,
+        configurationFingerprint: String,
+    ): Result<ResolvedMetadata> {
         val trace = DiagnosticTrace.start(
             recorder = diagnosticRecorder,
             workflow = DiagnosticWorkflow.METADATA_RESOLUTION,
@@ -94,6 +229,8 @@ class ResolveCanonicalMetadata(
                 }.awaitAll().filterNotNull()
             }
 
+            persistReportedChapterCounts(canonicalTitleId, candidates)
+
             candidates.forEach { candidate ->
                 trace.child().event(
                     subsystem = DiagnosticSubsystem.METADATA,
@@ -114,6 +251,7 @@ class ResolveCanonicalMetadata(
                 candidates = candidates,
                 identities = identities,
                 trace = trace,
+                configurationFingerprint = configurationFingerprint,
             )
 
             val tsuzukiRatingSources = ratings.map { rating ->
@@ -272,6 +410,39 @@ class ResolveCanonicalMetadata(
         }
     }
 
+    private suspend fun persistReportedChapterCounts(
+        canonicalTitleId: String,
+        candidates: List<Candidate>,
+    ) {
+        val repository = reportedChapterCountRepository ?: return
+        val updatedAt = clock()
+        candidates.forEach { candidate ->
+            if (
+                !registry.isGlobalCapabilityActive(
+                    candidate.providerId,
+                    IntegrationCapability.METADATA_EDITORIAL,
+                )
+            ) {
+                return@forEach
+            }
+            val chapterCount = candidate.item.chapterCount?.takeIf { it > 0 } ?: return@forEach
+            try {
+                repository.upsert(
+                    ReportedChapterCount(
+                        canonicalTitleId = canonicalTitleId,
+                        provider = candidate.providerId.value,
+                        chapterCount = chapterCount,
+                        updatedAt = updatedAt,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Reported counts are editorial cache data and never block metadata resolution.
+            }
+        }
+    }
+
     private suspend fun persistArtwork(
         canonicalTitleId: String,
         candidates: List<Candidate>,
@@ -359,6 +530,7 @@ class ResolveCanonicalMetadata(
         candidates: List<Candidate>,
         identities: List<ExternalIdentity>,
         trace: DiagnosticTrace,
+        configurationFingerprint: String,
     ): List<ProvenancedMetadata<ResolvedRating>> = coroutineScope {
         val exactRatings = selectRatings(candidates)
         exactRatings.forEach { rating ->
@@ -382,7 +554,11 @@ class ResolveCanonicalMetadata(
             .filterNot { provider -> provider.integrationId.value in existingProviderIds }
             .map { provider ->
                 async {
-                    val result = provider.ratingFor(seed)
+                    val result = ratingEnrichmentCache?.ratingFor(
+                        item = seed,
+                        provider = provider,
+                        configurationFingerprint = configurationFingerprint,
+                    ) ?: provider.ratingFor(seed)
                     val error = result.exceptionOrNull()
                     if (error is CancellationException) throw error
                     val match = result.getOrNull()
@@ -548,6 +724,7 @@ class ResolveCanonicalMetadata(
     )
 
     private companion object {
+        const val DEFAULT_METADATA_TTL_MILLIS = 15 * 60 * 1000L
         val METADATA_CAPABILITIES = listOf(
             IntegrationCapability.METADATA_BASIC,
             IntegrationCapability.METADATA_ARTWORK,

@@ -89,6 +89,13 @@ class SearchCatalog(
         items = searchIntegrations.enrichRatings(page.items),
     )
 
+    suspend fun enrichProgressively(
+        page: CatalogPage,
+        onItem: suspend (index: Int, item: CatalogItem) -> Unit,
+    ): CatalogPage = page.copy(
+        items = searchIntegrations.enrichRatingsProgressively(page.items, onItem),
+    )
+
     suspend operator fun invoke(
         query: String? = null,
         sort: CatalogSort = CatalogSort.POPULARITY_DESC,

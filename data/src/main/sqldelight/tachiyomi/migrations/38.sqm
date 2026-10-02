@@ -1,0 +1,14 @@
+CREATE TABLE tsuzuki_chapter_refresh_snapshot(
+    canonical_title_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    fingerprint TEXT,
+    configuration_fingerprint TEXT NOT NULL,
+    observed_at INTEGER NOT NULL,
+    refreshed_at INTEGER NOT NULL,
+    item_count INTEGER NOT NULL,
+    PRIMARY KEY(canonical_title_id, scope_key),
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX tsuzuki_chapter_refresh_snapshot_title_index
+ON tsuzuki_chapter_refresh_snapshot(canonical_title_id);

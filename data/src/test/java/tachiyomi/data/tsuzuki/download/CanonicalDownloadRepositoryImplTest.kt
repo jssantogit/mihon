@@ -106,6 +106,57 @@ class CanonicalDownloadRepositoryImplTest {
         )
     }
 
+    @Test
+    fun downloadsCanBeReadByCanonicalTitleWithoutLoadingOtherTitles() = runBlocking<Unit> {
+        database.tsuzuki_titlesQueries.insertTsuzukiTitle(
+            id = "title-2",
+            displayTitle = "Other",
+            identityState = "SOURCE_ONLY",
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        database.tsuzuki_canonical_chaptersQueries.upsertTsuzukiCanonicalChapter(
+            id = "chapter-2",
+            canonicalTitleId = "title-2",
+            displayNumber = "1",
+            volume = null,
+            title = null,
+            type = "REGULAR",
+            baseNumber = 1L,
+            part = null,
+            alphaSuffix = null,
+            confidence = 1.0,
+            createdAt = 1L,
+            updatedAt = 1L,
+            confirmationState = "CONFIRMED",
+        )
+        repository.upsert(
+            CanonicalDownloadArtifact(
+                canonicalChapterId = "chapter-1",
+                localUri = "content://downloads/chapter-1.cbz",
+                format = "CBZ",
+                originatingAddonId = null,
+                originatingOptionKey = null,
+                completedAt = 100L,
+                checksum = null,
+            ),
+        )
+        repository.upsert(
+            CanonicalDownloadArtifact(
+                canonicalChapterId = "chapter-2",
+                localUri = "content://downloads/chapter-2.cbz",
+                format = "CBZ",
+                originatingAddonId = null,
+                originatingOptionKey = null,
+                completedAt = 200L,
+                checksum = null,
+            ),
+        )
+
+        repository.getChapterIdsByCanonicalTitle("title-1") shouldBe setOf("chapter-1")
+        repository.getChapterIdsByCanonicalTitle("title-2") shouldBe setOf("chapter-2")
+    }
+
     private fun nativeLibraryArchitecture(): String = when (System.getProperty("os.arch").orEmpty().lowercase()) {
         "aarch64", "arm64" -> "aarch64"
         "x86_64", "amd64" -> "x86_64"

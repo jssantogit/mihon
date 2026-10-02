@@ -195,6 +195,10 @@ class ReconcileChapterEvidence internal constructor(
             }
             .toMap()
             .toMutableMap()
+        val reconciliationIndex = ChapterEvidenceReconciliationIndex(persistedEvidence.values)
+        val parseCache = ChapterEvidenceParseCache { rawLabel, rawNumber ->
+            parser.execute(rawLabel, rawNumber)
+        }
         val chaptersByIdentity = linkedMapOf<CanonicalChapterIdentity, MutableList<CanonicalChapter>>()
         chapters.values.forEach { chapter ->
             if (chapter.identity.isSpecific) {
@@ -202,7 +206,7 @@ class ReconcileChapterEvidence internal constructor(
             }
         }
         val chapterUpserts = linkedMapOf<String, CanonicalChapter>()
-        val evidenceUpserts = mutableListOf<ChapterEvidenceWrite>()
+        val evidenceUpserts = mutableListOf<PersistedChapterEvidence>()
 
         fun indexChapter(chapter: CanonicalChapter) {
             if (!chapter.identity.isSpecific) return
@@ -260,9 +264,10 @@ class ReconcileChapterEvidence internal constructor(
                 mappedCanonicalChapterId = mappedCanonicalChapterId,
                 rawMetadata = existing?.rawMetadata ?: byteArrayOf(),
             )
+            reconciliationIndex.replace(previous = existing, current = persisted)
             persistedEvidence[stableId] = persisted
             if (externalKey != null) persistedEvidenceByExternalKey[externalKey] = persisted
-            evidenceUpserts += ChapterEvidenceWrite(observation, mappedCanonicalChapterId)
+            evidenceUpserts += persisted
         }
 
         val initialChapterCount = chapters.size
@@ -286,7 +291,7 @@ class ReconcileChapterEvidence internal constructor(
             }
 
             val parsed = try {
-                parser.execute(observation.rawLabel, observation.rawNumber)
+                parseCache.parse(observation)
             } catch (error: Throwable) {
                 diagnostics.recordIfEnabled(
                     canonicalTitleId,
@@ -323,7 +328,9 @@ class ReconcileChapterEvidence internal constructor(
                     parsedIdentityIsReliable = parsedIdentityIsReliable,
                     parsedIdentity = parsed.identity,
                     currentChapters = chapters,
-                    persistedEvidence = persistedEvidence.values,
+                    candidates = observation.externalChapterKey
+                        ?.let(reconciliationIndex::externalKeyCandidates)
+                        .orEmpty(),
                 )
             ) {
                 // The fetch began before newer evidence was recorded for this exact
@@ -353,7 +360,9 @@ class ReconcileChapterEvidence internal constructor(
             }
             val previousCrossProducerEvidence = crossProducerMappedEvidence(
                 observation = observation,
-                persistedEvidence = persistedEvidence.values,
+                candidates = observation.externalChapterKey
+                    ?.let(reconciliationIndex::externalKeyCandidates)
+                    .orEmpty(),
             )
             val previousCrossProducerMappedChapterId = previousCrossProducerEvidence?.mappedCanonicalChapterId
             val previousCrossProducerMappedChapter = previousCrossProducerMappedChapterId?.let { chapterId ->
@@ -437,13 +446,13 @@ class ReconcileChapterEvidence internal constructor(
                     .size > 1
             val hasIndependentMappedSupport = mappedChapter != null &&
                 mappedIdentityConflicts &&
-                persistedEvidence.values.any { support ->
+                reconciliationIndex.mappedChapterCandidates(mappedChapter.id).any { support ->
                     support.evidence.id != previousEvidence?.evidence?.id &&
-                        support.mappedCanonicalChapterId == mappedChapter.id &&
                         isReliableSupportFor(
                             evidence = support.evidence,
                             chapter = mappedChapter,
                             volumeIsAmbiguous = mappedChapterHasVolumeVariants,
+                            parseCache = parseCache,
                         )
                 }
 
@@ -535,7 +544,7 @@ class ReconcileChapterEvidence internal constructor(
         }
 
         canonicalChapterRepository.upsertBatch(chapterUpserts.values.toList(), emptyList())
-        val persistedWrites = evidenceRepository.upsertBatch(evidenceUpserts)
+        val persistedWrites = evidenceRepository.upsertResolvedBatch(evidenceUpserts)
         persistedWrites.forEach { persisted ->
             persistedEvidence[persisted.evidence.id] = persisted
         }
@@ -599,8 +608,9 @@ class ReconcileChapterEvidence internal constructor(
         evidence: ChapterEvidence,
         chapter: CanonicalChapter,
         volumeIsAmbiguous: Boolean,
+        parseCache: ChapterEvidenceParseCache,
     ): Boolean {
-        val parsed = parser.execute(evidence.rawLabel, evidence.rawNumber)
+        val parsed = parseCache.parse(evidence)
         val unsafeSourceEvidence = evidence.producerKind == ProducerKind.ADDON &&
             evidence.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
             isUnsafeProvisionalChapterEvidence(parsed, evidence.rawLabel, evidence.rawNumber)
@@ -650,10 +660,10 @@ class ReconcileChapterEvidence internal constructor(
         parsedIdentityIsReliable: Boolean,
         parsedIdentity: CanonicalChapterIdentity,
         currentChapters: Map<String, CanonicalChapter>,
-        persistedEvidence: Collection<PersistedChapterEvidence>,
+        candidates: Collection<PersistedChapterEvidence>,
     ): Boolean {
         val externalKey = observation.externalChapterKey ?: return false
-        val candidates = persistedEvidence.filter { persisted ->
+        val crossProducerCandidates = candidates.filter { persisted ->
             persisted.evidence.producerKind == ProducerKind.ADDON &&
                 persisted.evidence.producerId != observation.producerId &&
                 (
@@ -662,10 +672,10 @@ class ReconcileChapterEvidence internal constructor(
                     ) &&
                 persisted.evidence.externalChapterKey == externalKey
         }
-        if (candidates.isEmpty()) return false
-        val latestObservedAt = candidates.maxOf { it.evidence.observedAt }
+        if (crossProducerCandidates.isEmpty()) return false
+        val latestObservedAt = crossProducerCandidates.maxOf { it.evidence.observedAt }
         if (latestObservedAt < observation.observedAt) return false
-        val latest = candidates.filter { it.evidence.observedAt == latestObservedAt }
+        val latest = crossProducerCandidates.filter { it.evidence.observedAt == latestObservedAt }
         val selected = latest.first()
         if (latest.drop(1).any { !samePersistedObservation(selected, it) }) return true
 
@@ -685,12 +695,12 @@ class ReconcileChapterEvidence internal constructor(
 
     private fun crossProducerMappedEvidence(
         observation: ChapterEvidence,
-        persistedEvidence: Collection<PersistedChapterEvidence>,
+        candidates: Collection<PersistedChapterEvidence>,
     ): PersistedChapterEvidence? {
         if (observation.producerKind != ProducerKind.ADDON) return null
         val externalKey = observation.externalChapterKey ?: return null
         val observationIsLegacy = observation.producerId.startsWith(LEGACY_PRODUCER_PREFIX)
-        return persistedEvidence
+        return candidates
             .filter { persisted ->
                 persisted.evidence.producerKind == ProducerKind.ADDON &&
                     persisted.evidence.producerId != observation.producerId &&

@@ -26,6 +26,7 @@ import tachiyomi.domain.tsuzuki.integration.model.IntegrationCapability
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationManifest
 import tachiyomi.domain.tsuzuki.integration.model.IntegrationSettings
 import tachiyomi.domain.tsuzuki.integration.repository.IntegrationSettingsRepository
+import java.security.MessageDigest
 
 @Inject
 @SingleIn(AppScope::class)
@@ -66,6 +67,28 @@ class DefaultIntegrationRegistry(
         .map { Unit }
 
     override fun manifests(): List<IntegrationManifest> = integrationManifests
+
+    override fun configurationFingerprint(): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        settings.value
+            .sortedWith(compareBy({ it.integrationId.value }, IntegrationSettings::updatedAt))
+            .forEach { value ->
+                val token = buildString {
+                    append(value.integrationId.value)
+                    append('\u0000')
+                    append(value.enabled)
+                    append('\u0000')
+                    append(value.updatedAt)
+                    append('\u0000')
+                    append(value.configJson)
+                }.encodeToByteArray()
+                digest.update(token.size.toString().encodeToByteArray())
+                digest.update(':'.code.toByte())
+                digest.update(token)
+                digest.update(';'.code.toByte())
+            }
+        return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
 
     override fun isGlobalCapabilityActive(
         integrationId: tachiyomi.domain.tsuzuki.integration.IntegrationId,

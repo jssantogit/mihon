@@ -208,12 +208,24 @@ jobs:
         shell: bash
         env:
           TEST_FILTER: ${{ matrix.filter }}
+          TSUZUKI_CHAPTER_BENCHMARK: ${{ contains(github.event.head_commit.message, '[perf-benchmark]') && 'true' || 'false' }}
+          TSUZUKI_BENCHMARK_LABEL: ${{ github.sha }}
         run: |
           args=(./gradlew "${{ matrix.task }}")
           if [ -n "$TEST_FILTER" ]; then
             args+=(--tests "$TEST_FILTER")
           fi
           "${args[@]}"
+
+      - name: Upload performance benchmark report
+        if: always() && contains(github.event.head_commit.message, '[perf-benchmark]')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance-benchmark-${{ matrix.key }}-${{ github.sha }}
+          path: |
+            data/build/reports/tsuzuki/*.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload failed test report
         if: failure() && steps.unit_tests.outcome == 'failure'

@@ -10,6 +10,7 @@ import tachiyomi.data.Database
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceAuthority
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceRepository
+import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceSupportSnapshot
 import tachiyomi.domain.tsuzuki.chapter.evidence.ChapterEvidenceWrite
 import tachiyomi.domain.tsuzuki.chapter.evidence.PersistedChapterEvidence
 import tachiyomi.domain.tsuzuki.chapter.evidence.ProducerKind
@@ -30,6 +31,32 @@ class ChapterEvidenceRepositoryImpl(
         return database.tsuzuki_chapter_evidenceQueries
             .getTsuzukiChapterEvidenceByTitle(canonicalTitleId, ::mapEvidence)
             .awaitAsList()
+    }
+
+    override suspend fun getSupportSnapshot(canonicalTitleId: String): ChapterEvidenceSupportSnapshot {
+        val rows = database.tsuzuki_chapter_evidenceQueries
+            .getTsuzukiChapterEvidenceSupportByTitle(canonicalTitleId) {
+                    producerKind,
+                    producerId,
+                    mappedCanonicalChapterId,
+                ->
+                SupportRow(producerKind, producerId, mappedCanonicalChapterId)
+            }
+            .awaitAsList()
+
+        val mappedCanonicalChapterIds = rows.mapNotNullTo(linkedSetOf()) { it.mappedCanonicalChapterId }
+        val addonMappedChapterIds = rows.asSequence()
+            .filter { it.producerKind == ProducerKind.ADDON.name }
+            .mapNotNull { row ->
+                row.mappedCanonicalChapterId?.let { chapterId -> row.producerId to chapterId }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, chapterIds) -> chapterIds.toSet() }
+
+        return ChapterEvidenceSupportSnapshot(
+            mappedCanonicalChapterIds = mappedCanonicalChapterIds,
+            addonMappedChapterIds = addonMappedChapterIds,
+        )
     }
 
     override suspend fun getByProducerExternalKey(
@@ -54,6 +81,35 @@ class ChapterEvidenceRepositoryImpl(
         listOf(ChapterEvidenceWrite(evidence, mappedCanonicalChapterId)),
     ).single()
 
+    override suspend fun upsertResolvedBatch(
+        values: List<PersistedChapterEvidence>,
+    ): List<PersistedChapterEvidence> = database.transactionWithResult {
+        if (values.isEmpty()) return@transactionWithResult emptyList()
+        val canonicalTitleIds = values.map { it.evidence.canonicalTitleId }.distinct()
+        require(canonicalTitleIds.size == 1) { "Resolved chapter evidence batch must belong to one canonical title" }
+
+        values.map { persisted ->
+            val evidence = persisted.evidence
+            database.tsuzuki_chapter_evidenceQueries.upsertTsuzukiChapterEvidence(
+                id = evidence.id,
+                canonicalTitleId = evidence.canonicalTitleId,
+                producerKind = evidence.producerKind.name,
+                producerId = evidence.producerId,
+                externalChapterKey = evidence.externalChapterKey,
+                rawLabel = evidence.rawLabel,
+                rawNumber = evidence.rawNumber,
+                volume = evidence.volume?.toLong(),
+                title = evidence.title,
+                observedAt = evidence.observedAt,
+                confidence = evidence.confidence,
+                authorityClass = evidence.authority.name,
+                mappedCanonicalChapterId = persisted.mappedCanonicalChapterId,
+                rawMetadata = persisted.rawMetadata,
+            )
+            persisted
+        }
+    }
+
     override suspend fun upsertBatch(writes: List<ChapterEvidenceWrite>): List<PersistedChapterEvidence> =
         database.transactionWithResult {
             if (writes.isEmpty()) return@transactionWithResult emptyList()
@@ -77,18 +133,7 @@ class ChapterEvidenceRepositoryImpl(
                 val externalKey = evidence.externalChapterKey?.let {
                     ExternalEvidenceKey(evidence.producerKind, evidence.producerId, it)
                 }
-                val existingByExternalKey = externalKey?.let { key ->
-                    byExternalKey[key] ?: getByProducerExternalKey(
-                        producerKind = evidence.producerKind,
-                        producerId = evidence.producerId,
-                        externalChapterKey = key.externalChapterKey,
-                    )?.also { existing ->
-                        require(existing.evidence.canonicalTitleId == evidence.canonicalTitleId) {
-                            "External chapter evidence identity is already attached to another canonical title"
-                        }
-                        byExternalKey[key] = existing
-                    }
-                }
+                val existingByExternalKey = externalKey?.let(byExternalKey::get)
                 val existing = existingByExternalKey ?: byId[evidence.id]
                 val stableEvidence = if (existing != null) evidence.copy(id = existing.evidence.id) else evidence
                 val rawMetadata = existing?.rawMetadata ?: byteArrayOf()
@@ -164,6 +209,12 @@ class ChapterEvidenceRepositoryImpl(
         ),
         mappedCanonicalChapterId = mappedCanonicalChapterId,
         rawMetadata = rawMetadata,
+    )
+
+    private data class SupportRow(
+        val producerKind: String,
+        val producerId: String,
+        val mappedCanonicalChapterId: String?,
     )
 
     private data class ExternalEvidenceKey(

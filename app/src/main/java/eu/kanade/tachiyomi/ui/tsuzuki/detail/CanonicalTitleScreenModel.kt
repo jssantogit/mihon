@@ -11,14 +11,11 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.manga.model.asMangaCover
@@ -46,6 +43,7 @@ import tachiyomi.domain.tsuzuki.download.interactor.GetCanonicalChapterDownloadS
 import tachiyomi.domain.tsuzuki.download.model.CanonicalDownloadPreparation
 import tachiyomi.domain.tsuzuki.download.repository.CanonicalDownloadRepository
 import tachiyomi.domain.tsuzuki.integration.interactor.ResolveCanonicalMetadata
+import tachiyomi.domain.tsuzuki.integration.model.ResolvedMetadata
 import tachiyomi.domain.tsuzuki.integration.model.TsuzukiRating
 import tachiyomi.domain.tsuzuki.metadata.ReportedChapterCount
 import tachiyomi.domain.tsuzuki.metadata.interactor.RefreshReportedChapterCounts
@@ -171,7 +169,7 @@ class CanonicalTitleScreenModel(
             if (alreadyLoaded == null) {
                 loadCachedFirst(canonicalTitleId)
             } else {
-                refreshInBackground(canonicalTitleId)
+                refreshInBackground(canonicalTitleId, forceChapterRefresh = false)
             }
         }
         return operation!!
@@ -181,7 +179,7 @@ class CanonicalTitleScreenModel(
         val id = canonicalTitleId ?: return null
         operation?.cancel()
         operation = viewModelScope.launch {
-            refreshInBackground(id)
+            refreshInBackground(id, forceChapterRefresh = true)
         }
         return operation
     }
@@ -198,8 +196,8 @@ class CanonicalTitleScreenModel(
             try {
                 val refreshed = loadLocalState(
                     canonicalTitleId = id,
-                    includeLegacyDownloadChecks = false,
                     includeIntegrationMetadata = false,
+                    allowSourceNetwork = false,
                     isRefreshing = false,
                 )
                 if (canonicalTitleId != id) return@launch
@@ -429,16 +427,31 @@ class CanonicalTitleScreenModel(
             // never be on the critical path to opening a title.
             _state.value = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
-                includeLegacyDownloadChecks = false,
                 includeIntegrationMetadata = false,
+                allowSourceNetwork = false,
                 isRefreshing = true,
             )
+            val cachedIntegrationMetadata = try {
+                resolveCanonicalMetadata.cached(canonicalTitleId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+            if (cachedIntegrationMetadata != null && this.canonicalTitleId == canonicalTitleId) {
+                val current = (_state.value as? CanonicalTitleScreenState.Loaded)
+                    ?.takeIf { it.title.id == canonicalTitleId }
+                if (current != null) {
+                    _state.value = current.withIntegrationMetadata(cachedIntegrationMetadata)
+                }
+            }
             logcat {
                 "TsuzukiPerf detail cached chapters=" +
                     "${(_state.value as? CanonicalTitleScreenState.Loaded)?.chapters?.size ?: 0} " +
+                    "metadata=${cachedIntegrationMetadata != null} " +
                     "elapsed=${initialStart.elapsedNow()}"
             }
-            refreshInBackground(canonicalTitleId)
+            refreshInBackground(canonicalTitleId, forceChapterRefresh = false)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -446,22 +459,34 @@ class CanonicalTitleScreenModel(
         }
     }
 
-    private suspend fun refreshInBackground(canonicalTitleId: String) {
+    private suspend fun refreshInBackground(
+        canonicalTitleId: String,
+        forceChapterRefresh: Boolean,
+    ) {
         val refreshStart = TimeSource.Monotonic.markNow()
         val before = _state.value as? CanonicalTitleScreenState.Loaded
         if (before != null) {
             _state.value = before.copy(isRefreshing = true, refreshError = null)
         }
 
-        val errors = coroutineScope {
+        val refreshResults = coroutineScope {
             val chapterRefresh = async {
-                refreshChapterEvidence.execute(canonicalTitleId).exceptionOrNull()
+                refreshChapterEvidence.executeProgressively(
+                    canonicalTitleId = canonicalTitleId,
+                    forceRefresh = forceChapterRefresh,
+                    onStageReconciled = {
+                        publishChapterRefreshStage(canonicalTitleId)
+                    },
+                ).exceptionOrNull()
             }
             val metadataRefresh = async {
-                refreshReportedChapterCounts.execute(canonicalTitleId).exceptionOrNull()
+                resolveCanonicalMetadata.execute(
+                    canonicalTitleId = canonicalTitleId,
+                    forceRefresh = forceChapterRefresh,
+                )
             }
 
-            val metadataError = metadataRefresh.await()
+            val metadataResult = metadataRefresh.await()
             val metadataElapsed = refreshStart.elapsedNow()
             val current = _state.value as? CanonicalTitleScreenState.Loaded
             if (current?.title?.id == canonicalTitleId) {
@@ -473,7 +498,7 @@ class CanonicalTitleScreenModel(
                         current.chapters.filterNot(CanonicalChapterDetailItem::inferredFromCount),
                         refreshedCounts,
                     ),
-                    refreshError = metadataError,
+                    refreshError = metadataResult.exceptionOrNull(),
                 )
             }
 
@@ -481,18 +506,19 @@ class CanonicalTitleScreenModel(
             logcat {
                 "TsuzukiPerf detail refresh metadataElapsed=$metadataElapsed " +
                     "chapterElapsed=${refreshStart.elapsedNow()} " +
-                    "metadataError=${metadataError != null} chapterError=${chapterError != null}"
+                    "metadataError=${metadataResult.isFailure} chapterError=${chapterError != null}"
             }
-            listOfNotNull(metadataError, chapterError)
+            metadataResult to chapterError
         }
 
         try {
             val refreshed = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
-                includeLegacyDownloadChecks = true,
                 includeIntegrationMetadata = true,
+                integrationMetadataOverride = refreshResults.first.getOrNull(),
+                allowSourceNetwork = false,
                 isRefreshing = false,
-                refreshError = errors.firstOrNull(),
+                refreshError = refreshResults.first.exceptionOrNull() ?: refreshResults.second,
             )
             logcat {
                 "TsuzukiPerf detail ready chapters=${refreshed.chapters.size} " +
@@ -523,10 +549,32 @@ class CanonicalTitleScreenModel(
         }
     }
 
+    private suspend fun publishChapterRefreshStage(canonicalTitleId: String) {
+        val current = (_state.value as? CanonicalTitleScreenState.Loaded)
+            ?.takeIf { it.title.id == canonicalTitleId }
+            ?: return
+        val staged = loadLocalState(
+            canonicalTitleId = canonicalTitleId,
+            includeIntegrationMetadata = false,
+            allowSourceNetwork = false,
+            isRefreshing = true,
+        )
+        val latest = (_state.value as? CanonicalTitleScreenState.Loaded)
+            ?.takeIf { it.title.id == canonicalTitleId }
+            ?: return
+        _state.value = latest.copy(
+            chapters = staged.chapters,
+            addonCoverage = staged.addonCoverage,
+            isRefreshing = true,
+            refreshError = current.refreshError,
+        )
+    }
+
     private suspend fun loadLocalState(
         canonicalTitleId: String,
-        includeLegacyDownloadChecks: Boolean,
         includeIntegrationMetadata: Boolean,
+        integrationMetadataOverride: ResolvedMetadata? = null,
+        allowSourceNetwork: Boolean = includeIntegrationMetadata,
         isRefreshing: Boolean,
         refreshError: Throwable? = null,
     ): CanonicalTitleScreenState.Loaded {
@@ -534,10 +582,8 @@ class CanonicalTitleScreenModel(
             ?: throw NoSuchElementException("Canonical title not found: $canonicalTitleId")
         val libraryEntry = canonicalLibraryRepository.get(canonicalTitleId)
         val chapters = canonicalChapterRepository.getByCanonicalTitleId(canonicalTitleId)
-        val persistedEvidence = chapterEvidenceRepository.getByCanonicalTitleId(canonicalTitleId)
-        val supportedChapterIds = persistedEvidence
-            .mapNotNull { it.mappedCanonicalChapterId }
-            .toSet()
+        val supportSnapshot = chapterEvidenceRepository.getSupportSnapshot(canonicalTitleId)
+        val supportedChapterIds = supportSnapshot.mappedCanonicalChapterIds
         val addonNames = try {
             addonRepository.snapshot().associate { it.id.value to it.displayName }
         } catch (error: CancellationException) {
@@ -549,10 +595,7 @@ class CanonicalTitleScreenModel(
             .getProgressByCanonicalTitleId(canonicalTitleId)
             .associateBy(CanonicalChapterProgress::canonicalChapterId)
         val canonicalDownloadIds = canonicalDownloadRepository
-            .getAll()
-            .asSequence()
-            .map { it.canonicalChapterId }
-            .toSet()
+            .getChapterIdsByCanonicalTitle(canonicalTitleId)
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
         val canonicalArtwork = try {
             resolveCanonicalArtwork.execute(canonicalTitleId)
@@ -562,7 +605,10 @@ class CanonicalTitleScreenModel(
             null
         }
         var metadata = try {
-            resolveCanonicalSourceManga.execute(canonicalTitleId)
+            resolveCanonicalSourceManga.execute(
+                canonicalTitleId = canonicalTitleId,
+                allowNetwork = allowSourceNetwork,
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
@@ -598,7 +644,7 @@ class CanonicalTitleScreenModel(
         }
 
         val integrationMetadata = if (includeIntegrationMetadata) {
-            try {
+            integrationMetadataOverride ?: try {
                 resolveCanonicalMetadata
                     .execute(canonicalTitleId)
                     .getOrNull()
@@ -610,93 +656,22 @@ class CanonicalTitleScreenModel(
         } else {
             null
         }
-        val resolvedRatings = integrationMetadata
-            ?.ratings
-            .orEmpty()
-            .ifEmpty { listOfNotNull(integrationMetadata?.ratingDetails) }
-        val integrationRatings = resolvedRatings.map { rating ->
-            CanonicalProviderRating(
-                providerId = rating.providerId.value,
-                value = rating.value.value,
-                maxValue = rating.value.maxValue,
-                voteCount = rating.value.voteCount,
-            )
-        }
-        val integrationMetadataSources = buildList {
-            addAll(
-                listOfNotNull(
-                    integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.authors?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.artists?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.tags?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.status?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.format?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.startDate?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.endDate?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.editorialVolumeCount?.let {
-                        it.attribution ?: it.providerId.value
-                    },
-                ),
-            )
-            resolvedRatings.forEach { rating ->
-                add(rating.attribution ?: rating.providerId.value)
-            }
-        }.distinct()
-
-        val details = if (!includeLegacyDownloadChecks) {
-            chapters.mapNotNull { chapter ->
-                val progress = progressByChapter[chapter.id]
-                val downloaded = chapter.id in canonicalDownloadIds
-                if (
-                    chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
-                    chapter.id !in supportedChapterIds &&
-                    progress == null &&
-                    !downloaded
-                ) {
-                    null
-                } else {
-                    CanonicalChapterDetailItem(
-                        chapter = chapter,
-                        progress = progress,
-                        downloaded = downloaded,
-                    )
-                }
-            }
-        } else {
-            coroutineScope {
-                val downloadCheckGate = Semaphore(MAX_CONCURRENT_DOWNLOAD_CHECKS)
-                chapters.map { chapter ->
-                    async {
-                        val progress = progressByChapter[chapter.id]
-                        val downloaded = chapter.id in canonicalDownloadIds ||
-                            downloadCheckGate.withPermit {
-                                try {
-                                    getCanonicalChapterDownloadState.execute(chapter.id).hasDownload
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (_: Throwable) {
-                                    false
-                                }
-                            }
-                        if (
-                            chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
-                            chapter.id !in supportedChapterIds &&
-                            progress == null &&
-                            !downloaded
-                        ) {
-                            null
-                        } else {
-                            CanonicalChapterDetailItem(
-                                chapter = chapter,
-                                progress = progress,
-                                downloaded = downloaded,
-                            )
-                        }
-                    }
-                }.awaitAll().filterNotNull()
+        val details = chapters.mapNotNull { chapter ->
+            val progress = progressByChapter[chapter.id]
+            val downloaded = chapter.id in canonicalDownloadIds
+            if (
+                chapter.confirmation != CanonicalChapterConfirmation.CONFIRMED &&
+                chapter.id !in supportedChapterIds &&
+                progress == null &&
+                !downloaded
+            ) {
+                null
+            } else {
+                CanonicalChapterDetailItem(
+                    chapter = chapter,
+                    progress = progress,
+                    downloaded = downloaded,
+                )
             }
         }
 
@@ -713,37 +688,17 @@ class CanonicalTitleScreenModel(
             libraryEntry = libraryEntry,
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
-            addonCoverage = observedAddonCoverage(chapters, persistedEvidence, addonNames),
-            coverUrl = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl,
+            addonCoverage = observedAddonCoverage(chapters, supportSnapshot.addonMappedChapterIds, addonNames),
+            coverUrl = canonicalArtwork?.coverUrl,
             sourceCover = metadata?.asMangaCover(),
-            author = integrationMetadata
-                ?.authors
-                ?.value
-                ?.takeIf { it.isNotEmpty() }
-                ?.joinToString()
-                ?: integrationMetadata
-                    ?.artists
-                    ?.value
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.joinToString()
-                ?: metadata?.author,
-            description = integrationMetadata?.synopsis?.value ?: metadata?.description,
-            genres = integrationMetadata?.genres?.value ?: metadata?.genre.orEmpty(),
-            tags = integrationMetadata?.tags?.value.orEmpty(),
-            editorialStatus = integrationMetadata?.status?.value,
-            editorialFormat = integrationMetadata?.format?.value,
-            ratingValue = integrationRatings.firstOrNull()?.value,
-            ratingMaxValue = integrationRatings.firstOrNull()?.maxValue,
-            ratingVoteCount = integrationRatings.firstOrNull()?.voteCount,
-            ratings = integrationRatings,
-            tsuzukiRating = integrationMetadata?.tsuzukiRating,
-            startDate = integrationMetadata?.startDate?.value,
-            endDate = integrationMetadata?.endDate?.value,
-            editorialVolumeCount = integrationMetadata?.editorialVolumeCount?.value,
-            metadataSources = integrationMetadataSources,
+            author = metadata?.author,
+            description = metadata?.description,
+            genres = metadata?.genre.orEmpty(),
             isRefreshing = isRefreshing,
             refreshError = refreshError,
-        )
+        ).let { local ->
+            integrationMetadata?.let { metadata -> local.withIntegrationMetadata(metadata) } ?: local
+        }
         val cacheReason = if (isRefreshing) {
             ChapterInventoryDiagnosticReason.CACHE_SNAPSHOT
         } else {
@@ -757,6 +712,69 @@ class CanonicalTitleScreenModel(
         return loaded.copy(
             chapterDiagnosticsRecording = diagnosticsRecording(canonicalTitleId),
             chapterDiagnosticReportAvailable = diagnosticReportAvailable(canonicalTitleId),
+        )
+    }
+
+    private fun CanonicalTitleScreenState.Loaded.withIntegrationMetadata(
+        metadata: ResolvedMetadata,
+    ): CanonicalTitleScreenState.Loaded {
+        val resolvedRatings = metadata.ratings
+            .ifEmpty { listOfNotNull(metadata.ratingDetails) }
+        val integrationRatings = resolvedRatings.map { rating ->
+            CanonicalProviderRating(
+                providerId = rating.providerId.value,
+                value = rating.value.value,
+                maxValue = rating.value.maxValue,
+                voteCount = rating.value.voteCount,
+            )
+        }
+        val sources = buildList {
+            addAll(
+                listOfNotNull(
+                    metadata.title?.let { it.attribution ?: it.providerId.value },
+                    metadata.synopsis?.let { it.attribution ?: it.providerId.value },
+                    metadata.artworkUrl?.let { it.attribution ?: it.providerId.value },
+                    metadata.authors?.let { it.attribution ?: it.providerId.value },
+                    metadata.artists?.let { it.attribution ?: it.providerId.value },
+                    metadata.genres?.let { it.attribution ?: it.providerId.value },
+                    metadata.tags?.let { it.attribution ?: it.providerId.value },
+                    metadata.status?.let { it.attribution ?: it.providerId.value },
+                    metadata.format?.let { it.attribution ?: it.providerId.value },
+                    metadata.startDate?.let { it.attribution ?: it.providerId.value },
+                    metadata.endDate?.let { it.attribution ?: it.providerId.value },
+                    metadata.editorialVolumeCount?.let { it.attribution ?: it.providerId.value },
+                ),
+            )
+            resolvedRatings.forEach { rating ->
+                add(rating.attribution ?: rating.providerId.value)
+            }
+        }.distinct()
+
+        return copy(
+            coverUrl = metadata.artworkUrl?.value ?: coverUrl,
+            author = metadata.authors
+                ?.value
+                ?.takeIf { it.isNotEmpty() }
+                ?.joinToString()
+                ?: metadata.artists
+                    ?.value
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.joinToString()
+                ?: author,
+            description = metadata.synopsis?.value ?: description,
+            genres = metadata.genres?.value ?: genres,
+            tags = metadata.tags?.value ?: tags,
+            editorialStatus = metadata.status?.value ?: editorialStatus,
+            editorialFormat = metadata.format?.value ?: editorialFormat,
+            ratingValue = integrationRatings.firstOrNull()?.value ?: ratingValue,
+            ratingMaxValue = integrationRatings.firstOrNull()?.maxValue ?: ratingMaxValue,
+            ratingVoteCount = integrationRatings.firstOrNull()?.voteCount ?: ratingVoteCount,
+            ratings = integrationRatings.ifEmpty { ratings },
+            tsuzukiRating = metadata.tsuzukiRating ?: tsuzukiRating,
+            startDate = metadata.startDate?.value ?: startDate,
+            endDate = metadata.endDate?.value ?: endDate,
+            editorialVolumeCount = metadata.editorialVolumeCount?.value ?: editorialVolumeCount,
+            metadataSources = sources.ifEmpty { metadataSources },
         )
     }
 
@@ -893,6 +911,5 @@ class CanonicalTitleScreenModel(
     }
 
     private companion object {
-        const val MAX_CONCURRENT_DOWNLOAD_CHECKS = 8
     }
 }

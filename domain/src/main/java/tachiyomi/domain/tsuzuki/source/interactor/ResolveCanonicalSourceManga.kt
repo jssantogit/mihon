@@ -39,7 +39,10 @@ class ResolveCanonicalSourceManga(
     private val structuredDiagnostics: StructuredDiagnosticRecorder,
 ) {
 
-    suspend fun execute(canonicalTitleId: String): Manga? {
+    suspend fun execute(
+        canonicalTitleId: String,
+        allowNetwork: Boolean = true,
+    ): Manga? {
         val diagnosticId = canonicalTitleId.take(8)
         val title = canonicalTitleRepository.getById(canonicalTitleId)
         if (title == null) {
@@ -73,6 +76,7 @@ class ResolveCanonicalSourceManga(
             if (fallback == null && persisted != null) {
                 fallback = persisted
             }
+            if (!allowNetwork) continue
 
             val candidate = ReadingSourceCandidate(
                 sourceId = mapping.sourceId,
@@ -136,6 +140,15 @@ class ResolveCanonicalSourceManga(
                     return repaired
                 }
             }
+        }
+
+        if (!allowNetwork) {
+            logcat {
+                "TsuzukiCover sourceResolve title=$diagnosticId selected=local-only " +
+                    "fallbackPresent=" + (fallback != null) +
+                    " fallbackThumbnail=" + !fallback?.thumbnailUrl.isNullOrBlank()
+            }
+            return fallback
         }
 
         val bindingManga = resolveFromContentBindings(

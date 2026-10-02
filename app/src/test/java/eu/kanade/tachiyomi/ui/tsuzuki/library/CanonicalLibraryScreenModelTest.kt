@@ -3,6 +3,10 @@ package eu.kanade.tachiyomi.ui.tsuzuki.library
 import eu.kanade.domain.tsuzuki.library.interactor.RemoveUnifiedLibraryTitle
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,10 +23,15 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitle
 import tachiyomi.domain.tsuzuki.library.interactor.ObserveCanonicalLibrary
+import tachiyomi.domain.tsuzuki.library.interactor.ObserveUnifiedLibrary
+import tachiyomi.domain.tsuzuki.library.interactor.RefreshUserLibraries
 import tachiyomi.domain.tsuzuki.library.interactor.SetCanonicalLibraryStatus
 import tachiyomi.domain.tsuzuki.library.model.CanonicalLibraryItem
+import tachiyomi.domain.tsuzuki.library.model.UnifiedLibraryTitle
 import tachiyomi.domain.tsuzuki.migration.interactor.MigrateMihonLibraryToCanonical
 import tachiyomi.domain.tsuzuki.migration.model.CanonicalMigrationReport
 import tachiyomi.domain.tsuzuki.migration.model.MihonLibrarySnapshot
@@ -42,6 +51,7 @@ import tachiyomi.domain.tsuzuki.reader.service.CanonicalReadingStartResolver
 import tachiyomi.domain.tsuzuki.repository.CanonicalLibraryRepository
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
 import tachiyomi.domain.tsuzuki.repository.SourceTitleMappingRepository
+import tachiyomi.domain.tsuzuki.source.interactor.ResolveCanonicalSourceManga
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CanonicalLibraryScreenModelTest {
@@ -56,6 +66,61 @@ class CanonicalLibraryScreenModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `library first paint never performs source network for cover fallback`() = runTest(testDispatcher) {
+        val title = CanonicalTitle(
+            id = "title-network",
+            displayTitle = "Dandadan",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val entry = CanonicalLibraryEntry(
+            canonicalTitleId = title.id,
+            status = LibraryStatus.READING,
+            favorite = true,
+            addedAt = 1L,
+            updatedAt = 1L,
+        )
+        val observeUnifiedLibrary = mockk<ObserveUnifiedLibrary>()
+        every { observeUnifiedLibrary.subscribe() } returns MutableStateFlow(
+            listOf(
+                UnifiedLibraryTitle(
+                    title = title,
+                    localEntry = entry,
+                    externalMemberships = emptyList(),
+                ),
+            ),
+        )
+        val mangaRepository = mockk<MangaRepository>()
+        every { mangaRepository.getLibraryMangaAsFlow() } returns MutableStateFlow(emptyList())
+        val sourceResolver = mockk<ResolveCanonicalSourceManga>()
+        coEvery { sourceResolver.execute(title.id, allowNetwork = false) } returns null
+        val artworkRepository = mockk<TitleArtworkRepository>()
+        every { artworkRepository.observeAll() } returns MutableStateFlow(emptyList())
+        val refreshUserLibraries = mockk<RefreshUserLibraries>()
+        coEvery { refreshUserLibraries.refreshConnected() } returns emptyMap()
+
+        val screenModel = CanonicalLibraryScreenModel(
+            observeUnifiedLibrary = observeUnifiedLibrary,
+            setCanonicalLibraryStatus = mockk(relaxed = true),
+            removeUnifiedLibraryTitle = mockk(relaxed = true),
+            migrateMihonLibraryToCanonical = FakeMigrateMihonLibraryToCanonical(),
+            resolveCanonicalReadingStart = FakeCanonicalReadingStartResolver(),
+            canonicalReadingRepository = FakeCanonicalReadingRepository(),
+            refreshUserLibraries = refreshUserLibraries,
+            mangaRepository = mangaRepository,
+            resolveCanonicalSourceManga = sourceResolver,
+            titleArtworkRepository = artworkRepository,
+        )
+
+        advanceUntilIdle()
+
+        screenModel.state.value.shouldBeInstanceOf<CanonicalLibraryScreenState.Success>()
+        coVerify(exactly = 1) { sourceResolver.execute(title.id, allowNetwork = false) }
+        coVerify(exactly = 0) { sourceResolver.execute(title.id, allowNetwork = true) }
     }
 
     @Test

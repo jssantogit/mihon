@@ -9,9 +9,9 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +19,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -94,6 +98,9 @@ class TsuzukiSearchScreenModel(
     val events = eventChannel.receiveAsFlow()
 
     private var operation: Job? = null
+    private var operationGeneration = 0L
+    // Shared by every Discover block so a single screen load cannot fan out provider requests without a bound.
+    private val discoveryRequestGate = Semaphore(DISCOVER_NETWORK_CONCURRENCY)
 
     init {
         loadDiscover()
@@ -106,36 +113,61 @@ class TsuzukiSearchScreenModel(
 
     fun search(query: String): Job {
         operation?.cancel()
+        val generation = ++operationGeneration
         val normalized = query.trim()
         operation = viewModelScope.launch {
             registry.awaitReady()
+            if (generation != operationGeneration) return@launch
             if (normalized.isEmpty()) {
-                loadDiscoverNow()
+                loadDiscoverNow(generation)
                 return@launch
             }
 
             searchPreferences.recordSearch(normalized)
             if (registry.searchProviders().isEmpty()) {
-                _state.value = SearchState.NeedsIntegration(
-                    recentSearches = searchPreferences.getRecentSearches(),
-                )
+                if (generation == operationGeneration) {
+                    _state.value = SearchState.NeedsIntegration(
+                        recentSearches = searchPreferences.getRecentSearches(),
+                    )
+                }
                 return@launch
             }
 
             _state.value = SearchState.Loading
             try {
-                val items = searchIntegrations.execute(
-                    CatalogQuery(query = normalized),
-                )
-                _state.value = if (items.isEmpty()) {
-                    SearchState.Empty(normalized)
-                } else {
-                    SearchState.Results(normalized, items)
+                val baseItems = searchIntegrations.executeBaseProgressively(
+                    query = CatalogQuery(query = normalized),
+                ) { partialItems ->
+                    if (generation == operationGeneration && partialItems.isNotEmpty()) {
+                        _state.value = SearchState.Results(normalized, partialItems)
+                    }
+                }
+                if (generation != operationGeneration) return@launch
+                if (baseItems.isEmpty()) {
+                    _state.value = SearchState.Empty(normalized)
+                    return@launch
+                }
+
+                _state.value = SearchState.Results(normalized, baseItems)
+                val enriched = searchIntegrations.enrichRatingsProgressively(baseItems) { index, item ->
+                    if (generation != operationGeneration) return@enrichRatingsProgressively
+                    val current = _state.value as? SearchState.Results ?: return@enrichRatingsProgressively
+                    if (current.query != normalized || index !in current.items.indices) {
+                        return@enrichRatingsProgressively
+                    }
+                    _state.value = current.copy(
+                        items = current.items.toMutableList().apply { this[index] = item },
+                    )
+                }
+                if (generation == operationGeneration) {
+                    _state.value = SearchState.Results(normalized, enriched)
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                _state.value = SearchState.Error(normalized, error)
+                if (generation == operationGeneration) {
+                    _state.value = SearchState.Error(normalized, error)
+                }
             }
         }
         return operation!!
@@ -143,8 +175,9 @@ class TsuzukiSearchScreenModel(
 
     fun loadDiscover(): Job {
         operation?.cancel()
+        val generation = ++operationGeneration
         operation = viewModelScope.launch {
-            loadDiscoverNow()
+            loadDiscoverNow(generation)
         }
         return operation!!
     }
@@ -173,8 +206,9 @@ class TsuzukiSearchScreenModel(
         loadDiscover()
     }
 
-    private suspend fun loadDiscoverNow() {
+    private suspend fun loadDiscoverNow(generation: Long) {
         registry.awaitReady()
+        if (generation != operationGeneration) return
         val recentSearches = searchPreferences.getRecentSearches()
         val providers = registry.discoveryProviders()
         if (providers.isEmpty()) {
@@ -192,78 +226,167 @@ class TsuzukiSearchScreenModel(
             return
         }
 
-        _state.value = SearchState.Loading
+        if (generation != operationGeneration) return
+        _state.value = SearchState.Discover(
+            recentSearches = recentSearches,
+            blocks = emptyList(),
+        )
         try {
-            val blocks = coroutineScope {
-                listOf(
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.TRENDING,
-                            providers = providers,
-                        ) { provider ->
-                            provider.trending(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
+            coroutineScope {
+                val completedBlocks = Channel<DiscoverBlock>(DISCOVER_REQUEST_COUNT)
+                val baseJobs = listOf(
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.TRENDING,
+                                providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
+                            ) { provider ->
+                                provider.trending(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.POPULAR,
+                                providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
+                            ) { provider ->
+                                provider.popular(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.TOP_RATED,
+                                providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
+                            ) { provider ->
+                                provider.topRated(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.FAVORITES,
+                                providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
+                            ) { provider ->
+                                provider.favorites(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.RECENTLY_UPDATED,
+                                providers = providers,
+                                onPartial = { block ->
+                                    if (block.items.isNotEmpty()) {
+                                        publishDiscoverBlock(generation, block)
+                                    }
+                                },
+                            ) { provider ->
+                                provider.recentlyUpdated(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                )
+                val enrichmentJobs = mutableListOf<Job>()
+                repeat(baseJobs.size) {
+                    val block = completedBlocks.receive()
+                    if (block.items.isNotEmpty()) {
+                        publishDiscoverBlock(generation, block)
+                        enrichmentJobs += launch {
+                            val enriched = searchIntegrations.enrichRatingsProgressively(block.items) { index, item ->
+                                publishDiscoverItem(
+                                    generation = generation,
+                                    kind = block.kind,
+                                    index = index,
+                                    item = item,
+                                )
+                            }
+                            publishDiscoverBlock(
+                                generation = generation,
+                                block = block.copy(items = enriched),
                             )
                         }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.POPULAR,
-                            providers = providers,
-                        ) { provider ->
-                            provider.popular(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.TOP_RATED,
-                            providers = providers,
-                        ) { provider ->
-                            provider.topRated(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.FAVORITES,
-                            providers = providers,
-                        ) { provider ->
-                            provider.favorites(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.RECENTLY_UPDATED,
-                            providers = providers,
-                        ) { provider ->
-                            provider.recentlyUpdated(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                ).awaitAll()
-                    .filter { block -> block.items.isNotEmpty() }
+                    }
+                }
+                baseJobs.forEach { it.join() }
+                enrichmentJobs.forEach { it.join() }
             }
-            _state.value = SearchState.Discover(
-                recentSearches = recentSearches,
-                blocks = blocks,
-            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            _state.value = SearchState.Error(
-                query = null,
-                error = error,
+            if (generation == operationGeneration) {
+                _state.value = SearchState.Error(
+                    query = null,
+                    error = error,
+                )
+            }
+        }
+    }
+
+    private fun publishDiscoverBlock(
+        generation: Long,
+        block: DiscoverBlock,
+    ) {
+        if (generation != operationGeneration) return
+        _state.update { current ->
+            val discover = current as? SearchState.Discover ?: return@update current
+            val blocks = discover.blocks.associateBy(DiscoverBlock::kind).toMutableMap()
+            if (block.items.isEmpty()) {
+                blocks.remove(block.kind)
+            } else {
+                blocks[block.kind] = block
+            }
+            discover.copy(
+                blocks = blocks.values.sortedBy { it.kind.ordinal },
+            )
+        }
+    }
+
+    private fun publishDiscoverItem(
+        generation: Long,
+        kind: DiscoverKind,
+        index: Int,
+        item: CatalogItem,
+    ) {
+        if (generation != operationGeneration) return
+        _state.update { current ->
+            val discover = current as? SearchState.Discover ?: return@update current
+            val blockIndex = discover.blocks.indexOfFirst { it.kind == kind }
+            if (blockIndex < 0) return@update current
+            val block = discover.blocks[blockIndex]
+            if (index !in block.items.indices) return@update current
+            discover.copy(
+                blocks = discover.blocks.toMutableList().apply {
+                    this[blockIndex] = block.copy(
+                        items = block.items.toMutableList().apply {
+                            this[index] = item
+                        },
+                    )
+                },
             )
         }
     }
@@ -271,29 +394,52 @@ class TsuzukiSearchScreenModel(
     private suspend fun discoverBlock(
         kind: DiscoverKind,
         providers: List<DiscoveryProvider>,
+        onPartial: suspend (DiscoverBlock) -> Unit = {},
         request: suspend (DiscoveryProvider) -> Result<CatalogPage>,
-    ): DiscoverBlock {
-        val items = coroutineScope {
-            providers.map { provider ->
-                async {
-                    try {
-                        val result = request(provider)
-                        val error = result.exceptionOrNull()
-                        if (error is CancellationException) throw error
-                        result.getOrElse { emptyPage() }.items
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Throwable) {
-                        emptyList()
+    ): DiscoverBlock = coroutineScope {
+        val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
+        val pending = providers.mapIndexed { index, provider ->
+            async {
+                val items = try {
+                    val result = discoveryRequestGate.withPermit {
+                        request(provider)
                     }
+                    val error = result.exceptionOrNull()
+                    if (error is CancellationException) throw error
+                    result.getOrElse { emptyPage() }.items
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                    emptyList()
                 }
-            }.awaitAll().flatten()
-        }.let(::mergeCatalogItemsByVerifiedIdentity)
+                index to items
+            }
+        }.toMutableList()
 
-        return DiscoverBlock(
-            kind = kind,
-            items = searchIntegrations.enrichRatings(items),
-        )
+        var block = DiscoverBlock(kind = kind, items = emptyList())
+        while (pending.isNotEmpty()) {
+            val (completed, result) = awaitNext(pending)
+            pending.remove(completed)
+            val (index, items) = result
+            providerItems[index] = items
+            block = DiscoverBlock(
+                kind = kind,
+                items = providerItems
+                    .filterNotNull()
+                    .flatten()
+                    .let(::mergeCatalogItemsByVerifiedIdentity),
+            )
+            onPartial(block)
+        }
+        block
+    }
+
+    private suspend fun <T> awaitNext(
+        pending: List<Deferred<T>>,
+    ): Pair<Deferred<T>, T> = select {
+        pending.forEach { deferred ->
+            deferred.onAwait { value -> deferred to value }
+        }
     }
 
     private fun emptyPage() = CatalogPage(
@@ -303,5 +449,7 @@ class TsuzukiSearchScreenModel(
 
     private companion object {
         const val DISCOVER_LIMIT = 20
+        const val DISCOVER_REQUEST_COUNT = 5
+        const val DISCOVER_NETWORK_CONCURRENCY = 4
     }
 }

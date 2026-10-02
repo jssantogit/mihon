@@ -33,6 +33,12 @@ FROM tsuzuki_chapter_evidence
 WHERE canonical_title_id = :canonicalTitleId
 ORDER BY observed_at ASC, id ASC;
 
+getTsuzukiChapterEvidenceSupportByTitle:
+SELECT DISTINCT producer_kind, producer_id, mapped_canonical_chapter_id
+FROM tsuzuki_chapter_evidence
+WHERE canonical_title_id = :canonicalTitleId
+AND mapped_canonical_chapter_id IS NOT NULL;
+
 getTsuzukiChapterEvidenceByProducerExternalKey:
 SELECT *
 FROM tsuzuki_chapter_evidence

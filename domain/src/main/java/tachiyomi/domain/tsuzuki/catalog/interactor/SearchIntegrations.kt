@@ -2,11 +2,17 @@ package tachiyomi.domain.tsuzuki.catalog.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import tachiyomi.domain.tsuzuki.catalog.cache.BaseCatalogSearchCache
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
@@ -24,24 +30,93 @@ import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 @Inject
 class SearchIntegrations(
     private val registry: IntegrationRegistry,
+    private val ratingEnrichmentCache: RatingEnrichmentCache = RatingEnrichmentCache(),
+    private val baseSearchCache: BaseCatalogSearchCache = BaseCatalogSearchCache(),
 ) {
 
-    suspend fun execute(query: CatalogQuery): List<CatalogItem> = coroutineScope {
-        registry.searchProviders()
-            .map { provider ->
-                async {
-                    provider.search(query)
-                        .getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }
-                        .items
-                }
-            }
-            .awaitAll()
-            .flatten()
-            // Exact provider ids and provider-published cross-provider mappings are safe.
-            // Title similarity alone remains intentionally insufficient.
-            .let(::mergeCatalogItemsByVerifiedIdentity)
-            .let { items -> enrichRatings(items) }
+    private val ratingLookupGate = Semaphore(RATING_LOOKUP_CONCURRENCY)
+    private val itemEnrichmentGate = Semaphore(ITEM_ENRICHMENT_CONCURRENCY)
+
+    suspend fun execute(query: CatalogQuery): List<CatalogItem> =
+        enrichRatings(executeBase(query))
+
+    suspend fun executeBase(query: CatalogQuery): List<CatalogItem> {
+        val providers = registry.searchProviders()
+        if (providers.isEmpty()) return emptyList()
+        val cacheKey = baseSearchCacheKey(query, providers.map { it.integrationId.value })
+        return baseSearchCache.getOrFetch(cacheKey) {
+            computeBase(query, providers) { }
+        }
     }
+
+    suspend fun executeBaseProgressively(
+        query: CatalogQuery,
+        onItems: suspend (List<CatalogItem>) -> Unit,
+    ): List<CatalogItem> {
+        val providers = registry.searchProviders()
+        if (providers.isEmpty()) return emptyList()
+        val cacheKey = baseSearchCacheKey(query, providers.map { it.integrationId.value })
+        baseSearchCache.get(cacheKey)?.let { cached ->
+            onItems(cached)
+            return cached
+        }
+
+        val loaded = computeBase(query, providers, onItems)
+        if (loaded.cacheable) {
+            baseSearchCache.put(cacheKey, loaded.items)
+        }
+        return loaded.items
+    }
+
+    private suspend fun computeBase(
+        query: CatalogQuery,
+        providers: List<tachiyomi.domain.tsuzuki.integration.SearchProvider>,
+        onItems: suspend (List<CatalogItem>) -> Unit,
+    ): BaseCatalogSearchCache.LoadResult = coroutineScope {
+        val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
+        var complete = true
+        val pending = providers.mapIndexed { index, provider ->
+            async {
+                val result = provider.search(query)
+                val error = result.exceptionOrNull()
+                if (error is CancellationException) throw error
+                Triple(
+                    index,
+                    result.getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }.items,
+                    result.isSuccess,
+                )
+            }
+        }.toMutableList()
+
+        var merged = emptyList<CatalogItem>()
+        while (pending.isNotEmpty()) {
+            val (completed, result) = awaitNext(pending)
+            pending.remove(completed)
+            val (index, items, succeeded) = result
+            complete = complete && succeeded
+            providerItems[index] = items
+            merged = providerItems
+                .filterNotNull()
+                .flatten()
+                // Exact provider ids and provider-published cross-provider mappings are safe.
+                // Title similarity alone remains intentionally insufficient.
+                .let(::mergeCatalogItemsByVerifiedIdentity)
+            onItems(merged)
+        }
+        BaseCatalogSearchCache.LoadResult(
+            items = merged,
+            cacheable = complete,
+        )
+    }
+
+    private fun baseSearchCacheKey(
+        query: CatalogQuery,
+        providerIds: List<String>,
+    ) = BaseCatalogSearchCache.Key(
+        query = query,
+        providerIds = providerIds,
+        configurationFingerprint = registry.configurationFingerprint(),
+    )
 
     /**
      * Ratings describe the canonical work, not the catalog that happened to list it.
@@ -51,132 +126,209 @@ class SearchIntegrations(
      * contribute a non-persistent rating-only match when title/alias is corroborated by publication
      * year or creator identity and the candidate is unambiguous.
      */
-    suspend fun enrichRatings(items: List<CatalogItem>): List<CatalogItem> = coroutineScope {
+    suspend fun enrichRatings(items: List<CatalogItem>): List<CatalogItem> =
+        enrichRatingsProgressively(items) { _, _ -> }
+
+    suspend fun enrichRatingsProgressively(
+        items: List<CatalogItem>,
+        onItem: suspend (index: Int, item: CatalogItem) -> Unit,
+    ): List<CatalogItem> = coroutineScope {
         val providers = registry.ratingsProviders()
         if (providers.isEmpty()) {
-            return@coroutineScope items.map { item ->
+            val cleared = items.map { item ->
                 item.copy(
                     score = null,
                     scores = emptyList(),
                     tsuzukiRating = null,
                 )
             }
+            cleared.forEachIndexed { index, item -> onItem(index, item) }
+            return@coroutineScope cleared
         }
 
         val activeProviderIds = providers.map { it.integrationId.value }.toSet()
-        // Catalog rows may need provider detail lookups; keep network pressure bounded.
-        val semaphore = Semaphore(RATING_LOOKUP_CONCURRENCY)
+        val configurationFingerprint = registry.configurationFingerprint()
+        val publishMutex = Mutex()
 
-        items.map { item ->
-            async {
-                val resolvedIdentities = providers
-                    .map { provider ->
-                        async {
-                            try {
-                                semaphore.withPermit {
-                                    provider.resolveExternalIds(item)
-                                        .getOrNullPreservingCancellation()
-                                        .orEmpty()
-                                }
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (_: Throwable) {
-                                emptyMap()
-                            }
-                        }
-                    }
-                    .awaitAll()
-                    .fold(item.externalIds.toMutableMap()) { accumulated, identities ->
-                        accumulated.apply { putAll(identities) }
-                    }
-
-                val identifiedItem = item.copy(externalIds = resolvedIdentities)
-                val existingScores = item.scores
-                    .ifEmpty { listOfNotNull(item.score) }
-                    .filter { score -> score.provider in activeProviderIds }
-                    .distinctBy(CatalogScore::provider)
-                val existingProviders = existingScores.map(CatalogScore::provider).toSet()
-
-                val matches = providers
-                    .filterNot { provider -> provider.integrationId.value in existingProviders }
-                    .map { provider ->
-                        async {
-                            localRatingMatch(
-                                item = identifiedItem,
-                                providerId = provider.integrationId.value,
-                                candidates = items,
-                            ) ?: try {
-                                semaphore.withPermit {
-                                    provider.ratingFor(identifiedItem)
-                                        .getOrNullPreservingCancellation()
-                                }
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (_: Throwable) {
-                                null
-                            }
-                        }
-                    }
-                    .awaitAll()
-                    .filterNotNull()
-
-                val resolvedScores = matches.map { match ->
-                    CatalogScore(
-                        provider = match.rating.providerId,
-                        value = match.rating.value,
-                        maxValue = match.rating.scaleMax,
-                        voteCount = match.rating.voteCount,
-                        identityEvidence = match.identityEvidence,
-                    )
-                }
-                val scores = (existingScores + resolvedScores)
-                    .distinctBy(CatalogScore::provider)
-                    .sortedWith(
-                        compareBy<CatalogScore>(
-                            { score ->
-                                RATING_PROVIDER_ORDER.indexOf(score.provider)
-                                    .takeIf { index -> index >= 0 }
-                                    ?: Int.MAX_VALUE
-                            },
-                            CatalogScore::provider,
-                        ),
-                    )
-
-                identifiedItem.copy(
-                    score = scores.firstOrNull(),
-                    scores = scores,
-                    tsuzukiRating = if (
-                        registry.isGlobalCapabilityActive(
-                            TSUZUKI_INTEGRATION_ID,
-                            IntegrationCapability.RATINGS,
-                        )
-                    ) {
-                        ComputeTsuzukiRating(
-                            scores.map { score ->
-                                TsuzukiRatingSource(
-                                    providerId = score.provider,
-                                    value = score.value,
-                                    maxValue = score.maxValue,
-                                    voteCount = score.voteCount,
-                                    identityEvidence = score.identityEvidence,
-                                )
-                            },
-                        )
-                    } else {
-                        null
-                    },
-                    externalIds = buildMap {
-                        putAll(identifiedItem.externalIds)
-                        matches
-                            .filter(CatalogRatingMatch::verifiedIdentity)
-                            .forEach { match ->
-                                put(match.rating.providerId, match.externalId)
-                            }
-                    },
-                )
+        val preparedItems = items.map { item ->
+            item.withRatingScores(item.activeScores(activeProviderIds))
+        }
+        preparedItems.forEachIndexed { index, prepared ->
+            if (prepared != items[index]) {
+                onItem(index, prepared)
             }
-        }.awaitAll()
+        }
+
+        val enrichedItems = preparedItems.toMutableList()
+        preparedItems.indices
+            .map { index ->
+                async {
+                    val enriched = itemEnrichmentGate.withPermit {
+                        enrichRatingItem(
+                            item = preparedItems[index],
+                            candidates = preparedItems,
+                            providers = providers,
+                            activeProviderIds = activeProviderIds,
+                            configurationFingerprint = configurationFingerprint,
+                            semaphore = ratingLookupGate,
+                        )
+                    }
+                    if (enriched != preparedItems[index]) {
+                        publishMutex.withLock {
+                            onItem(index, enriched)
+                        }
+                    }
+                    index to enriched
+                }
+            }
+            .awaitAll()
+            .forEach { (index, enriched) ->
+                enrichedItems[index] = enriched
+            }
+        enrichedItems
     }
+
+    private suspend fun enrichRatingItem(
+        item: CatalogItem,
+        candidates: List<CatalogItem>,
+        providers: List<tachiyomi.domain.tsuzuki.integration.RatingsProvider>,
+        activeProviderIds: Set<String>,
+        configurationFingerprint: String,
+        semaphore: Semaphore,
+    ): CatalogItem = coroutineScope {
+        val existingScores = item.activeScores(activeProviderIds)
+        val existingProviders = existingScores.map(CatalogScore::provider).toSet()
+        val providersNeedingRating = providers.filterNot { provider ->
+            provider.integrationId.value in existingProviders
+        }
+
+        val resolvedIdentities = providersNeedingRating
+            .map { provider ->
+                async {
+                    try {
+                        semaphore.withPermit {
+                            ratingEnrichmentCache.resolveExternalIds(
+                                item = item,
+                                provider = provider,
+                                configurationFingerprint = configurationFingerprint,
+                            )
+                                .getOrNullPreservingCancellation()
+                                .orEmpty()
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        emptyMap()
+                    }
+                }
+            }
+            .awaitAll()
+            .fold(item.externalIds.toMutableMap()) { accumulated, identities ->
+                accumulated.apply { putAll(identities) }
+            }
+
+        val identifiedItem = item.copy(externalIds = resolvedIdentities)
+
+        val matches = providersNeedingRating
+            .map { provider ->
+                async {
+                    localRatingMatch(
+                        item = identifiedItem,
+                        providerId = provider.integrationId.value,
+                        candidates = candidates,
+                    ) ?: try {
+                        semaphore.withPermit {
+                            ratingEnrichmentCache.ratingFor(
+                                item = identifiedItem,
+                                provider = provider,
+                                configurationFingerprint = configurationFingerprint,
+                            )
+                                .getOrNullPreservingCancellation()
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        null
+                    }
+                }
+            }
+            .awaitAll()
+            .filterNotNull()
+
+        val resolvedScores = matches.map { match ->
+            CatalogScore(
+                provider = match.rating.providerId,
+                value = match.rating.value,
+                maxValue = match.rating.scaleMax,
+                voteCount = match.rating.voteCount,
+                identityEvidence = match.identityEvidence,
+            )
+        }
+        val scores = (existingScores + resolvedScores)
+            .distinctBy(CatalogScore::provider)
+            .sortedWith(
+                compareBy<CatalogScore>(
+                    { score ->
+                        RATING_PROVIDER_ORDER.indexOf(score.provider)
+                            .takeIf { index -> index >= 0 }
+                            ?: Int.MAX_VALUE
+                    },
+                    CatalogScore::provider,
+                ),
+            )
+
+        identifiedItem.withRatingScores(scores).copy(
+            externalIds = buildMap {
+                putAll(identifiedItem.externalIds)
+                matches
+                    .filter(CatalogRatingMatch::verifiedIdentity)
+                    .forEach { match ->
+                        put(match.rating.providerId, match.externalId)
+                    }
+            },
+        )
+    }
+
+    private fun CatalogItem.activeScores(activeProviderIds: Set<String>): List<CatalogScore> =
+        scores
+            .ifEmpty { listOfNotNull(score) }
+            .filter { score -> score.provider in activeProviderIds }
+            .distinctBy(CatalogScore::provider)
+            .sortedWith(
+                compareBy<CatalogScore>(
+                    { score ->
+                        RATING_PROVIDER_ORDER.indexOf(score.provider)
+                            .takeIf { index -> index >= 0 }
+                            ?: Int.MAX_VALUE
+                    },
+                    CatalogScore::provider,
+                ),
+            )
+
+    private fun CatalogItem.withRatingScores(scores: List<CatalogScore>): CatalogItem = copy(
+        score = scores.firstOrNull(),
+        scores = scores,
+        tsuzukiRating = if (
+            registry.isGlobalCapabilityActive(
+                TSUZUKI_INTEGRATION_ID,
+                IntegrationCapability.RATINGS,
+            )
+        ) {
+            ComputeTsuzukiRating(
+                scores.map { score ->
+                    TsuzukiRatingSource(
+                        providerId = score.provider,
+                        value = score.value,
+                        maxValue = score.maxValue,
+                        voteCount = score.voteCount,
+                        identityEvidence = score.identityEvidence,
+                    )
+                },
+            )
+        } else {
+            null
+        },
+    )
 
     private fun localRatingMatch(
         item: CatalogItem,
@@ -210,8 +362,17 @@ class SearchIntegrations(
         return getOrNull()
     }
 
+    private suspend fun <T> awaitNext(
+        pending: List<Deferred<T>>,
+    ): Pair<Deferred<T>, T> = select {
+        pending.forEach { deferred ->
+            deferred.onAwait { value -> deferred to value }
+        }
+    }
+
     private companion object {
         const val RATING_LOOKUP_CONCURRENCY = 4
+        const val ITEM_ENRICHMENT_CONCURRENCY = 3
         val RATING_PROVIDER_ORDER = listOf("mal", "kitsu", "mangaupdates", "bangumi", "shikimori", "hikka")
     }
 }

@@ -134,6 +134,7 @@ class CatalogScreenModel(
     private var discoverJob: Job? = null
     private var searchJob: Job? = null
     private var previewJob: Job? = null
+    private var searchGeneration = 0L
 
     val state: StateFlow<CatalogScreenState> = combine(
         searchQueryFlow,
@@ -184,6 +185,7 @@ class CatalogScreenModel(
     fun updateSearchQuery(query: String) {
         searchQueryFlow.value = query
         searchJob?.cancel()
+        val generation = ++searchGeneration
 
         if (query.isBlank()) {
             searchStateFlow.value = SearchState.Idle
@@ -193,21 +195,33 @@ class CatalogScreenModel(
         searchStateFlow.value = SearchState.Loading
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MILLIS)
-            executeSearch(query)
+            executeSearch(query, generation)
         }
     }
 
     fun search(query: String = searchQueryFlow.value): Job {
         searchJob?.cancel()
-        return viewModelScope.launch {
-            executeSearch(query)
+        val generation = ++searchGeneration
+        val job = viewModelScope.launch {
+            executeSearch(query, generation)
         }
+        searchJob = job
+        return job
     }
 
     suspend fun executeSearch(query: String) {
+        val generation = ++searchGeneration
+        executeSearch(query, generation)
+    }
+
+    private suspend fun executeSearch(
+        query: String,
+        generation: Long,
+    ) {
+        if (!isCurrentSearch(query, generation, allowUnpublishedQuery = true)) return
         searchQueryFlow.value = query
         if (query.isBlank()) {
-            searchStateFlow.value = SearchState.Idle
+            if (generation == searchGeneration) searchStateFlow.value = SearchState.Idle
             return
         }
         searchStateFlow.value = SearchState.Loading
@@ -215,13 +229,23 @@ class CatalogScreenModel(
             val result = searchCatalog.awaitBase(query = query)
             result.fold(
                 onSuccess = { page ->
+                    if (!isCurrentSearch(query, generation)) return@fold
                     if (page.items.isEmpty()) {
                         searchStateFlow.value = SearchState.Empty
                     } else {
                         searchStateFlow.value = SearchState.Success(page.items)
                         try {
-                            val enriched = searchCatalog.enrich(page)
-                            if (searchQueryFlow.value == query) {
+                            val enriched = searchCatalog.enrichProgressively(page) { index, item ->
+                                if (!isCurrentSearch(query, generation)) return@enrichProgressively
+                                val currentItems = (searchStateFlow.value as? SearchState.Success)?.items
+                                    ?: page.items
+                                if (index in currentItems.indices) {
+                                    searchStateFlow.value = SearchState.Success(
+                                        currentItems.toMutableList().apply { this[index] = item },
+                                    )
+                                }
+                            }
+                            if (isCurrentSearch(query, generation)) {
                                 searchStateFlow.value = SearchState.Success(enriched.items)
                             }
                         } catch (e: CancellationException) {
@@ -232,18 +256,30 @@ class CatalogScreenModel(
                     }
                 },
                 onFailure = { error ->
-                    searchStateFlow.value = SearchState.Error(error)
+                    if (isCurrentSearch(query, generation)) {
+                        searchStateFlow.value = SearchState.Error(error)
+                    }
                 },
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            searchStateFlow.value = SearchState.Error(e)
+            if (isCurrentSearch(query, generation)) {
+                searchStateFlow.value = SearchState.Error(e)
+            }
         }
     }
 
+    private fun isCurrentSearch(
+        query: String,
+        generation: Long,
+        allowUnpublishedQuery: Boolean = false,
+    ): Boolean = generation == searchGeneration &&
+        (allowUnpublishedQuery || searchQueryFlow.value == query)
+
     fun clearSearch() {
         searchJob?.cancel()
+        searchGeneration++
         searchQueryFlow.value = ""
         searchStateFlow.value = SearchState.Idle
     }

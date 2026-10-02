@@ -1,0 +1,7 @@
+CREATE TABLE tsuzuki_metadata_snapshot(
+    canonical_title_id TEXT NOT NULL PRIMARY KEY,
+    configuration_fingerprint TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    refreshed_at INTEGER NOT NULL,
+    FOREIGN KEY(canonical_title_id) REFERENCES tsuzuki_titles(id) ON DELETE CASCADE
+);
