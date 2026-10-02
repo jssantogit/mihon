@@ -597,36 +597,6 @@ private fun AdvancedSection(
 }
 
 @Composable
-private fun QuickChoiceRow(
-    label: String,
-    options: List<QuickChoice>,
-    selected: String?,
-    enabled: Boolean,
-    onSelect: (String?) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-        )
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(top = 6.dp),
-        ) {
-            items(options, key = { it.label }) { option ->
-                FilterChip(
-                    selected = option.value == selected,
-                    onClick = { if (enabled) onSelect(option.value) },
-                    enabled = enabled,
-                    label = { Text(option.label) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun ActiveFiltersCard(
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
@@ -1223,14 +1193,6 @@ internal fun CollectionProviderDescriptor.visibleFilterFields(
     .filter { it.placement == placement }
     .map(CollectionFilterCapability::field)
 
-private fun CollectionFilterCapability.staticStringOptions(): List<Pair<String, String>>? {
-    val source = valueSource as? FilterValueSource.Static ?: return null
-    return source.values.mapNotNull { option ->
-        val stringValue = option.value as? QueryValue.StringValue ?: return@mapNotNull null
-        option.label to stringValue.value
-    }
-}
-
 private fun CollectionFilterCapability.preferredScalarOperator(): QueryOperator = when {
     QueryOperator.EQUALS in operators -> QueryOperator.EQUALS
     QueryOperator.CONTAINS in operators -> QueryOperator.CONTAINS
@@ -1339,22 +1301,6 @@ private fun QueryExpression.matchesFieldPolarity(
     else -> false
 }
 
-private fun ListEditorState.replaceExtraField(
-    field: QueryField,
-    expression: QueryExpression?,
-): ListEditorState {
-    val remaining = extraTerms.filterNot { term -> term.fieldOrNull() == field }
-    return copy(
-        extraTerms = if (expression == null) remaining else remaining + expression,
-    )
-}
-
-private fun QueryExpression.fieldOrNull(): QueryField? = when (this) {
-    is QueryExpression.Predicate -> field
-    is QueryExpression.Not -> (expression as? QueryExpression.Predicate)?.field
-    else -> null
-}
-
 private fun QueryExpression.Predicate?.toNumericBounds(): Pair<String, String> {
     if (this == null) return "" to ""
     return when (operator) {
@@ -1443,17 +1389,6 @@ private fun QueryValue.numericText(): String? = when (this) {
     else -> null
 }
 
-private val LEGACY_RENDERED_FIELDS = setOf(
-    QueryField.STATUS,
-    QueryField.WORK_TYPE,
-    QueryField.GENRE,
-    QueryField.TAG,
-    QueryField.SCORE,
-    QueryField.RATING,
-    QueryField.CHAPTER_COUNT,
-    QueryField.VOLUME_COUNT,
-)
-
 @Composable
 private fun <T> BuilderDropdown(
     label: String,
@@ -1530,11 +1465,6 @@ private fun BuilderNumericField(
     )
 }
 
-private data class QuickChoice(
-    val label: String,
-    val value: String?,
-)
-
 private data class ActiveFilter(
     val label: String,
     val onClear: () -> Unit,
@@ -1552,16 +1482,7 @@ private fun ListEditorState.activeFilterCount(): Int = listOf(
     minVolumes.takeIf(String::isNotBlank),
 ).count { it != null } + extraTerms.size
 
-private fun providerDisplayName(providerId: String): String = when (providerId.lowercase()) {
-    "kitsu" -> "Kitsu"
-    "myanimelist", "mal" -> "MyAnimeList"
-    "mangaupdates" -> "MangaUpdates"
-    "bangumi" -> "Bangumi"
-    "komga" -> "Komga"
-    "kavita" -> "Kavita"
-    "suwayomi" -> "Suwayomi"
-    else -> providerId
-}
+private fun providerDisplayName(providerId: String): String = providerId.prettyEnumName()
 
 private fun sortDisplayName(sort: CollectionSortSelection): String = when (sort.key) {
     CollectionSortKey.Standard.POPULARITY -> when (sort.direction) {
