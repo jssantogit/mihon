@@ -4,7 +4,9 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -33,20 +35,44 @@ class SearchIntegrations(
     suspend fun execute(query: CatalogQuery): List<CatalogItem> =
         enrichRatings(executeBase(query))
 
-    suspend fun executeBase(query: CatalogQuery): List<CatalogItem> = coroutineScope {
-        registry.searchProviders()
-            .map { provider ->
-                async {
-                    provider.search(query)
+    suspend fun executeBase(query: CatalogQuery): List<CatalogItem> =
+        executeBaseProgressively(query) { }
+
+    suspend fun executeBaseProgressively(
+        query: CatalogQuery,
+        onItems: suspend (List<CatalogItem>) -> Unit,
+    ): List<CatalogItem> = coroutineScope {
+        val providers = registry.searchProviders()
+        if (providers.isEmpty()) return@coroutineScope emptyList()
+
+        val completed = Channel<Pair<Int, List<CatalogItem>>>(providers.size)
+        val providerItems = MutableList<List<CatalogItem>?>(providers.size) { null }
+        providers.forEachIndexed { index, provider ->
+            launch {
+                val result = provider.search(query)
+                val error = result.exceptionOrNull()
+                if (error is CancellationException) throw error
+                completed.send(
+                    index to result
                         .getOrElse { CatalogPage(items = emptyList(), hasNextPage = false) }
-                        .items
-                }
+                        .items,
+                )
             }
-            .awaitAll()
-            .flatten()
-            // Exact provider ids and provider-published cross-provider mappings are safe.
-            // Title similarity alone remains intentionally insufficient.
-            .let(::mergeCatalogItemsByVerifiedIdentity)
+        }
+
+        var merged = emptyList<CatalogItem>()
+        repeat(providers.size) {
+            val (index, items) = completed.receive()
+            providerItems[index] = items
+            merged = providerItems
+                .filterNotNull()
+                .flatten()
+                // Exact provider ids and provider-published cross-provider mappings are safe.
+                // Title similarity alone remains intentionally insufficient.
+                .let(::mergeCatalogItemsByVerifiedIdentity)
+            onItems(merged)
+        }
+        merged
     }
 
     /**
@@ -82,13 +108,13 @@ class SearchIntegrations(
         val semaphore = Semaphore(RATING_LOOKUP_CONCURRENCY)
         val publishMutex = Mutex()
 
+        val itemGate = Semaphore(ITEM_ENRICHMENT_CONCURRENCY)
         val enrichedItems = items.toMutableList()
         items.indices
-            .chunked(ITEM_ENRICHMENT_CONCURRENCY)
-            .forEach { indices ->
-                indices.map { index ->
-                    async {
-                        val enriched = enrichRatingItem(
+            .map { index ->
+                async {
+                    val enriched = itemGate.withPermit {
+                        enrichRatingItem(
                             item = items[index],
                             candidates = items,
                             providers = providers,
@@ -96,14 +122,16 @@ class SearchIntegrations(
                             configurationFingerprint = configurationFingerprint,
                             semaphore = semaphore,
                         )
-                        publishMutex.withLock {
-                            onItem(index, enriched)
-                        }
-                        index to enriched
                     }
-                }.awaitAll().forEach { (index, enriched) ->
-                    enrichedItems[index] = enriched
+                    publishMutex.withLock {
+                        onItem(index, enriched)
+                    }
+                    index to enriched
                 }
+            }
+            .awaitAll()
+            .forEach { (index, enriched) ->
+                enrichedItems[index] = enriched
             }
         enrichedItems
     }

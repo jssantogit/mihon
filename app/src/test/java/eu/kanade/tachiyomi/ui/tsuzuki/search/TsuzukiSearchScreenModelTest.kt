@@ -231,7 +231,9 @@ class TsuzukiSearchScreenModelTest {
             private val slow = object : SearchProvider {
                 override val integrationId = IntegrationId("slow")
 
-                override suspend fun search(query: tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery): Result<CatalogPage> {
+                override suspend fun search(
+                    query: tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery,
+                ): Result<CatalogPage> {
                     slowRelease.await()
                     return Result.success(
                         CatalogPage(

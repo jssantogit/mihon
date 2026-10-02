@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
@@ -129,9 +130,13 @@ class TsuzukiSearchScreenModel(
 
             _state.value = SearchState.Loading
             try {
-                val baseItems = searchIntegrations.executeBase(
-                    CatalogQuery(query = normalized),
-                )
+                val baseItems = searchIntegrations.executeBaseProgressively(
+                    query = CatalogQuery(query = normalized),
+                ) { partialItems ->
+                    if (generation == operationGeneration && partialItems.isNotEmpty()) {
+                        _state.value = SearchState.Results(normalized, partialItems)
+                    }
+                }
                 if (generation != operationGeneration) return@launch
                 if (baseItems.isEmpty()) {
                     _state.value = SearchState.Empty(normalized)
@@ -217,92 +222,88 @@ class TsuzukiSearchScreenModel(
         }
 
         if (generation != operationGeneration) return
-        _state.value = SearchState.Loading
+        _state.value = SearchState.Discover(
+            recentSearches = recentSearches,
+            blocks = emptyList(),
+        )
         try {
-            val blocks = coroutineScope {
-                listOf(
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.TRENDING,
-                            providers = providers,
-                        ) { provider ->
-                            provider.trending(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
+            coroutineScope {
+                val completedBlocks = Channel<DiscoverBlock>(DISCOVER_REQUEST_COUNT)
+                val baseJobs = listOf(
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.TRENDING,
+                                providers = providers,
+                            ) { provider ->
+                                provider.trending(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.POPULAR,
+                                providers = providers,
+                            ) { provider ->
+                                provider.popular(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.TOP_RATED,
+                                providers = providers,
+                            ) { provider ->
+                                provider.topRated(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.FAVORITES,
+                                providers = providers,
+                            ) { provider ->
+                                provider.favorites(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                    launch {
+                        completedBlocks.send(
+                            discoverBlock(
+                                kind = DiscoverKind.RECENTLY_UPDATED,
+                                providers = providers,
+                            ) { provider ->
+                                provider.recentlyUpdated(offset = 0, limit = DISCOVER_LIMIT)
+                            },
+                        )
+                    },
+                )
+                val enrichmentJobs = mutableListOf<Job>()
+                repeat(baseJobs.size) {
+                    val block = completedBlocks.receive()
+                    if (block.items.isNotEmpty()) {
+                        publishDiscoverBlock(generation, block)
+                        enrichmentJobs += launch {
+                            val enriched = searchIntegrations.enrichRatingsProgressively(block.items) { index, item ->
+                                publishDiscoverItem(
+                                    generation = generation,
+                                    kind = block.kind,
+                                    index = index,
+                                    item = item,
+                                )
+                            }
+                            publishDiscoverBlock(
+                                generation = generation,
+                                block = block.copy(items = enriched),
                             )
                         }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.POPULAR,
-                            providers = providers,
-                        ) { provider ->
-                            provider.popular(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.TOP_RATED,
-                            providers = providers,
-                        ) { provider ->
-                            provider.topRated(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.FAVORITES,
-                            providers = providers,
-                        ) { provider ->
-                            provider.favorites(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                    async {
-                        discoverBlock(
-                            kind = DiscoverKind.RECENTLY_UPDATED,
-                            providers = providers,
-                        ) { provider ->
-                            provider.recentlyUpdated(
-                                offset = 0,
-                                limit = DISCOVER_LIMIT,
-                            )
-                        }
-                    },
-                ).awaitAll()
-                    .filter { block -> block.items.isNotEmpty() }
-            }
-            if (generation != operationGeneration) return
-            _state.value = SearchState.Discover(
-                recentSearches = recentSearches,
-                blocks = blocks,
-            )
-
-            val targets = blocks.flatMapIndexed { blockIndex, block ->
-                block.items.mapIndexed { itemIndex, item ->
-                    DiscoverTarget(blockIndex, itemIndex, item)
+                    }
                 }
-            }
-            if (targets.isNotEmpty()) {
-                searchIntegrations.enrichRatingsProgressively(targets.map(DiscoverTarget::item)) { flatIndex, item ->
-                    if (generation != operationGeneration) return@enrichRatingsProgressively
-                    val target = targets[flatIndex]
-                    val current = _state.value as? SearchState.Discover ?: return@enrichRatingsProgressively
-                    val block = current.blocks.getOrNull(target.blockIndex) ?: return@enrichRatingsProgressively
-                    if (target.itemIndex !in block.items.indices) return@enrichRatingsProgressively
-                    val updatedBlocks = current.blocks.toMutableList()
-                    updatedBlocks[target.blockIndex] = block.copy(
-                        items = block.items.toMutableList().apply { this[target.itemIndex] = item },
-                    )
-                    _state.value = current.copy(blocks = updatedBlocks)
-                }
+                baseJobs.forEach { it.join() }
+                enrichmentJobs.forEach { it.join() }
             }
         } catch (error: CancellationException) {
             throw error
@@ -313,6 +314,50 @@ class TsuzukiSearchScreenModel(
                     error = error,
                 )
             }
+        }
+    }
+
+    private fun publishDiscoverBlock(
+        generation: Long,
+        block: DiscoverBlock,
+    ) {
+        if (generation != operationGeneration) return
+        _state.update { current ->
+            val discover = current as? SearchState.Discover ?: return@update current
+            val blocks = discover.blocks.associateBy(DiscoverBlock::kind).toMutableMap()
+            if (block.items.isEmpty()) {
+                blocks.remove(block.kind)
+            } else {
+                blocks[block.kind] = block
+            }
+            discover.copy(
+                blocks = blocks.values.sortedBy { it.kind.ordinal },
+            )
+        }
+    }
+
+    private fun publishDiscoverItem(
+        generation: Long,
+        kind: DiscoverKind,
+        index: Int,
+        item: CatalogItem,
+    ) {
+        if (generation != operationGeneration) return
+        _state.update { current ->
+            val discover = current as? SearchState.Discover ?: return@update current
+            val blockIndex = discover.blocks.indexOfFirst { it.kind == kind }
+            if (blockIndex < 0) return@update current
+            val block = discover.blocks[blockIndex]
+            if (index !in block.items.indices) return@update current
+            discover.copy(
+                blocks = discover.blocks.toMutableList().apply {
+                    this[blockIndex] = block.copy(
+                        items = block.items.toMutableList().apply {
+                            this[index] = item
+                        },
+                    )
+                },
+            )
         }
     }
 
@@ -349,13 +394,8 @@ class TsuzukiSearchScreenModel(
         hasNextPage = false,
     )
 
-    private data class DiscoverTarget(
-        val blockIndex: Int,
-        val itemIndex: Int,
-        val item: CatalogItem,
-    )
-
     private companion object {
         const val DISCOVER_LIMIT = 20
+        const val DISCOVER_REQUEST_COUNT = 5
     }
 }
