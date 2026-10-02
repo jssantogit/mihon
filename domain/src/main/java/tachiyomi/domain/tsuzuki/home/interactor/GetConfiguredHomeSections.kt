@@ -154,7 +154,7 @@ class DefaultHomeCollectionListLoader(
             }
             is ExecuteCollectionListResult.UnsupportedGlobalSort -> {
                 HomeRowContent.Unavailable(
-                    "Sort ${result.sort.name} is unavailable for this provider",
+                    "Sort ${result.sort.cacheKey} is unavailable for this provider",
                 )
             }
             is ExecuteCollectionListResult.UnsupportedResidual -> {
