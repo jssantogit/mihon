@@ -33,4 +33,22 @@ class BGMSearchTest {
         track.score_votes shouldBe 2400
         track.tags shouldContainExactly listOf("悬疑", "漫画")
     }
+
+    @Test
+    fun `Bangumi null platform keeps existing manga eligibility contract`() {
+        val track = BGMSubject(
+            id = 7L,
+            nameCn = "Example",
+            name = "Example",
+            summary = null,
+            date = null,
+            images = null,
+            volumes = 0,
+            eps = 0,
+            rating = null,
+            platform = null,
+        ).toTrackSearch(trackerId = 5L)
+
+        track.publishing_type shouldBe "Manga"
+    }
 }
