@@ -115,6 +115,40 @@ class PageOffsetNormalizerTest {
     }
 
     @Test
+    fun `consecutive normalized slices neither duplicate nor skip raw candidates`() = runTest {
+        val dataset = (0 until 23).map { item(it.toString()) }
+        val fetcher = PageCatalogFetcher { page, pageSize ->
+            val start = (page - 1) * pageSize
+            val end = minOf(start + pageSize, dataset.size)
+            Result.success(
+                CatalogPage(
+                    items = if (start >= dataset.size) emptyList() else dataset.subList(start, end),
+                    hasNextPage = end < dataset.size,
+                    totalCount = dataset.size,
+                ),
+            )
+        }
+
+        val first = PageOffsetNormalizer.load(
+            rawOffset = 0,
+            limit = 7,
+            upstreamPageSize = 5,
+            pageOrigin = PageIndexOrigin.ONE,
+            fetcher = fetcher,
+        ).getOrThrow()
+        val second = PageOffsetNormalizer.load(
+            rawOffset = 7,
+            limit = 7,
+            upstreamPageSize = 5,
+            pageOrigin = PageIndexOrigin.ONE,
+            fetcher = fetcher,
+        ).getOrThrow()
+
+        (first.items + second.items).map { it.providerId } shouldContainExactly
+            (0 until 14).map(Int::toString)
+    }
+
+    @Test
     fun `empty page with has next fails instead of skipping unknown raw candidates`() = runTest {
         val result = PageOffsetNormalizer.load(
             rawOffset = 0,
