@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
 import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
@@ -48,6 +49,7 @@ class ResolveCanonicalMetadata private constructor(
     private val snapshotRepository: CanonicalMetadataSnapshotRepository?,
     private val inFlightResolution: InFlightCanonicalMetadataResolution?,
     private val reportedChapterCountRepository: ReportedChapterCountRepository?,
+    private val ratingEnrichmentCache: RatingEnrichmentCache?,
     private val clock: () -> Long,
     private val metadataTtlMillis: Long,
     @Suppress("UNUSED_PARAMETER") constructorMarker: Unit,
@@ -62,6 +64,7 @@ class ResolveCanonicalMetadata private constructor(
         snapshotRepository: CanonicalMetadataSnapshotRepository,
         inFlightResolution: InFlightCanonicalMetadataResolution,
         reportedChapterCountRepository: ReportedChapterCountRepository,
+        ratingEnrichmentCache: RatingEnrichmentCache,
     ) : this(
         canonicalTitleRepository = canonicalTitleRepository,
         registry = registry,
@@ -70,6 +73,7 @@ class ResolveCanonicalMetadata private constructor(
         snapshotRepository = snapshotRepository,
         inFlightResolution = inFlightResolution,
         reportedChapterCountRepository = reportedChapterCountRepository,
+        ratingEnrichmentCache = ratingEnrichmentCache,
         clock = { Clock.System.now().toEpochMilliseconds() },
         metadataTtlMillis = DEFAULT_METADATA_TTL_MILLIS,
         constructorMarker = Unit,
@@ -88,6 +92,7 @@ class ResolveCanonicalMetadata private constructor(
         snapshotRepository = null,
         inFlightResolution = null,
         reportedChapterCountRepository = null,
+        ratingEnrichmentCache = null,
         clock = { Clock.System.now().toEpochMilliseconds() },
         metadataTtlMillis = DEFAULT_METADATA_TTL_MILLIS,
         constructorMarker = Unit,
@@ -103,6 +108,7 @@ class ResolveCanonicalMetadata private constructor(
         reportedChapterCountRepository: ReportedChapterCountRepository,
         clock: () -> Long,
         metadataTtlMillis: Long,
+        ratingEnrichmentCache: RatingEnrichmentCache? = null,
     ) : this(
         canonicalTitleRepository = canonicalTitleRepository,
         registry = registry,
@@ -111,6 +117,7 @@ class ResolveCanonicalMetadata private constructor(
         snapshotRepository = snapshotRepository,
         inFlightResolution = inFlightResolution,
         reportedChapterCountRepository = reportedChapterCountRepository,
+        ratingEnrichmentCache = ratingEnrichmentCache,
         clock = clock,
         metadataTtlMillis = metadataTtlMillis,
         constructorMarker = Unit,
@@ -135,7 +142,7 @@ class ResolveCanonicalMetadata private constructor(
         }
 
         val resolve: suspend () -> Result<ResolvedMetadata> = {
-            resolveLive(canonicalTitleId)
+            resolveLive(canonicalTitleId, configurationFingerprint)
         }
         val result = inFlightResolution?.execute(
             canonicalTitleId = canonicalTitleId,
@@ -159,7 +166,10 @@ class ResolveCanonicalMetadata private constructor(
         return cached?.let { Result.success(it.metadata) } ?: result
     }
 
-    private suspend fun resolveLive(canonicalTitleId: String): Result<ResolvedMetadata> {
+    private suspend fun resolveLive(
+        canonicalTitleId: String,
+        configurationFingerprint: String,
+    ): Result<ResolvedMetadata> {
         val trace = DiagnosticTrace.start(
             recorder = diagnosticRecorder,
             workflow = DiagnosticWorkflow.METADATA_RESOLUTION,
@@ -232,6 +242,7 @@ class ResolveCanonicalMetadata private constructor(
                 candidates = candidates,
                 identities = identities,
                 trace = trace,
+                configurationFingerprint = configurationFingerprint,
             )
 
             val tsuzukiRatingSources = ratings.map { rating ->
@@ -510,6 +521,7 @@ class ResolveCanonicalMetadata private constructor(
         candidates: List<Candidate>,
         identities: List<ExternalIdentity>,
         trace: DiagnosticTrace,
+        configurationFingerprint: String,
     ): List<ProvenancedMetadata<ResolvedRating>> = coroutineScope {
         val exactRatings = selectRatings(candidates)
         exactRatings.forEach { rating ->
@@ -533,7 +545,11 @@ class ResolveCanonicalMetadata private constructor(
             .filterNot { provider -> provider.integrationId.value in existingProviderIds }
             .map { provider ->
                 async {
-                    val result = provider.ratingFor(seed)
+                    val result = ratingEnrichmentCache?.ratingFor(
+                        item = seed,
+                        provider = provider,
+                        configurationFingerprint = configurationFingerprint,
+                    ) ?: provider.ratingFor(seed)
                     val error = result.exceptionOrNull()
                     if (error is CancellationException) throw error
                     val match = result.getOrNull()
