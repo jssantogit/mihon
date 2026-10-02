@@ -201,6 +201,44 @@ class ManageCollectionDefinitions internal constructor(
         store.upsertList(list.copy(updatedAt = clock(), revision = list.revision + 1))
     }
 
+    suspend fun reorderUserCollections(
+        orderedCollectionIds: List<String>,
+    ) {
+        val current = store.getCollections()
+            .filter { it.origin == CollectionOrigin.USER }
+            .sortedWith(compareBy<TsuzukiCollection> { it.sortOrder }.thenBy { it.id })
+
+        require(orderedCollectionIds.size == current.size) {
+            "Collection reorder must include every active user Collection exactly once"
+        }
+        require(orderedCollectionIds.distinct().size == orderedCollectionIds.size) {
+            "Collection reorder cannot contain duplicate ids"
+        }
+
+        val byId = current.associateBy(TsuzukiCollection::id)
+        require(orderedCollectionIds.all(byId::containsKey)) {
+            "Collection reorder contains an unknown or non-user Collection"
+        }
+
+        val sortOrders = current.map(TsuzukiCollection::sortOrder).sorted()
+        val now = clock()
+        val updates = orderedCollectionIds.mapIndexedNotNull { index, id ->
+            val collection = byId.getValue(id)
+            val targetSortOrder = sortOrders[index]
+            collection
+                .takeIf { it.sortOrder != targetSortOrder }
+                ?.copy(
+                    sortOrder = targetSortOrder,
+                    revision = collection.revision + 1,
+                    updatedAt = now,
+                )
+        }
+
+        if (updates.isNotEmpty()) {
+            store.upsertCollections(updates)
+        }
+    }
+
     suspend fun reorderCollection(
         collectionId: String,
         sortOrder: Long,
