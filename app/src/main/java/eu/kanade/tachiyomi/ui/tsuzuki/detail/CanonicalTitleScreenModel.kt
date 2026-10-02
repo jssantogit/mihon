@@ -439,27 +439,10 @@ class CanonicalTitleScreenModel(
                 null
             }
             if (cachedIntegrationMetadata != null && this.canonicalTitleId == canonicalTitleId) {
-                val cachedState = loadLocalState(
-                    canonicalTitleId = canonicalTitleId,
-                    includeIntegrationMetadata = true,
-                    integrationMetadataOverride = cachedIntegrationMetadata,
-                    allowSourceNetwork = false,
-                    isRefreshing = true,
-                )
                 val current = (_state.value as? CanonicalTitleScreenState.Loaded)
                     ?.takeIf { it.title.id == canonicalTitleId }
-                _state.value = if (current == null) {
-                    cachedState
-                } else {
-                    cachedState.copy(
-                        libraryEntry = current.libraryEntry,
-                        libraryMutationInProgress = current.libraryMutationInProgress,
-                        libraryMutationError = current.libraryMutationError,
-                        downloadInProgressChapterId = current.downloadInProgressChapterId,
-                        downloadSelectionChapterId = current.downloadSelectionChapterId,
-                        downloadError = current.downloadError,
-                        chapterActionError = current.chapterActionError,
-                    )
+                if (current != null) {
+                    _state.value = current.withIntegrationMetadata(cachedIntegrationMetadata)
                 }
             }
             logcat {
@@ -673,42 +656,6 @@ class CanonicalTitleScreenModel(
         } else {
             null
         }
-        val resolvedRatings = integrationMetadata
-            ?.ratings
-            .orEmpty()
-            .ifEmpty { listOfNotNull(integrationMetadata?.ratingDetails) }
-        val integrationRatings = resolvedRatings.map { rating ->
-            CanonicalProviderRating(
-                providerId = rating.providerId.value,
-                value = rating.value.value,
-                maxValue = rating.value.maxValue,
-                voteCount = rating.value.voteCount,
-            )
-        }
-        val integrationMetadataSources = buildList {
-            addAll(
-                listOfNotNull(
-                    integrationMetadata?.title?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.synopsis?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.artworkUrl?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.authors?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.artists?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.genres?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.tags?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.status?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.format?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.startDate?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.endDate?.let { it.attribution ?: it.providerId.value },
-                    integrationMetadata?.editorialVolumeCount?.let {
-                        it.attribution ?: it.providerId.value
-                    },
-                ),
-            )
-            resolvedRatings.forEach { rating ->
-                add(rating.attribution ?: rating.providerId.value)
-            }
-        }.distinct()
-
         val details = chapters.mapNotNull { chapter ->
             val progress = progressByChapter[chapter.id]
             val downloaded = chapter.id in canonicalDownloadIds
@@ -742,36 +689,16 @@ class CanonicalTitleScreenModel(
             chapters = withMetadataSlots(canonicalTitleId, details, reportedCounts),
             reportedChapterCounts = reportedCounts,
             addonCoverage = observedAddonCoverage(chapters, supportSnapshot.addonMappedChapterIds, addonNames),
-            coverUrl = integrationMetadata?.artworkUrl?.value ?: canonicalArtwork?.coverUrl,
+            coverUrl = canonicalArtwork?.coverUrl,
             sourceCover = metadata?.asMangaCover(),
-            author = integrationMetadata
-                ?.authors
-                ?.value
-                ?.takeIf { it.isNotEmpty() }
-                ?.joinToString()
-                ?: integrationMetadata
-                    ?.artists
-                    ?.value
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.joinToString()
-                ?: metadata?.author,
-            description = integrationMetadata?.synopsis?.value ?: metadata?.description,
-            genres = integrationMetadata?.genres?.value ?: metadata?.genre.orEmpty(),
-            tags = integrationMetadata?.tags?.value.orEmpty(),
-            editorialStatus = integrationMetadata?.status?.value,
-            editorialFormat = integrationMetadata?.format?.value,
-            ratingValue = integrationRatings.firstOrNull()?.value,
-            ratingMaxValue = integrationRatings.firstOrNull()?.maxValue,
-            ratingVoteCount = integrationRatings.firstOrNull()?.voteCount,
-            ratings = integrationRatings,
-            tsuzukiRating = integrationMetadata?.tsuzukiRating,
-            startDate = integrationMetadata?.startDate?.value,
-            endDate = integrationMetadata?.endDate?.value,
-            editorialVolumeCount = integrationMetadata?.editorialVolumeCount?.value,
-            metadataSources = integrationMetadataSources,
+            author = metadata?.author,
+            description = metadata?.description,
+            genres = metadata?.genre.orEmpty(),
             isRefreshing = isRefreshing,
             refreshError = refreshError,
-        )
+        ).let { local ->
+            integrationMetadata?.let(local::withIntegrationMetadata) ?: local
+        }
         val cacheReason = if (isRefreshing) {
             ChapterInventoryDiagnosticReason.CACHE_SNAPSHOT
         } else {
@@ -785,6 +712,69 @@ class CanonicalTitleScreenModel(
         return loaded.copy(
             chapterDiagnosticsRecording = diagnosticsRecording(canonicalTitleId),
             chapterDiagnosticReportAvailable = diagnosticReportAvailable(canonicalTitleId),
+        )
+    }
+
+    private fun CanonicalTitleScreenState.Loaded.withIntegrationMetadata(
+        metadata: ResolvedMetadata,
+    ): CanonicalTitleScreenState.Loaded {
+        val resolvedRatings = metadata.ratings
+            .ifEmpty { listOfNotNull(metadata.ratingDetails) }
+        val integrationRatings = resolvedRatings.map { rating ->
+            CanonicalProviderRating(
+                providerId = rating.providerId.value,
+                value = rating.value.value,
+                maxValue = rating.value.maxValue,
+                voteCount = rating.value.voteCount,
+            )
+        }
+        val sources = buildList {
+            addAll(
+                listOfNotNull(
+                    metadata.title?.let { it.attribution ?: it.providerId.value },
+                    metadata.synopsis?.let { it.attribution ?: it.providerId.value },
+                    metadata.artworkUrl?.let { it.attribution ?: it.providerId.value },
+                    metadata.authors?.let { it.attribution ?: it.providerId.value },
+                    metadata.artists?.let { it.attribution ?: it.providerId.value },
+                    metadata.genres?.let { it.attribution ?: it.providerId.value },
+                    metadata.tags?.let { it.attribution ?: it.providerId.value },
+                    metadata.status?.let { it.attribution ?: it.providerId.value },
+                    metadata.format?.let { it.attribution ?: it.providerId.value },
+                    metadata.startDate?.let { it.attribution ?: it.providerId.value },
+                    metadata.endDate?.let { it.attribution ?: it.providerId.value },
+                    metadata.editorialVolumeCount?.let { it.attribution ?: it.providerId.value },
+                ),
+            )
+            resolvedRatings.forEach { rating ->
+                add(rating.attribution ?: rating.providerId.value)
+            }
+        }.distinct()
+
+        return copy(
+            coverUrl = metadata.artworkUrl?.value ?: coverUrl,
+            author = metadata.authors
+                ?.value
+                ?.takeIf { it.isNotEmpty() }
+                ?.joinToString()
+                ?: metadata.artists
+                    ?.value
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.joinToString()
+                ?: author,
+            description = metadata.synopsis?.value ?: description,
+            genres = metadata.genres?.value ?: genres,
+            tags = metadata.tags?.value ?: tags,
+            editorialStatus = metadata.status?.value ?: editorialStatus,
+            editorialFormat = metadata.format?.value ?: editorialFormat,
+            ratingValue = integrationRatings.firstOrNull()?.value ?: ratingValue,
+            ratingMaxValue = integrationRatings.firstOrNull()?.maxValue ?: ratingMaxValue,
+            ratingVoteCount = integrationRatings.firstOrNull()?.voteCount ?: ratingVoteCount,
+            ratings = integrationRatings.ifEmpty { ratings },
+            tsuzukiRating = metadata.tsuzukiRating ?: tsuzukiRating,
+            startDate = metadata.startDate?.value ?: startDate,
+            endDate = metadata.endDate?.value ?: endDate,
+            editorialVolumeCount = metadata.editorialVolumeCount?.value ?: editorialVolumeCount,
+            metadataSources = sources.ifEmpty { metadataSources },
         )
     }
 
