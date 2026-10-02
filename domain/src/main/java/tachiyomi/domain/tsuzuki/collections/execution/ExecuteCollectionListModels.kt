@@ -1,6 +1,6 @@
 package tachiyomi.domain.tsuzuki.collections.execution
 
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.scheduler.QuerySchedulePriority
 
@@ -52,7 +52,7 @@ sealed interface ExecuteCollectionListResult {
     ) : ExecuteCollectionListResult
 
     data class UnsupportedGlobalSort(
-        val sort: CatalogSort,
+        val sort: CollectionSortSelection,
     ) : ExecuteCollectionListResult
 
     data class UnsupportedResidual(
