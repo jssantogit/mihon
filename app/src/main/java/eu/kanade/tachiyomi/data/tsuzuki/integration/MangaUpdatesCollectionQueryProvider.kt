@@ -194,7 +194,8 @@ object MangaUpdatesCollectionCapabilities : ProviderQueryCapabilities {
     private const val PROVIDER_ID = "mangaupdates"
     private const val MANGA_UPDATES_PAGE_SIZE = 50
 
-    private val MANGA_UPDATES_RELEASE_FILTERS = listOf(
+    private val MANGA_UPDATES_RELEASE_FILTERS
+        get() = listOf(
         "scanlated",
         "completed",
         "oneshots",
@@ -203,7 +204,8 @@ object MangaUpdatesCollectionCapabilities : ProviderQueryCapabilities {
         "no_releases",
     )
 
-    private val MANGA_UPDATES_SORTS = listOf(
+    private val MANGA_UPDATES_SORTS
+        get() = listOf(
         "score" to "Score",
         "title" to "Title",
         "rank" to "Rank",
