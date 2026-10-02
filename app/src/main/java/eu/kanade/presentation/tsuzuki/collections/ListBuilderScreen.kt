@@ -790,9 +790,10 @@ private fun DescriptorFilterControl(
                 selected = selected,
                 onClick = {
                     onEditorChange(
-                        editor.replaceExtraField(
-                            capability.field,
-                            if (selected) {
+                        editor.replaceFieldTerm(
+                            field = capability.field,
+                            negated = false,
+                            predicate = if (selected) {
                                 null
                             } else {
                                 QueryExpression.Predicate(
