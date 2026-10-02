@@ -395,7 +395,9 @@ private fun AdvancedListFilters(
             }
 
             item(key = "genres_tags") {
-                AdvancedSection(if (editor.providerId.equals("kitsu", ignoreCase = true)) "GENRES" else "GENRES & TAGS") {
+                AdvancedSection(
+                    if (editor.providerId.equals("kitsu", ignoreCase = true)) "GENRES" else "GENRES & TAGS",
+                ) {
                     OutlinedTextField(
                         modifier = Modifier.fillMaxWidth(),
                         value = editor.includeGenre,
@@ -716,9 +718,10 @@ private fun providerFormatOptions(providerId: String): List<String> = when (prov
         CatalogItemFormat.DOUJIN,
     ).map(CatalogItemFormat::name)
 
-    else -> CatalogItemFormat.entries
-        .filterNot { it == CatalogItemFormat.UNKNOWN }
-        .map(CatalogItemFormat::name)
+    else ->
+        CatalogItemFormat.entries
+            .filterNot { it == CatalogItemFormat.UNKNOWN }
+            .map(CatalogItemFormat::name)
 }
 
 private fun providerDisplayName(providerId: String): String = when (providerId.lowercase()) {
