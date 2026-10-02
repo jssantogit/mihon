@@ -156,7 +156,9 @@ object KitsuQueryCompiler {
                         }
 
                         QueryField.GENRE -> genres += value
-                        else -> error("Capability/compiler disagreement for Kitsu field '${expression.field.identifier}'")
+                        else -> error(
+                            "Capability/compiler disagreement for Kitsu field '${expression.field.identifier}'",
+                        )
                     }
                 }
 
