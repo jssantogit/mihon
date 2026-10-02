@@ -2,6 +2,7 @@ package tachiyomi.domain.tsuzuki.collections.execution
 
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
@@ -19,4 +20,8 @@ interface CollectionQueryProvider {
 
 interface CollectionQueryProviderRegistry {
     fun get(providerId: String): CollectionQueryProvider?
+
+    fun all(): List<CollectionQueryProvider>
+
+    fun descriptors(): List<CollectionProviderDescriptor> = all().map { it.capabilities.descriptor }
 }
