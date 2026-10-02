@@ -319,7 +319,7 @@ private fun QuickListBuilder(
                         text = if (activeCount == 0) {
                             "No filters applied"
                         } else {
-                            "${activeCount} active filter${if (activeCount == 1) "" else "s"}"
+                            "$activeCount active filter${if (activeCount == 1) "" else "s"}"
                         },
                         style = MaterialTheme.typography.titleSmall,
                     )
@@ -536,25 +536,25 @@ private fun ActiveFiltersCard(
             add(ActiveFilter(it.prettyEnumName()) { onEditorChange(editor.copy(format = null)) })
         }
         editor.includeGenre.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Genre: ${it}") { onEditorChange(editor.copy(includeGenre = "")) })
+            add(ActiveFilter("Genre: $it") { onEditorChange(editor.copy(includeGenre = "")) })
         }
         editor.excludeGenre.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Exclude genre: ${it}") { onEditorChange(editor.copy(excludeGenre = "")) })
+            add(ActiveFilter("Exclude genre: $it") { onEditorChange(editor.copy(excludeGenre = "")) })
         }
         editor.includeTag.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Tag: ${it}") { onEditorChange(editor.copy(includeTag = "")) })
+            add(ActiveFilter("Tag: $it") { onEditorChange(editor.copy(includeTag = "")) })
         }
         editor.excludeTag.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Exclude tag: ${it}") { onEditorChange(editor.copy(excludeTag = "")) })
+            add(ActiveFilter("Exclude tag: $it") { onEditorChange(editor.copy(excludeTag = "")) })
         }
         editor.minScore.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Rating ≥ ${it}") { onEditorChange(editor.copy(minScore = "")) })
+            add(ActiveFilter("Rating ≥ $it") { onEditorChange(editor.copy(minScore = "")) })
         }
         editor.minChapters.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Chapters ≥ ${it}") { onEditorChange(editor.copy(minChapters = "")) })
+            add(ActiveFilter("Chapters ≥ $it") { onEditorChange(editor.copy(minChapters = "")) })
         }
         editor.minVolumes.takeIf(String::isNotBlank)?.let {
-            add(ActiveFilter("Volumes ≥ ${it}") { onEditorChange(editor.copy(minVolumes = "")) })
+            add(ActiveFilter("Volumes ≥ $it") { onEditorChange(editor.copy(minVolumes = "")) })
         }
     }
 
