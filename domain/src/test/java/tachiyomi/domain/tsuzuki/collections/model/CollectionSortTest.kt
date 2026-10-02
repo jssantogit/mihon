@@ -5,6 +5,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 
+// Final Collections V2 integration checkpoint.
 class CollectionSortTest {
 
     @Test
