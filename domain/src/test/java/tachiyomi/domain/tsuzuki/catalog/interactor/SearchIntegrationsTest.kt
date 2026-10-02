@@ -590,6 +590,63 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `existing provider ratings publish Tsuzuki aggregate before slow supplemental rating`() = runTest {
+        val supplementalStarted = CompletableDeferred<Unit>()
+        val supplementalRelease = CompletableDeferred<Unit>()
+        val mal = FakeRatingsProvider("mal", emptyMap())
+        val kitsu = FakeRatingsProvider("kitsu", emptyMap())
+        val hikka = object : RatingsProvider {
+            override val integrationId = IntegrationId("hikka")
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+                supplementalStarted.complete(Unit)
+                supplementalRelease.await()
+                return Result.success(null)
+            }
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(mal, kitsu, hikka),
+            ),
+            ratingEnrichmentCache = RatingEnrichmentCache(
+                scope = this,
+                clock = { 0L },
+                positiveTtlMillis = 60_000L,
+                negativeTtlMillis = 60_000L,
+                maxEntries = 32,
+            ),
+        )
+        val item = CatalogItem(
+            provider = "fake",
+            providerId = "1",
+            title = "Work",
+            scores = listOf(
+                CatalogScore(provider = "mal", value = 8.0, maxValue = 10.0),
+                CatalogScore(provider = "kitsu", value = 80.0, maxValue = 100.0),
+            ),
+        )
+        val published = mutableListOf<CatalogItem>()
+
+        val operation = async {
+            search.enrichRatingsProgressively(listOf(item)) { _, updated ->
+                published += updated
+            }
+        }
+        supplementalStarted.await()
+        runCurrent()
+
+        published.last().tsuzukiRating?.sourceCount shouldBe 2
+        operation.isCompleted shouldBe false
+
+        supplementalRelease.complete(Unit)
+        operation.await()
+    }
+
+    @Test
     fun `rating enrichment fills a freed item slot without waiting for a slow sibling`() = runTest {
         val slowRelease = CompletableDeferred<Unit>()
         val started = mutableListOf<String>()
