@@ -229,15 +229,15 @@ class CollectionListEditorTest {
         editor.copy(
             title = "Renamed",
             sort = CollectionSortSelection(
-            CollectionSortKey.Standard.RATING,
-            CollectionSortDirection.DESC,
-        ),
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
         ).toDraftOrNull()!!.let { draft ->
             draft.title shouldBe "Renamed"
             draft.sort shouldBe CollectionSortSelection(
-            CollectionSortKey.Standard.RATING,
-            CollectionSortDirection.DESC,
-        )
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            )
             draft.query shouldBe query
         }
     }
