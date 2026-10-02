@@ -1502,13 +1502,15 @@ private data class ParsedSimpleTerm(
 private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
     if (expression == null) return ParsedSimpleQuery()
 
-    fun parseTerm(candidate: QueryExpression): ParsedSimpleTerm? = when (candidate) {
-        is QueryExpression.Predicate -> ParsedSimpleTerm(candidate, negated = false)
-        is QueryExpression.Not -> {
-            val predicate = candidate.expression as? QueryExpression.Predicate ?: return null
-            ParsedSimpleTerm(predicate, negated = true)
+    fun parseTerm(candidate: QueryExpression): ParsedSimpleTerm? {
+        return when (candidate) {
+            is QueryExpression.Predicate -> ParsedSimpleTerm(candidate, negated = false)
+            is QueryExpression.Not -> {
+                val predicate = candidate.expression as? QueryExpression.Predicate ?: return null
+                ParsedSimpleTerm(predicate, negated = true)
+            }
+            else -> null
         }
-        else -> null
     }
 
     val terms = when (expression) {
