@@ -34,6 +34,15 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
  */
 object KitsuQueryCapabilities : ProviderQueryCapabilities {
 
+    private val KITSU_FORMAT_VALUES = setOf(
+        CatalogItemFormat.MANGA.name,
+        CatalogItemFormat.NOVEL.name,
+        CatalogItemFormat.ONE_SHOT.name,
+        CatalogItemFormat.MANHWA.name,
+        CatalogItemFormat.MANHUA.name,
+        CatalogItemFormat.DOUJIN.name,
+    )
+
     override val descriptor: CollectionProviderDescriptor = CollectionProviderDescriptor(
         providerId = "kitsu",
         displayName = "Kitsu",
@@ -199,14 +208,6 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         -> false
     }
 
-    private val KITSU_FORMAT_VALUES = setOf(
-        CatalogItemFormat.MANGA.name,
-        CatalogItemFormat.NOVEL.name,
-        CatalogItemFormat.ONE_SHOT.name,
-        CatalogItemFormat.MANHWA.name,
-        CatalogItemFormat.MANHUA.name,
-        CatalogItemFormat.DOUJIN.name,
-    )
 }
 
 /**
