@@ -169,7 +169,7 @@ class ShikimoriApi(
             val arguments = buildList {
                 add("page: ${query.page}")
                 add("limit: ${query.limit}")
-                add("order: ${query.order.graphQlString()}")
+                add("order: ${query.order}")
                 query.kind?.let { add("kind: ${it.graphQlString()}") }
                 query.status?.let { add("status: ${it.graphQlString()}") }
                 query.season?.let { add("season: ${it.graphQlString()}") }
