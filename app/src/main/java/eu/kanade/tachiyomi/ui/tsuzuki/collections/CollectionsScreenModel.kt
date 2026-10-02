@@ -418,7 +418,7 @@ class CollectionsScreenModel(
         query: QueryExpression?,
         sort: CatalogSort,
         layoutType: String?,
-        providerId: String,
+        providerId: String = "kitsu",
     ) = launchAction {
         val folder = currentCollections()
             .flatMap { it.folders }
@@ -443,7 +443,7 @@ class CollectionsScreenModel(
         query: QueryExpression?,
         sort: CatalogSort,
         layoutType: String?,
-        providerId: String,
+        providerId: String = list.providerId,
     ) = launchAction {
         manager.updateUserList(
             list.copy(
