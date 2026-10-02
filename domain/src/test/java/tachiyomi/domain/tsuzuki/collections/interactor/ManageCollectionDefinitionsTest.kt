@@ -264,6 +264,27 @@ class ManageCollectionDefinitionsTest {
     }
 
     @Test
+    fun `folder reorder rejects incomplete sibling order`() = runTest {
+        val store = FakeStore()
+        val manager = manager(store)
+        val collection = collection("collection")
+        val first = folder("first", collection.id).copy(sortOrder = 10)
+        val second = folder("second", collection.id).copy(sortOrder = 20)
+
+        store.upsertCollection(collection)
+        store.upsertFolder(first)
+        store.upsertFolder(second)
+
+        shouldThrow<IllegalArgumentException> {
+            manager.reorderUserFolders(
+                collectionId = collection.id,
+                parentFolderId = null,
+                orderedFolderIds = listOf("second"),
+            )
+        }
+    }
+
+    @Test
     fun `reordering user lists persists the exact folder order`() = runTest {
         val store = FakeStore()
         val manager = manager(store)
