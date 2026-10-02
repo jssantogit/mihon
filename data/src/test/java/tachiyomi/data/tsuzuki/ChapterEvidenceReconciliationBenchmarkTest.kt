@@ -94,6 +94,7 @@ class ChapterEvidenceReconciliationBenchmarkTest {
         val output = java.io.File("build/reports/tsuzuki/chapter-evidence-benchmark.txt")
         output.parentFile.mkdirs()
         samples += "revision_label=$label"
+        samples += "benchmark_phase=performance_v2_post_optimization"
         samples += "environment java=${System.getProperty("java.version")} " +
             "os=${System.getProperty("os.name")} arch=${System.getProperty("os.arch")} " +
             "processors=${Runtime.getRuntime().availableProcessors()} driver=JdbcSqliteDriver(IN_MEMORY)"
