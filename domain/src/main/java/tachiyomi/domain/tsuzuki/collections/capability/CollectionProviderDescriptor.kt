@@ -64,11 +64,26 @@ data class CollectionProviderDescriptor(
     }
 
     fun supports(
-        predicate: QueryExpression.Predicate,
+        field: QueryField,
+        operator: QueryOperator,
+        value: QueryValue,
         executionMode: FilterExecutionMode? = null,
     ): Boolean = filters.any { capability ->
-        capability.accepts(predicate, executionMode)
+        capability.field == field &&
+            operator in capability.operators &&
+            (executionMode == null || executionMode in capability.execution) &&
+            capability.valueSource.accepts(value)
     }
+
+    fun supports(
+        predicate: QueryExpression.Predicate,
+        executionMode: FilterExecutionMode? = null,
+    ): Boolean = supports(
+        field = predicate.field,
+        operator = predicate.operator,
+        value = predicate.value,
+        executionMode = executionMode,
+    )
 
     fun supportsResidual(expression: QueryExpression): Boolean = when (expression) {
         is QueryExpression.Predicate -> supports(expression, FilterExecutionMode.RESIDUAL_EXACT)
