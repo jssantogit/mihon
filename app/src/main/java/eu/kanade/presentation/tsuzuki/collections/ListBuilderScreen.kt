@@ -360,8 +360,9 @@ private fun AdvancedListFilters(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = "This imported query uses boolean or provider-specific semantics outside the current visual builder. " +
-                            "Tsuzuki will keep the original AST unchanged rather than silently simplifying it.",
+                        text = "This imported query uses boolean or provider-specific semantics " +
+                            "outside the current visual builder. Tsuzuki will keep the original AST unchanged " +
+                            "rather than silently simplifying it.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
