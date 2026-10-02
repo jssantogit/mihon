@@ -315,6 +315,57 @@ class MangaUpdatesApi(
         }
     }
 
+    suspend fun collectionSearch(
+        query: MangaUpdatesCollectionQuery,
+        trackerId: Long,
+    ): MangaUpdatesCollectionPage {
+        val body = buildJsonObject {
+            query.search?.takeIf(String::isNotBlank)?.let { put("search", it) }
+            query.licensed?.let { put("licensed", if (it) "yes" else "no") }
+            query.type?.takeIf(String::isNotBlank)?.let { type ->
+                put("type", buildJsonArray { add(type) })
+            }
+            query.category?.takeIf(String::isNotBlank)?.let { category ->
+                put("category", buildJsonArray { add(category) })
+            }
+            query.releaseFilter?.takeIf(String::isNotBlank)?.let { put("filter", it) }
+            query.genre?.takeIf(String::isNotBlank)?.let { genre ->
+                put("genre", buildJsonArray { add(genre) })
+            }
+            query.excludeGenre?.takeIf(String::isNotBlank)?.let { genre ->
+                put("exclude_genre", buildJsonArray { add(genre) })
+            }
+            put("orderby", query.orderBy)
+            put("page", query.page)
+            put("perpage", query.perPage)
+            put("include_rank_metadata", true)
+            put(
+                "filter_types",
+                buildJsonArray {
+                    add("drama cd")
+                },
+            )
+        }
+
+        val response = with(json) {
+            client.newCall(
+                POST(
+                    url = "$BASE_URL/v1/series/search",
+                    body = body.toString().toRequestBody(CONTENT_TYPE),
+                ),
+            )
+                .awaitSuccess()
+                .parseAs<MUSearchResult>()
+        }
+
+        return MangaUpdatesCollectionPage(
+            items = response.results.map { it.record.toTrackSearch(trackerId) },
+            page = response.page.takeIf { it > 0 } ?: query.page,
+            perPage = response.perPage.takeIf { it > 0 } ?: query.perPage,
+            totalHits = response.totalHits.coerceAtLeast(response.results.size),
+        )
+    }
+
     suspend fun getSeriesDetails(id: Long): MURecord? {
         return withIOContext {
             val url = "$BASE_URL/v1/series/$id"
