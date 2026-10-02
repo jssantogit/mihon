@@ -51,6 +51,7 @@ object ResidualEvaluator {
         return when (predicate.field) {
             QueryField.Standard.WORK_TYPE,
             QueryField.Standard.STATUS,
+            QueryField.Standard.COUNTRY,
             -> if (
                 operator in setOf(QueryOperator.EQUALS, QueryOperator.NOT_EQUALS, QueryOperator.IN) &&
                 isStringOperand(operator, value)
@@ -60,10 +61,15 @@ object ResidualEvaluator {
                 "Unsupported operator/value for ${predicate.field.identifier}: ${operator.name}"
             }
 
+            QueryField.Standard.START_YEAR,
+            QueryField.Standard.RELEASE_YEAR,
             QueryField.Standard.CHAPTER_COUNT,
             QueryField.Standard.VOLUME_COUNT,
             QueryField.Standard.SCORE,
             QueryField.Standard.RATING,
+            QueryField.Standard.POPULARITY,
+            QueryField.Standard.FAVORITES,
+            QueryField.Standard.RANK,
             -> if (
                 operator in setOf(
                     QueryOperator.EQUALS,
@@ -84,6 +90,12 @@ object ResidualEvaluator {
 
             QueryField.Standard.GENRE,
             QueryField.Standard.TAG,
+            QueryField.Standard.AUTHOR,
+            QueryField.Standard.ARTIST,
+            QueryField.Standard.PUBLISHER,
+            QueryField.Standard.MAGAZINE,
+            QueryField.Standard.CATEGORY,
+            QueryField.Standard.DEMOGRAPHIC,
             -> if (
                 operator in setOf(
                     QueryOperator.EQUALS,
@@ -92,6 +104,26 @@ object ResidualEvaluator {
                     QueryOperator.CONTAINS,
                 ) &&
                 isStringOperand(operator, value)
+            ) {
+                null
+            } else {
+                "Unsupported operator/value for ${predicate.field.identifier}: ${operator.name}"
+            }
+
+            QueryField.Standard.START_DATE,
+            QueryField.Standard.END_DATE,
+            -> if (
+                operator in setOf(
+                    QueryOperator.EQUALS,
+                    QueryOperator.NOT_EQUALS,
+                    QueryOperator.IN,
+                    QueryOperator.GREATER_THAN,
+                    QueryOperator.GREATER_OR_EQUAL,
+                    QueryOperator.LESS_THAN,
+                    QueryOperator.LESS_OR_EQUAL,
+                    QueryOperator.BETWEEN,
+                ) &&
+                isDateOperand(operator, value)
             ) {
                 null
             } else {
@@ -107,6 +139,18 @@ object ResidualEvaluator {
             value is QueryValue.ListValue &&
                 value.values.isNotEmpty() &&
                 value.values.all { it is QueryValue.StringValue }
+        else -> value is QueryValue.StringValue
+    }
+
+    private fun isDateOperand(operator: QueryOperator, value: QueryValue): Boolean = when (operator) {
+        QueryOperator.IN ->
+            value is QueryValue.ListValue &&
+                value.values.isNotEmpty() &&
+                value.values.all { it is QueryValue.StringValue }
+        QueryOperator.BETWEEN ->
+            value is QueryValue.RangeValue &&
+                value.lower is QueryValue.StringValue &&
+                value.upper is QueryValue.StringValue
         else -> value is QueryValue.StringValue
     }
 
@@ -151,6 +195,24 @@ object ResidualEvaluator {
             else -> FieldValue.Scalar(QueryValue.StringValue(item.status.name))
         }
 
+        QueryField.Standard.START_YEAR,
+        QueryField.Standard.RELEASE_YEAR,
+        ->
+            item.startDate
+                ?.extractYear()
+                ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
+                ?: FieldValue.Missing
+
+        QueryField.Standard.START_DATE ->
+            item.startDate
+                ?.let { FieldValue.Scalar(QueryValue.StringValue(it)) }
+                ?: FieldValue.Missing
+
+        QueryField.Standard.END_DATE ->
+            item.endDate
+                ?.let { FieldValue.Scalar(QueryValue.StringValue(it)) }
+                ?: FieldValue.Missing
+
         QueryField.Standard.CHAPTER_COUNT ->
             item.chapterCount
                 ?.let { FieldValue.Scalar(QueryValue.IntegerValue(it)) }
@@ -168,17 +230,35 @@ object ResidualEvaluator {
                 ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.value)) }
                 ?: FieldValue.Missing
 
-        QueryField.Standard.GENRE -> if (item.genres.isEmpty()) {
-            FieldValue.Missing
-        } else {
-            FieldValue.Collection(item.genres.map { QueryValue.StringValue(it) })
-        }
+        QueryField.Standard.GENRE -> item.genres.asFieldValue()
+        QueryField.Standard.TAG -> item.tags.asFieldValue()
+        QueryField.Standard.AUTHOR -> item.authors.asFieldValue()
+        QueryField.Standard.ARTIST -> item.artists.asFieldValue()
+        QueryField.Standard.PUBLISHER -> item.publishers.asFieldValue()
+        QueryField.Standard.MAGAZINE -> item.magazines.asFieldValue()
+        QueryField.Standard.CATEGORY -> item.categories.asFieldValue()
+        QueryField.Standard.DEMOGRAPHIC -> item.demographics.asFieldValue()
 
-        QueryField.Standard.TAG -> if (item.tags.isEmpty()) {
-            FieldValue.Missing
-        } else {
-            FieldValue.Collection(item.tags.map { QueryValue.StringValue(it) })
-        }
+        QueryField.Standard.COUNTRY ->
+            item.country
+                ?.takeIf(String::isNotBlank)
+                ?.let { FieldValue.Scalar(QueryValue.StringValue(it)) }
+                ?: FieldValue.Missing
+
+        QueryField.Standard.POPULARITY ->
+            item.popularity
+                ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.toDouble())) }
+                ?: FieldValue.Missing
+
+        QueryField.Standard.FAVORITES ->
+            item.favorites
+                ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it.toDouble())) }
+                ?: FieldValue.Missing
+
+        QueryField.Standard.RANK ->
+            item.rank
+                ?.let { FieldValue.Scalar(QueryValue.DoubleValue(it)) }
+                ?: FieldValue.Missing
 
         else -> error("Unsupported field reached evaluator after preflight: ${field.identifier}")
     }
@@ -191,17 +271,11 @@ object ResidualEvaluator {
                 val values = (expected as QueryValue.ListValue).values
                 truth(values.any { scalarEquals(actual, it) })
             }
-            QueryOperator.GREATER_THAN -> compareNumeric(actual, expected) { it > 0 }
-            QueryOperator.GREATER_OR_EQUAL -> compareNumeric(actual, expected) { it >= 0 }
-            QueryOperator.LESS_THAN -> compareNumeric(actual, expected) { it < 0 }
-            QueryOperator.LESS_OR_EQUAL -> compareNumeric(actual, expected) { it <= 0 }
-            QueryOperator.BETWEEN -> {
-                val range = expected as QueryValue.RangeValue
-                val lower = numericValue(range.lower)
-                val upper = numericValue(range.upper)
-                val actualNumber = numericValue(actual)
-                truth(actualNumber >= lower && actualNumber <= upper)
-            }
+            QueryOperator.GREATER_THAN -> compareOrdered(actual, expected) { it > 0 }
+            QueryOperator.GREATER_OR_EQUAL -> compareOrdered(actual, expected) { it >= 0 }
+            QueryOperator.LESS_THAN -> compareOrdered(actual, expected) { it < 0 }
+            QueryOperator.LESS_OR_EQUAL -> compareOrdered(actual, expected) { it <= 0 }
+            QueryOperator.BETWEEN -> evaluateBetween(actual, expected as QueryValue.RangeValue)
             QueryOperator.CONTAINS -> {
                 val actualString = (actual as QueryValue.StringValue).value
                 val expectedString = (expected as QueryValue.StringValue).value
@@ -248,12 +322,34 @@ object ResidualEvaluator {
 
     private fun stringEquals(left: String, right: String): Boolean = left.equals(right, ignoreCase = true)
 
-    private fun compareNumeric(
+    private fun compareOrdered(
         actual: QueryValue,
         expected: QueryValue,
         predicate: (Int) -> Boolean,
     ): TruthValue {
-        return truth(predicate(numericValue(actual).compareTo(numericValue(expected))))
+        val comparison = when {
+            isNumeric(actual) && isNumeric(expected) -> numericValue(actual).compareTo(numericValue(expected))
+            actual is QueryValue.StringValue && expected is QueryValue.StringValue ->
+                actual.value.compareTo(expected.value)
+            else -> error("Expected comparable query values")
+        }
+        return truth(predicate(comparison))
+    }
+
+    private fun evaluateBetween(
+        actual: QueryValue,
+        range: QueryValue.RangeValue,
+    ): TruthValue = when {
+        isNumeric(actual) && isNumeric(range.lower) && isNumeric(range.upper) -> {
+            val actualNumber = numericValue(actual)
+            truth(actualNumber >= numericValue(range.lower) && actualNumber <= numericValue(range.upper))
+        }
+        actual is QueryValue.StringValue &&
+            range.lower is QueryValue.StringValue &&
+            range.upper is QueryValue.StringValue -> {
+            truth(actual.value >= range.lower.value && actual.value <= range.upper.value)
+        }
+        else -> error("Expected comparable range query values")
     }
 
     private fun numericValue(value: QueryValue): Double = when (value) {
@@ -263,6 +359,18 @@ object ResidualEvaluator {
     }
 
     private fun truth(value: Boolean): TruthValue = if (value) TruthValue.TRUE else TruthValue.FALSE
+
+    private fun String.extractYear(): Int? =
+        take(4)
+            .takeIf { it.length == 4 && it.all(Char::isDigit) }
+            ?.toIntOrNull()
+
+    private fun List<String>.asFieldValue(): FieldValue =
+        if (isEmpty()) {
+            FieldValue.Missing
+        } else {
+            FieldValue.Collection(map { QueryValue.StringValue(it) })
+        }
 
     private sealed interface FieldValue {
         data object Missing : FieldValue
