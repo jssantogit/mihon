@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
@@ -36,6 +35,7 @@ import tachiyomi.domain.tsuzuki.collections.interactor.ManageCollectionDefinitio
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
@@ -58,7 +58,7 @@ data class CollectionUiModel(
 data class CollectionListDraft(
     val title: String,
     val query: QueryExpression?,
-    val sort: CatalogSort,
+    val sort: CollectionSortSelection,
     val layoutType: String?,
     val providerId: String = "kitsu",
 )
@@ -416,7 +416,7 @@ class CollectionsScreenModel(
         folderId: String,
         title: String,
         query: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         layoutType: String?,
         providerId: String = "kitsu",
     ) = launchAction {
@@ -441,7 +441,7 @@ class CollectionsScreenModel(
         list: CollectionList,
         title: String,
         query: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         layoutType: String?,
         providerId: String = list.providerId,
     ) = launchAction {
