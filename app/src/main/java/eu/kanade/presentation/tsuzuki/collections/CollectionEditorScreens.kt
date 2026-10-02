@@ -420,6 +420,7 @@ internal fun FolderEditorScreen(
             },
         )
     }
+    if (listEditor != null) return
 
     val listState = rememberLazyListState()
     val renderedListCount = if (editingPersisted) displayedLists.size else draftLists.size

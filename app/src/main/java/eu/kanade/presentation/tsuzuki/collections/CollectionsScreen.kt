@@ -476,7 +476,13 @@ private fun CollectionsReadyContent(
                             onDuplicate = {
                                 onAction(CollectionsAction.DuplicateCollection(graph.collection.id))
                             },
-                            onOpen = { onOpenCollection(graph.collection.id) },
+                            onOpen = {
+                                if (graph.collection.origin == CollectionOrigin.USER) {
+                                    onEdit(EditorDialog.RenameCollection(graph.collection))
+                                } else {
+                                    onOpenCollection(graph.collection.id)
+                                }
+                            },
                         )
                     }
                 }
