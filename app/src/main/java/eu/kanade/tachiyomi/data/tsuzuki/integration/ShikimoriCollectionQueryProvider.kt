@@ -339,6 +339,32 @@ class ShikimoriCollectionQueryProvider private constructor(
     override val providerId = "shikimori"
     override val capabilities: ProviderQueryCapabilities = ShikimoriCollectionCapabilities
 
+    override suspend fun lookupValues(
+        lookupId: String,
+        query: String?,
+    ): Result<List<FilterOption>> {
+        val values = when (lookupId) {
+            "shikimori.genres" -> requestGate.withPermit { api.lookupGenres() }
+            "shikimori.publishers" -> requestGate.withPermit { api.lookupPublishers() }
+            else -> return super.lookupValues(lookupId, query)
+        }
+        return runCatching {
+            values
+                .filter { (label, value) ->
+                    query.isNullOrBlank() ||
+                        label.contains(query, ignoreCase = true) ||
+                        value.contains(query, ignoreCase = true)
+                }
+                .map { (label, value) ->
+                    FilterOption(
+                        id = value,
+                        label = label,
+                        value = QueryValue.of(value),
+                    )
+                }
+        }
+    }
+
     override suspend fun fetch(
         pushdownExpression: QueryExpression?,
         sort: CollectionSortSelection,
