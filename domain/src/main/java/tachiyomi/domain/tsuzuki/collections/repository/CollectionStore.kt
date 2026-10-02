@@ -10,6 +10,7 @@ interface CollectionStore {
     suspend fun getCollections(includeDeleted: Boolean = false): List<TsuzukiCollection>
     fun observeCollections(): Flow<List<TsuzukiCollection>>
     suspend fun upsertCollection(collection: TsuzukiCollection)
+    suspend fun upsertCollections(collections: List<TsuzukiCollection>)
 
     suspend fun getFolder(id: String): CollectionFolder?
     suspend fun getFolders(collectionId: String, includeDeleted: Boolean = false): List<CollectionFolder>
