@@ -46,7 +46,7 @@ data class BGMSubject(
         tracking_url = "https://bangumi.tv/subject/${this@BGMSubject.id}"
         total_chapters = eps
         total_volumes = volumes
-        publishing_type = if (platform == "漫画") "Manga" else ""
+        publishing_type = if (platform == null || platform == "漫画") "Manga" else ""
         start_date = date ?: ""
     }
 }
