@@ -45,6 +45,7 @@ enum class DiagnosticSubsystem {
     DOWNLOAD,
     DATABASE,
     DIAGNOSTICS,
+    COLLECTIONS,
 }
 
 enum class DiagnosticWorkflow {
@@ -60,6 +61,7 @@ enum class DiagnosticWorkflow {
     ARTWORK_RESOLUTION,
     METADATA_RESOLUTION,
     DIAGNOSTIC_CAPTURE,
+    COLLECTION_EXECUTION,
 }
 
 enum class DiagnosticEventName {
@@ -118,6 +120,9 @@ enum class DiagnosticEventName {
     CAPTURE_SESSION_STARTED,
     CAPTURE_SESSION_STOPPED,
     CRASH_CONTEXT_UPDATED,
+
+    COLLECTION_QUERY_PLANNED,
+    COLLECTION_EXECUTION_COMPLETED,
 }
 
 enum class DiagnosticStage {
