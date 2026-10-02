@@ -348,39 +348,6 @@ fun CollectionsScreen(
             }
         }
 
-        when (val dialog = editor) {
-            is EditorDialog.CreateList -> {
-                ListEditorDialog(
-                    title = "New List",
-                    initial = ListEditorState.empty(),
-                    onDismiss = { editor = null },
-                    onConfirm = { draft ->
-                        onAction(
-                            CollectionsAction.CreateList(
-                                collectionId = dialog.collectionId,
-                                folderId = dialog.folderId,
-                                draft = draft,
-                            ),
-                        )
-                        editor = null
-                    },
-                )
-            }
-
-            is EditorDialog.EditList -> {
-                ListEditorDialog(
-                    title = "Edit List",
-                    initial = ListEditorState.from(dialog.list),
-                    onDismiss = { editor = null },
-                    onConfirm = { draft ->
-                        onAction(CollectionsAction.UpdateList(dialog.list, draft))
-                        editor = null
-                    },
-                )
-            }
-
-            else -> Unit
-        }
     }
 
     deleteTarget?.let { target ->
