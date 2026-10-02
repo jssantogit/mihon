@@ -95,6 +95,24 @@ class MangaUpdatesCollectionQueryProviderTest {
     }
 
     @Test
+    fun `blank MangaUpdates category lookup does not call remote search`() = runTest {
+        var categoryCalls = 0
+        val api = object : MangaUpdatesIntegrationApi {
+            override suspend fun search(query: String): List<TrackSearch> = emptyList()
+            override suspend fun discover(orderBy: String, offset: Int, limit: Int): List<TrackSearch> = emptyList()
+            override suspend fun getMangaDetails(id: Long): TrackSearch = track(id)
+            override suspend fun lookupCategories(query: String): List<Pair<String, String>> {
+                categoryCalls++
+                return emptyList()
+            }
+        }
+        val provider = MangaUpdatesCollectionQueryProvider.forTest(api)
+
+        provider.lookupValues("mangaupdates.categories", "").getOrThrow() shouldBe emptyList()
+        categoryCalls shouldBe 0
+    }
+
+    @Test
     fun `provider exposes dynamic genre and category lookups`() = runTest {
         val api = object : MangaUpdatesIntegrationApi {
             override suspend fun search(query: String): List<TrackSearch> = emptyList()
