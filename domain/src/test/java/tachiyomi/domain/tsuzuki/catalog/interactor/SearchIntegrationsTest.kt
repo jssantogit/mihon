@@ -282,6 +282,49 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `rating enrichment reuses cached provider result across repeated pages`() = runTest {
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+            var ratingCalls = 0
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+
+            override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
+                ratingCalls++
+                return Result.success(
+                    CatalogRatingMatch(
+                        externalId = "m1",
+                        rating = ExternalRating(
+                            providerId = "mal",
+                            label = "MAL",
+                            value = 8.4,
+                            scaleMax = 10.0,
+                        ),
+                    ),
+                )
+            }
+        }
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "k1",
+            title = "Work",
+            externalIds = mapOf("mal" to "m1"),
+        )
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("kitsu", Result.success(page(item))),
+                ratingProviders = listOf(provider),
+            ),
+        )
+
+        search.enrichRatings(listOf(item)).single().scores.single().value shouldBe 8.4
+        search.enrichRatings(listOf(item)).single().scores.single().value shouldBe 8.4
+
+        provider.ratingCalls shouldBe 1
+    }
+
+    @Test
     fun `same provider and title with distinct external identities remain distinct`() = runTest {
         val search = SearchIntegrations(
             registry(
@@ -403,6 +446,7 @@ class SearchIntegrationsTest {
         ratingProviders: List<RatingsProvider> = emptyList(),
         tsuzukiRatingsEnabled: Boolean = true,
     ) = object : IntegrationRegistry {
+        override fun configurationFingerprint(): String = "cfg"
         override fun searchProviders(): List<SearchProvider> = providers.toList()
         override fun discoveryProviders(): List<DiscoveryProvider> = emptyList()
         override fun metadataProviders(): List<MetadataProvider> = emptyList()
