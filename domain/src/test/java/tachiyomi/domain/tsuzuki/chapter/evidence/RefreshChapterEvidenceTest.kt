@@ -700,6 +700,101 @@ class RefreshChapterEvidenceTest {
     }
 
     @Test
+    fun `fast Add-on stage publishes before slow integration completes`() = runTest {
+        val integrationGate = CompletableDeferred<Unit>()
+        val canonicalTitleId = "canonical-title"
+        val addonId = AddonId("fast-addon")
+        val chapters = FakeCanonicalChapterRepository()
+        val stages = mutableListOf<List<String>>()
+
+        val slowIntegration = object : ChapterEvidenceProvider {
+            override val producerId: String = "slow-editorial"
+
+            override suspend fun evidenceFor(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                integrationGate.await()
+                return Result.success(
+                    listOf(editorialEvidence("editorial-1", "1", "Chapter 1", producerId)),
+                )
+            }
+        }
+        val fastAddon = object : ChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> =
+                Result.success(
+                    listOf(
+                        ChapterEvidence(
+                            id = "addon-2",
+                            canonicalTitleId = canonicalTitleId,
+                            producerKind = ProducerKind.ADDON,
+                            producerId = addonId.value,
+                            externalChapterKey = "42:chapter-2",
+                            rawLabel = "Chapter 2",
+                            rawNumber = 2.0,
+                            volume = null,
+                            title = null,
+                            observedAt = 10L,
+                            confidence = 1.0,
+                            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+                        ),
+                    ),
+                )
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(fastAddon)
+        }
+        val binding = ContentBinding(
+            id = "fast-binding",
+            canonicalTitleId = canonicalTitleId,
+            addonId = addonId,
+            providerTitleKey = "42:/fast-title",
+            matchConfidence = 1.0,
+            verifiedByUser = true,
+            availability = ContentBindingAvailability.AVAILABLE,
+            runtimePayload = byteArrayOf(1),
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery {
+            resolver.existingBindingsForRefresh(canonicalTitleId, addonId)
+        } returns Result.success(listOf(binding))
+        val refresh = RefreshChapterEvidence(
+            registry = registry(listOf(slowIntegration)),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = FakeChapterEvidenceRepository(),
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+        )
+
+        val operation = async {
+            refresh.executeProgressively(
+                canonicalTitleId = canonicalTitleId,
+                onStageReconciled = {
+                    stages += chapters.getByCanonicalTitleId(canonicalTitleId).map { it.displayNumber }
+                },
+            )
+        }
+        runCurrent()
+
+        stages shouldContainExactly listOf(listOf("2"))
+        operation.isCompleted shouldBe false
+
+        integrationGate.complete(Unit)
+        operation.await().isSuccess shouldBe true
+        stages shouldContainExactly listOf(
+            listOf("2"),
+            listOf("1", "2"),
+        )
+    }
+
+    @Test
     fun `integration and Add-on evidence fetch concurrently before reconciliation`() = runTest {
         val integrationStarted = CompletableDeferred<Unit>()
         val addonStarted = CompletableDeferred<Unit>()
