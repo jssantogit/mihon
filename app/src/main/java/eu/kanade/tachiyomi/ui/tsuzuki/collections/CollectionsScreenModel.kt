@@ -183,7 +183,7 @@ sealed interface CollectionsScreenState {
         val collections: List<CollectionUiModel>,
         val transferState: CollectionsTransferState,
         val listRuntimeStates: Map<String, CollectionListRuntimeState>,
-        val draftPreviewState: CollectionDraftPreviewState,
+        val draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     ) : CollectionsScreenState
 
     data class Error(
