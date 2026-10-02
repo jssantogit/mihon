@@ -69,25 +69,65 @@ class ExecuteCollectionList internal constructor(
             )
         }
 
-        val provider = providerRegistry.get(list.providerId)
-            ?: return ExecuteCollectionListResult.ProviderUnavailable(list.providerId)
+        val draftResult = executeDraft(
+            ExecuteCollectionDraftRequest(
+                draft = CollectionListDraftExecution(
+                    providerId = list.providerId,
+                    query = list.query,
+                    sort = list.sort,
+                ),
+                pageSize = request.pageSize,
+                cursor = request.cursor,
+                cachePolicy = request.cachePolicy,
+                priority = request.priority,
+            ),
+        )
+
+        return when (draftResult) {
+            is ExecuteCollectionDraftResult.Page -> ExecuteCollectionListResult.Page(
+                list = list,
+                page = draftResult.page,
+            )
+            is ExecuteCollectionDraftResult.ProviderUnavailable ->
+                ExecuteCollectionListResult.ProviderUnavailable(draftResult.providerId)
+            is ExecuteCollectionDraftResult.UnsupportedGlobalSort ->
+                ExecuteCollectionListResult.UnsupportedGlobalSort(draftResult.sort)
+            is ExecuteCollectionDraftResult.UnsupportedResidual ->
+                ExecuteCollectionListResult.UnsupportedResidual(draftResult.reasons)
+            ExecuteCollectionDraftResult.CacheMiss -> ExecuteCollectionListResult.CacheMiss
+            is ExecuteCollectionDraftResult.ProviderFailure ->
+                ExecuteCollectionListResult.ProviderFailure(draftResult.cause)
+            is ExecuteCollectionDraftResult.PaginationInvariantFailure ->
+                ExecuteCollectionListResult.PaginationInvariantFailure(draftResult.reason)
+        }
+    }
+
+    suspend operator fun invoke(request: ExecuteCollectionListRequest): ExecuteCollectionListResult {
+        return execute(request)
+    }
+
+    internal suspend fun executeDraft(
+        request: ExecuteCollectionDraftRequest,
+    ): ExecuteCollectionDraftResult {
+        val provider = providerRegistry.get(request.draft.providerId)
+            ?: return ExecuteCollectionDraftResult.ProviderUnavailable(request.draft.providerId)
 
         val plan = QueryPlanner.plan(
-            expression = list.query,
+            expression = request.draft.query,
             capabilities = provider.capabilities,
-            requestedSort = list.sort,
+            requestedSort = request.draft.sort,
         )
         val remoteSort = when (val sortPlan = plan.sortPlan) {
             is SortPlan.RemoteExact -> sortPlan.sort
             is SortPlan.UnsupportedForGlobalOrdering -> {
-                return ExecuteCollectionListResult.UnsupportedGlobalSort(sortPlan.requestedSort)
+                return ExecuteCollectionDraftResult.UnsupportedGlobalSort(sortPlan.requestedSort)
             }
         }
 
         when (val support = ResidualEvaluator.support(plan.residualExpression)) {
             ResidualSupport.Supported -> Unit
             is ResidualSupport.Unsupported -> {
-                return ExecuteCollectionListResult.UnsupportedResidual(support.reasons)
+                return ExecuteCollectionDraftResult.UnsupportedResidual(support.reasons)
             }
         }
 
@@ -95,9 +135,8 @@ class ExecuteCollectionList internal constructor(
             providerId = provider.providerId,
             priority = request.priority,
         ) {
-            executeScheduled(
+            executeScheduledDraft(
                 request = request,
-                list = list,
                 provider = provider,
                 pushdownExpression = plan.pushdownExpression,
                 residualExpression = plan.residualExpression,
@@ -115,18 +154,13 @@ class ExecuteCollectionList internal constructor(
         }
     }
 
-    suspend operator fun invoke(request: ExecuteCollectionListRequest): ExecuteCollectionListResult {
-        return execute(request)
-    }
-
-    private suspend fun executeScheduled(
-        request: ExecuteCollectionListRequest,
-        list: CollectionList,
+    private suspend fun executeScheduledDraft(
+        request: ExecuteCollectionDraftRequest,
         provider: CollectionQueryProvider,
         pushdownExpression: QueryExpression?,
         residualExpression: QueryExpression?,
         remoteSort: CollectionSortSelection,
-    ): ExecuteCollectionListResult {
+    ): ExecuteCollectionDraftResult {
         val result = ResidualPaginator.loadPage(
             residualExpression = residualExpression,
             logicalPageSize = request.pageSize,
@@ -146,25 +180,17 @@ class ExecuteCollectionList internal constructor(
         )
 
         return when (result) {
-            is ResidualPageResult.Success -> ExecuteCollectionListResult.Page(
-                list = list,
-                page = result.page,
-            )
-            is ResidualPageResult.BudgetReached -> ExecuteCollectionListResult.Page(
-                list = list,
-                page = result.page,
-            )
-            is ResidualPageResult.UnsupportedResidual -> {
-                ExecuteCollectionListResult.UnsupportedResidual(result.reasons)
-            }
-            is ResidualPageResult.PaginationInvariantFailure -> {
-                ExecuteCollectionListResult.PaginationInvariantFailure(result.reason)
-            }
+            is ResidualPageResult.Success -> ExecuteCollectionDraftResult.Page(result.page)
+            is ResidualPageResult.BudgetReached -> ExecuteCollectionDraftResult.Page(result.page)
+            is ResidualPageResult.UnsupportedResidual ->
+                ExecuteCollectionDraftResult.UnsupportedResidual(result.reasons)
+            is ResidualPageResult.PaginationInvariantFailure ->
+                ExecuteCollectionDraftResult.PaginationInvariantFailure(result.reason)
             is ResidualPageResult.ProviderFailure -> {
                 if (result.cause is CollectionCacheMissException) {
-                    ExecuteCollectionListResult.CacheMiss
+                    ExecuteCollectionDraftResult.CacheMiss
                 } else {
-                    ExecuteCollectionListResult.ProviderFailure(result.cause)
+                    ExecuteCollectionDraftResult.ProviderFailure(result.cause)
                 }
             }
         }
