@@ -1,7 +1,7 @@
 package tachiyomi.domain.tsuzuki.collections.execution
 
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.scheduler.QuerySchedulePriority
 
 enum class CollectionCacheMode {
