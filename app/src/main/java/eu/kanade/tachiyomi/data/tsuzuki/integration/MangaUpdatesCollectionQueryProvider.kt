@@ -220,7 +220,6 @@ object MangaUpdatesCollectionCapabilities : ProviderQueryCapabilities {
         label = label,
         value = QueryValue.of(format.name),
     )
-
 }
 
 object MangaUpdatesCollectionCompiler {
@@ -297,7 +296,7 @@ object MangaUpdatesCollectionCompiler {
             excludeGenre = excludeGenre,
             orderBy = key.nativeId,
             page = 1,
-            perPage = MANGA_UPDATES_PAGE_SIZE,
+            perPage = 50,
         )
     }
 }
