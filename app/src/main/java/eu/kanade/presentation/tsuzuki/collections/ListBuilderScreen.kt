@@ -1,5 +1,7 @@
 package eu.kanade.presentation.tsuzuki.collections
 
+// Structural List Builder V2: Quick Builder + Advanced.
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
