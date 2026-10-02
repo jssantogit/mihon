@@ -61,8 +61,6 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -1442,25 +1440,3 @@ internal data class DeleteTarget(
 private const val COLLECTION_LIST_HEADER_COUNT = 1
 private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
 
-internal val SUPPORTED_SORTS = listOf(
-    CollectionSortSelection(
-        CollectionSortKey.Standard.POPULARITY,
-        CollectionSortDirection.DESC,
-    ),
-    CollectionSortSelection(
-        CollectionSortKey.Standard.POPULARITY,
-        CollectionSortDirection.ASC,
-    ),
-    CollectionSortSelection(
-        CollectionSortKey.Standard.RATING,
-        CollectionSortDirection.DESC,
-    ),
-    CollectionSortSelection(
-        CollectionSortKey.Standard.RATING,
-        CollectionSortDirection.ASC,
-    ),
-    CollectionSortSelection(
-        CollectionSortKey.Standard.UPDATED,
-        CollectionSortDirection.DESC,
-    ),
-)
