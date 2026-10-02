@@ -736,8 +736,10 @@ private fun DescriptorFilterControl(
     onFilterLookup: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val positivePredicate = editor.simplePredicate(capability.field, negated = false)
-    val negativePredicate = editor.simplePredicate(capability.field, negated = true)
+    val positivePredicates = editor.simplePredicates(capability.field, negated = false)
+    val negativePredicates = editor.simplePredicates(capability.field, negated = true)
+    val positivePredicate = positivePredicates.firstOrNull()
+    val negativePredicate = negativePredicates.firstOrNull()
 
     when (val source = capability.valueSource) {
         is FilterValueSource.Static -> {
@@ -945,8 +947,8 @@ private fun DescriptorFilterControl(
                 providerId = editor.providerId,
                 capability = capability,
                 source = source,
-                positivePredicate = positivePredicate,
-                negativePredicate = negativePredicate,
+                positivePredicates = positivePredicates,
+                negativePredicates = negativePredicates,
                 editor = editor,
                 onEditorChange = onEditorChange,
                 lookupState = filterLookupStates[
@@ -1039,8 +1041,8 @@ private fun RemoteLookupFilterControl(
     providerId: String,
     capability: CollectionFilterCapability,
     source: FilterValueSource.RemoteLookup,
-    positivePredicate: QueryExpression.Predicate?,
-    negativePredicate: QueryExpression.Predicate?,
+    positivePredicates: List<QueryExpression.Predicate>,
+    negativePredicates: List<QueryExpression.Predicate>,
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
     lookupState: CollectionFilterLookupState?,
@@ -1095,14 +1097,14 @@ private fun RemoteLookupFilterControl(
                         modifier = Modifier.padding(top = 6.dp),
                     )
                 } else {
-                    val positiveValue = positivePredicate?.value
-                    val negativeValue = negativePredicate?.value
+                    val positiveValues = positivePredicates.map { it.value }.toSet()
+                    val negativeValues = negativePredicates.map { it.value }.toSet()
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.padding(top = 8.dp),
                     ) {
                         items(lookupState.options, key = { option -> option.id }) { option ->
-                            val selectedPositive = positiveValue == option.value
+                            val selectedPositive = option.value in positiveValues
                             FilterChip(
                                 selected = selectedPositive,
                                 enabled = editor.filtersEditable,
@@ -1113,18 +1115,30 @@ private fun RemoteLookupFilterControl(
                                         value = option.value,
                                     )
                                     onEditorChange(
-                                        editor.replaceFieldTerm(
-                                            field = capability.field,
-                                            negated = false,
-                                            predicate = predicate,
-                                        ),
+                                        if (capability.multiValueMode == MultiValueMode.ALL) {
+                                            editor.toggleFieldPredicate(
+                                                field = capability.field,
+                                                negated = false,
+                                                predicate = QueryExpression.Predicate(
+                                                    field = capability.field,
+                                                    operator = capability.preferredScalarOperator(),
+                                                    value = option.value,
+                                                ),
+                                            )
+                                        } else {
+                                            editor.replaceFieldTerm(
+                                                field = capability.field,
+                                                negated = false,
+                                                predicate = predicate,
+                                            )
+                                        },
                                     )
                                 },
                                 label = { Text(option.label) },
                             )
 
                             if (capability.multiValueMode == MultiValueMode.INCLUDE_EXCLUDE) {
-                                val selectedNegative = negativeValue == option.value
+                                val selectedNegative = option.value in negativeValues
                                 FilterChip(
                                     selected = selectedNegative,
                                     enabled = editor.filtersEditable,
@@ -1224,16 +1238,16 @@ private fun CollectionFilterCapability.preferredScalarOperator(): QueryOperator 
     else -> operators.first()
 }
 
-private fun ListEditorState.simplePredicate(
+private fun ListEditorState.simplePredicates(
     field: QueryField,
     negated: Boolean,
-): QueryExpression.Predicate? {
+): List<QueryExpression.Predicate> {
     val terms = when (val query = currentQuery()) {
         null -> emptyList()
         is QueryExpression.All -> query.expressions
         else -> listOf(query)
     }
-    return terms.firstNotNullOfOrNull { term ->
+    return terms.mapNotNull { term ->
         when {
             !negated && term is QueryExpression.Predicate && term.field == field -> term
             negated && term is QueryExpression.Not -> {
@@ -1244,10 +1258,44 @@ private fun ListEditorState.simplePredicate(
     }
 }
 
+private fun ListEditorState.simplePredicate(
+    field: QueryField,
+    negated: Boolean,
+): QueryExpression.Predicate? = simplePredicates(field, negated).firstOrNull()
+
 private fun ListEditorState.replaceFieldTerm(
     field: QueryField,
     negated: Boolean,
     predicate: QueryExpression.Predicate?,
+): ListEditorState = replaceFieldTerms(
+    field = field,
+    negated = negated,
+    predicates = listOfNotNull(predicate),
+)
+
+private fun ListEditorState.toggleFieldPredicate(
+    field: QueryField,
+    negated: Boolean,
+    predicate: QueryExpression.Predicate,
+): ListEditorState {
+    val existing = simplePredicates(field, negated)
+    val selected = existing.any { candidate ->
+        candidate.operator == predicate.operator && candidate.value == predicate.value
+    }
+    val next = if (selected) {
+        existing.filterNot { candidate ->
+            candidate.operator == predicate.operator && candidate.value == predicate.value
+        }
+    } else {
+        existing + predicate
+    }
+    return replaceFieldTerms(field, negated, next)
+}
+
+private fun ListEditorState.replaceFieldTerms(
+    field: QueryField,
+    negated: Boolean,
+    predicates: List<QueryExpression.Predicate>,
 ): ListEditorState {
     var updated = this
     updated = when (field) {
@@ -1274,11 +1322,11 @@ private fun ListEditorState.replaceFieldTerm(
     val remaining = updated.extraTerms.filterNot { term ->
         term.matchesFieldPolarity(field = field, negated = negated)
     }
-    val replacement = predicate?.let { if (negated) QueryExpression.Not(it) else it }
+    val replacements = predicates.map { predicate ->
+        if (negated) QueryExpression.Not(predicate) else predicate
+    }
 
-    return updated.copy(
-        extraTerms = if (replacement == null) remaining else remaining + replacement,
-    )
+    return updated.copy(extraTerms = remaining + replacements)
 }
 
 private fun QueryExpression.matchesFieldPolarity(
