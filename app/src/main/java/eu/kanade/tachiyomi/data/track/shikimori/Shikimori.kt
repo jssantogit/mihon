@@ -250,6 +250,10 @@ interface ShikimoriIntegrationApi {
 
     suspend fun getMangaDetailsPublic(id: Int): TrackSearch?
 
+    suspend fun lookupGenres(): List<Pair<String, String>> = emptyList()
+
+    suspend fun lookupPublishers(): List<Pair<String, String>> = emptyList()
+
     suspend fun collectionSearch(query: ShikimoriCollectionQuery): ShikimoriCollectionPage =
         ShikimoriCollectionPage(
             items = emptyList(),
