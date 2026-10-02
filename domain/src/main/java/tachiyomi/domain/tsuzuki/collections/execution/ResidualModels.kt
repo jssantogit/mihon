@@ -70,6 +70,7 @@ data class ResidualPageCursor(
 data class LogicalCatalogPage(
     val items: List<CatalogItem>,
     val nextCursor: ResidualPageCursor?,
+    val scanBudgetReason: ResidualScanBudgetReason? = null,
 ) {
     val hasNextPage: Boolean
         get() = nextCursor != null
