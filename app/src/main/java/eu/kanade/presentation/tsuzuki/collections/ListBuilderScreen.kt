@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -39,6 +40,9 @@ import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapability
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderSwitchPlan
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderSwitchPlanner
+import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
 import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
@@ -55,6 +59,7 @@ internal fun ListBuilderScreen(
     title: String,
     initial: ListEditorState,
     providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
+    providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     previewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onPreviewDraft: (CollectionListDraft?) -> Unit = {},
     onClose: () -> Unit,
@@ -62,6 +67,8 @@ internal fun ListBuilderScreen(
 ) {
     var editor by remember(initial) { mutableStateOf(initial) }
     var advanced by remember(initial) { mutableStateOf(false) }
+    var pendingSwitch by remember(initial) { mutableStateOf<CollectionProviderSwitchPlan.Ready?>(null) }
+    var blockedSwitchMessage by remember(initial) { mutableStateOf<String?>(null) }
     val draft = editor.toDraftOrNull()
 
     LaunchedEffect(draft) {
@@ -79,6 +86,93 @@ internal fun ListBuilderScreen(
         } else {
             onClose()
         }
+    }
+
+    fun applyProviderSwitch(plan: CollectionProviderSwitchPlan.Ready) {
+        val target = providerCapabilities[plan.targetProviderId] ?: return
+        val targetSort = plan.sort
+            ?: target.descriptor.uiSortSelections().firstOrNull()
+            ?: return
+        editor = ListEditorState.fromDraft(
+            CollectionListDraft(
+                title = editor.title,
+                query = plan.query,
+                sort = targetSort,
+                layoutType = editor.layoutType,
+                providerId = plan.targetProviderId,
+            ),
+        )
+    }
+
+    fun requestProviderSwitch(targetProviderId: String) {
+        if (targetProviderId == editor.providerId) return
+        val target = providerCapabilities[targetProviderId] ?: return
+        when (
+            val plan = CollectionProviderSwitchPlanner.plan(
+                sourceProviderId = editor.providerId,
+                target = target,
+                query = editor.currentQuery(),
+                sort = editor.sort,
+            )
+        ) {
+            is CollectionProviderSwitchPlan.Blocked -> {
+                blockedSwitchMessage =
+                    "This imported query is too complex to translate safely. Reset its filters before changing source."
+            }
+            is CollectionProviderSwitchPlan.Ready -> {
+                if (plan.requiresConfirmation) {
+                    pendingSwitch = plan
+                } else {
+                    applyProviderSwitch(plan)
+                }
+            }
+        }
+    }
+
+    pendingSwitch?.let { plan ->
+        AlertDialog(
+            onDismissRequest = { pendingSwitch = null },
+            title = { Text("Change catalog source?") },
+            text = {
+                val removed = buildList {
+                    addAll(plan.removedExpressions.map(QueryExpression::toCanonicalString))
+                    plan.removedSort?.let { add("Sort: ${it.cacheKey}") }
+                }
+                Text(
+                    "The target provider cannot execute these filters/sort with the same semantics: " +
+                        removed.joinToString() +
+                        ". They will be removed only if you confirm.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingSwitch = null
+                        applyProviderSwitch(plan)
+                    },
+                ) {
+                    Text("Change source")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSwitch = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    blockedSwitchMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { blockedSwitchMessage = null },
+            title = { Text("Source change blocked") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { blockedSwitchMessage = null }) {
+                    Text("OK")
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -129,6 +223,7 @@ internal fun ListBuilderScreen(
                 onEditorChange = { editor = it },
                 onAdvanced = { advanced = true },
                 providerDescriptors = providerDescriptors,
+                onProviderSelect = ::requestProviderSwitch,
                 previewState = previewState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -144,6 +239,7 @@ private fun QuickListBuilder(
     onEditorChange: (ListEditorState) -> Unit,
     onAdvanced: () -> Unit,
     providerDescriptors: List<CollectionProviderDescriptor>,
+    onProviderSelect: (String) -> Unit,
     previewState: CollectionDraftPreviewState,
     modifier: Modifier = Modifier,
 ) {
@@ -208,20 +304,7 @@ private fun QuickListBuilder(
                                 ?.displayName
                                 ?: providerDisplayName(providerId)
                         },
-                        onSelect = { selected ->
-                            if (selected != editor.providerId) {
-                                onEditorChange(
-                                    editor.copy(
-                                        providerId = selected,
-                                        sort = providerDescriptors
-                                            .firstOrNull { it.providerId == selected }
-                                            ?.uiSortSelections()
-                                            ?.firstOrNull()
-                                            ?: editor.sort,
-                                    ),
-                                )
-                            }
-                        },
+                        onSelect = onProviderSelect,
                         enabled = editor.filtersEditable && sources.isNotEmpty(),
                     )
                     if (descriptor == null) {
