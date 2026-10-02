@@ -66,15 +66,17 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         )
 
         is QueryExpression.All -> {
-            val predicates = expression.expressions.map { it as? QueryExpression.Predicate ?: return false }
-            if (predicates.any { !canPushExpression(it) }) return false
+            val predicates = expression.expressions.mapNotNull { it as? QueryExpression.Predicate }
+            if (predicates.size != expression.expressions.size || predicates.any { !canPushExpression(it) }) {
+                false
+            } else {
+                val singletonFields = predicates
+                    .filter { it.field == QueryField.STATUS || it.field == QueryField.WORK_TYPE }
+                    .groupingBy { it.field }
+                    .eachCount()
 
-            val singletonFields = predicates
-                .filter { it.field == QueryField.STATUS || it.field == QueryField.WORK_TYPE }
-                .groupingBy { it.field }
-                .eachCount()
-
-            singletonFields.values.none { it > 1 }
+                singletonFields.values.none { it > 1 }
+            }
         }
 
         is QueryExpression.Any,
