@@ -383,10 +383,10 @@ internal fun FolderEditorScreen(
             is FolderListEditorTarget.EditDraft -> ListEditorState.fromDraft(draftLists[target.index].draft)
             is FolderListEditorTarget.EditPersisted -> ListEditorState.from(target.list)
         }
-        ListEditorDialog(
+        ListBuilderScreen(
             title = if (target is FolderListEditorTarget.New) "New List" else "Edit List",
             initial = initial,
-            onDismiss = { listEditor = null },
+            onClose = { listEditor = null },
             onConfirm = { draft ->
                 when (target) {
                     FolderListEditorTarget.New -> {
@@ -869,7 +869,7 @@ private fun EditorSectionHeader(
 }
 
 @Composable
-private fun EditorSectionLabel(text: String) {
+internal fun EditorSectionLabel(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
@@ -878,7 +878,7 @@ private fun EditorSectionLabel(text: String) {
 }
 
 @Composable
-private fun EditorSurface(
+internal fun EditorSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
@@ -915,7 +915,7 @@ private fun EditorEmptyCard(
 }
 
 @Composable
-private fun EditorBottomBar(
+internal fun EditorBottomBar(
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
