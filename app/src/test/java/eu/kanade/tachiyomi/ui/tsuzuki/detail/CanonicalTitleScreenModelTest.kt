@@ -258,7 +258,7 @@ class CanonicalTitleScreenModelTest {
     fun `detail exposes enriched provider metadata after background refresh`() = runTest(dispatcher) {
         val sourceResolver = mockk<ResolveCanonicalSourceManga>()
         coEvery {
-            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = true)
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = false)
         } returns Manga.create().copy(
             id = 77L,
             source = 10L,
@@ -388,6 +388,9 @@ class CanonicalTitleScreenModelTest {
         state.endDate shouldBe "2001"
         state.editorialVolumeCount shouldBe 18
         state.metadataSources shouldBe listOf("MangaUpdates", "MyAnimeList")
+        coVerify(exactly = 0) {
+            sourceResolver.execute(canonicalTitleId = "title", allowNetwork = true)
+        }
     }
 
     @Test

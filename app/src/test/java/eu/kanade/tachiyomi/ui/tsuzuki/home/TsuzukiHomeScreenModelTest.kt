@@ -145,6 +145,47 @@ class TsuzukiHomeScreenModelTest {
     }
 
     @Test
+    fun `legacy progress import runs once per title across repeated library emissions`() = runTest(dispatcher) {
+        val first = CanonicalLibraryItem(
+            title = CanonicalTitle(
+                id = "title-1",
+                displayTitle = "One",
+                identityState = CanonicalIdentityState.RESOLVED,
+                createdAt = 1L,
+                updatedAt = 1L,
+            ),
+            entry = tachiyomi.domain.tsuzuki.model.CanonicalLibraryEntry(
+                canonicalTitleId = "title-1",
+                status = tachiyomi.domain.tsuzuki.model.LibraryStatus.READING,
+                favorite = true,
+                addedAt = 1L,
+                updatedAt = 1L,
+            ),
+        )
+        val second = first.copy(
+            title = first.title.copy(id = "title-2", displayTitle = "Two"),
+            entry = first.entry.copy(canonicalTitleId = "title-2"),
+        )
+        val library = MutableStateFlow(listOf(first))
+        val importer = mockk<ImportLegacyCanonicalProgress>()
+        coEvery { importer.execute(any()) } returns 0
+
+        createModel(
+            continueReading = MutableStateFlow(emptyList()),
+            sections = MutableStateFlow(emptyList()),
+            libraryItems = library,
+            legacyImporter = importer,
+        )
+        advanceUntilIdle()
+
+        library.value = listOf(first, second)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { importer.execute("title-1") }
+        coVerify(exactly = 1) { importer.execute("title-2") }
+    }
+
+    @Test
     fun `remove from continue reading stores suppression without touching progress`() = runTest(dispatcher) {
         val visibility = mockk<ContinueReadingVisibilityRepository>(relaxed = true)
         val model = createModel(
@@ -202,6 +243,8 @@ class TsuzukiHomeScreenModelTest {
         sourceMangaResolver: ResolveCanonicalSourceManga =
             mockk(relaxed = true),
         artworkRepository: TitleArtworkRepository = FakeTitleArtworkRepository(emptyList()),
+        libraryItems: MutableStateFlow<List<CanonicalLibraryItem>> = MutableStateFlow(emptyList()),
+        legacyImporter: ImportLegacyCanonicalProgress = mockk(relaxed = true),
     ): TsuzukiHomeScreenModel {
         val observeHome = mockk<ObserveHomeContinueReading>()
         every { observeHome.subscribe() } returns continueReading
@@ -210,14 +253,10 @@ class TsuzukiHomeScreenModelTest {
         every { configured.subscribe() } returns sections
 
         val observeLibrary = mockk<ObserveCanonicalLibrary>()
-        every { observeLibrary.subscribe() } returns
-            MutableStateFlow(emptyList<CanonicalLibraryItem>())
+        every { observeLibrary.subscribe() } returns libraryItems
 
         val history = mockk<HistoryRepository>()
         every { history.getHistory("") } returns MutableStateFlow(emptyList())
-
-        val importLegacy = mockk<ImportLegacyCanonicalProgress>()
-        coEvery { importLegacy.execute(any()) } returns 0
 
         return TsuzukiHomeScreenModel(
             observeHomeContinueReading = observeHome,
@@ -225,7 +264,7 @@ class TsuzukiHomeScreenModelTest {
             visibilityRepository = visibility,
             observeCanonicalLibrary = observeLibrary,
             historyRepository = history,
-            importLegacyCanonicalProgress = importLegacy,
+            importLegacyCanonicalProgress = legacyImporter,
             materializeCanonicalTitleFromCatalog = materializer,
             resolveCanonicalSourceManga = sourceMangaResolver,
             titleArtworkRepository = artworkRepository,
