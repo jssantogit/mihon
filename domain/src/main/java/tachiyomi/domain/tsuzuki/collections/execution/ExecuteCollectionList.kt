@@ -132,6 +132,7 @@ class ExecuteCollectionList internal constructor(
             logicalPageSize = request.pageSize,
             cursor = request.cursor,
             maxProviderPageSize = provider.capabilities.maxPageSize,
+            scanPolicy = provider.capabilities.descriptor.scanPolicy,
             fetcher = CatalogPageFetcher { offset, limit ->
                 loadRawPage(
                     provider = provider,
@@ -148,6 +149,13 @@ class ExecuteCollectionList internal constructor(
             is ResidualPageResult.Success -> ExecuteCollectionListResult.Page(
                 list = list,
                 page = result.page,
+            )
+            is ResidualPageResult.BudgetReached -> ExecuteCollectionListResult.ScanBudgetReached(
+                list = list,
+                page = result.page,
+                reason = result.reason,
+                rawItemsScanned = result.rawItemsScanned,
+                remoteRequests = result.remoteRequests,
             )
             is ResidualPageResult.UnsupportedResidual -> {
                 ExecuteCollectionListResult.UnsupportedResidual(result.reasons)
