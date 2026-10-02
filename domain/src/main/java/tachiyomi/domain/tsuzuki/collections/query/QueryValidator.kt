@@ -64,9 +64,12 @@ object QueryValidator {
             -> {
                 val isNumeric = value is QueryValue.IntegerValue || value is QueryValue.DoubleValue
                 val isTemporal = value is QueryValue.RelativeTemporal
-                if (!isNumeric && !isTemporal) {
+                val isDateString =
+                    field in setOf(QueryField.START_DATE, QueryField.END_DATE) &&
+                        value is QueryValue.StringValue
+                if (!isNumeric && !isTemporal && !isDateString) {
                     errors.add(
-                        "Numeric comparison operator ${operator.name} requires a numeric or temporal value, but got ${value::class.simpleName}",
+                        "Ordered comparison ${operator.name} requires numeric/temporal data or an ISO date string for date fields, but got ${value::class.simpleName}",
                     )
                 }
             }
