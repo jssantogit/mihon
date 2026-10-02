@@ -36,6 +36,56 @@ data class ExecuteCollectionListRequest(
     }
 }
 
+data class CollectionListDraftExecution(
+    val providerId: String,
+    val query: tachiyomi.domain.tsuzuki.collections.query.QueryExpression?,
+    val sort: CollectionSortSelection,
+) {
+    init {
+        require(providerId.isNotBlank()) { "Collection draft providerId cannot be blank" }
+    }
+}
+
+data class ExecuteCollectionDraftRequest(
+    val draft: CollectionListDraftExecution,
+    val pageSize: Int = 6,
+    val cursor: ResidualPageCursor = ResidualPageCursor(),
+    val cachePolicy: CollectionExecutionCachePolicy = CollectionExecutionCachePolicy(),
+    val priority: QuerySchedulePriority = QuerySchedulePriority.VISIBLE,
+) {
+    init {
+        require(pageSize > 0) { "Collection draft page size must be positive" }
+    }
+}
+
+sealed interface ExecuteCollectionDraftResult {
+    data class Page(
+        val page: LogicalCatalogPage,
+    ) : ExecuteCollectionDraftResult
+
+    data class ProviderUnavailable(
+        val providerId: String,
+    ) : ExecuteCollectionDraftResult
+
+    data class UnsupportedGlobalSort(
+        val sort: CollectionSortSelection,
+    ) : ExecuteCollectionDraftResult
+
+    data class UnsupportedResidual(
+        val reasons: List<String>,
+    ) : ExecuteCollectionDraftResult
+
+    data object CacheMiss : ExecuteCollectionDraftResult
+
+    data class ProviderFailure(
+        val cause: Throwable,
+    ) : ExecuteCollectionDraftResult
+
+    data class PaginationInvariantFailure(
+        val reason: String,
+    ) : ExecuteCollectionDraftResult
+}
+
 sealed interface ExecuteCollectionListResult {
     data class Page(
         val list: CollectionList,
