@@ -1,8 +1,10 @@
 package tachiyomi.domain.tsuzuki.catalog.cache
 
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -49,6 +51,76 @@ class RatingEnrichmentCacheTest {
         first.await()?.rating?.value shouldBe 8.4
         second.await()?.rating?.value shouldBe 8.4
         provider.ratingCalls shouldBe 1
+    }
+
+    @Test
+    fun `canceling the last rating waiter cancels orphaned provider work`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val providerCancelled = CompletableDeferred<Unit>()
+        val provider = CountingRatingsProvider(
+            ratingGate = gate,
+            onRatingCancelled = { providerCancelled.complete(Unit) },
+        )
+        val cache = cache()
+        val identified = item(externalIds = mapOf("mal" to "m1"))
+
+        val waiter = async {
+            cache.ratingFor(identified, provider, "cfg")
+        }
+        runCurrent()
+        provider.ratingCalls shouldBe 1
+
+        waiter.cancelAndJoin()
+        runCurrent()
+
+        providerCancelled.isCompleted shouldBe true
+    }
+
+    @Test
+    fun `canceling one shared rating waiter keeps provider work for the remaining waiter`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val providerCancelled = CompletableDeferred<Unit>()
+        val provider = CountingRatingsProvider(
+            ratingGate = gate,
+            onRatingCancelled = { providerCancelled.complete(Unit) },
+        )
+        val cache = cache()
+        val identified = item(externalIds = mapOf("mal" to "m1"))
+
+        val first = async { cache.ratingFor(identified, provider, "cfg") }
+        val second = async { cache.ratingFor(identified, provider, "cfg") }
+        runCurrent()
+        provider.ratingCalls shouldBe 1
+
+        first.cancelAndJoin()
+        runCurrent()
+        providerCancelled.isCompleted shouldBe false
+
+        gate.complete(Unit)
+        second.await().getOrThrow()?.rating?.value shouldBe 8.4
+        providerCancelled.isCompleted shouldBe false
+    }
+
+    @Test
+    fun `a new waiter restarts provider work after an orphaned request was cancelled`() = runTest {
+        val firstGate = CompletableDeferred<Unit>()
+        val providerCancelled = CompletableDeferred<Unit>()
+        val provider = CountingRatingsProvider(
+            ratingGate = firstGate,
+            onRatingCancelled = { providerCancelled.complete(Unit) },
+        )
+        val cache = cache()
+        val identified = item(externalIds = mapOf("mal" to "m1"))
+
+        val first = async { cache.ratingFor(identified, provider, "cfg") }
+        runCurrent()
+        first.cancelAndJoin()
+        runCurrent()
+        providerCancelled.isCompleted shouldBe true
+
+        provider.ratingGate = null
+        cache.ratingFor(identified, provider, "cfg").getOrThrow()?.rating?.value shouldBe 8.4
+        provider.ratingCalls shouldBe 2
     }
 
     @Test
@@ -106,7 +178,8 @@ class RatingEnrichmentCacheTest {
     )
 
     private class CountingRatingsProvider(
-        private val ratingGate: CompletableDeferred<Unit>? = null,
+        var ratingGate: CompletableDeferred<Unit>? = null,
+        private val onRatingCancelled: () -> Unit = {},
         private val match: CatalogRatingMatch? = CatalogRatingMatch(
             externalId = "m1",
             rating = ExternalRating(
@@ -131,7 +204,12 @@ class RatingEnrichmentCacheTest {
 
         override suspend fun ratingFor(item: CatalogItem): Result<CatalogRatingMatch?> {
             ratingCalls++
-            ratingGate?.await()
+            try {
+                ratingGate?.await()
+            } catch (error: CancellationException) {
+                onRatingCancelled()
+                throw error
+            }
             return Result.success(match)
         }
     }
