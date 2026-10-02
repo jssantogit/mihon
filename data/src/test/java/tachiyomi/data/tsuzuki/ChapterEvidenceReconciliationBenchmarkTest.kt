@@ -35,7 +35,7 @@ import java.lang.reflect.Proxy
 import java.nio.file.Files
 import java.util.Locale
 
-/** Opt-in SQLDelight in-memory benchmark. Set TSUZUKI_CHAPTER_BENCHMARK=true to execute. */
+/** Opt-in SQLDelight in-memory benchmark. Set TSUZUKI_CHAPTER_BENCHMARK=true to execute. Final V2 comparison uses this same workload. */
 class ChapterEvidenceReconciliationBenchmarkTest {
 
     private lateinit var driver: SqlDriver
