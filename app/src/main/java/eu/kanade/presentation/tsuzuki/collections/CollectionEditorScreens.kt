@@ -48,6 +48,7 @@ import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import java.util.UUID
@@ -55,6 +56,7 @@ import java.util.UUID
 @Composable
 internal fun CollectionEditorScreen(
     graph: CollectionUiModel?,
+    providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
@@ -78,6 +80,7 @@ internal fun CollectionEditorScreen(
                     parentFolderId = null,
                     existing = null,
                     initialDraft = null,
+                    providerDescriptors = providerDescriptors,
                     draftPreviewState = draftPreviewState,
                     onSubmitDraft = { draft ->
                         draftFolders = draftFolders + DraftFolderEntry(
@@ -127,6 +130,7 @@ internal fun CollectionEditorScreen(
                         existing = null,
                         initialDraft = null,
                         onSubmitDraft = null,
+                        providerDescriptors = providerDescriptors,
                         draftPreviewState = draftPreviewState,
                         onAction = onAction,
                         onDelete = onDelete,
@@ -146,6 +150,7 @@ internal fun CollectionEditorScreen(
                         existing = model,
                         initialDraft = null,
                         onSubmitDraft = null,
+                        providerDescriptors = providerDescriptors,
                         draftPreviewState = draftPreviewState,
                         onAction = onAction,
                         onDelete = onDelete,
@@ -356,6 +361,7 @@ internal fun FolderEditorScreen(
     existing: CollectionFolderUiModel?,
     initialDraft: CollectionFolderDraft?,
     onSubmitDraft: ((CollectionFolderDraft) -> Unit)?,
+    providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
@@ -393,6 +399,7 @@ internal fun FolderEditorScreen(
         ListBuilderScreen(
             title = if (target is FolderListEditorTarget.New) "New List" else "Edit List",
             initial = initial,
+            providerDescriptors = providerDescriptors,
             previewState = draftPreviewState,
             onPreviewDraft = { draft ->
                 onAction(CollectionsAction.PreviewDraftChanged(draft))
