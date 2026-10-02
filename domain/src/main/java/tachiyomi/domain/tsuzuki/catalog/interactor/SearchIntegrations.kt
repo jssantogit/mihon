@@ -184,7 +184,16 @@ class SearchIntegrations(
         configurationFingerprint: String,
         semaphore: Semaphore,
     ): CatalogItem = coroutineScope {
-        val resolvedIdentities = providers
+        val existingScores = item.scores
+            .ifEmpty { listOfNotNull(item.score) }
+            .filter { score -> score.provider in activeProviderIds }
+            .distinctBy(CatalogScore::provider)
+        val existingProviders = existingScores.map(CatalogScore::provider).toSet()
+        val providersNeedingRating = providers.filterNot { provider ->
+            provider.integrationId.value in existingProviders
+        }
+
+        val resolvedIdentities = providersNeedingRating
             .map { provider ->
                 async {
                     try {
@@ -210,14 +219,8 @@ class SearchIntegrations(
             }
 
         val identifiedItem = item.copy(externalIds = resolvedIdentities)
-        val existingScores = item.scores
-            .ifEmpty { listOfNotNull(item.score) }
-            .filter { score -> score.provider in activeProviderIds }
-            .distinctBy(CatalogScore::provider)
-        val existingProviders = existingScores.map(CatalogScore::provider).toSet()
 
-        val matches = providers
-            .filterNot { provider -> provider.integrationId.value in existingProviders }
+        val matches = providersNeedingRating
             .map { provider ->
                 async {
                     localRatingMatch(
