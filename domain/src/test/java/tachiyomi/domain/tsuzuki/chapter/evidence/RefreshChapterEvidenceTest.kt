@@ -1183,7 +1183,26 @@ class RefreshChapterEvidenceTest {
         val resolver = mockk<ResolveContentBinding>()
         onResolver(resolver)
         val bindingResult: Result<List<ContentBinding>> = bindingError?.let { Result.failure(it) }
-            ?: Result.success(if (bindingAvailable) listOf(mockk<ContentBinding>()) else emptyList())
+            ?: Result.success(
+                if (bindingAvailable) {
+                    listOf(
+                        ContentBinding(
+                            id = "fixture-binding",
+                            canonicalTitleId = "canonical-title",
+                            addonId = addonId,
+                            providerTitleKey = "1:/fixture",
+                            matchConfidence = 1.0,
+                            verifiedByUser = true,
+                            availability = ContentBindingAvailability.AVAILABLE,
+                            runtimePayload = byteArrayOf(1),
+                            createdAt = 1L,
+                            updatedAt = 1L,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                },
+            )
         coEvery { resolver.existingBindingsForRefresh("canonical-title", addonId) } returns bindingResult
 
         return RefreshChapterEvidence(
