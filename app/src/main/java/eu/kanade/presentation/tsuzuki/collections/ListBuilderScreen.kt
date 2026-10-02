@@ -420,6 +420,8 @@ private fun QuickListBuilder(
                                 capability = capability,
                                 editor = editor,
                                 onEditorChange = onEditorChange,
+                                filterLookupStates = filterLookupStates,
+                                onFilterLookup = onFilterLookup,
                                 modifier = Modifier.padding(top = 10.dp),
                             )
                         }
@@ -714,6 +716,8 @@ private fun AdvancedListFilters(
                                 capability = capability,
                                 editor = editor,
                                 onEditorChange = onEditorChange,
+                                filterLookupStates = filterLookupStates,
+                                onFilterLookup = onFilterLookup,
                                 modifier = if (index == 0) Modifier else Modifier.padding(top = 12.dp),
                             )
                         }
@@ -883,6 +887,8 @@ private fun DescriptorFilterControl(
     capability: CollectionFilterCapability,
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState>,
+    onFilterLookup: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val predicate = editor.extraTerms
