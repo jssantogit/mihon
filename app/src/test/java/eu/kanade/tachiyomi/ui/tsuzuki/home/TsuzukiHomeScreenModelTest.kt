@@ -112,7 +112,7 @@ class TsuzukiHomeScreenModelTest {
     @Test
     fun `continue reading prefers persisted canonical provider artwork over source fallback`() = runTest(dispatcher) {
         val resolver = mockk<ResolveCanonicalSourceManga>()
-        coEvery { resolver.execute("title-1") } returns Manga.create().copy(
+        coEvery { resolver.execute("title-1", allowNetwork = false) } returns Manga.create().copy(
             id = 77L,
             source = 10L,
             url = "/dandadan",
@@ -141,6 +141,7 @@ class TsuzukiHomeScreenModelTest {
         val item = model.state.value.continueReading.single()
         item.coverUrl shouldBe "https://kitsu.example/dandadan.jpg"
         item.sourceCover?.url shouldBe "https://source.example/dandadan.jpg"
+        coVerify(exactly = 0) { resolver.execute("title-1", allowNetwork = true) }
     }
 
     @Test
