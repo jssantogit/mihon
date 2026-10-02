@@ -395,7 +395,7 @@ private fun AdvancedListFilters(
             }
 
             item(key = "genres_tags") {
-                AdvancedSection("GENRES & TAGS") {
+                AdvancedSection(if (editor.providerId.equals("kitsu", ignoreCase = true)) "GENRES" else "GENRES & TAGS") {
                     OutlinedTextField(
                         modifier = Modifier.fillMaxWidth(),
                         value = editor.includeGenre,
@@ -404,39 +404,43 @@ private fun AdvancedListFilters(
                         placeholder = { Text("e.g. Action") },
                         singleLine = true,
                     )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.excludeGenre,
-                        onValueChange = { onEditorChange(editor.copy(excludeGenre = it)) },
-                        label = { Text("Exclude genre") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.includeTag,
-                        onValueChange = { onEditorChange(editor.copy(includeTag = it)) },
-                        label = { Text("Include tag") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.excludeTag,
-                        onValueChange = { onEditorChange(editor.copy(excludeTag = it)) },
-                        label = { Text("Exclude tag") },
-                        singleLine = true,
-                    )
-                    Text(
-                        text = "Include uses provider-neutral CONTAINS semantics; exclude is stored as NOT(CONTAINS).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                    if (!editor.providerId.equals("kitsu", ignoreCase = true)) {
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.excludeGenre,
+                            onValueChange = { onEditorChange(editor.copy(excludeGenre = it)) },
+                            label = { Text("Exclude genre") },
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.includeTag,
+                            onValueChange = { onEditorChange(editor.copy(includeTag = it)) },
+                            label = { Text("Include tag") },
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.excludeTag,
+                            onValueChange = { onEditorChange(editor.copy(excludeTag = it)) },
+                            label = { Text("Exclude tag") },
+                            singleLine = true,
+                        )
+                    } else {
+                        Text(
+                            text = "Kitsu supports positive genre filtering. Exclusions and tags stay hidden until " +
+                                "their provider semantics are executable without scanning missing metadata.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                 }
             }
 
