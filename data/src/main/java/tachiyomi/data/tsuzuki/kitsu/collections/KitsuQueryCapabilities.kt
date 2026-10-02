@@ -108,41 +108,6 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         ),
     )
 
-    override fun canPushSort(sort: CollectionSortSelection): Boolean = when (sort.key) {
-        CollectionSortKey.Standard.POPULARITY,
-        CollectionSortKey.Standard.RATING,
-        -> sort.direction != null
-
-        CollectionSortKey.Standard.UPDATED -> sort.direction == CollectionSortDirection.DESC
-        CollectionSortKey.Standard.RELEVANCE,
-        is CollectionSortKey.Provider,
-        -> false
-    }
-
-    override fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean {
-        val stringValue = value as? QueryValue.StringValue ?: return false
-        val normalized = stringValue.value.trim()
-        if (normalized.isEmpty()) return false
-
-        return when (field) {
-            QueryField.STATUS -> {
-                operator == QueryOperator.EQUALS &&
-                    normalized.uppercase() in KITSU_STATUS_VALUES
-            }
-
-            QueryField.WORK_TYPE -> {
-                operator == QueryOperator.EQUALS &&
-                    normalized.uppercase() in KITSU_FORMAT_VALUES
-            }
-
-            QueryField.GENRE -> {
-                operator in setOf(QueryOperator.EQUALS, QueryOperator.CONTAINS)
-            }
-
-            else -> false
-        }
-    }
-
     override fun canPushExpression(expression: QueryExpression): Boolean = when (expression) {
         is QueryExpression.Predicate -> canPushPredicate(
             field = expression.field,
@@ -168,11 +133,6 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         is QueryExpression.Not,
         -> false
     }
-
-    private val KITSU_STATUS_VALUES = setOf(
-        CatalogItemStatus.ONGOING.name,
-        CatalogItemStatus.COMPLETED.name,
-    )
 
     private val KITSU_FORMAT_VALUES = setOf(
         CatalogItemFormat.MANGA.name,
