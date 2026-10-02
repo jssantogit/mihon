@@ -196,100 +196,100 @@ object MangaUpdatesCollectionCapabilities : ProviderQueryCapabilities {
 
     private val MANGA_UPDATES_RELEASE_FILTERS
         get() = listOf(
-        "scanlated",
-        "completed",
-        "oneshots",
-        "no_oneshots",
-        "some_releases",
-        "no_releases",
-    )
+            "scanlated",
+            "completed",
+            "oneshots",
+            "no_oneshots",
+            "some_releases",
+            "no_releases",
+        )
 
     private val MANGA_UPDATES_SORTS
         get() = listOf(
-        "score" to "Score",
-        "title" to "Title",
-        "rank" to "Rank",
-        "rating" to "Rating",
-        "year" to "Year",
-        "date_added" to "Date added",
-        "week_pos" to "Weekly popularity",
-        "month1_pos" to "Monthly popularity",
-        "month3_pos" to "3-month popularity",
-        "month6_pos" to "6-month popularity",
-        "year_pos" to "Yearly popularity",
-        "list_reading" to "Reading-list popularity",
-        "list_wish" to "Wish-list popularity",
-        "list_complete" to "Complete-list popularity",
-        "list_unfinished" to "Unfinished-list popularity",
+            "score" to "Score",
+            "title" to "Title",
+            "rank" to "Rank",
+            "rating" to "Rating",
+            "year" to "Year",
+            "date_added" to "Date added",
+            "week_pos" to "Weekly popularity",
+            "month1_pos" to "Monthly popularity",
+            "month3_pos" to "3-month popularity",
+            "month6_pos" to "6-month popularity",
+            "year_pos" to "Yearly popularity",
+            "list_reading" to "Reading-list popularity",
+            "list_wish" to "Wish-list popularity",
+            "list_complete" to "Complete-list popularity",
+            "list_unfinished" to "Unfinished-list popularity",
         )
-}
+            }
 
-object MangaUpdatesCollectionCompiler {
+            object MangaUpdatesCollectionCompiler {
 
-    fun compile(
-        pushdownExpression: QueryExpression?,
-        sort: CollectionSortSelection,
-    ): MangaUpdatesCollectionQuery {
-        require(MangaUpdatesCollectionCapabilities.canPushSort(sort)) {
+            fun compile(
+            pushdownExpression: QueryExpression?,
+            sort: CollectionSortSelection,
+            ): MangaUpdatesCollectionQuery {
+            require(MangaUpdatesCollectionCapabilities.canPushSort(sort)) {
             "Unsupported MangaUpdates Collection sort: $sort"
-        }
-        if (pushdownExpression != null) {
+            }
+            if (pushdownExpression != null) {
             require(MangaUpdatesCollectionCapabilities.canPushExpression(pushdownExpression)) {
-                "Unsupported MangaUpdates Collection pushdown: ${pushdownExpression.toCanonicalString()}"
+            "Unsupported MangaUpdates Collection pushdown: ${pushdownExpression.toCanonicalString()}"
             }
-        }
+            }
 
-        var type: String? = null
-        var category: String? = null
-        var licensed: Boolean? = null
-        var releaseFilter: String? = null
-        var genre: String? = null
-        var excludeGenre: String? = null
+            var type: String? = null
+            var category: String? = null
+            var licensed: Boolean? = null
+            var releaseFilter: String? = null
+            var genre: String? = null
+            var excludeGenre: String? = null
 
-        fun collect(expression: QueryExpression) {
+            fun collect(expression: QueryExpression) {
             when (expression) {
-                is QueryExpression.Predicate -> {
-                    when (expression.field) {
-                        QueryField.WORK_TYPE -> {
-                            val value = (expression.value as QueryValue.StringValue).value
-                            type = when (value.uppercase()) {
-                                CatalogItemFormat.MANGA.name -> "Manga"
-                                CatalogItemFormat.MANHWA.name -> "Manhwa"
-                                CatalogItemFormat.MANHUA.name -> "Manhua"
-                                CatalogItemFormat.DOUJIN.name -> "Doujinshi"
-                                CatalogItemFormat.NOVEL.name -> "Novel"
-                                else -> error("Unsupported MangaUpdates work type '$value'")
-                            }
-                        }
-                        QueryField.GENRE -> {
-                            genre = (expression.value as QueryValue.StringValue).value
-                        }
-                        QueryField.CATEGORY -> {
-                            category = (expression.value as QueryValue.StringValue).value
-                        }
-                        QueryField.Custom("mangaupdates.licensed") -> {
-                            licensed = (expression.value as QueryValue.BooleanValue).value
-                        }
-                        QueryField.Custom("mangaupdates.release_filter") -> {
-                            releaseFilter = (expression.value as QueryValue.StringValue).value
-                        }
-                        else -> error(
-                            "Capability/compiler disagreement for ${expression.field.identifier}",
-                        )
-                    }
-                }
-                is QueryExpression.Not -> {
-                    val predicate = expression.expression as QueryExpression.Predicate
-                    excludeGenre = (predicate.value as QueryValue.StringValue).value
-                }
-                is QueryExpression.All -> expression.expressions.forEach(::collect)
-                is QueryExpression.Any -> error("ANY cannot reach MangaUpdates compiler")
+            is QueryExpression.Predicate -> {
+            when (expression.field) {
+            QueryField.WORK_TYPE -> {
+            val value = (expression.value as QueryValue.StringValue).value
+            type = when (value.uppercase()) {
+            CatalogItemFormat.MANGA.name -> "Manga"
+            CatalogItemFormat.MANHWA.name -> "Manhwa"
+            CatalogItemFormat.MANHUA.name -> "Manhua"
+            CatalogItemFormat.DOUJIN.name -> "Doujinshi"
+            CatalogItemFormat.NOVEL.name -> "Novel"
+            else -> error("Unsupported MangaUpdates work type '$value'")
             }
-        }
+            }
+            QueryField.GENRE -> {
+            genre = (expression.value as QueryValue.StringValue).value
+            }
+            QueryField.CATEGORY -> {
+            category = (expression.value as QueryValue.StringValue).value
+            }
+            QueryField.Custom("mangaupdates.licensed") -> {
+            licensed = (expression.value as QueryValue.BooleanValue).value
+            }
+            QueryField.Custom("mangaupdates.release_filter") -> {
+            releaseFilter = (expression.value as QueryValue.StringValue).value
+            }
+            else -> error(
+            "Capability/compiler disagreement for ${expression.field.identifier}",
+        )
+            }
+            }
+            is QueryExpression.Not -> {
+            val predicate = expression.expression as QueryExpression.Predicate
+            excludeGenre = (predicate.value as QueryValue.StringValue).value
+            }
+            is QueryExpression.All -> expression.expressions.forEach(::collect)
+            is QueryExpression.Any -> error("ANY cannot reach MangaUpdates compiler")
+            }
+            }
 
-        pushdownExpression?.let(::collect)
-        val key = sort.key as CollectionSortKey.Provider
-        return MangaUpdatesCollectionQuery(
+            pushdownExpression?.let(::collect)
+            val key = sort.key as CollectionSortKey.Provider
+            return MangaUpdatesCollectionQuery(
             type = type,
             category = category,
             licensed = licensed,
@@ -300,12 +300,12 @@ object MangaUpdatesCollectionCompiler {
             page = 1,
             perPage = 50,
         )
-    }
-}
+            }
+            }
 
-@SingleIn(AppScope::class)
-@ContributesIntoSet(AppScope::class, binding = binding<CollectionQueryProvider>())
-class MangaUpdatesCollectionQueryProvider private constructor(
+            @SingleIn(AppScope::class)
+            @ContributesIntoSet(AppScope::class, binding = binding<CollectionQueryProvider>())
+            class MangaUpdatesCollectionQueryProvider private constructor(
     private val api: MangaUpdatesIntegrationApi,
 ) : CollectionQueryProvider {
 
