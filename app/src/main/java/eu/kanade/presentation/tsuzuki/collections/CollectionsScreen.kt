@@ -169,6 +169,38 @@ fun CollectionsScreen(
             } != null
         }
 
+        is EditorDialog.CreateList -> {
+            ListBuilderScreen(
+                title = "New List",
+                initial = ListEditorState.empty(),
+                onClose = { editor = null },
+                onConfirm = { draft ->
+                    onAction(
+                        CollectionsAction.CreateList(
+                            collectionId = currentEditor.collectionId,
+                            folderId = currentEditor.folderId,
+                            draft = draft,
+                        ),
+                    )
+                    editor = null
+                },
+            )
+            true
+        }
+
+        is EditorDialog.EditList -> {
+            ListBuilderScreen(
+                title = "Edit List",
+                initial = ListEditorState.from(currentEditor.list),
+                onClose = { editor = null },
+                onConfirm = { draft ->
+                    onAction(CollectionsAction.UpdateList(currentEditor.list, draft))
+                    editor = null
+                },
+            )
+            true
+        }
+
         else -> false
     }
 
@@ -1264,8 +1296,13 @@ internal data class ListEditorState(
     val title: String,
     val sort: CatalogSort,
     val layoutType: String?,
+    val providerId: String,
     val status: String?,
     val format: String?,
+    val includeGenre: String,
+    val excludeGenre: String,
+    val includeTag: String,
+    val excludeTag: String,
     val minScore: String,
     val minChapters: String,
     val minVolumes: String,
@@ -1294,6 +1331,46 @@ internal data class ListEditorState(
                             QueryField.WORK_TYPE,
                             QueryOperator.EQUALS,
                             QueryValue.of(it),
+                        ),
+                    )
+                }
+                includeGenre.trim().takeIf(String::isNotEmpty)?.let {
+                    add(
+                        QueryExpression.Predicate(
+                            QueryField.GENRE,
+                            QueryOperator.CONTAINS,
+                            QueryValue.of(it),
+                        ),
+                    )
+                }
+                excludeGenre.trim().takeIf(String::isNotEmpty)?.let {
+                    add(
+                        QueryExpression.Not(
+                            QueryExpression.Predicate(
+                                QueryField.GENRE,
+                                QueryOperator.CONTAINS,
+                                QueryValue.of(it),
+                            ),
+                        ),
+                    )
+                }
+                includeTag.trim().takeIf(String::isNotEmpty)?.let {
+                    add(
+                        QueryExpression.Predicate(
+                            QueryField.TAG,
+                            QueryOperator.CONTAINS,
+                            QueryValue.of(it),
+                        ),
+                    )
+                }
+                excludeTag.trim().takeIf(String::isNotEmpty)?.let {
+                    add(
+                        QueryExpression.Not(
+                            QueryExpression.Predicate(
+                                QueryField.TAG,
+                                QueryOperator.CONTAINS,
+                                QueryValue.of(it),
+                            ),
                         ),
                     )
                 }
@@ -1338,6 +1415,7 @@ internal data class ListEditorState(
             query = query,
             sort = sort,
             layoutType = layoutType,
+            providerId = providerId,
         )
     }
 
@@ -1346,8 +1424,13 @@ internal data class ListEditorState(
             title = "",
             sort = CatalogSort.POPULARITY_DESC,
             layoutType = null,
+            providerId = "kitsu",
             status = null,
             format = null,
+            includeGenre = "",
+            excludeGenre = "",
+            includeTag = "",
+            excludeTag = "",
             minScore = "",
             minChapters = "",
             minVolumes = "",
@@ -1361,8 +1444,13 @@ internal data class ListEditorState(
                 title = list.title,
                 sort = list.sort,
                 layoutType = list.layoutType,
+                providerId = list.providerId,
                 status = parsed?.status,
                 format = parsed?.format,
+                includeGenre = parsed?.includeGenre.orEmpty(),
+                excludeGenre = parsed?.excludeGenre.orEmpty(),
+                includeTag = parsed?.includeTag.orEmpty(),
+                excludeTag = parsed?.excludeTag.orEmpty(),
                 minScore = parsed?.minScore.orEmpty(),
                 minChapters = parsed?.minChapters.orEmpty(),
                 minVolumes = parsed?.minVolumes.orEmpty(),
@@ -1377,8 +1465,13 @@ internal data class ListEditorState(
                 title = draft.title,
                 sort = draft.sort,
                 layoutType = draft.layoutType,
+                providerId = draft.providerId,
                 status = parsed?.status,
                 format = parsed?.format,
+                includeGenre = parsed?.includeGenre.orEmpty(),
+                excludeGenre = parsed?.excludeGenre.orEmpty(),
+                includeTag = parsed?.includeTag.orEmpty(),
+                excludeTag = parsed?.excludeTag.orEmpty(),
                 minScore = parsed?.minScore.orEmpty(),
                 minChapters = parsed?.minChapters.orEmpty(),
                 minVolumes = parsed?.minVolumes.orEmpty(),
@@ -1392,54 +1485,98 @@ internal data class ListEditorState(
 private data class ParsedSimpleQuery(
     val status: String? = null,
     val format: String? = null,
+    val includeGenre: String? = null,
+    val excludeGenre: String? = null,
+    val includeTag: String? = null,
+    val excludeTag: String? = null,
     val minScore: String? = null,
     val minChapters: String? = null,
     val minVolumes: String? = null,
 )
 
+private data class ParsedSimpleTerm(
+    val predicate: QueryExpression.Predicate,
+    val negated: Boolean,
+)
+
 private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
     if (expression == null) return ParsedSimpleQuery()
 
-    val predicates = when (expression) {
-        is QueryExpression.Predicate -> listOf(expression)
-        is QueryExpression.All -> expression.expressions.map {
-            it as? QueryExpression.Predicate ?: return null
+    fun parseTerm(candidate: QueryExpression): ParsedSimpleTerm? = when (candidate) {
+        is QueryExpression.Predicate -> ParsedSimpleTerm(candidate, negated = false)
+        is QueryExpression.Not -> {
+            val predicate = candidate.expression as? QueryExpression.Predicate ?: return null
+            ParsedSimpleTerm(predicate, negated = true)
         }
+        else -> null
+    }
+
+    val terms = when (expression) {
+        is QueryExpression.Predicate,
+        is QueryExpression.Not,
+        -> listOf(parseTerm(expression) ?: return null)
+        is QueryExpression.All -> expression.expressions.map { parseTerm(it) ?: return null }
         else -> return null
     }
 
     var result = ParsedSimpleQuery()
-    val seen = mutableSetOf<QueryField>()
+    val seen = mutableSetOf<Pair<QueryField, Boolean>>()
 
-    for (predicate in predicates) {
-        if (!seen.add(predicate.field)) return null
+    for (term in terms) {
+        val predicate = term.predicate
+        if (!seen.add(predicate.field to term.negated)) return null
         val value = predicate.value
 
         result = when {
-            predicate.field == QueryField.STATUS &&
+            !term.negated &&
+                predicate.field == QueryField.STATUS &&
                 predicate.operator == QueryOperator.EQUALS &&
                 value is QueryValue.StringValue -> {
                 result.copy(status = value.value)
             }
 
-            predicate.field == QueryField.WORK_TYPE &&
+            !term.negated &&
+                predicate.field == QueryField.WORK_TYPE &&
                 predicate.operator == QueryOperator.EQUALS &&
                 value is QueryValue.StringValue -> {
                 result.copy(format = value.value)
             }
 
-            predicate.field == QueryField.SCORE &&
+            predicate.field == QueryField.GENRE &&
+                predicate.operator == QueryOperator.CONTAINS &&
+                value is QueryValue.StringValue -> {
+                if (term.negated) {
+                    result.copy(excludeGenre = value.value)
+                } else {
+                    result.copy(includeGenre = value.value)
+                }
+            }
+
+            predicate.field == QueryField.TAG &&
+                predicate.operator == QueryOperator.CONTAINS &&
+                value is QueryValue.StringValue -> {
+                if (term.negated) {
+                    result.copy(excludeTag = value.value)
+                } else {
+                    result.copy(includeTag = value.value)
+                }
+            }
+
+            !term.negated &&
+                predicate.field == QueryField.SCORE &&
                 predicate.operator == QueryOperator.GREATER_OR_EQUAL -> {
                 result.copy(minScore = numericText(value) ?: return null)
             }
 
-            predicate.field == QueryField.CHAPTER_COUNT &&
+            !term.negated &&
+                predicate.field == QueryField.CHAPTER_COUNT &&
                 predicate.operator == QueryOperator.GREATER_OR_EQUAL &&
                 value is QueryValue.IntegerValue -> {
                 result.copy(minChapters = value.value.toString())
             }
 
-            predicate.field == QueryField.VOLUME_COUNT &&
+            !term.negated &&
+                predicate.field == QueryField.VOLUME_COUNT &&
                 predicate.operator == QueryOperator.GREATER_OR_EQUAL &&
                 value is QueryValue.IntegerValue -> {
                 result.copy(minVolumes = value.value.toString())
@@ -1481,7 +1618,7 @@ internal data class DeleteTarget(
 private const val COLLECTION_LIST_HEADER_COUNT = 1
 private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
 
-private val SUPPORTED_SORTS = listOf(
+internal val SUPPORTED_SORTS = listOf(
     CatalogSort.POPULARITY_DESC,
     CatalogSort.POPULARITY_ASC,
     CatalogSort.RATING_DESC,
