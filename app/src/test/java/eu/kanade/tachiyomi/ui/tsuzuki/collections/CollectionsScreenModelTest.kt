@@ -1,7 +1,7 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.collections
 
 import io.mockk.coEvery
-import io.mockk.coVerifyOrder
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +39,7 @@ class CollectionsScreenModelTest {
     }
 
     @Test
-    fun `moving a collection across multiple positions persists the displayed order`() = runTest(dispatcher) {
+    fun `drag reorder persists the exact displayed collection order`() = runTest(dispatcher) {
         val first = collection(id = "first", sortOrder = 10)
         val second = collection(id = "second", sortOrder = 20)
         val third = collection(id = "third", sortOrder = 30)
@@ -50,11 +50,7 @@ class CollectionsScreenModelTest {
         every { store.observeFolders(any()) } returns flowOf(emptyList())
 
         val manager = mockk<ManageCollectionDefinitions>()
-        coEvery { manager.reorderCollection(any(), any()) } answers {
-            val id = firstArg<String>()
-            val sortOrder = secondArg<Long>()
-            source.first { it.id == id }.copy(sortOrder = sortOrder)
-        }
+        coEvery { manager.reorderUserCollections(any()) } returns Unit
 
         val model = CollectionsScreenModel(
             store = store,
@@ -65,13 +61,15 @@ class CollectionsScreenModelTest {
         )
         advanceUntilIdle()
 
-        model.dispatch(CollectionsAction.MoveCollection(first, delta = 2))
+        model.dispatch(
+            CollectionsAction.ReorderCollections(
+                orderedCollectionIds = listOf("third", "first", "second"),
+            ),
+        )
         advanceUntilIdle()
 
-        coVerifyOrder {
-            manager.reorderCollection("second", 10)
-            manager.reorderCollection("third", 20)
-            manager.reorderCollection("first", 30)
+        coVerify(exactly = 1) {
+            manager.reorderUserCollections(listOf("third", "first", "second"))
         }
     }
 
