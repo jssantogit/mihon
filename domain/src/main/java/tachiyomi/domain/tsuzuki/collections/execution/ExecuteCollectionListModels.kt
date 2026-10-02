@@ -42,6 +42,14 @@ sealed interface ExecuteCollectionListResult {
         val page: LogicalCatalogPage,
     ) : ExecuteCollectionListResult
 
+    data class ScanBudgetReached(
+        val list: CollectionList,
+        val page: LogicalCatalogPage,
+        val reason: ResidualScanBudgetReason,
+        val rawItemsScanned: Int,
+        val remoteRequests: Int,
+    ) : ExecuteCollectionListResult
+
     data class DefinitionUnavailable(
         val listId: String,
         val reason: String,
