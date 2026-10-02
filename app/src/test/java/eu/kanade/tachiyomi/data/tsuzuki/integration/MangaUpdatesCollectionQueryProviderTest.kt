@@ -9,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -91,6 +92,29 @@ class MangaUpdatesCollectionQueryProviderTest {
         result.hasNextPage shouldBe true
         result.totalCount shouldBe 12
         calls.isNotEmpty() shouldBe true
+    }
+
+    @Test
+    fun `provider exposes dynamic genre and category lookups`() = runTest {
+        val api = object : MangaUpdatesIntegrationApi {
+            override suspend fun search(query: String): List<TrackSearch> = emptyList()
+            override suspend fun discover(orderBy: String, offset: Int, limit: Int): List<TrackSearch> = emptyList()
+            override suspend fun getMangaDetails(id: Long): TrackSearch = track(id)
+            override suspend fun lookupGenres(): List<Pair<String, String>> =
+                listOf("Romance" to "Romance")
+            override suspend fun lookupCategories(query: String): List<Pair<String, String>> {
+                query shouldBe "award"
+                return listOf("Award Winning" to "Award Winning")
+            }
+        }
+        val provider = MangaUpdatesCollectionQueryProvider.forTest(api)
+
+        provider.lookupValues("mangaupdates.genres").getOrThrow() shouldContainExactly listOf(
+            FilterOption("Romance", "Romance", QueryValue.of("Romance")),
+        )
+        provider.lookupValues("mangaupdates.categories", "award").getOrThrow() shouldContainExactly listOf(
+            FilterOption("Award Winning", "Award Winning", QueryValue.of("Award Winning")),
+        )
     }
 
     @Test
