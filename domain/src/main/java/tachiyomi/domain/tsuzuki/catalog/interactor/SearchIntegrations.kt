@@ -34,6 +34,9 @@ class SearchIntegrations(
     private val baseSearchCache: BaseCatalogSearchCache = BaseCatalogSearchCache(),
 ) {
 
+    private val ratingLookupGate = Semaphore(RATING_LOOKUP_CONCURRENCY)
+    private val itemEnrichmentGate = Semaphore(ITEM_ENRICHMENT_CONCURRENCY)
+
     suspend fun execute(query: CatalogQuery): List<CatalogItem> =
         enrichRatings(executeBase(query))
 
@@ -145,10 +148,8 @@ class SearchIntegrations(
 
         val activeProviderIds = providers.map { it.integrationId.value }.toSet()
         val configurationFingerprint = registry.configurationFingerprint()
-        val semaphore = Semaphore(RATING_LOOKUP_CONCURRENCY)
         val publishMutex = Mutex()
 
-        val itemGate = Semaphore(ITEM_ENRICHMENT_CONCURRENCY)
         val preparedItems = items.map { item ->
             item.withRatingScores(item.activeScores(activeProviderIds))
         }
@@ -162,14 +163,14 @@ class SearchIntegrations(
         preparedItems.indices
             .map { index ->
                 async {
-                    val enriched = itemGate.withPermit {
+                    val enriched = itemEnrichmentGate.withPermit {
                         enrichRatingItem(
                             item = preparedItems[index],
                             candidates = preparedItems,
                             providers = providers,
                             activeProviderIds = activeProviderIds,
                             configurationFingerprint = configurationFingerprint,
-                            semaphore = semaphore,
+                            semaphore = ratingLookupGate,
                         )
                     }
                     if (enriched != preparedItems[index]) {
