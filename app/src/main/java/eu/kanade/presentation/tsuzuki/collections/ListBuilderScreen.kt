@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapability
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
@@ -1261,22 +1260,6 @@ private fun ListEditorState.activeFilterCount(): Int = listOf(
     minChapters.takeIf(String::isNotBlank),
     minVolumes.takeIf(String::isNotBlank),
 ).count { it != null } + extraTerms.size
-
-private fun providerFormatOptions(providerId: String): List<String> = when (providerId.lowercase()) {
-    "kitsu" -> listOf(
-        CatalogItemFormat.MANGA,
-        CatalogItemFormat.NOVEL,
-        CatalogItemFormat.ONE_SHOT,
-        CatalogItemFormat.MANHWA,
-        CatalogItemFormat.MANHUA,
-        CatalogItemFormat.DOUJIN,
-    ).map(CatalogItemFormat::name)
-
-    else ->
-        CatalogItemFormat.entries
-            .filterNot { it == CatalogItemFormat.UNKNOWN }
-            .map(CatalogItemFormat::name)
-}
 
 private fun providerDisplayName(providerId: String): String = when (providerId.lowercase()) {
     "kitsu" -> "Kitsu"
