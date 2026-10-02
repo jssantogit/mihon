@@ -53,6 +53,8 @@ class KitsuHttpClient(
         limit: Int,
         sort: String?,
         status: String?,
+        genres: List<String>,
+        subtype: String?,
     ): Result<KitsuMangaResponse> {
         val urlBuilder = baseUrl.newBuilder().addPathSegment("manga")
         if (!query.isNullOrBlank()) {
@@ -60,6 +62,18 @@ class KitsuHttpClient(
         }
         if (!status.isNullOrBlank()) {
             urlBuilder.addQueryParameter("filter[status]", status.trim())
+        }
+        val normalizedGenres = genres
+            .asSequence()
+            .map(::normalizeFilterSlug)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedGenres.isNotEmpty()) {
+            urlBuilder.addQueryParameter("filter[genres]", normalizedGenres.joinToString(","))
+        }
+        if (!subtype.isNullOrBlank()) {
+            urlBuilder.addQueryParameter("filter[subtype]", subtype.trim().lowercase())
         }
         if (!sort.isNullOrBlank()) {
             urlBuilder.addQueryParameter("sort", sort.trim())
@@ -110,6 +124,12 @@ class KitsuHttpClient(
     }
 
     override suspend fun getMangaById(id: String): Result<KitsuSingleMangaResponse> = getMangaDetails(id)
+
+    private fun normalizeFilterSlug(value: String): String = value
+        .trim()
+        .lowercase()
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')
 
     private suspend inline fun <reified T> executeRequest(url: HttpUrl): Result<T> {
         return try {

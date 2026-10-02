@@ -2,11 +2,10 @@ package tachiyomi.data.tsuzuki.kitsu.collections
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.planner.QueryPlanner
 import tachiyomi.domain.tsuzuki.collections.planner.SortPlan
@@ -29,25 +28,50 @@ class KitsuCapabilityTest {
         value = QueryValue.of("completed"),
     )
 
-    @Test
-    fun `capability declarations do not infer support from CatalogQuery field existence`() {
-        val dummyQuery = CatalogQuery(genres = listOf("Action"))
-        dummyQuery.genres shouldNotBe emptyList<String>()
+    private val manga = QueryExpression.Predicate(
+        field = QueryField.WORK_TYPE,
+        operator = QueryOperator.EQUALS,
+        value = QueryValue.of("MANGA"),
+    )
 
+    private val romance = QueryExpression.Predicate(
+        field = QueryField.GENRE,
+        operator = QueryOperator.CONTAINS,
+        value = QueryValue.of("Romance"),
+    )
+
+    @Test
+    fun `Kitsu advertises exact status subtype and genre filters`() {
         KitsuQueryCapabilities.canPushPredicate(
-            field = QueryField.GENRE,
-            operator = QueryOperator.EQUALS,
-            value = QueryValue.of("Action"),
-        ) shouldBe false
-    }
-
-    @Test
-    fun `genres scores tags and authors remain non-pushable`() {
+            QueryField.STATUS,
+            QueryOperator.EQUALS,
+            QueryValue.of("ongoing"),
+        ) shouldBe true
+        KitsuQueryCapabilities.canPushPredicate(
+            QueryField.WORK_TYPE,
+            QueryOperator.EQUALS,
+            QueryValue.of("manga"),
+        ) shouldBe true
+        KitsuQueryCapabilities.canPushPredicate(
+            QueryField.GENRE,
+            QueryOperator.CONTAINS,
+            QueryValue.of("Romance"),
+        ) shouldBe true
         KitsuQueryCapabilities.canPushPredicate(
             QueryField.GENRE,
             QueryOperator.EQUALS,
             QueryValue.of("Action"),
+        ) shouldBe true
+
+        KitsuQueryCapabilities.canPushPredicate(
+            QueryField.WORK_TYPE,
+            QueryOperator.EQUALS,
+            QueryValue.of("WEBTOON"),
         ) shouldBe false
+    }
+
+    @Test
+    fun `scores tags authors and genre exclusion remain non-pushable`() {
         KitsuQueryCapabilities.canPushPredicate(
             QueryField.SCORE,
             QueryOperator.GREATER_OR_EQUAL,
@@ -62,6 +86,10 @@ class KitsuCapabilityTest {
             QueryField.AUTHOR,
             QueryOperator.EQUALS,
             QueryValue.of("Oda"),
+        ) shouldBe false
+
+        KitsuQueryCapabilities.canPushExpression(
+            QueryExpression.Not(romance),
         ) shouldBe false
     }
 
@@ -82,12 +110,6 @@ class KitsuCapabilityTest {
         KitsuQueryCapabilities.canPushPredicate(
             QueryField.STATUS,
             QueryOperator.EQUALS,
-            QueryValue.of("ongoing"),
-        ) shouldBe true
-
-        KitsuQueryCapabilities.canPushPredicate(
-            QueryField.STATUS,
-            QueryOperator.EQUALS,
             QueryValue.of("completed"),
         ) shouldBe true
 
@@ -104,23 +126,18 @@ class KitsuCapabilityTest {
     }
 
     @Test
-    fun `planner keeps text and genre residual while compiling exact status`() {
+    fun `planner pushes romance manga conjunction and keeps unsupported text residual`() {
         val text = QueryExpression.Predicate(
             field = QueryField.Custom("query"),
             operator = QueryOperator.EQUALS,
             value = QueryValue.of("Monster"),
         )
-        val genre = QueryExpression.Predicate(
-            field = QueryField.GENRE,
-            operator = QueryOperator.EQUALS,
-            value = QueryValue.of("Mystery"),
-        )
-        val queryExpression = QueryExpression.All(text, ongoing, genre)
+        val queryExpression = QueryExpression.All(text, manga, romance)
 
         val plan = QueryPlanner.plan(queryExpression, KitsuQueryCapabilities, CatalogSort.RATING_DESC)
 
-        plan.pushdownExpression shouldBe ongoing
-        plan.residualExpression shouldBe QueryExpression.All(text, genre).normalize()
+        plan.pushdownExpression shouldBe QueryExpression.All(manga, romance).normalize()
+        plan.residualExpression shouldBe text
 
         val catalogQuery = KitsuQueryCompiler.compile(
             pushdownExpression = plan.pushdownExpression,
@@ -130,11 +147,25 @@ class KitsuCapabilityTest {
         )
 
         catalogQuery.query shouldBe null
-        catalogQuery.status shouldBe CatalogItemStatus.ONGOING
+        catalogQuery.status shouldBe null
+        catalogQuery.format shouldBe CatalogItemFormat.MANGA
         catalogQuery.sort shouldBe CatalogSort.RATING_DESC
-        catalogQuery.genres shouldBe emptyList()
+        catalogQuery.genres shouldBe listOf("Romance")
         catalogQuery.offset shouldBe 10
         catalogQuery.limit shouldBe 20
+    }
+
+    @Test
+    fun `status subtype and genre can be compiled together`() {
+        val expression = QueryExpression.All(ongoing, manga, romance)
+
+        KitsuQueryCapabilities.canPushExpression(expression) shouldBe true
+
+        val query = KitsuQueryCompiler.compile(expression)
+
+        query.status shouldBe CatalogItemStatus.ONGOING
+        query.format shouldBe CatalogItemFormat.MANGA
+        query.genres shouldBe listOf("Romance")
     }
 
     @Test

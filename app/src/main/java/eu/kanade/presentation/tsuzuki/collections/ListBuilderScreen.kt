@@ -217,16 +217,15 @@ private fun QuickListBuilder(
                         enabled = editor.filtersEditable,
                         onSelect = { onEditorChange(editor.copy(status = it)) },
                     )
-                    QuickChoiceRow(
+                    BuilderDropdown(
                         label = "Type",
-                        options = listOf(
-                            QuickChoice("Any", null),
-                            QuickChoice("Manga", CatalogItemFormat.MANGA.name),
-                            QuickChoice("Manhwa", CatalogItemFormat.MANHWA.name),
-                        ),
-                        selected = editor.format,
+                        current = editor.format ?: "Any",
+                        options = listOf("Any") + providerFormatOptions(editor.providerId),
+                        display = { it.prettyEnumName() },
+                        onSelect = {
+                            onEditorChange(editor.copy(format = it.takeUnless { value -> value == "Any" }))
+                        },
                         enabled = editor.filtersEditable,
-                        onSelect = { onEditorChange(editor.copy(format = it)) },
                         modifier = Modifier.padding(top = 10.dp),
                     )
                     OutlinedTextField(
@@ -292,7 +291,7 @@ private fun QuickListBuilder(
                         )
                         Text(
                             text = if (editor.filtersEditable) {
-                                "Genres, tags, chapters, volumes, and full work type options."
+                                "Genres, chapters, volumes, ratings, and provider-specific options."
                             } else {
                                 "Inspect the preserved query state without rewriting it."
                             },
@@ -380,17 +379,6 @@ private fun AdvancedListFilters(
         } else {
             item(key = "publication") {
                 AdvancedSection("PUBLICATION") {
-                    BuilderDropdown(
-                        label = "Work type",
-                        current = editor.format ?: "Any",
-                        options = listOf("Any") + CatalogItemFormat.entries
-                            .filterNot { it == CatalogItemFormat.UNKNOWN }
-                            .map(CatalogItemFormat::name),
-                        display = { it.prettyEnumName() },
-                        onSelect = {
-                            onEditorChange(editor.copy(format = it.takeUnless { value -> value == "Any" }))
-                        },
-                    )
                     BuilderNumericField(
                         label = "Minimum chapters",
                         value = editor.minChapters,
@@ -407,7 +395,9 @@ private fun AdvancedListFilters(
             }
 
             item(key = "genres_tags") {
-                AdvancedSection("GENRES & TAGS") {
+                AdvancedSection(
+                    if (editor.providerId.equals("kitsu", ignoreCase = true)) "GENRES" else "GENRES & TAGS",
+                ) {
                     OutlinedTextField(
                         modifier = Modifier.fillMaxWidth(),
                         value = editor.includeGenre,
@@ -416,39 +406,43 @@ private fun AdvancedListFilters(
                         placeholder = { Text("e.g. Action") },
                         singleLine = true,
                     )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.excludeGenre,
-                        onValueChange = { onEditorChange(editor.copy(excludeGenre = it)) },
-                        label = { Text("Exclude genre") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.includeTag,
-                        onValueChange = { onEditorChange(editor.copy(includeTag = it)) },
-                        label = { Text("Include tag") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        value = editor.excludeTag,
-                        onValueChange = { onEditorChange(editor.copy(excludeTag = it)) },
-                        label = { Text("Exclude tag") },
-                        singleLine = true,
-                    )
-                    Text(
-                        text = "Include uses provider-neutral CONTAINS semantics; exclude is stored as NOT(CONTAINS).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                    if (!editor.providerId.equals("kitsu", ignoreCase = true)) {
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.excludeGenre,
+                            onValueChange = { onEditorChange(editor.copy(excludeGenre = it)) },
+                            label = { Text("Exclude genre") },
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.includeTag,
+                            onValueChange = { onEditorChange(editor.copy(includeTag = it)) },
+                            label = { Text("Include tag") },
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            value = editor.excludeTag,
+                            onValueChange = { onEditorChange(editor.copy(excludeTag = it)) },
+                            label = { Text("Exclude tag") },
+                            singleLine = true,
+                        )
+                    } else {
+                        Text(
+                            text = "Kitsu supports positive genre filtering. Exclusions and tags stay hidden until " +
+                                "their provider semantics are executable without scanning missing metadata.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                 }
             }
 
@@ -713,6 +707,22 @@ private fun ListEditorState.activeFilterCount(): Int = listOf(
     minChapters.takeIf(String::isNotBlank),
     minVolumes.takeIf(String::isNotBlank),
 ).count { it != null }
+
+private fun providerFormatOptions(providerId: String): List<String> = when (providerId.lowercase()) {
+    "kitsu" -> listOf(
+        CatalogItemFormat.MANGA,
+        CatalogItemFormat.NOVEL,
+        CatalogItemFormat.ONE_SHOT,
+        CatalogItemFormat.MANHWA,
+        CatalogItemFormat.MANHUA,
+        CatalogItemFormat.DOUJIN,
+    ).map(CatalogItemFormat::name)
+
+    else ->
+        CatalogItemFormat.entries
+            .filterNot { it == CatalogItemFormat.UNKNOWN }
+            .map(CatalogItemFormat::name)
+}
 
 private fun providerDisplayName(providerId: String): String = when (providerId.lowercase()) {
     "kitsu" -> "Kitsu"

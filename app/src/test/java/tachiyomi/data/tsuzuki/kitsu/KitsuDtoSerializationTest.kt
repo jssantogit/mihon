@@ -68,6 +68,41 @@ class KitsuDtoSerializationTest {
     }
 
     @Test
+    fun `http client sends normalized genre and subtype filters`() = runTest {
+        var capturedUrl: okhttp3.HttpUrl? = null
+        val responseBody = javaClass.getResource("/kitsu/kitsu_manga_search_berserk.json")!!.readText()
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    capturedUrl = chain.request().url
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("HTTP 200")
+                        .body(responseBody.toResponseBody("application/vnd.api+json".toMediaType()))
+                        .build()
+                },
+            )
+            .build()
+        val kitsuClient = KitsuHttpClient(client, json)
+
+        val result = kitsuClient.searchManga(
+            query = null,
+            offset = 0,
+            limit = 10,
+            sort = "-userCount",
+            status = null,
+            genres = listOf("Romance", "Science Fiction"),
+            subtype = "MANGA",
+        )
+
+        result.isSuccess shouldBe true
+        capturedUrl?.queryParameter("filter[genres]") shouldBe "romance,science-fiction"
+        capturedUrl?.queryParameter("filter[subtype]") shouldBe "manga"
+    }
+
+    @Test
     fun `http client maps 404 response to ItemNotFound`() = runTest {
         val client = mockOkHttpClient(statusCode = 404, responseBody = "{\"errors\":[{\"title\":\"Not Found\"}]}")
         val kitsuClient = KitsuHttpClient(client, json)

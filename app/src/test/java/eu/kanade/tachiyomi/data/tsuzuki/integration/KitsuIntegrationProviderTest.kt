@@ -412,6 +412,8 @@ class KitsuIntegrationProviderTest {
             limit: Int,
             sort: String?,
             status: String?,
+            genres: List<String>,
+            subtype: String?,
         ): Result<KitsuMangaResponse> = searchResult
 
         override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> =

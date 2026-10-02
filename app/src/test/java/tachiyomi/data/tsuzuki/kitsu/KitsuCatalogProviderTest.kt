@@ -70,6 +70,8 @@ class KitsuCatalogProviderTest {
         fakeClient.lastSearchOffset shouldBe 0
         fakeClient.lastSearchLimit shouldBe 10
         fakeClient.lastSearchSort shouldBe "-userCount"
+        fakeClient.lastSearchGenres shouldBe emptyList()
+        fakeClient.lastSearchSubtype shouldBe null
     }
 
     @Test
@@ -180,6 +182,28 @@ class KitsuCatalogProviderTest {
 
         provider.search(CatalogQuery(status = null))
         fakeClient.lastSearchStatus shouldBe null
+    }
+
+    @Test
+    fun `search forwards genre and format filters to Kitsu client`() = runTest {
+        val fakeClient = FakeKitsuClient(searchResult = Result.success(KitsuMangaResponse()))
+        val provider = KitsuCatalogProvider(fakeClient)
+
+        provider.search(
+            CatalogQuery(
+                genres = listOf("Romance"),
+                format = CatalogItemFormat.MANGA,
+            ),
+        )
+
+        fakeClient.lastSearchGenres shouldBe listOf("Romance")
+        fakeClient.lastSearchSubtype shouldBe "manga"
+
+        provider.search(CatalogQuery(format = CatalogItemFormat.ONE_SHOT))
+        fakeClient.lastSearchSubtype shouldBe "oneshot"
+
+        provider.search(CatalogQuery(format = CatalogItemFormat.WEBTOON))
+        fakeClient.lastSearchSubtype shouldBe null
     }
 
     @Test
@@ -401,6 +425,8 @@ class KitsuCatalogProviderTest {
         var lastSearchLimit: Int = 0
         var lastSearchSort: String? = null
         var lastSearchStatus: String? = null
+        var lastSearchGenres: List<String> = emptyList()
+        var lastSearchSubtype: String? = null
         var lastTrendingLimit: Int = 0
         var lastPopularOffset: Int = 0
         var lastPopularLimit: Int = 0
@@ -412,12 +438,16 @@ class KitsuCatalogProviderTest {
             limit: Int,
             sort: String?,
             status: String?,
+            genres: List<String>,
+            subtype: String?,
         ): Result<KitsuMangaResponse> {
             lastSearchQuery = query
             lastSearchOffset = offset
             lastSearchLimit = limit
             lastSearchSort = sort
             lastSearchStatus = status
+            lastSearchGenres = genres
+            lastSearchSubtype = subtype
             return searchResult
         }
 
@@ -429,7 +459,15 @@ class KitsuCatalogProviderTest {
         override suspend fun getPopularManga(offset: Int, limit: Int): Result<KitsuMangaResponse> {
             lastPopularOffset = offset
             lastPopularLimit = limit
-            return popularResult ?: searchManga(null, offset, limit, "-userCount", null)
+            return popularResult ?: searchManga(
+                query = null,
+                offset = offset,
+                limit = limit,
+                sort = "-userCount",
+                status = null,
+                genres = emptyList(),
+                subtype = null,
+            )
         }
 
         override suspend fun getMangaDetails(kitsuId: String): Result<KitsuSingleMangaResponse> {

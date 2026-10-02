@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki.kitsu.collections
 
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
@@ -12,12 +13,9 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 /**
  * Exact Collections-query capabilities for the Kitsu catalog provider.
  *
- * Kitsu's existing client exposes filter[text], but that endpoint is a text-search candidate mechanism,
- * not a proven exact implementation of Collections EQUALS or CONTAINS predicate semantics. It is
- * therefore intentionally not advertised as predicate pushdown.
- *
- * The current CatalogQuery contract can represent one exact Kitsu status filter at a time. Compound
- * boolean expressions are not advertised by this adapter.
+ * Kitsu's manga search service supports exact filters for status, subtype and genre slugs. These
+ * filters are safe to combine with AND semantics, so the Collections planner can push a conjunction
+ * of those predicates while leaving unsupported predicates on the residual side.
  */
 object KitsuQueryCapabilities : ProviderQueryCapabilities {
     override val providerId: String = "kitsu"
@@ -37,24 +35,75 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
     }
 
     override fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean {
-        if (field != QueryField.STATUS || operator != QueryOperator.EQUALS || value !is QueryValue.StringValue) {
-            return false
-        }
+        val stringValue = value as? QueryValue.StringValue ?: return false
+        val normalized = stringValue.value.trim()
+        if (normalized.isEmpty()) return false
 
-        return when (value.value.trim().uppercase()) {
-            CatalogItemStatus.ONGOING.name,
-            CatalogItemStatus.COMPLETED.name,
-            -> true
+        return when (field) {
+            QueryField.STATUS -> {
+                operator == QueryOperator.EQUALS &&
+                    normalized.uppercase() in KITSU_STATUS_VALUES
+            }
+
+            QueryField.WORK_TYPE -> {
+                operator == QueryOperator.EQUALS &&
+                    normalized.uppercase() in KITSU_FORMAT_VALUES
+            }
+
+            QueryField.GENRE -> {
+                operator in setOf(QueryOperator.EQUALS, QueryOperator.CONTAINS)
+            }
+
             else -> false
         }
     }
+
+    override fun canPushExpression(expression: QueryExpression): Boolean = when (expression) {
+        is QueryExpression.Predicate -> canPushPredicate(
+            field = expression.field,
+            operator = expression.operator,
+            value = expression.value,
+        )
+
+        is QueryExpression.All -> {
+            val predicates = expression.expressions.mapNotNull { it as? QueryExpression.Predicate }
+            if (predicates.size != expression.expressions.size || predicates.any { !canPushExpression(it) }) {
+                false
+            } else {
+                val singletonFields = predicates
+                    .filter { it.field == QueryField.STATUS || it.field == QueryField.WORK_TYPE }
+                    .groupingBy { it.field }
+                    .eachCount()
+
+                singletonFields.values.none { it > 1 }
+            }
+        }
+
+        is QueryExpression.Any,
+        is QueryExpression.Not,
+        -> false
+    }
+
+    private val KITSU_STATUS_VALUES = setOf(
+        CatalogItemStatus.ONGOING.name,
+        CatalogItemStatus.COMPLETED.name,
+    )
+
+    private val KITSU_FORMAT_VALUES = setOf(
+        CatalogItemFormat.MANGA.name,
+        CatalogItemFormat.NOVEL.name,
+        CatalogItemFormat.ONE_SHOT.name,
+        CatalogItemFormat.MANHWA.name,
+        CatalogItemFormat.MANHUA.name,
+        CatalogItemFormat.DOUJIN.name,
+    )
 }
 
 /**
  * Compiles only expressions that [KitsuQueryCapabilities] declares exactly representable.
  *
  * Unsupported expressions fail closed instead of being ignored. The planner must retain those
- * expressions as residual work for Block C.
+ * expressions as residual work.
  */
 object KitsuQueryCompiler {
 
@@ -71,35 +120,63 @@ object KitsuQueryCompiler {
         require(KitsuQueryCapabilities.canPushSort(sort)) {
             "Kitsu cannot guarantee exact remote ordering for $sort"
         }
-
-        val status = when (pushdownExpression) {
-            null -> null
-            is QueryExpression.Predicate -> compileStatusPredicate(pushdownExpression)
-            else -> throw IllegalArgumentException(
-                "Kitsu cannot compile compound Collections pushdown: ${pushdownExpression.toCanonicalString()}",
-            )
+        if (pushdownExpression != null) {
+            require(KitsuQueryCapabilities.canPushExpression(pushdownExpression)) {
+                "Kitsu cannot compile Collections pushdown: ${pushdownExpression.toCanonicalString()}"
+            }
         }
+
+        var status: CatalogItemStatus? = null
+        var format: CatalogItemFormat? = null
+        val genres = mutableListOf<String>()
+
+        fun collect(expression: QueryExpression) {
+            when (expression) {
+                is QueryExpression.Predicate -> {
+                    val value = (expression.value as QueryValue.StringValue).value.trim()
+                    when (expression.field) {
+                        QueryField.STATUS -> {
+                            status = when (value.uppercase()) {
+                                CatalogItemStatus.ONGOING.name -> CatalogItemStatus.ONGOING
+                                CatalogItemStatus.COMPLETED.name -> CatalogItemStatus.COMPLETED
+                                else -> error("Capability/compiler disagreement for Kitsu status '$value'")
+                            }
+                        }
+
+                        QueryField.WORK_TYPE -> {
+                            format = when (value.uppercase()) {
+                                CatalogItemFormat.MANGA.name -> CatalogItemFormat.MANGA
+                                CatalogItemFormat.NOVEL.name -> CatalogItemFormat.NOVEL
+                                CatalogItemFormat.ONE_SHOT.name -> CatalogItemFormat.ONE_SHOT
+                                CatalogItemFormat.MANHWA.name -> CatalogItemFormat.MANHWA
+                                CatalogItemFormat.MANHUA.name -> CatalogItemFormat.MANHUA
+                                CatalogItemFormat.DOUJIN.name -> CatalogItemFormat.DOUJIN
+                                else -> error("Capability/compiler disagreement for Kitsu work type '$value'")
+                            }
+                        }
+
+                        QueryField.GENRE -> genres += value
+                        else -> error(
+                            "Capability/compiler disagreement for Kitsu field '${expression.field.identifier}'",
+                        )
+                    }
+                }
+
+                is QueryExpression.All -> expression.expressions.forEach(::collect)
+                else -> error("Unsupported Kitsu pushdown expression reached compiler")
+            }
+        }
+
+        pushdownExpression?.let(::collect)
 
         return CatalogQuery(
             query = null,
             sort = sort,
-            genres = emptyList(),
+            genres = genres.distinct(),
+            format = format,
             status = status,
             offset = offset,
             limit = limit,
         )
-    }
-
-    private fun compileStatusPredicate(predicate: QueryExpression.Predicate): CatalogItemStatus {
-        require(KitsuQueryCapabilities.canPushExpression(predicate)) {
-            "Kitsu cannot compile predicate: ${predicate.toCanonicalString()}"
-        }
-
-        val value = (predicate.value as QueryValue.StringValue).value.trim().uppercase()
-        return when (value) {
-            CatalogItemStatus.ONGOING.name -> CatalogItemStatus.ONGOING
-            CatalogItemStatus.COMPLETED.name -> CatalogItemStatus.COMPLETED
-            else -> error("Capability/compiler disagreement for Kitsu status '$value'")
-        }
     }
 }
