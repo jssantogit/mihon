@@ -85,7 +85,7 @@ class TsuzukiHomeScreenModelTest {
     @Test
     fun `continue reading resolves cover even when title is outside Library`() = runTest(dispatcher) {
         val resolver = mockk<ResolveCanonicalSourceManga>()
-        coEvery { resolver.execute("title-1") } returns Manga.create().copy(
+        coEvery { resolver.execute("title-1", allowNetwork = false) } returns Manga.create().copy(
             id = 77L,
             source = 10L,
             url = "/dandadan",
@@ -104,6 +104,8 @@ class TsuzukiHomeScreenModelTest {
         item.coverUrl shouldBe null
         item.sourceCover?.sourceId shouldBe 10L
         item.sourceCover?.url shouldBe "https://cdn.example/dandadan.jpg"
+        coVerify(exactly = 1) { resolver.execute("title-1", allowNetwork = false) }
+        coVerify(exactly = 0) { resolver.execute("title-1", allowNetwork = true) }
     }
 
     // Provider artwork must survive the transient Search -> canonical boundary.

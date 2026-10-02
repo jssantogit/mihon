@@ -5,9 +5,12 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
@@ -418,6 +421,56 @@ class SearchIntegrationsTest {
         }
 
         results.size shouldBe 2
+    }
+
+    @Test
+    fun `progressive rating enrichment prioritizes a bounded first item window`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                started += item.providerId
+                release.await()
+                return Result.success(emptyMap())
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val cache = RatingEnrichmentCache(
+            scope = this,
+            clock = { 0L },
+            positiveTtlMillis = 60_000L,
+            negativeTtlMillis = 60_000L,
+            maxEntries = 32,
+        )
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+            ratingEnrichmentCache = cache,
+        )
+        val items = (1..6).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = index.toString(),
+                title = "Work $index",
+            )
+        }
+
+        val operation = async {
+            search.enrichRatingsProgressively(items) { _, _ -> }
+        }
+        runCurrent()
+
+        started shouldContainExactly listOf("1", "2", "3")
+
+        release.complete(Unit)
+        operation.await().map(CatalogItem::providerId) shouldContainExactly
+            listOf("1", "2", "3", "4", "5", "6")
     }
 
     @Test
