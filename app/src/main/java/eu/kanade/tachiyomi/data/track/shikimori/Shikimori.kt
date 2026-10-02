@@ -217,8 +217,44 @@ class Shikimori(id: Long) : BaseTracker(id, "Shikimori"), DeletableTracker {
     }
 }
 
+data class ShikimoriCollectionQuery(
+    val page: Int,
+    val limit: Int,
+    val order: String,
+    val kind: String? = null,
+    val status: String? = null,
+    val season: String? = null,
+    val score: Int? = null,
+    val genre: String? = null,
+    val publisher: String? = null,
+    val franchise: String? = null,
+    val censored: Boolean? = null,
+    val search: String? = null,
+) {
+    init {
+        require(page >= 1) { "Shikimori page must be one-based" }
+        require(limit in 1..50) { "Shikimori page limit must be between 1 and 50" }
+        require(order.isNotBlank()) { "Shikimori order cannot be blank" }
+    }
+}
+
+data class ShikimoriCollectionPage(
+    val items: List<TrackSearch>,
+    val page: Int,
+    val limit: Int,
+    val hasNextPage: Boolean,
+)
+
 interface ShikimoriIntegrationApi {
     suspend fun searchPublic(query: String): List<TrackSearch>
 
     suspend fun getMangaDetailsPublic(id: Int): TrackSearch?
+
+    suspend fun collectionSearch(query: ShikimoriCollectionQuery): ShikimoriCollectionPage =
+        ShikimoriCollectionPage(
+            items = emptyList(),
+            page = query.page,
+            limit = query.limit,
+            hasNextPage = false,
+        )
 }
