@@ -123,7 +123,7 @@ object CollectionProviderSwitchPlanner {
                     )
             }
         }
-        is QueryExpression.All -> expression.expressions.all(::covers)
+        is QueryExpression.All -> expression.expressions.all { child -> covers(child) }
         is QueryExpression.Any -> false
     }
 
