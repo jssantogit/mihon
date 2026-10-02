@@ -348,6 +348,37 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `concurrent identical base searches share one provider request`() = runTest {
+        var calls = 0
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val provider = object : SearchProvider {
+            override val integrationId = IntegrationId("kitsu")
+
+            override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+                calls++
+                entered.complete(Unit)
+                release.await()
+                return Result.success(page(CatalogItem("kitsu", "1", "Work")))
+            }
+        }
+        val search = SearchIntegrations(registry(provider))
+        val query = CatalogQuery(query = "Work")
+
+        val first = async { search.executeBase(query) }
+        entered.await()
+        val second = async { search.executeBase(query) }
+        runCurrent()
+
+        calls shouldBe 1
+
+        release.complete(Unit)
+        first.await().map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        second.await().map(CatalogItem::providerId) shouldContainExactly listOf("1")
+        calls shouldBe 1
+    }
+
+    @Test
     fun `partial base search failure is not cached as a complete query result`() = runTest {
         var healthyCalls = 0
         var flakyCalls = 0
