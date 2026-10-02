@@ -241,6 +241,53 @@ class ManageCollectionDefinitionsTest {
     }
 
     @Test
+    fun `reordering user folders persists the exact sibling order`() = runTest {
+        val store = FakeStore()
+        val manager = manager(store)
+        val collection = collection("collection")
+        val first = folder("first", collection.id).copy(sortOrder = 10)
+        val second = folder("second", collection.id).copy(sortOrder = 20)
+        val third = folder("third", collection.id).copy(sortOrder = 30)
+
+        store.upsertCollection(collection)
+        store.upsertFolder(first)
+        store.upsertFolder(second)
+        store.upsertFolder(third)
+
+        manager.reorderUserFolders(
+            collectionId = collection.id,
+            parentFolderId = null,
+            orderedFolderIds = listOf("third", "first", "second"),
+        )
+
+        store.getFolders(collection.id).map { it.id } shouldContainExactly listOf("third", "first", "second")
+    }
+
+    @Test
+    fun `reordering user lists persists the exact folder order`() = runTest {
+        val store = FakeStore()
+        val manager = manager(store)
+        val collection = collection("collection")
+        val folder = folder("folder", collection.id)
+        val first = list("first", collection.id, folder.id).copy(sortOrder = 10)
+        val second = list("second", collection.id, folder.id).copy(sortOrder = 20)
+        val third = list("third", collection.id, folder.id).copy(sortOrder = 30)
+
+        store.upsertCollection(collection)
+        store.upsertFolder(folder)
+        store.upsertList(first)
+        store.upsertList(second)
+        store.upsertList(third)
+
+        manager.reorderUserLists(
+            folderId = folder.id,
+            orderedListIds = listOf("second", "third", "first"),
+        )
+
+        store.getLists(folder.id).map { it.id } shouldContainExactly listOf("second", "third", "first")
+    }
+
+    @Test
     fun `system content cannot be edited in place but may be reordered`() = runTest {
         val store = FakeStore()
         val manager = manager(store)
