@@ -619,7 +619,7 @@ internal fun FolderEditorScreen(
                     ) { isDragging ->
                         EditorListCard(
                             title = draft.title,
-                            subtitle = "Kitsu • ${draft.sort.name}",
+                            subtitle = "${draft.providerId} • ${draft.sort.name}",
                             isDragging = isDragging,
                             reorderEnabled = reorderEnabled,
                             reorderHandleModifier = if (reorderEnabled) {
