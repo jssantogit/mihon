@@ -271,6 +271,8 @@ interface HikkaIntegrationApi {
 
     suspend fun getMangaDetailsPublic(slug: String): HKManga?
 
+    suspend fun lookupGenres(): List<Pair<String, String>> = emptyList()
+
     suspend fun collectionSearch(query: HikkaCollectionQuery): HikkaCollectionPage = HikkaCollectionPage(
         items = emptyList(),
         page = query.page,
