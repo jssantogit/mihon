@@ -6,12 +6,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -131,7 +131,7 @@ class CollectionsSyncAdapterTest {
                             record.fields.forEach { (key, value) ->
                                 if (key != "sortDirection") put(key, value)
                             }
-                            put("sort", "POPULARITY_DESC")
+                            put("sort", kotlinx.serialization.json.JsonPrimitive("POPULARITY_DESC"))
                         },
                     )
                 } else {
