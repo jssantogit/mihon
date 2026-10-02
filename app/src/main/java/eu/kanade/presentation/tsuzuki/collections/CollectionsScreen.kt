@@ -1119,7 +1119,17 @@ internal data class ListEditorState(
     fun toDraftOrNull(): CollectionListDraft? {
         if (title.isBlank()) return null
 
-        val query = if (!filtersEditable) {
+        return CollectionListDraft(
+            title = title.trim(),
+            query = currentQuery(),
+            sort = sort,
+            layoutType = layoutType,
+            providerId = providerId,
+        )
+    }
+
+    internal fun currentQuery(): QueryExpression? {
+        return if (!filtersEditable) {
             preservedQuery
         } else {
             val predicates = buildList<QueryExpression> {
@@ -1217,14 +1227,6 @@ internal data class ListEditorState(
                 else -> QueryExpression.All(predicates)
             }
         }
-
-        return CollectionListDraft(
-            title = title.trim(),
-            query = query,
-            sort = sort,
-            layoutType = layoutType,
-            providerId = providerId,
-        )
     }
 
     companion object {
