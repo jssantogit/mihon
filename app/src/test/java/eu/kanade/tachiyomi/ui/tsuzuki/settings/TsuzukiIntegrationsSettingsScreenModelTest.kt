@@ -173,7 +173,7 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
     }
 
     @Test
-    fun `unverified catalog providers expose only verified ratings globally`() = runTest(dispatcher) {
+    fun `hikka and shikimori expose allowed public catalog capabilities`() = runTest(dispatcher) {
         val model = TsuzukiIntegrationsSettingsScreenModel(FakeIntegrationSettingsRepository(), registry)
         advanceUntilIdle()
 
@@ -185,11 +185,19 @@ class TsuzukiIntegrationsSettingsScreenModelTest {
             val item = items.single { it.id.value == integrationId }
 
             item.supportsTracking shouldBe true
-            item.configurableCapabilities shouldBe setOf(IntegrationCapability.RATINGS)
-            item.capabilities shouldContainExactly listOf(IntegrationCapability.RATINGS)
-            item.restrictedCapabilities.isNotEmpty() shouldBe true
-            (IntegrationCapability.SEARCH in item.restrictedCapabilities) shouldBe true
-            (IntegrationCapability.METADATA_BASIC in item.restrictedCapabilities) shouldBe true
+            item.configurableCapabilities shouldBe setOf(
+                IntegrationCapability.SEARCH,
+                IntegrationCapability.METADATA_BASIC,
+                IntegrationCapability.METADATA_ARTWORK,
+                IntegrationCapability.RATINGS,
+            )
+            item.capabilities shouldContainExactly listOf(
+                IntegrationCapability.SEARCH,
+                IntegrationCapability.METADATA_BASIC,
+                IntegrationCapability.METADATA_ARTWORK,
+                IntegrationCapability.RATINGS,
+            )
+            item.restrictedCapabilities shouldBe emptyMap()
         }
     }
 
