@@ -293,9 +293,10 @@ class HikkaApi(
         }
         return elements.mapNotNull { entry ->
             when (entry) {
-                is JsonPrimitive -> entry.contentOrNull
-                    ?.takeIf(String::isNotBlank)
-                    ?.let { it to it }
+                is JsonPrimitive ->
+                    entry.contentOrNull
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { it to it }
                 is JsonObject -> {
                     val label = labelKeys.asSequence()
                         .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
