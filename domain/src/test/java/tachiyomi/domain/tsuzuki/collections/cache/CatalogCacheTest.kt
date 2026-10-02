@@ -71,10 +71,14 @@ class CatalogCacheTest {
             pageSize = 20,
         )
 
-        (base == base.copy(sort = CollectionSortSelection(
-            CollectionSortKey.Standard.RATING,
-            CollectionSortDirection.DESC,
-        ))) shouldBe false
+        (
+            base == base.copy(
+                sort = CollectionSortSelection(
+                    CollectionSortKey.Standard.RATING,
+                    CollectionSortDirection.DESC,
+                ),
+            )
+        ) shouldBe false
         (base == base.copy(rawOffset = 20)) shouldBe false
         (base == base.copy(pageSize = 10)) shouldBe false
     }
