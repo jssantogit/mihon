@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.KitsuCatalogProvider
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuGenreResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaAttributes
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
@@ -415,6 +416,9 @@ class KitsuIntegrationProviderTest {
             genres: List<String>,
             subtype: String?,
         ): Result<KitsuMangaResponse> = searchResult
+
+        override suspend fun getGenres(query: String?): Result<KitsuGenreResponse> =
+            Result.success(KitsuGenreResponse())
 
         override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> =
             Result.success(KitsuMangaResponse())
