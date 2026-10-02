@@ -199,6 +199,12 @@ class CollectionsSyncAdapterTest {
             collections[collection.id] = collection
         }
 
+        override suspend fun upsertCollections(collections: List<TsuzukiCollection>) {
+            collections.forEach { collection ->
+                this.collections[collection.id] = collection
+            }
+        }
+
         override suspend fun getFolder(id: String): CollectionFolder? = folders[id]
 
         override suspend fun getFolders(
