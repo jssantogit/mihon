@@ -37,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFilterLookupKey
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFilterLookupState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapability
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
@@ -61,7 +63,9 @@ internal fun ListBuilderScreen(
     providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     previewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState> = emptyMap(),
     onPreviewDraft: (CollectionListDraft?) -> Unit = {},
+    onFilterLookup: (String, String, String) -> Unit = { _, _, _ -> },
     onClose: () -> Unit,
     onConfirm: (CollectionListDraft) -> Unit,
 ) {
@@ -213,6 +217,8 @@ internal fun ListBuilderScreen(
                 editor = editor,
                 onEditorChange = { editor = it },
                 descriptor = providerDescriptors.firstOrNull { it.providerId == editor.providerId },
+                filterLookupStates = filterLookupStates,
+                onFilterLookup = onFilterLookup,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -225,6 +231,8 @@ internal fun ListBuilderScreen(
                 providerDescriptors = providerDescriptors,
                 onProviderSelect = ::requestProviderSwitch,
                 previewState = previewState,
+                filterLookupStates = filterLookupStates,
+                onFilterLookup = onFilterLookup,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -241,6 +249,8 @@ private fun QuickListBuilder(
     providerDescriptors: List<CollectionProviderDescriptor>,
     onProviderSelect: (String) -> Unit,
     previewState: CollectionDraftPreviewState,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState>,
+    onFilterLookup: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val descriptor = providerDescriptors.firstOrNull { it.providerId == editor.providerId }
@@ -559,6 +569,8 @@ private fun AdvancedListFilters(
     editor: ListEditorState,
     onEditorChange: (ListEditorState) -> Unit,
     descriptor: CollectionProviderDescriptor?,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState>,
+    onFilterLookup: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
