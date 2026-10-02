@@ -197,6 +197,7 @@ class CanonicalTitleScreenModel(
                 val refreshed = loadLocalState(
                     canonicalTitleId = id,
                     includeIntegrationMetadata = false,
+                    allowSourceNetwork = false,
                     isRefreshing = false,
                 )
                 if (canonicalTitleId != id) return@launch
@@ -427,6 +428,7 @@ class CanonicalTitleScreenModel(
             _state.value = loadLocalState(
                 canonicalTitleId = canonicalTitleId,
                 includeIntegrationMetadata = false,
+                allowSourceNetwork = false,
                 isRefreshing = true,
             )
             val cachedIntegrationMetadata = try {
@@ -441,6 +443,7 @@ class CanonicalTitleScreenModel(
                     canonicalTitleId = canonicalTitleId,
                     includeIntegrationMetadata = true,
                     integrationMetadataOverride = cachedIntegrationMetadata,
+                    allowSourceNetwork = false,
                     isRefreshing = true,
                 )
                 val current = (_state.value as? CanonicalTitleScreenState.Loaded)
@@ -569,6 +572,7 @@ class CanonicalTitleScreenModel(
         val staged = loadLocalState(
             canonicalTitleId = canonicalTitleId,
             includeIntegrationMetadata = false,
+            allowSourceNetwork = false,
             isRefreshing = true,
         )
         val latest = (_state.value as? CanonicalTitleScreenState.Loaded)
@@ -586,6 +590,7 @@ class CanonicalTitleScreenModel(
         canonicalTitleId: String,
         includeIntegrationMetadata: Boolean,
         integrationMetadataOverride: ResolvedMetadata? = null,
+        allowSourceNetwork: Boolean = includeIntegrationMetadata,
         isRefreshing: Boolean,
         refreshError: Throwable? = null,
     ): CanonicalTitleScreenState.Loaded {
@@ -606,10 +611,7 @@ class CanonicalTitleScreenModel(
             .getProgressByCanonicalTitleId(canonicalTitleId)
             .associateBy(CanonicalChapterProgress::canonicalChapterId)
         val canonicalDownloadIds = canonicalDownloadRepository
-            .getAll()
-            .asSequence()
-            .map { it.canonicalChapterId }
-            .toSet()
+            .getChapterIdsByCanonicalTitle(canonicalTitleId)
         val reportedCounts = reportedChapterCountRepository.getByTitle(canonicalTitleId)
         val canonicalArtwork = try {
             resolveCanonicalArtwork.execute(canonicalTitleId)
@@ -619,7 +621,10 @@ class CanonicalTitleScreenModel(
             null
         }
         var metadata = try {
-            resolveCanonicalSourceManga.execute(canonicalTitleId)
+            resolveCanonicalSourceManga.execute(
+                canonicalTitleId = canonicalTitleId,
+                allowNetwork = allowSourceNetwork,
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {

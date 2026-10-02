@@ -135,7 +135,10 @@ class CanonicalDownloadRepositoryImplTest {
                 canonicalChapterId = "chapter-1",
                 localUri = "content://downloads/chapter-1.cbz",
                 format = "CBZ",
+                originatingAddonId = null,
+                originatingOptionKey = null,
                 completedAt = 100L,
+                checksum = null,
             ),
         )
         repository.upsert(
@@ -143,7 +146,10 @@ class CanonicalDownloadRepositoryImplTest {
                 canonicalChapterId = "chapter-2",
                 localUri = "content://downloads/chapter-2.cbz",
                 format = "CBZ",
+                originatingAddonId = null,
+                originatingOptionKey = null,
                 completedAt = 200L,
+                checksum = null,
             ),
         )
 

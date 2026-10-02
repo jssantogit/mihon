@@ -30,6 +30,13 @@ class CanonicalDownloadRepositoryImpl(
             .awaitAsList()
     }
 
+    override suspend fun getChapterIdsByCanonicalTitle(canonicalTitleId: String): Set<String> {
+        return database.tsuzuki_canonical_downloadsQueries
+            .getTsuzukiCanonicalDownloadChapterIdsByTitle(canonicalTitleId)
+            .awaitAsList()
+            .toSet()
+    }
+
     override suspend fun upsert(artifact: CanonicalDownloadArtifact) {
         database.tsuzuki_canonical_downloadsQueries.upsertTsuzukiCanonicalDownload(
             canonicalChapterId = artifact.canonicalChapterId,

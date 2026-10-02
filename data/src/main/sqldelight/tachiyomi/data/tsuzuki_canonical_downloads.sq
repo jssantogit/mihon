@@ -20,6 +20,14 @@ SELECT *
 FROM tsuzuki_canonical_downloads
 ORDER BY completed_at ASC, canonical_chapter_id ASC;
 
+getTsuzukiCanonicalDownloadChapterIdsByTitle:
+SELECT d.canonical_chapter_id
+FROM tsuzuki_canonical_downloads AS d
+JOIN tsuzuki_canonical_chapters AS c
+ON c.id = d.canonical_chapter_id
+WHERE c.canonical_title_id = :canonicalTitleId
+ORDER BY d.canonical_chapter_id ASC;
+
 upsertTsuzukiCanonicalDownload:
 INSERT INTO tsuzuki_canonical_downloads(
     canonical_chapter_id,
