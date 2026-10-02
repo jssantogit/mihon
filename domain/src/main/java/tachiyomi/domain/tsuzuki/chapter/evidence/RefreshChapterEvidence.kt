@@ -6,9 +6,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -459,53 +461,59 @@ class RefreshChapterEvidence private constructor(
         canonicalTitleId: String,
         onBatch: suspend (EvidenceCollection) -> Unit = {},
     ): EvidenceCollection = coroutineScope {
+        val providers = registry.chapterEvidenceProviders()
+        if (providers.isEmpty()) return@coroutineScope EvidenceCollection()
+
         val gate = Semaphore(MAX_CONCURRENT_EVIDENCE_PROVIDERS)
-        val results = registry.chapterEvidenceProviders()
-            .map { provider ->
-                async {
-                    gate.withPermit {
-                        try {
-                            provider.evidenceFor(canonicalTitleId)
-                                .fold(
-                                    onSuccess = { observations ->
-                                        val accepted = observations.takeIf {
-                                            it.all { observation ->
-                                                observation.canonicalTitleId == canonicalTitleId
-                                            }
-                                        }.orEmpty()
-                                        EvidenceCollection(
-                                            evidence = accepted,
-                                            complete = accepted.size == observations.size,
-                                        )
-                                    },
-                                    onFailure = { error ->
-                                        if (error is CancellationException) throw error
-                                        recordRefreshOutcome(
-                                            canonicalTitleId = canonicalTitleId,
-                                            outcome = error.toDiagnosticOutcome(),
-                                            received = 0,
-                                        )
-                                        EvidenceCollection(emptyList(), complete = false)
-                                    },
-                                )
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (error: Throwable) {
-                            recordRefreshOutcome(
-                                canonicalTitleId = canonicalTitleId,
-                                outcome = error.toDiagnosticOutcome(),
+        val completed = Channel<EvidenceCollection>(capacity = providers.size)
+        providers.forEach { provider ->
+            launch {
+                val batch = gate.withPermit {
+                    try {
+                        provider.evidenceFor(canonicalTitleId)
+                            .fold(
+                                onSuccess = { observations ->
+                                    val accepted = observations.takeIf {
+                                        it.all { observation ->
+                                            observation.canonicalTitleId == canonicalTitleId
+                                        }
+                                    }.orEmpty()
+                                    EvidenceCollection(
+                                        evidence = accepted,
+                                        complete = accepted.size == observations.size,
+                                    )
+                                },
+                                onFailure = { error ->
+                                    if (error is CancellationException) throw error
+                                    recordRefreshOutcome(
+                                        canonicalTitleId = canonicalTitleId,
+                                        outcome = error.toDiagnosticOutcome(),
+                                        received = 0,
+                                    )
+                                    EvidenceCollection(emptyList(), complete = false)
+                                },
                             )
-                            EvidenceCollection(emptyList(), complete = false)
-                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        recordRefreshOutcome(
+                            canonicalTitleId = canonicalTitleId,
+                            outcome = error.toDiagnosticOutcome(),
+                        )
+                        EvidenceCollection(emptyList(), complete = false)
                     }
                 }
+                completed.send(batch)
             }
+        }
+
         var accumulated = EvidenceCollection()
-        results.forEach { deferred ->
-            val batch = deferred.await()
+        repeat(providers.size) {
+            val batch = completed.receive()
             onBatch(batch)
             accumulated = accumulated.merge(batch)
         }
+        completed.close()
         accumulated
     }
 
@@ -643,11 +651,18 @@ class RefreshChapterEvidence private constructor(
                     }
                 }
             var accumulated = AddonEvidenceCollection()
+            val completed = Channel<AddonEvidenceCollection>(capacity = results.size)
             results.forEach { deferred ->
-                val batch = deferred.await()
+                launch {
+                    completed.send(deferred.await())
+                }
+            }
+            repeat(results.size) {
+                val batch = completed.receive()
                 onBatch(batch)
                 accumulated = accumulated.merge(batch)
             }
+            completed.close()
             accumulated
         }
     }
