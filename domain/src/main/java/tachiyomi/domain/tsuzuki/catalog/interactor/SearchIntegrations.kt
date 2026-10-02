@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
@@ -24,6 +25,7 @@ import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 @Inject
 class SearchIntegrations(
     private val registry: IntegrationRegistry,
+    private val ratingEnrichmentCache: RatingEnrichmentCache = RatingEnrichmentCache(),
 ) {
 
     suspend fun execute(query: CatalogQuery): List<CatalogItem> = coroutineScope {
@@ -64,6 +66,7 @@ class SearchIntegrations(
         }
 
         val activeProviderIds = providers.map { it.integrationId.value }.toSet()
+        val configurationFingerprint = registry.configurationFingerprint()
         // Catalog rows may need provider detail lookups; keep network pressure bounded.
         val semaphore = Semaphore(RATING_LOOKUP_CONCURRENCY)
 
@@ -74,7 +77,11 @@ class SearchIntegrations(
                         async {
                             try {
                                 semaphore.withPermit {
-                                    provider.resolveExternalIds(item)
+                                    ratingEnrichmentCache.resolveExternalIds(
+                                        item = item,
+                                        provider = provider,
+                                        configurationFingerprint = configurationFingerprint,
+                                    )
                                         .getOrNullPreservingCancellation()
                                         .orEmpty()
                                 }
@@ -107,7 +114,11 @@ class SearchIntegrations(
                                 candidates = items,
                             ) ?: try {
                                 semaphore.withPermit {
-                                    provider.ratingFor(identifiedItem)
+                                    ratingEnrichmentCache.ratingFor(
+                                        item = identifiedItem,
+                                        provider = provider,
+                                        configurationFingerprint = configurationFingerprint,
+                                    )
                                         .getOrNullPreservingCancellation()
                                 }
                             } catch (error: CancellationException) {
