@@ -4,12 +4,12 @@ import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.cache.CacheFreshness
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheKey
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheLookup
 import tachiyomi.domain.tsuzuki.collections.cache.PersistentCatalogCacheStore
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.planner.QueryPlanner
 import tachiyomi.domain.tsuzuki.collections.planner.SortPlan
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
