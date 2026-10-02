@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -166,6 +167,7 @@ private fun QuickListBuilder(
                         options = sources,
                         display = ::providerDisplayName,
                         onSelect = { onEditorChange(editor.copy(providerId = it)) },
+                        enabled = editor.filtersEditable,
                     )
                     if (sources.size == 1) {
                         Text(
@@ -189,7 +191,7 @@ private fun QuickListBuilder(
                     )
                     Text(
                         text = "This List contains a query the visual builder cannot represent safely. " +
-                            "Its filters will be preserved exactly. You can still rename the List, change its source, sort, or display.",
+                            "Its filters and source will be preserved exactly. You can still rename the List, change sort, or display.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -480,7 +482,7 @@ private fun AdvancedListFilters(
 @Composable
 private fun AdvancedSection(
     title: String,
-    content: @Composable Column.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         EditorSectionLabel(title)
@@ -619,6 +621,7 @@ private fun <T> BuilderDropdown(
     display: (T) -> String,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -628,7 +631,8 @@ private fun <T> BuilderDropdown(
             style = MaterialTheme.typography.labelMedium,
         )
         TextButton(
-            onClick = { expanded = true },
+            onClick = { if (enabled) expanded = true },
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
