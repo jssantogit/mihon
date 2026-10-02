@@ -207,7 +207,6 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         is QueryExpression.Not,
         -> false
     }
-
 }
 
 /**
