@@ -146,6 +146,35 @@ class CollectionListEditorTest {
     }
 
     @Test
+    fun `multiple exact genre predicates stay editable for Kitsu all semantics`() {
+        val query = QueryExpression.All(
+            QueryExpression.Predicate(
+                QueryField.GENRE,
+                QueryOperator.EQUALS,
+                QueryValue.of("Romance"),
+            ),
+            QueryExpression.Predicate(
+                QueryField.GENRE,
+                QueryOperator.EQUALS,
+                QueryValue.of("Drama"),
+            ),
+        )
+        val draft = CollectionListDraft(
+            title = "Kitsu genres",
+            query = query,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "kitsu",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe query.expressions
+        editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
+    }
+
+    @Test
     fun `provider include exclude pair stays editable and round trips independently`() {
         val include = QueryExpression.Predicate(
             QueryField.PUBLISHER,
