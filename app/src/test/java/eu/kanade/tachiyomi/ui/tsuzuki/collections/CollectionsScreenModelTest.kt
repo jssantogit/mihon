@@ -21,6 +21,11 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftRequest
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraftResult
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
+import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderRegistry
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.execution.LogicalCatalogPage
 import tachiyomi.domain.tsuzuki.collections.interactor.ExportCollections
@@ -48,6 +53,29 @@ class CollectionsScreenModelTest {
     @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `screen state exposes registered Collection provider descriptors`() = runTest(dispatcher) {
+        val store = mockk<CollectionStore>()
+        every { store.observeCollections() } returns flowOf(emptyList())
+        val descriptors = listOf(descriptor("kitsu", "Kitsu"), descriptor("mal", "MyAnimeList"))
+        val registry = mockk<CollectionQueryProviderRegistry>()
+        every { registry.descriptors() } returns descriptors
+
+        val model = CollectionsScreenModel(
+            store = store,
+            manager = mockk(),
+            exportCollections = mockk(),
+            importCollections = mockk(),
+            executeCollectionList = mockk(),
+            executeCollectionDraft = mockk(),
+            providerRegistry = registry,
+        )
+        advanceUntilIdle()
+
+        val ready = model.state.value as CollectionsScreenState.Ready
+        ready.providerDescriptors shouldBe descriptors
     }
 
     @Test
@@ -122,6 +150,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk<ExecuteCollectionList>(),
             executeCollectionDraft = mockk<ExecuteCollectionDraft>(),
+            providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
 
@@ -195,6 +224,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk<ExecuteCollectionList>(),
             executeCollectionDraft = mockk<ExecuteCollectionDraft>(),
+            providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
 
@@ -235,6 +265,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk(),
             executeCollectionDraft = executeDraft,
+            providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
 
@@ -283,6 +314,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk(),
             executeCollectionDraft = executeDraft,
+            providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
 
@@ -304,6 +336,27 @@ class CollectionsScreenModelTest {
         val ready = model.state.value as CollectionsScreenState.Ready
         ready.draftPreviewState shouldBe CollectionDraftPreviewState.Idle
     }
+
+    private fun mockRegistry(): CollectionQueryProviderRegistry {
+        val registry = mockk<CollectionQueryProviderRegistry>()
+        every { registry.descriptors() } returns listOf(descriptor("kitsu", "Kitsu"))
+        return registry
+    }
+
+    private fun descriptor(
+        providerId: String,
+        displayName: String,
+    ) = CollectionProviderDescriptor(
+        providerId = providerId,
+        displayName = displayName,
+        scope = CollectionProviderScope.GLOBAL,
+        filters = emptyList(),
+        sorts = emptyList(),
+        paging = CollectionPagingCapability(
+            mode = CollectionPagingMode.OFFSET,
+            maxPageSize = 20,
+        ),
+    )
 
     private fun collection(
         id: String,
