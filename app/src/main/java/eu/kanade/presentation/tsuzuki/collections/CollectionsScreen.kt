@@ -57,10 +57,12 @@ import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -1081,7 +1083,7 @@ private fun ListRow(
 
 internal data class ListEditorState(
     val title: String,
-    val sort: CatalogSort,
+    val sort: CollectionSortSelection,
     val layoutType: String?,
     val providerId: String,
     val status: String?,
@@ -1209,7 +1211,7 @@ internal data class ListEditorState(
     companion object {
         fun empty(): ListEditorState = ListEditorState(
             title = "",
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             layoutType = null,
             providerId = "kitsu",
             status = null,
@@ -1408,9 +1410,24 @@ private const val COLLECTION_LIST_HEADER_COUNT = 1
 private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
 
 internal val SUPPORTED_SORTS = listOf(
-    CatalogSort.POPULARITY_DESC,
-    CatalogSort.POPULARITY_ASC,
-    CatalogSort.RATING_DESC,
-    CatalogSort.RATING_ASC,
-    CatalogSort.UPDATED_DESC,
+    CollectionSortSelection(
+        CollectionSortKey.Standard.POPULARITY,
+        CollectionSortDirection.DESC,
+    ),
+    CollectionSortSelection(
+        CollectionSortKey.Standard.POPULARITY,
+        CollectionSortDirection.ASC,
+    ),
+    CollectionSortSelection(
+        CollectionSortKey.Standard.RATING,
+        CollectionSortDirection.DESC,
+    ),
+    CollectionSortSelection(
+        CollectionSortKey.Standard.RATING,
+        CollectionSortDirection.ASC,
+    ),
+    CollectionSortSelection(
+        CollectionSortKey.Standard.UPDATED,
+        CollectionSortDirection.DESC,
+    ),
 )
