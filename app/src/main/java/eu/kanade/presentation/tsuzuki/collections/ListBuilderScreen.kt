@@ -47,6 +47,7 @@ import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderSwitchP
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
 import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
+import tachiyomi.domain.tsuzuki.collections.capability.MultiValueMode
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
@@ -891,10 +892,8 @@ private fun DescriptorFilterControl(
     onFilterLookup: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val predicate = editor.extraTerms
-        .asSequence()
-        .mapNotNull { it as? QueryExpression.Predicate }
-        .firstOrNull { it.field == capability.field }
+    val positivePredicate = editor.simplePredicate(capability.field, negated = false)
+    val negativePredicate = editor.simplePredicate(capability.field, negated = true)
 
     when (val source = capability.valueSource) {
         is FilterValueSource.Static -> {
@@ -904,36 +903,45 @@ private fun DescriptorFilterControl(
                     option.label to value.value
                 }
             if (options.isNotEmpty()) {
-                val current = (predicate?.value as? QueryValue.StringValue)?.value ?: "Any"
-                BuilderDropdown(
-                    label = capability.id.prettyEnumName(),
-                    current = current,
-                    options = listOf("Any") + options.map { it.second },
-                    display = { value ->
-                        if (value == "Any") value else options.firstOrNull { it.second == value }?.first ?: value
-                    },
-                    onSelect = { selected ->
-                        onEditorChange(
-                            editor.replaceExtraField(
-                                capability.field,
-                                selected.takeUnless { it == "Any" }?.let { value ->
-                                    QueryExpression.Predicate(
-                                        field = capability.field,
-                                        operator = capability.preferredScalarOperator(),
-                                        value = QueryValue.of(value),
-                                    )
-                                },
-                            ),
+                if (capability.multiValueMode == MultiValueMode.INCLUDE_EXCLUDE) {
+                    Column(modifier = modifier) {
+                        DescriptorStaticDropdown(
+                            label = "Include ${capability.id.prettyEnumName()}",
+                            options = options,
+                            predicate = positivePredicate,
+                            editor = editor,
+                            capability = capability,
+                            negated = false,
+                            onEditorChange = onEditorChange,
                         )
-                    },
-                    modifier = modifier,
-                    enabled = editor.filtersEditable,
-                )
+                        DescriptorStaticDropdown(
+                            label = "Exclude ${capability.id.prettyEnumName()}",
+                            options = options,
+                            predicate = negativePredicate,
+                            editor = editor,
+                            capability = capability,
+                            negated = true,
+                            onEditorChange = onEditorChange,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                } else {
+                    DescriptorStaticDropdown(
+                        label = capability.id.prettyEnumName(),
+                        options = options,
+                        predicate = positivePredicate,
+                        editor = editor,
+                        capability = capability,
+                        negated = false,
+                        onEditorChange = onEditorChange,
+                        modifier = modifier,
+                    )
+                }
             }
         }
 
         FilterValueSource.BooleanToggle -> {
-            val selected = (predicate?.value as? QueryValue.BooleanValue)?.value == true
+            val selected = (positivePredicate?.value as? QueryValue.BooleanValue)?.value == true
             FilterChip(
                 selected = selected,
                 onClick = {
@@ -961,7 +969,7 @@ private fun DescriptorFilterControl(
         FilterValueSource.IntegerRange,
         FilterValueSource.DecimalRange,
         -> {
-            val range = predicate.toNumericBounds()
+            val range = positivePredicate.toNumericBounds()
             Column(modifier = modifier) {
                 Text(capability.id.prettyEnumName(), style = MaterialTheme.typography.labelMedium)
                 Row(
@@ -1011,7 +1019,7 @@ private fun DescriptorFilterControl(
         }
 
         FilterValueSource.DateRange -> {
-            val range = predicate.toStringBounds()
+            val range = positivePredicate.toStringBounds()
             Column(modifier = modifier) {
                 Text(capability.id.prettyEnumName(), style = MaterialTheme.typography.labelMedium)
                 OutlinedTextField(
@@ -1049,31 +1057,249 @@ private fun DescriptorFilterControl(
             }
         }
 
-        FilterValueSource.FreeText,
-        is FilterValueSource.RemoteLookup,
-        -> {
-            val value = (predicate?.value as? QueryValue.StringValue)?.value.orEmpty()
-            OutlinedTextField(
-                modifier = modifier.fillMaxWidth(),
-                value = value,
-                onValueChange = { candidate ->
-                    onEditorChange(
-                        editor.replaceExtraField(
-                            capability.field,
-                            candidate.trim().takeIf(String::isNotEmpty)?.let {
-                                QueryExpression.Predicate(
-                                    field = capability.field,
-                                    operator = capability.preferredScalarOperator(),
-                                    value = QueryValue.of(it),
-                                )
-                            },
-                        ),
+        FilterValueSource.FreeText -> {
+            if (capability.multiValueMode == MultiValueMode.INCLUDE_EXCLUDE) {
+                Column(modifier = modifier) {
+                    DescriptorTextField(
+                        label = "Include ${capability.id.prettyEnumName()}",
+                        value = (positivePredicate?.value as? QueryValue.StringValue)?.value.orEmpty(),
+                        editor = editor,
+                        capability = capability,
+                        negated = false,
+                        onEditorChange = onEditorChange,
                     )
-                },
-                enabled = editor.filtersEditable,
-                label = { Text(capability.id.prettyEnumName()) },
-                singleLine = true,
+                    DescriptorTextField(
+                        label = "Exclude ${capability.id.prettyEnumName()}",
+                        value = (negativePredicate?.value as? QueryValue.StringValue)?.value.orEmpty(),
+                        editor = editor,
+                        capability = capability,
+                        negated = true,
+                        onEditorChange = onEditorChange,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            } else {
+                DescriptorTextField(
+                    label = capability.id.prettyEnumName(),
+                    value = (positivePredicate?.value as? QueryValue.StringValue)?.value.orEmpty(),
+                    editor = editor,
+                    capability = capability,
+                    negated = false,
+                    onEditorChange = onEditorChange,
+                    modifier = modifier,
+                )
+            }
+        }
+
+        is FilterValueSource.RemoteLookup -> {
+            RemoteLookupFilterControl(
+                providerId = editor.providerId,
+                capability = capability,
+                source = source,
+                positivePredicate = positivePredicate,
+                negativePredicate = negativePredicate,
+                editor = editor,
+                onEditorChange = onEditorChange,
+                lookupState = filterLookupStates[
+                    CollectionFilterLookupKey(editor.providerId, source.lookupId)
+                ],
+                onFilterLookup = onFilterLookup,
+                modifier = modifier,
             )
+        }
+    }
+}
+
+@Composable
+private fun DescriptorStaticDropdown(
+    label: String,
+    options: List<Pair<String, String>>,
+    predicate: QueryExpression.Predicate?,
+    editor: ListEditorState,
+    capability: CollectionFilterCapability,
+    negated: Boolean,
+    onEditorChange: (ListEditorState) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val current = (predicate?.value as? QueryValue.StringValue)?.value ?: "Any"
+    BuilderDropdown(
+        label = label,
+        current = current,
+        options = listOf("Any") + options.map { it.second },
+        display = { value ->
+            if (value == "Any") value else options.firstOrNull { it.second == value }?.first ?: value
+        },
+        onSelect = { selected ->
+            val predicateExpression = selected.takeUnless { it == "Any" }?.let { value ->
+                QueryExpression.Predicate(
+                    field = capability.field,
+                    operator = capability.preferredScalarOperator(),
+                    value = QueryValue.of(value),
+                )
+            }
+            onEditorChange(
+                editor.replaceFieldTerm(
+                    field = capability.field,
+                    negated = negated,
+                    predicate = predicateExpression,
+                ),
+            )
+        },
+        modifier = modifier,
+        enabled = editor.filtersEditable,
+    )
+}
+
+@Composable
+private fun DescriptorTextField(
+    label: String,
+    value: String,
+    editor: ListEditorState,
+    capability: CollectionFilterCapability,
+    negated: Boolean,
+    onEditorChange: (ListEditorState) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        modifier = modifier.fillMaxWidth(),
+        value = value,
+        onValueChange = { candidate ->
+            val predicate = candidate.trim().takeIf(String::isNotEmpty)?.let {
+                QueryExpression.Predicate(
+                    field = capability.field,
+                    operator = capability.preferredScalarOperator(),
+                    value = QueryValue.of(it),
+                )
+            }
+            onEditorChange(
+                editor.replaceFieldTerm(
+                    field = capability.field,
+                    negated = negated,
+                    predicate = predicate,
+                ),
+            )
+        },
+        enabled = editor.filtersEditable,
+        label = { Text(label) },
+        singleLine = true,
+    )
+}
+
+@Composable
+private fun RemoteLookupFilterControl(
+    providerId: String,
+    capability: CollectionFilterCapability,
+    source: FilterValueSource.RemoteLookup,
+    positivePredicate: QueryExpression.Predicate?,
+    negativePredicate: QueryExpression.Predicate?,
+    editor: ListEditorState,
+    onEditorChange: (ListEditorState) -> Unit,
+    lookupState: CollectionFilterLookupState?,
+    onFilterLookup: (String, String, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var query by remember(providerId, source.lookupId) { mutableStateOf("") }
+
+    LaunchedEffect(providerId, source.lookupId, query) {
+        onFilterLookup(providerId, source.lookupId, query)
+    }
+
+    Column(modifier = modifier) {
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = query,
+            onValueChange = { query = it },
+            enabled = editor.filtersEditable,
+            label = { Text("Search ${capability.id.prettyEnumName()}") },
+            singleLine = true,
+        )
+
+        when (lookupState) {
+            null,
+            CollectionFilterLookupState.Idle,
+            -> Unit
+
+            is CollectionFilterLookupState.Loading -> {
+                Text(
+                    text = "Loading options…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+
+            is CollectionFilterLookupState.Error -> {
+                Text(
+                    text = lookupState.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+
+            is CollectionFilterLookupState.Ready -> {
+                if (lookupState.options.isEmpty()) {
+                    Text(
+                        text = "No matching options",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                } else {
+                    val positiveValue = positivePredicate?.value
+                    val negativeValue = negativePredicate?.value
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        items(lookupState.options, key = { option -> option.id }) { option ->
+                            val selectedPositive = positiveValue == option.value
+                            FilterChip(
+                                selected = selectedPositive,
+                                enabled = editor.filtersEditable,
+                                onClick = {
+                                    val predicate = if (selectedPositive) null else QueryExpression.Predicate(
+                                        field = capability.field,
+                                        operator = capability.preferredScalarOperator(),
+                                        value = option.value,
+                                    )
+                                    onEditorChange(
+                                        editor.replaceFieldTerm(
+                                            field = capability.field,
+                                            negated = false,
+                                            predicate = predicate,
+                                        ),
+                                    )
+                                },
+                                label = { Text(option.label) },
+                            )
+
+                            if (capability.multiValueMode == MultiValueMode.INCLUDE_EXCLUDE) {
+                                val selectedNegative = negativeValue == option.value
+                                FilterChip(
+                                    selected = selectedNegative,
+                                    enabled = editor.filtersEditable,
+                                    onClick = {
+                                        val predicate = if (selectedNegative) null else QueryExpression.Predicate(
+                                            field = capability.field,
+                                            operator = capability.preferredScalarOperator(),
+                                            value = option.value,
+                                        )
+                                        onEditorChange(
+                                            editor.replaceFieldTerm(
+                                                field = capability.field,
+                                                negated = true,
+                                                predicate = predicate,
+                                            ),
+                                        )
+                                    },
+                                    label = { Text("Exclude ${option.label}") },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
