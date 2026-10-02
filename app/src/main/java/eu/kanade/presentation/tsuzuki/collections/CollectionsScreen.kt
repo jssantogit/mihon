@@ -347,7 +347,6 @@ fun CollectionsScreen(
                 }
             }
         }
-
     }
 
     deleteTarget?.let { target ->
