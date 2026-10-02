@@ -221,7 +221,7 @@ object MangaUpdatesCollectionCapabilities : ProviderQueryCapabilities {
         "list_wish" to "Wish-list popularity",
         "list_complete" to "Complete-list popularity",
         "list_unfinished" to "Unfinished-list popularity",
-    )
+        )
 }
 
 object MangaUpdatesCollectionCompiler {
