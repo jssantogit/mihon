@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
@@ -175,7 +175,7 @@ private fun list(
     title = id,
     providerId = "kitsu",
     query = null,
-    sort = CatalogSort.POPULARITY_DESC,
+    sort = CollectionSortSelection.DEFAULT,
     sortOrder = sortOrder,
     enabled = enabled,
     origin = CollectionOrigin.USER,
