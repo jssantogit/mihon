@@ -353,12 +353,13 @@ class MangaUpdatesCollectionQueryProvider private constructor(
             upstreamPageSize = capabilities.preferredPageSize ?: 50,
             pageOrigin = PageIndexOrigin.ONE,
             fetcher = PageCatalogFetcher { page, pageSize ->
-                api.collectionSearch(
-                    compiled.copy(
-                        page = page,
-                        perPage = pageSize,
-                    ),
-                ).map { response ->
+                runCatching {
+                    val response = api.collectionSearch(
+                        compiled.copy(
+                            page = page,
+                            perPage = pageSize,
+                        ),
+                    )
                     CatalogPage(
                         items = response.items.map { it.toIntegrationCatalogItem(providerId) },
                         hasNextPage = response.page * response.perPage < response.totalHits,
