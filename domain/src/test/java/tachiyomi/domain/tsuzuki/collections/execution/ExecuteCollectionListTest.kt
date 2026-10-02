@@ -100,9 +100,9 @@ class ExecuteCollectionListTest {
         fixture.store.putGraph(
             list(
                 query = QueryExpression.Predicate(
-                    QueryField.AUTHOR,
+                    QueryField.IN_LIBRARY,
                     QueryOperator.EQUALS,
-                    QueryValue.of("Author"),
+                    QueryValue.of(true),
                 ),
             ),
         )
