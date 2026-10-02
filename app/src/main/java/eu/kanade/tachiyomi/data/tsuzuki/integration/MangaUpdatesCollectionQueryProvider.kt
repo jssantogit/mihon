@@ -321,7 +321,11 @@ class MangaUpdatesCollectionQueryProvider private constructor(
     ): Result<List<FilterOption>> {
         val values = when (lookupId) {
             "mangaupdates.genres" -> api.lookupGenres()
-            "mangaupdates.categories" -> api.lookupCategories(query.orEmpty())
+            "mangaupdates.categories" -> {
+                val normalizedQuery = query?.trim().orEmpty()
+                if (normalizedQuery.isEmpty()) return Result.success(emptyList())
+                api.lookupCategories(normalizedQuery)
+            }
             else -> return super.lookupValues(lookupId, query)
         }
         return runCatching {
