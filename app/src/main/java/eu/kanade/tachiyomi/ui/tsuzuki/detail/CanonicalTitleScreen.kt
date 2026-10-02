@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.ui.tsuzuki.detail
 
+import android.app.Activity
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,12 +29,25 @@ import kotlinx.coroutines.flow.collect
 data class CanonicalTitleScreen(
     val canonicalTitleId: String,
     val openSourceBindingFlow: Boolean = false,
+    val finishOnNavigateUp: Boolean = false,
 ) : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
+        val navigateUp: () -> Unit = {
+            if (finishOnNavigateUp) {
+                (context as? Activity)?.finish()
+            } else {
+                navigator.pop()
+            }
+        }
+        BackHandler(
+            enabled = finishOnNavigateUp,
+            onBack = navigateUp,
+        )
+
         val screenModel = metroViewModel<CanonicalTitleScreenModel>()
         val contentSelectorViewModel = metroViewModel<ContentSelectorScreenModel>()
         val linkViewModel = metroViewModel<ContentBindingLinkScreenModel>()
@@ -62,7 +77,7 @@ data class CanonicalTitleScreen(
 
         CanonicalTitleDetailScreen(
             state = state,
-            navigateUp = navigator::pop,
+            navigateUp = navigateUp,
             onAtualizar = { screenModel.refresh() },
             onAddToLibrary = { screenModel.addToLibrary() },
             onRemoveFromLibrary = { screenModel.removeFromLibrary() },
