@@ -62,8 +62,17 @@ data class CollectionListDraft(
     val layoutType: String?,
 )
 
+@Immutable
+data class CollectionFolderDraft(
+    val title: String,
+    val lists: List<CollectionListDraft> = emptyList(),
+)
+
 sealed interface CollectionsAction {
-    data class CreateCollection(val title: String) : CollectionsAction
+    data class CreateCollection(
+        val title: String,
+        val folders: List<CollectionFolderDraft> = emptyList(),
+    ) : CollectionsAction
     data class RenameCollection(val collection: TsuzukiCollection, val title: String) : CollectionsAction
     data class DuplicateCollection(val collectionId: String) : CollectionsAction
     data class DeleteCollection(val collectionId: String) : CollectionsAction
@@ -73,11 +82,17 @@ sealed interface CollectionsAction {
         val collectionId: String,
         val parentFolderId: String?,
         val title: String,
+        val lists: List<CollectionListDraft> = emptyList(),
     ) : CollectionsAction
 
     data class RenameFolder(val folder: CollectionFolder, val title: String) : CollectionsAction
     data class DeleteFolder(val folderId: String) : CollectionsAction
     data class MoveFolder(val folder: CollectionFolder, val delta: Long) : CollectionsAction
+    data class ReorderFolders(
+        val collectionId: String,
+        val parentFolderId: String?,
+        val orderedFolderIds: List<String>,
+    ) : CollectionsAction
 
     data class CreateList(
         val collectionId: String,
@@ -94,6 +109,10 @@ sealed interface CollectionsAction {
     data class DuplicateList(val listId: String) : CollectionsAction
     data class DeleteList(val listId: String) : CollectionsAction
     data class MoveList(val list: CollectionList, val delta: Long) : CollectionsAction
+    data class ReorderLists(
+        val folderId: String,
+        val orderedListIds: List<String>,
+    ) : CollectionsAction
     data class ListVisibilityChanged(val listId: String, val visible: Boolean) : CollectionsAction
     data class RefreshList(val listId: String) : CollectionsAction
     data class LoadMore(val listId: String) : CollectionsAction
@@ -206,7 +225,7 @@ class CollectionsScreenModel(
 
     fun dispatch(action: CollectionsAction) {
         when (action) {
-            is CollectionsAction.CreateCollection -> createCollection(action.title)
+            is CollectionsAction.CreateCollection -> createCollection(action.title, action.folders)
             is CollectionsAction.RenameCollection -> renameCollection(action.collection, action.title)
             is CollectionsAction.DuplicateCollection -> duplicateCollection(action.collectionId)
             is CollectionsAction.DeleteCollection -> deleteCollection(action.collectionId)
@@ -215,10 +234,16 @@ class CollectionsScreenModel(
                 collectionId = action.collectionId,
                 parentFolderId = action.parentFolderId,
                 title = action.title,
+                lists = action.lists,
             )
             is CollectionsAction.RenameFolder -> renameFolder(action.folder, action.title)
             is CollectionsAction.DeleteFolder -> deleteFolder(action.folderId)
             is CollectionsAction.MoveFolder -> moveFolder(action.folder, action.delta)
+            is CollectionsAction.ReorderFolders -> reorderFolders(
+                collectionId = action.collectionId,
+                parentFolderId = action.parentFolderId,
+                orderedFolderIds = action.orderedFolderIds,
+            )
             is CollectionsAction.CreateList -> createList(
                 collectionId = action.collectionId,
                 folderId = action.folderId,
@@ -238,21 +263,47 @@ class CollectionsScreenModel(
             is CollectionsAction.DuplicateList -> duplicateList(action.listId)
             is CollectionsAction.DeleteList -> deleteList(action.listId)
             is CollectionsAction.MoveList -> moveList(action.list, action.delta)
+            is CollectionsAction.ReorderLists -> reorderLists(
+                folderId = action.folderId,
+                orderedListIds = action.orderedListIds,
+            )
             is CollectionsAction.ListVisibilityChanged -> setListVisible(action.listId, action.visible)
             is CollectionsAction.RefreshList -> refreshList(action.listId)
             is CollectionsAction.LoadMore -> loadMore(action.listId)
         }
     }
 
-    fun createCollection(title: String) = launchAction {
+    fun createCollection(
+        title: String,
+        folders: List<CollectionFolderDraft>,
+    ) = launchAction {
         val nextOrder = currentCollections()
             .maxOfOrNull { it.collection.sortOrder }
             ?.plus(1)
             ?: 0
-        manager.createUserCollection(
+        val collection = manager.createUserCollection(
             title = title,
             sortOrder = nextOrder,
         )
+        folders.forEachIndexed { folderIndex, folderDraft ->
+            val folder = manager.createUserFolder(
+                collectionId = collection.id,
+                title = folderDraft.title,
+                sortOrder = folderIndex.toLong(),
+            )
+            folderDraft.lists.forEachIndexed { listIndex, listDraft ->
+                manager.createUserList(
+                    collectionId = collection.id,
+                    folderId = folder.id,
+                    title = listDraft.title,
+                    providerId = "kitsu",
+                    query = listDraft.query,
+                    sort = listDraft.sort,
+                    sortOrder = listIndex.toLong(),
+                    layoutType = listDraft.layoutType,
+                )
+            }
+        }
     }
 
     fun renameCollection(
@@ -281,6 +332,7 @@ class CollectionsScreenModel(
         collectionId: String,
         parentFolderId: String?,
         title: String,
+        lists: List<CollectionListDraft>,
     ) = launchAction {
         val collection = currentCollections().first { it.collection.id == collectionId }
         val siblingMax = collection.folders
@@ -288,12 +340,24 @@ class CollectionsScreenModel(
             .maxOfOrNull { it.folder.sortOrder }
             ?: -1
 
-        manager.createUserFolder(
+        val folder = manager.createUserFolder(
             collectionId = collectionId,
             title = title,
             sortOrder = siblingMax + 1,
             parentFolderId = parentFolderId,
         )
+        lists.forEachIndexed { index, listDraft ->
+            manager.createUserList(
+                collectionId = collectionId,
+                folderId = folder.id,
+                title = listDraft.title,
+                providerId = "kitsu",
+                query = listDraft.query,
+                sort = listDraft.sort,
+                sortOrder = index.toLong(),
+                layoutType = listDraft.layoutType,
+            )
+        }
     }
 
     fun renameFolder(
@@ -329,6 +393,18 @@ class CollectionsScreenModel(
         manager.reorderFolder(
             folderId = folder.id,
             sortOrder = neighbor.sortOrder,
+        )
+    }
+
+    fun reorderFolders(
+        collectionId: String,
+        parentFolderId: String?,
+        orderedFolderIds: List<String>,
+    ) = launchAction {
+        manager.reorderUserFolders(
+            collectionId = collectionId,
+            parentFolderId = parentFolderId,
+            orderedFolderIds = orderedFolderIds,
         )
     }
 
@@ -420,6 +496,16 @@ class CollectionsScreenModel(
         manager.reorderList(
             listId = list.id,
             sortOrder = neighbor.sortOrder,
+        )
+    }
+
+    fun reorderLists(
+        folderId: String,
+        orderedListIds: List<String>,
+    ) = launchAction {
+        manager.reorderUserLists(
+            folderId = folderId,
+            orderedListIds = orderedListIds,
         )
     }
 
