@@ -7,6 +7,7 @@ import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
+/** Provider Capabilities V2 final validation anchor: UI and runtime share this contract. */
 interface CollectionQueryProvider {
     val providerId: String
     val capabilities: ProviderQueryCapabilities
