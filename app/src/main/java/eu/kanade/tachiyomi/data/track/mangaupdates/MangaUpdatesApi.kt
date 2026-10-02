@@ -22,6 +22,11 @@ import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.parseAs
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -315,6 +320,40 @@ class MangaUpdatesApi(
         }
     }
 
+    suspend fun lookupGenres(): List<Pair<String, String>> {
+        val element = with(json) {
+            client.newCall(GET("$BASE_URL/v1/genres"))
+                .awaitSuccess()
+                .parseAs<JsonElement>()
+        }
+        return element.lookupPairs(
+            labelKeys = listOf("genre", "name", "label", "title"),
+            valueKeys = listOf("genre", "slug", "name", "id"),
+        )
+    }
+
+    suspend fun lookupCategories(query: String): List<Pair<String, String>> {
+        val normalized = query.trim()
+        if (normalized.isEmpty()) return emptyList()
+        val body = buildJsonObject {
+            put("search", normalized)
+        }
+        val element = with(json) {
+            client.newCall(
+                POST(
+                    url = "$BASE_URL/v1/categories/search",
+                    body = body.toString().toRequestBody(CONTENT_TYPE),
+                ),
+            )
+                .awaitSuccess()
+                .parseAs<JsonElement>()
+        }
+        return element.lookupPairs(
+            labelKeys = listOf("category", "name", "label", "title"),
+            valueKeys = listOf("category", "name", "slug", "id"),
+        )
+    }
+
     suspend fun collectionSearch(
         query: MangaUpdatesCollectionQuery,
         trackerId: Long,
@@ -407,6 +446,34 @@ class MangaUpdatesApi(
                 .awaitSuccess()
                 .parseAs<MUCurrentUser>()
         }
+    }
+
+    private fun JsonElement.lookupPairs(
+        labelKeys: List<String>,
+        valueKeys: List<String>,
+    ): List<Pair<String, String>> {
+        val elements = when (this) {
+            is JsonArray -> this
+            is JsonObject -> values.firstOrNull { it is JsonArray } as? JsonArray ?: JsonArray(emptyList())
+            else -> JsonArray(emptyList())
+        }
+        return elements.mapNotNull { entry ->
+            when (entry) {
+                is JsonPrimitive -> entry.contentOrNull
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { it to it }
+                is JsonObject -> {
+                    val label = labelKeys.asSequence()
+                        .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
+                        .firstOrNull(String::isNotBlank)
+                    val value = valueKeys.asSequence()
+                        .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
+                        .firstOrNull(String::isNotBlank)
+                    if (label != null && value != null) label to value else null
+                }
+                else -> null
+            }
+        }.distinctBy { it.second }
     }
 
     companion object {
