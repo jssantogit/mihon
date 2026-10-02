@@ -56,9 +56,9 @@ class ResidualEvaluatorTest {
     @Test
     fun `unsupported field is explicit rather than false or unknown`() {
         val expression = predicate(
-            QueryField.AUTHOR,
+            QueryField.IN_LIBRARY,
             QueryOperator.EQUALS,
-            QueryValue.of("Kentaro Miura"),
+            QueryValue.of(true),
         )
 
         ResidualEvaluator.support(expression).shouldBeInstanceOf<ResidualSupport.Unsupported>()
@@ -211,7 +211,7 @@ class ResidualEvaluatorTest {
             demographics = listOf("Shounen"),
         )
 
-        evaluate(predicate(QueryField.AUTHOR, QueryOperator.EQUALS, QueryValue.of("one")), target) shouldBe
+        evaluate(predicate(QueryField.IN_LIBRARY, QueryOperator.EQUALS, QueryValue.of("one")), target) shouldBe
             TruthValue.TRUE
         evaluate(predicate(QueryField.ARTIST, QueryOperator.CONTAINS, QueryValue.of("YUSUKE MURATA")), target) shouldBe
             TruthValue.TRUE
