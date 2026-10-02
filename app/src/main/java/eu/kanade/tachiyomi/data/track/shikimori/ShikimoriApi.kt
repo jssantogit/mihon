@@ -164,6 +164,74 @@ class ShikimoriApi(
         }
     }
 
+    override suspend fun collectionSearch(query: ShikimoriCollectionQuery): ShikimoriCollectionPage {
+        return withIOContext {
+            val arguments = buildList {
+                add("page: ${query.page}")
+                add("limit: ${query.limit}")
+                add("order: ${query.order.graphQlString()}")
+                query.kind?.let { add("kind: ${it.graphQlString()}") }
+                query.status?.let { add("status: ${it.graphQlString()}") }
+                query.season?.let { add("season: ${it.graphQlString()}") }
+                query.score?.let { add("score: $it") }
+                query.genre?.let { add("genre: ${it.graphQlString()}") }
+                query.publisher?.let { add("publisher: ${it.graphQlString()}") }
+                query.franchise?.let { add("franchise: ${it.graphQlString()}") }
+                query.censored?.let { add("censored: $it") }
+                query.search?.takeIf(String::isNotBlank)?.let { add("search: ${it.graphQlString()}") }
+            }.joinToString()
+
+            val graphql = """
+                |{
+                    |mangas($arguments) {
+                        |id
+                        |name
+                        |chapters
+                        |kind
+                        |poster {
+                            |mainUrl
+                        |}
+                        |score
+                        |url
+                        |status
+                        |airedOn {
+                            |date
+                        |}
+                        |description
+                        |personRoles {
+                            |person {
+                                |name
+                            |}
+                            |rolesEn
+                        |}
+                    |}
+                |}
+            """.trimMargin()
+            val payload = buildJsonObject {
+                put("query", graphql)
+            }
+
+            val items = with(json) {
+                publicClient.newCall(
+                    POST(
+                        GRAPHQL_API_URL,
+                        body = payload.toString().toRequestBody(jsonMime),
+                    ),
+                )
+                    .awaitSuccess()
+                    .parseAs<SMSearchResult>()
+                    .data.mangas
+                    .map { it.toTrack(trackerId) }
+            }
+            ShikimoriCollectionPage(
+                items = items,
+                page = query.page,
+                limit = query.limit,
+                hasNextPage = items.size == query.limit,
+            )
+        }
+    }
+
     suspend fun getMangaDetails(id: Int): TrackSearch? = getMangaDetailsPublic(id)
 
     override suspend fun getMangaDetailsPublic(id: Int): TrackSearch? {
@@ -362,6 +430,9 @@ class ShikimoriApi(
                 .add("refresh_token", token)
                 .build(),
         )
+
+        private fun String.graphQlString(): String =
+            """ + replace("\\", "\\\\").replace(""", "\\"") + """
 
         private fun requireCredential(value: String): String =
             value.trim().ifBlank { throw ShikimoriCredentialsMissing() }
