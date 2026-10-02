@@ -26,6 +26,7 @@ import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
+import tachiyomi.domain.tsuzuki.collections.capability.ResidualScanPolicy
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
@@ -142,6 +143,48 @@ class ExecuteCollectionListTest {
         result.page.items.map { it.providerId } shouldContainExactly listOf("2", "4")
         result.page.nextCursor shouldBe null
         fixture.provider.calls shouldBe 3
+    }
+
+    @Test
+    fun `integrated execution exposes scan budget without pretending provider exhaustion`() = runTest {
+        val fixture = fixture(
+            dataset = listOf(
+                item("1", chapterCount = 101),
+                item("2", chapterCount = 2),
+                item("3", chapterCount = 3),
+                item("4", chapterCount = 102),
+            ),
+            maxProviderPageSize = 2,
+            scanPolicy = ResidualScanPolicy(
+                maxRawItemsPerLogicalPage = 100,
+                maxRemoteRequestsPerLogicalPage = 2,
+                maxElapsedMillis = 60_000,
+            ),
+        )
+        fixture.store.putGraph(
+            list(
+                query = QueryExpression.Predicate(
+                    QueryField.CHAPTER_COUNT,
+                    QueryOperator.GREATER_THAN,
+                    QueryValue.of(100),
+                ),
+            ),
+        )
+
+        val result = fixture.executor.execute(
+            ExecuteCollectionListRequest(
+                listId = "list",
+                pageSize = 2,
+                cachePolicy = CollectionExecutionCachePolicy(
+                    mode = CollectionCacheMode.NETWORK_ONLY,
+                ),
+            ),
+        ).shouldBeInstanceOf<ExecuteCollectionListResult.ScanBudgetReached>()
+
+        result.page.items.map { it.providerId } shouldContainExactly listOf("1")
+        result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 3)
+        result.reason shouldBe ResidualScanBudgetReason.REMOTE_REQUESTS
+        fixture.provider.calls shouldBe 2
     }
 
     @Test
@@ -305,6 +348,7 @@ class ExecuteCollectionListTest {
         dataset: List<CatalogItem> = listOf(item("network")),
         now: Long = 1_000,
         maxProviderPageSize: Int = 20,
+        scanPolicy: ResidualScanPolicy = ResidualScanPolicy.DEFAULT,
         providerGate: CompletableDeferred<Unit>? = null,
         maxConcurrentPerProvider: Int = 2,
     ): Fixture {
@@ -312,6 +356,7 @@ class ExecuteCollectionListTest {
         val provider = FakeProvider(
             dataset = dataset,
             maxProviderPageSize = maxProviderPageSize,
+            scanPolicy = scanPolicy,
             gate = providerGate,
         )
         val persistentCache = FakePersistentCache()
@@ -394,6 +439,7 @@ class ExecuteCollectionListTest {
     private class FakeProvider(
         private val dataset: List<CatalogItem>,
         maxProviderPageSize: Int,
+        scanPolicy: ResidualScanPolicy,
         private val gate: CompletableDeferred<Unit>?,
     ) : CollectionQueryProvider {
         var calls = 0
@@ -411,6 +457,7 @@ class ExecuteCollectionListTest {
                     mode = CollectionPagingMode.OFFSET,
                     maxPageSize = maxProviderPageSize,
                 ),
+                scanPolicy = scanPolicy,
             )
 
             override fun canPushPredicate(
