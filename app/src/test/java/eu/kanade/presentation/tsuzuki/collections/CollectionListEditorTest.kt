@@ -146,6 +146,36 @@ class CollectionListEditorTest {
     }
 
     @Test
+    fun `provider include exclude pair stays editable and round trips independently`() {
+        val include = QueryExpression.Predicate(
+            QueryField.PUBLISHER,
+            QueryOperator.EQUALS,
+            QueryValue.of("1"),
+        )
+        val exclude = QueryExpression.Not(
+            QueryExpression.Predicate(
+                QueryField.PUBLISHER,
+                QueryOperator.EQUALS,
+                QueryValue.of("4"),
+            ),
+        )
+        val query = QueryExpression.All(include, exclude)
+        val draft = CollectionListDraft(
+            title = "Publishers",
+            query = query,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "shikimori",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(include, exclude)
+        editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
+    }
+
+    @Test
     fun `advanced any query is preserved exactly when visual editor cannot represent it`() {
         val query = QueryExpression.Any(
             QueryExpression.Predicate(
