@@ -1512,4 +1512,3 @@ internal data class DeleteTarget(
 
 private const val COLLECTION_LIST_HEADER_COUNT = 1
 private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
-
