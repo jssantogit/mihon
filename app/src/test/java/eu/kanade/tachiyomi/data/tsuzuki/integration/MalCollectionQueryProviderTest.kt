@@ -24,6 +24,7 @@ class MalCollectionQueryProviderTest {
             setOf(FilterExecutionMode.RESIDUAL_EXACT)
         descriptor.capabilitiesFor(QueryField.AUTHOR).single().execution shouldBe
             setOf(FilterExecutionMode.RESIDUAL_EXACT)
+        descriptor.scanPolicy.maxRawItemsPerLogicalPage shouldBe 250
         MalCollectionCapabilities.canPushPredicate(
             QueryField.GENRE,
             QueryOperator.EQUALS,
