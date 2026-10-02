@@ -26,6 +26,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionCacheMode
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionExecutionCachePolicy
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionListDraftExecution
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderRegistry
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionDraft
@@ -187,6 +188,7 @@ sealed interface CollectionsScreenState {
         val listRuntimeStates: Map<String, CollectionListRuntimeState>,
         val draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
         val providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
+        val providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     ) : CollectionsScreenState
 
     data class Error(
@@ -247,6 +249,8 @@ class CollectionsScreenModel(
             draftPreviewState = preview,
             providerDescriptors = providerRegistry.descriptors()
                 .sortedBy(CollectionProviderDescriptor::displayName),
+            providerCapabilities = providerRegistry.all()
+                .associate { provider -> provider.providerId to provider.capabilities },
         ) as CollectionsScreenState
     }
         .catch { error ->
