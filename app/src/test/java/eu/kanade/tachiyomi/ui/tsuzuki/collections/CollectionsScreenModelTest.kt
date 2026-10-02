@@ -25,6 +25,7 @@ import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapabilit
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderRegistry
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.execution.LogicalCatalogPage
@@ -39,6 +40,7 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
+import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CollectionsScreenModelTest {
@@ -59,7 +61,14 @@ class CollectionsScreenModelTest {
     fun `screen state exposes registered Collection provider descriptors`() = runTest(dispatcher) {
         val store = mockk<CollectionStore>()
         every { store.observeCollections() } returns flowOf(emptyList())
-        val descriptors = listOf(descriptor("kitsu", "Kitsu"), descriptor("mal", "MyAnimeList"))
+        val descriptors = listOf(
+            descriptor("kitsu", "Kitsu"),
+            descriptor("mal", "MyAnimeList"),
+            descriptor("mangaupdates", "MangaUpdates"),
+            descriptor("bangumi", "Bangumi"),
+            descriptor("shikimori", "Shikimori"),
+            descriptor("hikka", "Hikka"),
+        )
         val registry = mockk<CollectionQueryProviderRegistry>()
         every { registry.descriptors() } returns descriptors
         every { registry.all() } returns emptyList()
@@ -77,6 +86,73 @@ class CollectionsScreenModelTest {
 
         val ready = model.state.value as CollectionsScreenState.Ready
         ready.providerDescriptors shouldBe descriptors
+    }
+
+    @Test
+    fun `filter lookup debounces and cancels stale provider query`() = runTest(dispatcher) {
+        val store = mockk<CollectionStore>()
+        every { store.observeCollections() } returns flowOf(emptyList())
+        val registry = mockk<CollectionQueryProviderRegistry>()
+        every { registry.descriptors() } returns listOf(descriptor("shikimori", "Shikimori"))
+        every { registry.all() } returns emptyList()
+        coEvery {
+            registry.lookupValues(
+                providerId = "shikimori",
+                lookupId = "shikimori.publishers",
+                query = "shou",
+            )
+        } returns Result.success(
+            listOf(FilterOption("1", "Shueisha", QueryValue.of("1"))),
+        )
+
+        val model = CollectionsScreenModel(
+            store = store,
+            manager = mockk(),
+            exportCollections = mockk(),
+            importCollections = mockk(),
+            executeCollectionList = mockk(),
+            executeCollectionDraft = mockk(),
+            providerRegistry = registry,
+        )
+        advanceUntilIdle()
+
+        model.dispatch(
+            CollectionsAction.FilterLookupRequested(
+                providerId = "shikimori",
+                lookupId = "shikimori.publishers",
+                query = "sh",
+            ),
+        )
+        advanceTimeBy(100)
+        model.dispatch(
+            CollectionsAction.FilterLookupRequested(
+                providerId = "shikimori",
+                lookupId = "shikimori.publishers",
+                query = "shou",
+            ),
+        )
+        advanceTimeBy(249)
+
+        coVerify(exactly = 0) {
+            registry.lookupValues("shikimori", "shikimori.publishers", any())
+        }
+
+        advanceTimeBy(1)
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) {
+            registry.lookupValues("shikimori", "shikimori.publishers", "sh")
+        }
+        coVerify(exactly = 1) {
+            registry.lookupValues("shikimori", "shikimori.publishers", "shou")
+        }
+        val ready = model.state.value as CollectionsScreenState.Ready
+        ready.filterLookupStates[
+            CollectionFilterLookupKey("shikimori", "shikimori.publishers")
+        ] shouldBe CollectionFilterLookupState.Ready(
+            query = "shou",
+            options = listOf(FilterOption("1", "Shueisha", QueryValue.of("1"))),
+        )
     }
 
     @Test
