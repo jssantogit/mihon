@@ -3,12 +3,12 @@ package tachiyomi.domain.tsuzuki.chapter.evidence
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.selects.select
@@ -236,37 +236,43 @@ class RefreshChapterEvidence private constructor(
             }
 
             val stagedEvidence = linkedMapOf<String, ChapterEvidence>()
+            val stageMutex = Mutex()
 
             suspend fun reconcileStage(
                 observations: List<ChapterEvidence>,
                 pendingSnapshots: List<ChapterRefreshSnapshot> = emptyList(),
             ) {
-                val delta = observations.filter { observation ->
-                    stagedEvidence[observation.id] != observation
-                }
-                if (delta.isNotEmpty()) {
-                    reconcileChapterEvidence.execute(canonicalTitleId, delta)
-                    delta.forEach { observation -> stagedEvidence[observation.id] = observation }
-                }
-                pendingSnapshots
-                    .associateBy(ChapterRefreshSnapshot::scopeKey)
-                    .values
-                    .forEach { snapshot -> refreshSnapshots?.upsertIfNewer(snapshot) }
-
-                if (delta.isNotEmpty()) {
-                    invalidateContentOptionsAfterChapterRefresh(
-                        invalidateInFlight = {
-                            inFlightContentResolution?.invalidateTitle(canonicalTitleId)
-                        },
-                        invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
-                    )
-                    try {
-                        onStageReconciled()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Throwable) {
-                        // Progressive publication is observational; canonical refresh stays authoritative.
+                stageMutex.lock()
+                try {
+                    val delta = observations.filter { observation ->
+                        stagedEvidence[observation.id] != observation
                     }
+                    if (delta.isNotEmpty()) {
+                        reconcileChapterEvidence.execute(canonicalTitleId, delta)
+                        delta.forEach { observation -> stagedEvidence[observation.id] = observation }
+                    }
+                    pendingSnapshots
+                        .associateBy(ChapterRefreshSnapshot::scopeKey)
+                        .values
+                        .forEach { snapshot -> refreshSnapshots?.upsertIfNewer(snapshot) }
+
+                    if (delta.isNotEmpty()) {
+                        invalidateContentOptionsAfterChapterRefresh(
+                            invalidateInFlight = {
+                                inFlightContentResolution?.invalidateTitle(canonicalTitleId)
+                            },
+                            invalidateCache = { contentOptionCache?.invalidateTitle(canonicalTitleId) },
+                        )
+                        try {
+                            onStageReconciled()
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Throwable) {
+                            // Progressive publication is observational; canonical refresh stays authoritative.
+                        }
+                    }
+                } finally {
+                    stageMutex.unlock()
                 }
             }
 
@@ -278,18 +284,15 @@ class RefreshChapterEvidence private constructor(
                 emptyList()
             }
 
-            val addonStageGate = CompletableDeferred<Unit>()
             val collections = coroutineScope {
                 val initialAddons = async {
                     collectAddonEvidence(canonicalTitleId) { batch ->
-                        addonStageGate.await()
                         reconcileStage(batch.evidence, batch.pendingSnapshots)
                     }
                 }
                 val integrationEvidence = collectIntegrationEvidence(canonicalTitleId) { batch ->
                     reconcileStage(batch.evidence)
                 }
-                addonStageGate.complete(Unit)
                 var addonEvidence = initialAddons.await()
 
                 val knownBindingIds = initialBindings.mapTo(linkedSetOf(), ContentBinding::id)

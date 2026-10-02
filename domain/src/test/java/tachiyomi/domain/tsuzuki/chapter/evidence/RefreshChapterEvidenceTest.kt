@@ -188,10 +188,9 @@ class RefreshChapterEvidenceTest {
 
         firstGate.complete(Unit)
         operation.await().isSuccess shouldBe true
-        stages shouldContainExactly listOf(
-            listOf("2"),
-            listOf("1", "2"),
-        )
+        stages.size shouldBe 2
+        stages.first() shouldContainExactly listOf("2")
+        stages.last().toSet() shouldBe setOf("1", "2")
     }
 
     @Test
@@ -788,10 +787,9 @@ class RefreshChapterEvidenceTest {
 
         integrationGate.complete(Unit)
         operation.await().isSuccess shouldBe true
-        stages shouldContainExactly listOf(
-            listOf("2"),
-            listOf("1", "2"),
-        )
+        stages.size shouldBe 2
+        stages.first() shouldContainExactly listOf("2")
+        stages.last().toSet() shouldBe setOf("1", "2")
     }
 
     @Test
