@@ -186,7 +186,8 @@ object HikkaCollectionCapabilities : ProviderQueryCapabilities {
 
     private const val PROVIDER_ID = "hikka"
     private const val PAGE_SIZE = 50
-    private val RANGE_OPERATORS = setOf(
+    private val RANGE_OPERATORS
+        get() = setOf(
         QueryOperator.GREATER_OR_EQUAL,
         QueryOperator.LESS_OR_EQUAL,
         QueryOperator.BETWEEN,
