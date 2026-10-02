@@ -7,10 +7,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.portable.CollectionPortableCodec
 import tachiyomi.domain.tsuzuki.collections.portable.PortableCollectionsDocument
@@ -338,7 +338,7 @@ class ImportExportCollectionsTest {
         title = "List $id",
         providerId = "kitsu",
         query = null,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         sortOrder = 0,
         origin = origin,
         createdAt = 1,
