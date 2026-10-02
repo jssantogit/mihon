@@ -477,7 +477,7 @@ class ShikimoriApi(
                 this@graphQlString.forEach { char ->
                     when (char) {
                         '\\' -> append("\\\\")
-                        '"' -> append("\\"")
+                        '"' -> append("\\\"")
                         else -> append(char)
                     }
                 }
