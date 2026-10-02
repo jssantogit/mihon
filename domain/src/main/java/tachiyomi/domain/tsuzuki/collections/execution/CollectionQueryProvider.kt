@@ -1,7 +1,7 @@
 package tachiyomi.domain.tsuzuki.collections.execution
 
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
@@ -11,7 +11,7 @@ interface CollectionQueryProvider {
 
     suspend fun fetch(
         pushdownExpression: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         offset: Int,
         limit: Int,
     ): Result<CatalogPage>
