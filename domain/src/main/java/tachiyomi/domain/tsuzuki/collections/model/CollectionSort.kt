@@ -133,5 +133,7 @@ fun CollectionSortSelection.toLegacyCatalogSortOrNull(): CatalogSort? = when (ke
 
 enum class SortDirectionMode {
     ASC_DESC,
+    ASC_ONLY,
+    DESC_ONLY,
     FIXED_NATIVE,
 }
