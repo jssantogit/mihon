@@ -169,6 +169,10 @@
         </activity>
 
         <activity
+            android:name=".ui.tsuzuki.detail.CanonicalTitleActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.reader.ReaderActivity"
             android:exported="false"
             android:launchMode="singleTask">
