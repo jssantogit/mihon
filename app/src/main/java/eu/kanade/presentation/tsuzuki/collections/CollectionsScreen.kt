@@ -1108,6 +1108,7 @@ internal data class ListEditorState(
     val minScore: String,
     val minChapters: String,
     val minVolumes: String,
+    val extraTerms: List<QueryExpression>,
     val preservedQuery: QueryExpression?,
     val filtersEditable: Boolean,
 ) {
@@ -1203,6 +1204,7 @@ internal data class ListEditorState(
                         ),
                     )
                 }
+                addAll(extraTerms)
             }
 
             when (predicates.size) {
@@ -1236,6 +1238,7 @@ internal data class ListEditorState(
             minScore = "",
             minChapters = "",
             minVolumes = "",
+            extraTerms = emptyList(),
             preservedQuery = null,
             filtersEditable = true,
         )
@@ -1256,6 +1259,7 @@ internal data class ListEditorState(
                 minScore = parsed?.minScore.orEmpty(),
                 minChapters = parsed?.minChapters.orEmpty(),
                 minVolumes = parsed?.minVolumes.orEmpty(),
+                extraTerms = parsed?.extraTerms.orEmpty(),
                 preservedQuery = if (parsed == null) list.query else null,
                 filtersEditable = parsed != null,
             )
@@ -1277,6 +1281,7 @@ internal data class ListEditorState(
                 minScore = parsed?.minScore.orEmpty(),
                 minChapters = parsed?.minChapters.orEmpty(),
                 minVolumes = parsed?.minVolumes.orEmpty(),
+                extraTerms = parsed?.extraTerms.orEmpty(),
                 preservedQuery = if (parsed == null) draft.query else null,
                 filtersEditable = parsed != null,
             )
@@ -1294,6 +1299,7 @@ private data class ParsedSimpleQuery(
     val minScore: String? = null,
     val minChapters: String? = null,
     val minVolumes: String? = null,
+    val extraTerms: List<QueryExpression> = emptyList(),
 )
 
 private data class ParsedSimpleTerm(
@@ -1386,7 +1392,15 @@ private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
                 result.copy(minVolumes = value.value.toString())
             }
 
-            else -> return null
+            else -> {
+                result.copy(
+                    extraTerms = result.extraTerms + if (term.negated) {
+                        QueryExpression.Not(predicate)
+                    } else {
+                        predicate
+                    },
+                )
+            }
         }
     }
 
