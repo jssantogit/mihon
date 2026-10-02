@@ -57,9 +57,9 @@ class CollectionListEditorTest {
             title = "Draft",
             query = query,
             sort = CollectionSortSelection(
-            CollectionSortKey.Standard.RATING,
-            CollectionSortDirection.DESC,
-        ),
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
             layoutType = "list",
         )
 
