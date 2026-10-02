@@ -5,6 +5,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.SortDirectionMode
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -37,6 +38,51 @@ class CollectionProviderDescriptorTest {
             QueryField.STATUS,
             QueryOperator.CONTAINS,
             FilterExecutionMode.REMOTE_EXACT,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `static descriptor rejects values it does not advertise`() {
+        val descriptor = descriptor(filters = listOf(statusFilter))
+
+        descriptor.supports(
+            field = QueryField.STATUS,
+            operator = QueryOperator.EQUALS,
+            value = QueryValue.of("ONGOING"),
+            executionMode = FilterExecutionMode.REMOTE_EXACT,
+        ) shouldBe true
+        descriptor.supports(
+            field = QueryField.STATUS,
+            operator = QueryOperator.EQUALS,
+            value = QueryValue.of("PAUSED"),
+            executionMode = FilterExecutionMode.REMOTE_EXACT,
+        ) shouldBe false
+    }
+
+    @Test
+    fun `sort descriptor validates requested direction`() {
+        val descriptor = descriptor(
+            sorts = listOf(
+                CollectionSortCapability(
+                    key = CollectionSortKey.Standard.POPULARITY,
+                    label = "Popularity",
+                    directionMode = SortDirectionMode.DESC_ONLY,
+                    defaultDirection = CollectionSortDirection.DESC,
+                ),
+            ),
+        )
+
+        descriptor.supports(
+            CollectionSortSelection(
+                CollectionSortKey.Standard.POPULARITY,
+                CollectionSortDirection.DESC,
+            ),
+        ) shouldBe true
+        descriptor.supports(
+            CollectionSortSelection(
+                CollectionSortKey.Standard.POPULARITY,
+                CollectionSortDirection.ASC,
+            ),
         ) shouldBe false
     }
 
