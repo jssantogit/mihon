@@ -36,6 +36,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFilterLookupKey
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFilterLookupState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
@@ -60,6 +62,8 @@ internal fun CollectionEditorScreen(
     providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
     providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState> = emptyMap(),
+    onFilterLookup: (String, String, String) -> Unit = { _, _, _ -> },
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onClose: () -> Unit,
@@ -85,6 +89,8 @@ internal fun CollectionEditorScreen(
                     providerDescriptors = providerDescriptors,
                     providerCapabilities = providerCapabilities,
                     draftPreviewState = draftPreviewState,
+                    filterLookupStates = filterLookupStates,
+                    onFilterLookup = onFilterLookup,
                     onSubmitDraft = { draft ->
                         draftFolders = draftFolders + DraftFolderEntry(
                             key = UUID.randomUUID().toString(),
@@ -111,6 +117,10 @@ internal fun CollectionEditorScreen(
                         providerDescriptors = providerDescriptors,
                         providerCapabilities = providerCapabilities,
                         draftPreviewState = draftPreviewState,
+                        filterLookupStates = filterLookupStates,
+                        onFilterLookup = onFilterLookup,
+                    filterLookupStates = filterLookupStates,
+                    onFilterLookup = onFilterLookup,
                         onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
                                 if (it.key == route.key) it.copy(draft = draft) else it
@@ -138,6 +148,10 @@ internal fun CollectionEditorScreen(
                         providerDescriptors = providerDescriptors,
                         providerCapabilities = providerCapabilities,
                         draftPreviewState = draftPreviewState,
+                        filterLookupStates = filterLookupStates,
+                        onFilterLookup = onFilterLookup,
+                    filterLookupStates = filterLookupStates,
+                    onFilterLookup = onFilterLookup,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -159,6 +173,10 @@ internal fun CollectionEditorScreen(
                         providerDescriptors = providerDescriptors,
                         providerCapabilities = providerCapabilities,
                         draftPreviewState = draftPreviewState,
+                        filterLookupStates = filterLookupStates,
+                        onFilterLookup = onFilterLookup,
+                    filterLookupStates = filterLookupStates,
+                    onFilterLookup = onFilterLookup,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -410,6 +428,8 @@ internal fun FolderEditorScreen(
             providerDescriptors = providerDescriptors,
             providerCapabilities = providerCapabilities,
             previewState = draftPreviewState,
+            filterLookupStates = filterLookupStates,
+            onFilterLookup = onFilterLookup,
             onPreviewDraft = { draft ->
                 onAction(CollectionsAction.PreviewDraftChanged(draft))
             },
