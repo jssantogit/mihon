@@ -7,6 +7,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -22,6 +23,7 @@ import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.interactor.GetDiscoverFeed
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchCatalog
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
@@ -76,7 +78,10 @@ class CatalogScreenModelTest {
         ),
     ): CatalogScreenModel {
         val integrationRegistry = registry(provider, ratingProviders)
-        val searchIntegrations = SearchIntegrations(integrationRegistry)
+        val searchIntegrations = SearchIntegrations(
+            integrationRegistry,
+            RatingEnrichmentCache(CoroutineScope(testDispatcher)),
+        )
         return CatalogScreenModel(
             searchCatalog = SearchCatalog(integrationRegistry, searchIntegrations),
             getDiscoverFeed = GetDiscoverFeed(integrationRegistry, searchIntegrations),

@@ -40,6 +40,15 @@ class RatingEnrichmentCache private constructor(
         constructorMarker = Unit,
     )
 
+    constructor(scope: CoroutineScope) : this(
+        scope = scope,
+        clock = { System.currentTimeMillis() },
+        positiveTtlMillis = DEFAULT_POSITIVE_TTL_MILLIS,
+        negativeTtlMillis = DEFAULT_NEGATIVE_TTL_MILLIS,
+        maxEntries = DEFAULT_MAX_ENTRIES,
+        constructorMarker = Unit,
+    )
+
     @Inject
     constructor() : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
