@@ -49,6 +49,7 @@ import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import java.util.UUID
@@ -57,6 +58,7 @@ import java.util.UUID
 internal fun CollectionEditorScreen(
     graph: CollectionUiModel?,
     providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
+    providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
@@ -81,6 +83,7 @@ internal fun CollectionEditorScreen(
                     existing = null,
                     initialDraft = null,
                     providerDescriptors = providerDescriptors,
+                    providerCapabilities = providerCapabilities,
                     draftPreviewState = draftPreviewState,
                     onSubmitDraft = { draft ->
                         draftFolders = draftFolders + DraftFolderEntry(
@@ -106,6 +109,7 @@ internal fun CollectionEditorScreen(
                         existing = null,
                         initialDraft = entry.draft,
                         providerDescriptors = providerDescriptors,
+                        providerCapabilities = providerCapabilities,
                         draftPreviewState = draftPreviewState,
                         onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
@@ -132,6 +136,7 @@ internal fun CollectionEditorScreen(
                         initialDraft = null,
                         onSubmitDraft = null,
                         providerDescriptors = providerDescriptors,
+                        providerCapabilities = providerCapabilities,
                         draftPreviewState = draftPreviewState,
                         onAction = onAction,
                         onDelete = onDelete,
@@ -152,6 +157,7 @@ internal fun CollectionEditorScreen(
                         initialDraft = null,
                         onSubmitDraft = null,
                         providerDescriptors = providerDescriptors,
+                        providerCapabilities = providerCapabilities,
                         draftPreviewState = draftPreviewState,
                         onAction = onAction,
                         onDelete = onDelete,
@@ -363,6 +369,7 @@ internal fun FolderEditorScreen(
     initialDraft: CollectionFolderDraft?,
     onSubmitDraft: ((CollectionFolderDraft) -> Unit)?,
     providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
+    providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
     draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
@@ -401,6 +408,7 @@ internal fun FolderEditorScreen(
             title = if (target is FolderListEditorTarget.New) "New List" else "Edit List",
             initial = initial,
             providerDescriptors = providerDescriptors,
+            providerCapabilities = providerCapabilities,
             previewState = draftPreviewState,
             onPreviewDraft = { draft ->
                 onAction(CollectionsAction.PreviewDraftChanged(draft))
@@ -586,7 +594,7 @@ internal fun FolderEditorScreen(
                     ) { isDragging ->
                         EditorListCard(
                             title = list.title,
-                            subtitle = "${list.providerId} • ${list.sort.name}",
+                            subtitle = "${list.providerId} • ${list.sort.cacheKey}",
                             isDragging = isDragging,
                             reorderEnabled = reorderEnabled,
                             reorderHandleModifier = if (reorderEnabled) {
@@ -639,7 +647,7 @@ internal fun FolderEditorScreen(
                     ) { isDragging ->
                         EditorListCard(
                             title = draft.title,
-                            subtitle = "${draft.providerId} • ${draft.sort.name}",
+                            subtitle = "${draft.providerId} • ${draft.sort.cacheKey}",
                             isDragging = isDragging,
                             reorderEnabled = reorderEnabled,
                             reorderHandleModifier = if (reorderEnabled) {
