@@ -1369,7 +1369,7 @@ private fun CollectionFilterCapability.rangeExpression(
 private fun CollectionFilterCapability.stringRangeExpression(
     minimum: String,
     maximum: String,
-): QueryExpression? {
+): QueryExpression.Predicate? {
     val min = minimum.trim().takeIf(String::isNotEmpty)?.let { QueryValue.of(it) }
     val max = maximum.trim().takeIf(String::isNotEmpty)?.let { QueryValue.of(it) }
     return when {
@@ -1484,24 +1484,27 @@ private fun ListEditorState.activeFilterCount(): Int = listOf(
 
 private fun providerDisplayName(providerId: String): String = providerId.prettyEnumName()
 
-private fun sortDisplayName(sort: CollectionSortSelection): String = when (sort.key) {
-    CollectionSortKey.Standard.POPULARITY -> when (sort.direction) {
-        CollectionSortDirection.DESC -> "Popularity (High to Low)"
-        CollectionSortDirection.ASC -> "Popularity (Low to High)"
-        null -> "Popularity"
+private fun sortDisplayName(sort: CollectionSortSelection): String {
+    val key = sort.key
+    return when (key) {
+        CollectionSortKey.Standard.POPULARITY -> when (sort.direction) {
+            CollectionSortDirection.DESC -> "Popularity (High to Low)"
+            CollectionSortDirection.ASC -> "Popularity (Low to High)"
+            null -> "Popularity"
+        }
+        CollectionSortKey.Standard.RATING -> when (sort.direction) {
+            CollectionSortDirection.DESC -> "Rating (High to Low)"
+            CollectionSortDirection.ASC -> "Rating (Low to High)"
+            null -> "Rating"
+        }
+        CollectionSortKey.Standard.UPDATED -> when (sort.direction) {
+            CollectionSortDirection.DESC -> "Recently Updated"
+            CollectionSortDirection.ASC -> "Oldest Updated"
+            null -> "Updated"
+        }
+        CollectionSortKey.Standard.RELEVANCE -> "Relevance"
+        is CollectionSortKey.Provider -> key.nativeId.prettyEnumName()
     }
-    CollectionSortKey.Standard.RATING -> when (sort.direction) {
-        CollectionSortDirection.DESC -> "Rating (High to Low)"
-        CollectionSortDirection.ASC -> "Rating (Low to High)"
-        null -> "Rating"
-    }
-    CollectionSortKey.Standard.UPDATED -> when (sort.direction) {
-        CollectionSortDirection.DESC -> "Recently Updated"
-        CollectionSortDirection.ASC -> "Oldest Updated"
-        null -> "Updated"
-    }
-    CollectionSortKey.Standard.RELEVANCE -> "Relevance"
-    is CollectionSortKey.Provider -> sort.key.nativeId.prettyEnumName()
 }
 
 private fun String.prettyEnumName(): String = lowercase()
