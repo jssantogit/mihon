@@ -52,6 +52,8 @@ class KitsuCatalogProvider(
             limit = query.limit,
             sort = sortParam,
             status = statusParam,
+            genres = query.genres,
+            subtype = query.format?.toKitsuSubtype(),
         ).mapCatalog { response ->
             val items = response.data.map { resource -> mapResourceToItem(resource, response.included) }
             val hasNext =
@@ -189,6 +191,18 @@ class KitsuCatalogProvider(
             chapterCount = attr.chapterCount,
             volumeCount = attr.volumeCount,
         )
+    }
+
+    private fun CatalogItemFormat.toKitsuSubtype(): String? = when (this) {
+        CatalogItemFormat.MANGA -> "manga"
+        CatalogItemFormat.NOVEL -> "novel"
+        CatalogItemFormat.ONE_SHOT -> "oneshot"
+        CatalogItemFormat.MANHWA -> "manhwa"
+        CatalogItemFormat.MANHUA -> "manhua"
+        CatalogItemFormat.DOUJIN -> "doujin"
+        CatalogItemFormat.WEBTOON,
+        CatalogItemFormat.UNKNOWN,
+        -> null
     }
 
     private inline fun <T, R> Result<T>.mapCatalog(transform: (T) -> R): Result<R> {
