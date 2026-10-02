@@ -217,7 +217,10 @@ class ResidualEvaluatorTest {
             TruthValue.TRUE
         evaluate(predicate(QueryField.PUBLISHER, QueryOperator.EQUALS, QueryValue.of("shueisha")), target) shouldBe
             TruthValue.TRUE
-        evaluate(predicate(QueryField.MAGAZINE, QueryOperator.EQUALS, QueryValue.of("weekly shonen jump")), target) shouldBe
+        evaluate(
+            predicate(QueryField.MAGAZINE, QueryOperator.EQUALS, QueryValue.of("weekly shonen jump")),
+            target,
+        ) shouldBe
             TruthValue.TRUE
         evaluate(predicate(QueryField.CATEGORY, QueryOperator.EQUALS, QueryValue.of("award winning")), target) shouldBe
             TruthValue.TRUE
@@ -238,7 +241,14 @@ class ResidualEvaluatorTest {
             TruthValue.TRUE
         evaluate(predicate(QueryField.POPULARITY, QueryOperator.GREATER_THAN, QueryValue.of(100_000)), target) shouldBe
             TruthValue.TRUE
-        evaluate(predicate(QueryField.FAVORITES, QueryOperator.BETWEEN, QueryValue.range(QueryValue.of(1), QueryValue.of(10_000))), target) shouldBe
+        evaluate(
+            predicate(
+                QueryField.FAVORITES,
+                QueryOperator.BETWEEN,
+                QueryValue.range(QueryValue.of(1), QueryValue.of(10_000)),
+            ),
+            target,
+        ) shouldBe
             TruthValue.TRUE
         evaluate(predicate(QueryField.RANK, QueryOperator.LESS_OR_EQUAL, QueryValue.of(50.0)), target) shouldBe
             TruthValue.TRUE
