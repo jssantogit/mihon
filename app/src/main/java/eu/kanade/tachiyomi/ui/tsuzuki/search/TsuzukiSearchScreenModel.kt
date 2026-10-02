@@ -94,6 +94,7 @@ class TsuzukiSearchScreenModel(
     val events = eventChannel.receiveAsFlow()
 
     private var operation: Job? = null
+    private var operationGeneration = 0L
 
     init {
         loadDiscover()
@@ -106,36 +107,57 @@ class TsuzukiSearchScreenModel(
 
     fun search(query: String): Job {
         operation?.cancel()
+        val generation = ++operationGeneration
         val normalized = query.trim()
         operation = viewModelScope.launch {
             registry.awaitReady()
+            if (generation != operationGeneration) return@launch
             if (normalized.isEmpty()) {
-                loadDiscoverNow()
+                loadDiscoverNow(generation)
                 return@launch
             }
 
             searchPreferences.recordSearch(normalized)
             if (registry.searchProviders().isEmpty()) {
-                _state.value = SearchState.NeedsIntegration(
-                    recentSearches = searchPreferences.getRecentSearches(),
-                )
+                if (generation == operationGeneration) {
+                    _state.value = SearchState.NeedsIntegration(
+                        recentSearches = searchPreferences.getRecentSearches(),
+                    )
+                }
                 return@launch
             }
 
             _state.value = SearchState.Loading
             try {
-                val items = searchIntegrations.execute(
+                val baseItems = searchIntegrations.executeBase(
                     CatalogQuery(query = normalized),
                 )
-                _state.value = if (items.isEmpty()) {
-                    SearchState.Empty(normalized)
-                } else {
-                    SearchState.Results(normalized, items)
+                if (generation != operationGeneration) return@launch
+                if (baseItems.isEmpty()) {
+                    _state.value = SearchState.Empty(normalized)
+                    return@launch
+                }
+
+                _state.value = SearchState.Results(normalized, baseItems)
+                val enriched = searchIntegrations.enrichRatingsProgressively(baseItems) { index, item ->
+                    if (generation != operationGeneration) return@enrichRatingsProgressively
+                    val current = _state.value as? SearchState.Results ?: return@enrichRatingsProgressively
+                    if (current.query != normalized || index !in current.items.indices) {
+                        return@enrichRatingsProgressively
+                    }
+                    _state.value = current.copy(
+                        items = current.items.toMutableList().apply { this[index] = item },
+                    )
+                }
+                if (generation == operationGeneration) {
+                    _state.value = SearchState.Results(normalized, enriched)
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                _state.value = SearchState.Error(normalized, error)
+                if (generation == operationGeneration) {
+                    _state.value = SearchState.Error(normalized, error)
+                }
             }
         }
         return operation!!
@@ -143,8 +165,9 @@ class TsuzukiSearchScreenModel(
 
     fun loadDiscover(): Job {
         operation?.cancel()
+        val generation = ++operationGeneration
         operation = viewModelScope.launch {
-            loadDiscoverNow()
+            loadDiscoverNow(generation)
         }
         return operation!!
     }
@@ -173,8 +196,9 @@ class TsuzukiSearchScreenModel(
         loadDiscover()
     }
 
-    private suspend fun loadDiscoverNow() {
+    private suspend fun loadDiscoverNow(generation: Long) {
         registry.awaitReady()
+        if (generation != operationGeneration) return
         val recentSearches = searchPreferences.getRecentSearches()
         val providers = registry.discoveryProviders()
         if (providers.isEmpty()) {
@@ -192,6 +216,7 @@ class TsuzukiSearchScreenModel(
             return
         }
 
+        if (generation != operationGeneration) return
         _state.value = SearchState.Loading
         try {
             val blocks = coroutineScope {
@@ -254,17 +279,40 @@ class TsuzukiSearchScreenModel(
                 ).awaitAll()
                     .filter { block -> block.items.isNotEmpty() }
             }
+            if (generation != operationGeneration) return
             _state.value = SearchState.Discover(
                 recentSearches = recentSearches,
                 blocks = blocks,
             )
+
+            val targets = blocks.flatMapIndexed { blockIndex, block ->
+                block.items.mapIndexed { itemIndex, item ->
+                    DiscoverTarget(blockIndex, itemIndex, item)
+                }
+            }
+            if (targets.isNotEmpty()) {
+                searchIntegrations.enrichRatingsProgressively(targets.map(DiscoverTarget::item)) { flatIndex, item ->
+                    if (generation != operationGeneration) return@enrichRatingsProgressively
+                    val target = targets[flatIndex]
+                    val current = _state.value as? SearchState.Discover ?: return@enrichRatingsProgressively
+                    val block = current.blocks.getOrNull(target.blockIndex) ?: return@enrichRatingsProgressively
+                    if (target.itemIndex !in block.items.indices) return@enrichRatingsProgressively
+                    val updatedBlocks = current.blocks.toMutableList()
+                    updatedBlocks[target.blockIndex] = block.copy(
+                        items = block.items.toMutableList().apply { this[target.itemIndex] = item },
+                    )
+                    _state.value = current.copy(blocks = updatedBlocks)
+                }
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            _state.value = SearchState.Error(
-                query = null,
-                error = error,
-            )
+            if (generation == operationGeneration) {
+                _state.value = SearchState.Error(
+                    query = null,
+                    error = error,
+                )
+            }
         }
     }
 
@@ -292,13 +340,19 @@ class TsuzukiSearchScreenModel(
 
         return DiscoverBlock(
             kind = kind,
-            items = searchIntegrations.enrichRatings(items),
+            items = items,
         )
     }
 
     private fun emptyPage() = CatalogPage(
         items = emptyList(),
         hasNextPage = false,
+    )
+
+    private data class DiscoverTarget(
+        val blockIndex: Int,
+        val itemIndex: Int,
+        val item: CatalogItem,
     )
 
     private companion object {

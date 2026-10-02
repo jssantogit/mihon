@@ -4,6 +4,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tachiyomi.core.common.preference.InMemoryPreferenceStore
+import tachiyomi.domain.tsuzuki.catalog.cache.RatingEnrichmentCache
 import tachiyomi.domain.tsuzuki.catalog.interactor.SearchIntegrations
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
@@ -55,7 +57,7 @@ class TsuzukiSearchScreenModelTest {
     fun `initial discover waits for registry readiness and loads without a prior search`() = runTest(dispatcher) {
         val registry = DelayedRegistry()
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
@@ -113,7 +115,7 @@ class TsuzukiSearchScreenModelTest {
             override fun trackingProviders(): List<TrackingProvider> = emptyList()
         }
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
@@ -194,7 +196,7 @@ class TsuzukiSearchScreenModelTest {
             override fun trackingProviders(): List<TrackingProvider> = emptyList()
         }
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
@@ -215,7 +217,7 @@ class TsuzukiSearchScreenModelTest {
     fun `search requests integration setup when no search provider is enabled`() = runTest(dispatcher) {
         val registry = emptyRegistry()
         val model = TsuzukiSearchScreenModel(
-            searchIntegrations = SearchIntegrations(registry),
+            searchIntegrations = SearchIntegrations(registry, RatingEnrichmentCache(CoroutineScope(dispatcher))),
             registry = registry,
             searchPreferences = TsuzukiSearchPreferences(InMemoryPreferenceStore()),
             materializeCanonicalTitleFromCatalog = MaterializeCanonicalTitleFromCatalog(
