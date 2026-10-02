@@ -3,6 +3,7 @@ package eu.kanade.presentation.tsuzuki.collections
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -40,6 +41,29 @@ class CollectionListEditorTest {
         editor.minScore shouldBe "80.0"
         editor.minChapters shouldBe "20"
 
+        editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
+    }
+
+    @Test
+    fun `draft list opens in the same visual editor without losing its query`() {
+        val query = QueryExpression.Predicate(
+            QueryField.STATUS,
+            QueryOperator.EQUALS,
+            QueryValue.of("ONGOING"),
+        )
+        val draft = CollectionListDraft(
+            title = "Draft",
+            query = query,
+            sort = CatalogSort.RATING_DESC,
+            layoutType = "list",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.title shouldBe "Draft"
+        editor.sort shouldBe CatalogSort.RATING_DESC
+        editor.layoutType shouldBe "list"
+        editor.status shouldBe "ONGOING"
         editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
     }
 
