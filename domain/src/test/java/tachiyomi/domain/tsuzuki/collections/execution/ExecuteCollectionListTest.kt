@@ -40,6 +40,9 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.CollectionQueryScheduler
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticEvent
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 
 class ExecuteCollectionListTest {
 
@@ -239,6 +242,34 @@ class ExecuteCollectionListTest {
     }
 
     @Test
+    fun `collection execution emits bounded structured planning and completion diagnostics`() = runTest {
+        val recorder = RecordingDiagnosticRecorder()
+        val fixture = fixture(
+            dataset = listOf(item("1", chapterCount = 101)),
+            diagnosticRecorder = recorder,
+        )
+        fixture.store.putGraph(list())
+
+        fixture.executor.execute(
+            ExecuteCollectionListRequest(
+                listId = "list",
+                pageSize = 1,
+                cachePolicy = CollectionExecutionCachePolicy(mode = CollectionCacheMode.NETWORK_ONLY),
+            ),
+        ).shouldBeInstanceOf<ExecuteCollectionListResult.Page>()
+
+        recorder.events.map { it.name } shouldBe listOf(
+            DiagnosticEventName.WORKFLOW_STARTED,
+            DiagnosticEventName.COLLECTION_QUERY_PLANNED,
+            DiagnosticEventName.COLLECTION_EXECUTION_COMPLETED,
+        )
+        recorder.events.last().attributes["provider_id"] shouldBe
+            tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue.Text("fake")
+        recorder.events.last().attributes["item_count"] shouldBe
+            tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue.Number(1)
+    }
+
+    @Test
     fun `fresh memory cache avoids provider fetch`() = runTest {
         val fixture = fixture(now = 1_050)
         fixture.store.putGraph(list())
@@ -402,6 +433,7 @@ class ExecuteCollectionListTest {
         scanPolicy: ResidualScanPolicy = ResidualScanPolicy.DEFAULT,
         providerGate: CompletableDeferred<Unit>? = null,
         maxConcurrentPerProvider: Int = 2,
+        diagnosticRecorder: StructuredDiagnosticRecorder = RecordingDiagnosticRecorder(),
     ): Fixture {
         val store = FakeCollectionStore()
         val provider = FakeProvider(
@@ -421,6 +453,7 @@ class ExecuteCollectionListTest {
             persistentCache = persistentCache,
             resources = resources,
             clock = { now },
+            diagnosticRecorder = diagnosticRecorder,
         )
         return Fixture(
             store = store,
@@ -554,6 +587,19 @@ class ExecuteCollectionListTest {
             maxConcurrentPerProvider = maxConcurrentPerProvider,
         )
         override val refreshCoordinator = CatalogRefreshCoordinator(scheduler)
+    }
+
+    private class RecordingDiagnosticRecorder : StructuredDiagnosticRecorder {
+        override val sessionId: String = "00000000-0000-0000-0000-000000000001"
+        val events = mutableListOf<StructuredDiagnosticEvent>()
+
+        override fun canonicalTitleReference(canonicalTitleId: String): String? = null
+
+        override fun mihonMangaReference(mihonMangaId: Long): String? = null
+
+        override fun record(event: StructuredDiagnosticEvent) {
+            events += event
+        }
     }
 
     private class FakePersistentCache : PersistentCatalogCacheStore {
