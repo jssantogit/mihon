@@ -62,7 +62,7 @@ class HikkaIntegrationProvider private constructor(
                         ),
                     )
                     CatalogPage(
-                        items = response.items.map(HKManga::toCatalogItem),
+                        items = response.items.map { manga -> manga.toCatalogItem() },
                         hasNextPage = response.page < response.pages,
                         totalCount = response.total,
                     )
