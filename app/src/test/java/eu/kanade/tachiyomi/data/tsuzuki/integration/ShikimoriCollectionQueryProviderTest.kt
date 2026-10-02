@@ -40,18 +40,18 @@ class ShikimoriCollectionQueryProviderTest {
             QueryExpression.Predicate(
                 QueryField.SCORE,
                 QueryOperator.GREATER_OR_EQUAL,
-                QueryValue.of(7.0),
+                QueryValue.of(7),
             ),
             QueryExpression.Predicate(
                 QueryField.GENRE,
                 QueryOperator.EQUALS,
-                QueryValue.of("action"),
+                QueryValue.of("1"),
             ),
             QueryExpression.Not(
                 QueryExpression.Predicate(
                     QueryField.PUBLISHER,
                     QueryOperator.EQUALS,
-                    QueryValue.of("Shueisha"),
+                    QueryValue.of("4"),
                 ),
             ),
             QueryExpression.Predicate(
@@ -76,8 +76,8 @@ class ShikimoriCollectionQueryProviderTest {
         query.status shouldBe "!released"
         query.season shouldBe "2018_2024"
         query.score shouldBe 7
-        query.genre shouldBe "action"
-        query.publisher shouldBe "!Shueisha"
+        query.genre shouldBe "1"
+        query.publisher shouldBe "!4"
         query.franchise shouldBe "berserk"
         query.censored shouldBe false
         query.order shouldBe "popularity"
