@@ -13,7 +13,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.cache.CacheFreshness
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheKey
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheLookup
@@ -22,10 +21,17 @@ import tachiyomi.domain.tsuzuki.collections.cache.MemoryCatalogCache
 import tachiyomi.domain.tsuzuki.collections.cache.PersistentCatalogCacheStore
 import tachiyomi.domain.tsuzuki.collections.cache.classifyCacheWindow
 import tachiyomi.domain.tsuzuki.collections.cache.safeCacheDeadline
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -35,6 +41,15 @@ import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.CollectionQueryScheduler
 
 class ExecuteCollectionListTest {
+
+    private val popularityDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.POPULARITY,
+        CollectionSortDirection.DESC,
+    )
+    private val ratingDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.RATING,
+        CollectionSortDirection.DESC,
+    )
 
     @Test
     fun `missing disabled and deleted definitions fail before provider execution`() = runTest {
@@ -68,10 +83,10 @@ class ExecuteCollectionListTest {
     @Test
     fun `unsupported global sort fails before provider fetch`() = runTest {
         val fixture = fixture()
-        fixture.store.putGraph(list(sort = CatalogSort.RATING_DESC))
+        fixture.store.putGraph(list(sort = ratingDesc))
 
         fixture.executor.execute(ExecuteCollectionListRequest("list")) shouldBe
-            ExecuteCollectionListResult.UnsupportedGlobalSort(CatalogSort.RATING_DESC)
+            ExecuteCollectionListResult.UnsupportedGlobalSort(ratingDesc)
         fixture.provider.calls shouldBe 0
     }
 
@@ -137,7 +152,7 @@ class ExecuteCollectionListTest {
         val key = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = popularityDesc,
             rawOffset = 0,
             pageSize = 1,
         )
@@ -168,7 +183,7 @@ class ExecuteCollectionListTest {
         val key = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = popularityDesc,
             rawOffset = 0,
             pageSize = 1,
         )
@@ -220,7 +235,7 @@ class ExecuteCollectionListTest {
         val key = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = popularityDesc,
             rawOffset = 0,
             pageSize = 1,
         )
@@ -323,7 +338,7 @@ class ExecuteCollectionListTest {
     private fun list(
         providerId: String = "fake",
         query: QueryExpression? = null,
-        sort: CatalogSort = CatalogSort.POPULARITY_DESC,
+        sort: CollectionSortSelection = popularityDesc,
         enabled: Boolean = true,
         deletedAt: Long? = null,
     ): CollectionList = CollectionList(
@@ -372,6 +387,8 @@ class ExecuteCollectionListTest {
         override fun get(providerId: String): CollectionQueryProvider? {
             return provider.takeIf { it.providerId == providerId }
         }
+
+        override fun all(): List<CollectionQueryProvider> = listOf(provider)
     }
 
     private class FakeProvider(
@@ -395,13 +412,13 @@ class ExecuteCollectionListTest {
             ): Boolean = false
 
             override fun canPushSort(sort: CatalogSort): Boolean {
-                return sort == CatalogSort.POPULARITY_DESC
+                return sort == popularityDesc
             }
         }
 
         override suspend fun fetch(
             pushdownExpression: QueryExpression?,
-            sort: CatalogSort,
+            sort: CollectionSortSelection,
             offset: Int,
             limit: Int,
         ): Result<CatalogPage> {
