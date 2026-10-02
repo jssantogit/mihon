@@ -327,6 +327,28 @@ class HikkaCollectionQueryProvider private constructor(
     override val providerId = "hikka"
     override val capabilities: ProviderQueryCapabilities = HikkaCollectionCapabilities
 
+    override suspend fun lookupValues(
+        lookupId: String,
+        query: String?,
+    ): Result<List<FilterOption>> {
+        if (lookupId != "hikka.genres") return super.lookupValues(lookupId, query)
+        return runCatching {
+            api.lookupGenres()
+                .filter { (label, value) ->
+                    query.isNullOrBlank() ||
+                        label.contains(query, ignoreCase = true) ||
+                        value.contains(query, ignoreCase = true)
+                }
+                .map { (label, value) ->
+                    FilterOption(
+                        id = value,
+                        label = label,
+                        value = QueryValue.of(value),
+                    )
+                }
+        }
+    }
+
     override suspend fun fetch(
         pushdownExpression: QueryExpression?,
         sort: CollectionSortSelection,
