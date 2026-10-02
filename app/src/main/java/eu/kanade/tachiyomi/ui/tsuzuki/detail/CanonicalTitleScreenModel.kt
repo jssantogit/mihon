@@ -457,6 +457,9 @@ class CanonicalTitleScreenModel(
                 refreshChapterEvidence.execute(
                     canonicalTitleId = canonicalTitleId,
                     forceRefresh = forceChapterRefresh,
+                    onStageReconciled = {
+                        publishChapterRefreshStage(canonicalTitleId)
+                    },
                 ).exceptionOrNull()
             }
             val metadataRefresh = async {
@@ -526,6 +529,26 @@ class CanonicalTitleScreenModel(
                 refreshError = error,
             ) ?: CanonicalTitleScreenState.Error(error)
         }
+    }
+
+    private suspend fun publishChapterRefreshStage(canonicalTitleId: String) {
+        val current = (_state.value as? CanonicalTitleScreenState.Loaded)
+            ?.takeIf { it.title.id == canonicalTitleId }
+            ?: return
+        val staged = loadLocalState(
+            canonicalTitleId = canonicalTitleId,
+            includeIntegrationMetadata = false,
+            isRefreshing = true,
+        )
+        val latest = (_state.value as? CanonicalTitleScreenState.Loaded)
+            ?.takeIf { it.title.id == canonicalTitleId }
+            ?: return
+        _state.value = latest.copy(
+            chapters = staged.chapters,
+            addonCoverage = staged.addonCoverage,
+            isRefreshing = true,
+            refreshError = current.refreshError,
+        )
     }
 
     private suspend fun loadLocalState(
