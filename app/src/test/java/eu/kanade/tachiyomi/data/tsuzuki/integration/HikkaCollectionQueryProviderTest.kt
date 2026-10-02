@@ -9,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
@@ -82,6 +83,23 @@ class HikkaCollectionQueryProviderTest {
         query.nativeScoreFrom shouldBe 7.0
         query.nativeScoreTo shouldBe 10.0
         query.sort shouldBe "native_score:desc"
+    }
+
+    @Test
+    fun `provider exposes Hikka genre lookup and filters query locally`() = runTest {
+        val api = object : HikkaIntegrationApi {
+            override suspend fun searchPublic(query: String): List<HKManga> = emptyList()
+            override suspend fun getMangaDetailsPublic(slug: String): HKManga? = null
+            override suspend fun lookupGenres(): List<Pair<String, String>> = listOf(
+                "Romance" to "romance",
+                "Action" to "action",
+            )
+        }
+        val provider = HikkaCollectionQueryProvider.forTest(api)
+
+        provider.lookupValues("hikka.genres", "roma").getOrThrow() shouldContainExactly listOf(
+            FilterOption("romance", "Romance", QueryValue.of("romance")),
+        )
     }
 
     @Test
