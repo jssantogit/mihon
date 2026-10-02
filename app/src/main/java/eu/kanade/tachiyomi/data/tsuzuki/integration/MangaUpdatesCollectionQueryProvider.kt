@@ -318,17 +318,20 @@ class MangaUpdatesCollectionQueryProvider private constructor(
     override suspend fun lookupValues(
         lookupId: String,
         query: String?,
-    ): Result<List<FilterOption>> = runCatching {
-        when (lookupId) {
+    ): Result<List<FilterOption>> {
+        val values = when (lookupId) {
             "mangaupdates.genres" -> api.lookupGenres()
             "mangaupdates.categories" -> api.lookupCategories(query.orEmpty())
             else -> return super.lookupValues(lookupId, query)
-        }.map { (label, value) ->
-            FilterOption(
-                id = value,
-                label = label,
-                value = QueryValue.of(value),
-            )
+        }
+        return runCatching {
+            values.map { (label, value) ->
+                FilterOption(
+                    id = value,
+                    label = label,
+                    value = QueryValue.of(value),
+                )
+            }
         }
     }
 
