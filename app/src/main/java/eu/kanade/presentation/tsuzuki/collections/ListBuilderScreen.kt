@@ -40,7 +40,6 @@ import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapability
 import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
-import tachiyomi.domain.tsuzuki.collections.capability.CollectionSortCapability
 import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
 import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
@@ -1026,7 +1025,7 @@ internal fun listBuilderProviderIds(
     currentProviderId: String,
 ): List<String> = (
     descriptors.map(CollectionProviderDescriptor::providerId) +
-        currentProviderId.takeIf(String::isNotBlank).orEmpty()
+        currentProviderId.takeIf { it.isNotBlank() }.orEmpty()
     ).filter(String::isNotBlank).distinct()
 
 internal fun CollectionProviderDescriptor.visibleFilterFields(
@@ -1135,8 +1134,8 @@ private fun CollectionFilterCapability.stringRangeExpression(
     minimum: String,
     maximum: String,
 ): QueryExpression? {
-    val min = minimum.trim().takeIf(String::isNotEmpty)?.let(QueryValue::of)
-    val max = maximum.trim().takeIf(String::isNotEmpty)?.let(QueryValue::of)
+    val min = minimum.trim().takeIf(String::isNotEmpty)?.let { QueryValue.of(it) }
+    val max = maximum.trim().takeIf(String::isNotEmpty)?.let { QueryValue.of(it) }
     return when {
         min != null && max != null && QueryOperator.BETWEEN in operators ->
             QueryExpression.Predicate(field, QueryOperator.BETWEEN, QueryValue.range(min, max))
