@@ -41,6 +41,12 @@ interface MalIntegrationApi {
         limit: Int,
     ): List<TrackSearch>
 
+    suspend fun getRankingRaw(
+        rankingType: String,
+        offset: Int,
+        limit: Int,
+    ): List<TrackSearch> = getRanking(rankingType, offset, limit)
+
     suspend fun getMangaDetails(id: Int): TrackSearch
 
     suspend fun getUserMangaList(): List<MalUserListEntry>
@@ -122,6 +128,14 @@ class MyAnimeListApi(
         rankingType: String,
         offset: Int,
         limit: Int,
+    ): List<TrackSearch> =
+        getRankingRaw(rankingType, offset, limit)
+            .filterNot { it.publishing_type.contains("novel", ignoreCase = true) }
+
+    override suspend fun getRankingRaw(
+        rankingType: String,
+        offset: Int,
+        limit: Int,
     ): List<TrackSearch> {
         return withIOContext {
             val url = "$BASE_API_URL/manga/ranking".toUri().buildUpon()
@@ -136,7 +150,6 @@ class MyAnimeListApi(
                     .awaitSuccess()
                     .parseAs<MALSearchResult>()
                     .data
-                    .filter { !(it.node.mediaType.contains("novel")) }
                     .map { it.node.toTrackSearch(trackerId) }
             }
         }
