@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -358,7 +359,14 @@ internal fun FolderEditorScreen(
     val titleSeed = existing?.folder?.title ?: initialDraft?.title.orEmpty()
     var title by remember(existing?.folder?.id, initialDraft) { mutableStateOf(titleSeed) }
     var draftLists by remember(existing?.folder?.id, initialDraft) {
-        mutableStateOf(initialDraft?.lists.orEmpty())
+        mutableStateOf(
+            initialDraft?.lists.orEmpty().map { draft ->
+                DraftListEntry(
+                    key = UUID.randomUUID().toString(),
+                    draft = draft,
+                )
+            },
+        )
     }
     var listEditor by remember(existing?.folder?.id, initialDraft) {
         mutableStateOf<FolderListEditorTarget?>(null)
@@ -372,7 +380,7 @@ internal fun FolderEditorScreen(
     listEditor?.let { target ->
         val initial = when (target) {
             FolderListEditorTarget.New -> ListEditorState.empty()
-            is FolderListEditorTarget.EditDraft -> ListEditorState.fromDraft(draftLists[target.index])
+            is FolderListEditorTarget.EditDraft -> ListEditorState.fromDraft(draftLists[target.index].draft)
             is FolderListEditorTarget.EditPersisted -> ListEditorState.from(target.list)
         }
         ListEditorDialog(
@@ -391,13 +399,16 @@ internal fun FolderEditorScreen(
                                 ),
                             )
                         } else {
-                            draftLists = draftLists + draft
+                            draftLists = draftLists + DraftListEntry(
+                                key = UUID.randomUUID().toString(),
+                                draft = draft,
+                            )
                         }
                     }
 
                     is FolderListEditorTarget.EditDraft -> {
                         draftLists = draftLists.mapIndexed { index, current ->
-                            if (index == target.index) draft else current
+                            if (index == target.index) current.copy(draft = draft) else current
                         }
                     }
 
@@ -465,7 +476,7 @@ internal fun FolderEditorScreen(
                                     collectionId = requireNotNull(collectionId),
                                     parentFolderId = parentFolderId,
                                     title = normalizedTitle,
-                                    lists = draftLists,
+                                    lists = draftLists.map(DraftListEntry::draft),
                                 ),
                             )
                         }
@@ -474,7 +485,7 @@ internal fun FolderEditorScreen(
                             onSubmitDraft?.invoke(
                                 CollectionFolderDraft(
                                     title = normalizedTitle,
-                                    lists = draftLists,
+                                    lists = draftLists.map(DraftListEntry::draft),
                                 ),
                             )
                             return@EditorBottomBar
@@ -595,14 +606,15 @@ internal fun FolderEditorScreen(
                 }
             } else {
                 items(
-                    count = draftLists.size,
-                    key = { index -> "draft_list_$index_${draftLists[index].title}" },
-                ) { index ->
-                    val draft = draftLists[index]
+                    items = draftLists,
+                    key = DraftListEntry::key,
+                ) { entry ->
+                    val index = draftLists.indexOfFirst { it.key == entry.key }
+                    val draft = entry.draft
                     val reorderEnabled = draftLists.size > 1
                     ReorderableItem(
                         state = reorderableState,
-                        key = "draft_list_$index_${draft.title}",
+                        key = entry.key,
                         enabled = reorderEnabled,
                     ) { isDragging ->
                         EditorListCard(
@@ -622,7 +634,10 @@ internal fun FolderEditorScreen(
                                 draftLists = draftLists.toMutableList().apply {
                                     add(
                                         index + 1,
-                                        draft.copy(title = "${draft.title} Copy"),
+                                        DraftListEntry(
+                                            key = UUID.randomUUID().toString(),
+                                            draft = draft.copy(title = "${draft.title} Copy"),
+                                        ),
                                     )
                                 }
                             },
@@ -864,7 +879,7 @@ private fun EditorSectionLabel(text: String) {
 
 @Composable
 private fun EditorSurface(
-    content: @Composable Column.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -935,6 +950,11 @@ private fun editorCountLabel(
 private data class DraftFolderEntry(
     val key: String,
     val draft: CollectionFolderDraft,
+)
+
+private data class DraftListEntry(
+    val key: String,
+    val draft: CollectionListDraft,
 )
 
 private sealed interface CollectionFolderEditorRoute {
