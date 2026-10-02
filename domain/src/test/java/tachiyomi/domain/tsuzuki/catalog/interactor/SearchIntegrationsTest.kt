@@ -748,6 +748,61 @@ class SearchIntegrationsTest {
     }
 
     @Test
+    fun `concurrent enrichment calls share one item backpressure window`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val provider = object : RatingsProvider {
+            override val integrationId = IntegrationId("mal")
+
+            override suspend fun resolveExternalIds(item: CatalogItem): Result<Map<String, String>> {
+                started += item.providerId
+                release.await()
+                return Result.success(emptyMap())
+            }
+
+            override suspend fun ratings(externalId: String): Result<List<ExternalRating>> =
+                Result.success(emptyList())
+        }
+        val search = SearchIntegrations(
+            registry(
+                FakeSearchProvider("fake", Result.success(page())),
+                ratingProviders = listOf(provider),
+            ),
+            ratingEnrichmentCache = RatingEnrichmentCache(
+                scope = this,
+                clock = { 0L },
+                positiveTtlMillis = 60_000L,
+                negativeTtlMillis = 60_000L,
+                maxEntries = 32,
+            ),
+        )
+        val firstItems = (1..3).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = "first-$index",
+                title = "First $index",
+            )
+        }
+        val secondItems = (1..3).map { index ->
+            CatalogItem(
+                provider = "fake",
+                providerId = "second-$index",
+                title = "Second $index",
+            )
+        }
+
+        val first = async { search.enrichRatingsProgressively(firstItems) { _, _ -> } }
+        val second = async { search.enrichRatingsProgressively(secondItems) { _, _ -> } }
+        runCurrent()
+
+        started.size shouldBe 3
+
+        release.complete(Unit)
+        first.await()
+        second.await()
+    }
+
+    @Test
     fun `caller cancellation is never swallowed as a provider failure`() = runTest {
         val cancelling = object : SearchProvider {
             override val integrationId = IntegrationId("cancel")
