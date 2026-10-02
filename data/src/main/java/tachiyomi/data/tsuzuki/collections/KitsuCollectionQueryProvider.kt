@@ -13,7 +13,6 @@ import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProvider
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
-import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 @Inject
 @SingleIn(AppScope::class)
