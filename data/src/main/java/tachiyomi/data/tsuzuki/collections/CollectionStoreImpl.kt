@@ -48,6 +48,18 @@ class CollectionStoreImpl(
     }
 
     override suspend fun upsertCollection(collection: TsuzukiCollection) {
+        upsertCollectionRow(collection)
+    }
+
+    override suspend fun upsertCollections(collections: List<TsuzukiCollection>) {
+        database.transaction {
+            for (collection in collections) {
+                upsertCollectionRow(collection)
+            }
+        }
+    }
+
+    private suspend fun upsertCollectionRow(collection: TsuzukiCollection) {
         database.tsuzuki_collectionsQueries.upsertTsuzukiCollection(
             id = collection.id,
             title = collection.title,

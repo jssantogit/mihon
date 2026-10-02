@@ -219,6 +219,28 @@ class ManageCollectionDefinitionsTest {
     }
 
     @Test
+    fun `reordering user collections persists the exact order in one batch`() = runTest {
+        val store = FakeStore()
+        val manager = manager(store)
+        val first = collection("first").copy(sortOrder = 10)
+        val second = collection("second").copy(sortOrder = 20)
+        val third = collection("third").copy(sortOrder = 30)
+
+        store.upsertCollection(first)
+        store.upsertCollection(second)
+        store.upsertCollection(third)
+        store.collectionBatchUpserts = 0
+
+        manager.reorderUserCollections(listOf("third", "first", "second"))
+
+        store.collectionBatchUpserts shouldBe 1
+        store.getCollections().map { it.id } shouldContainExactly listOf("third", "first", "second")
+        store.getCollection("third")!!.sortOrder shouldBe 10
+        store.getCollection("first")!!.sortOrder shouldBe 20
+        store.getCollection("second")!!.sortOrder shouldBe 30
+    }
+
+    @Test
     fun `system content cannot be edited in place but may be reordered`() = runTest {
         val store = FakeStore()
         val manager = manager(store)
@@ -341,6 +363,7 @@ class ManageCollectionDefinitionsTest {
         private val lists = linkedMapOf<String, CollectionList>()
 
         var collectionUpserts: Int = 0
+        var collectionBatchUpserts: Int = 0
         var folderUpserts: Int = 0
         var listUpserts: Int = 0
 
@@ -359,6 +382,14 @@ class ManageCollectionDefinitionsTest {
         override suspend fun upsertCollection(collection: TsuzukiCollection) {
             collectionUpserts++
             collections[collection.id] = collection
+        }
+
+        override suspend fun upsertCollections(collections: List<TsuzukiCollection>) {
+            collectionBatchUpserts++
+            collections.forEach { collection ->
+                collectionUpserts++
+                this.collections[collection.id] = collection
+            }
         }
 
         override suspend fun getFolder(id: String): CollectionFolder? = folders[id]

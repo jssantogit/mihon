@@ -67,7 +67,7 @@ sealed interface CollectionsAction {
     data class RenameCollection(val collection: TsuzukiCollection, val title: String) : CollectionsAction
     data class DuplicateCollection(val collectionId: String) : CollectionsAction
     data class DeleteCollection(val collectionId: String) : CollectionsAction
-    data class MoveCollection(val collection: TsuzukiCollection, val delta: Long) : CollectionsAction
+    data class ReorderCollections(val orderedCollectionIds: List<String>) : CollectionsAction
 
     data class CreateFolder(
         val collectionId: String,
@@ -210,7 +210,7 @@ class CollectionsScreenModel(
             is CollectionsAction.RenameCollection -> renameCollection(action.collection, action.title)
             is CollectionsAction.DuplicateCollection -> duplicateCollection(action.collectionId)
             is CollectionsAction.DeleteCollection -> deleteCollection(action.collectionId)
-            is CollectionsAction.MoveCollection -> moveCollection(action.collection, action.delta)
+            is CollectionsAction.ReorderCollections -> reorderCollections(action.orderedCollectionIds)
             is CollectionsAction.CreateFolder -> createFolder(
                 collectionId = action.collectionId,
                 parentFolderId = action.parentFolderId,
@@ -270,32 +270,11 @@ class CollectionsScreenModel(
         manager.tombstoneCollection(collectionId)
     }
 
-    fun moveCollection(
-        collection: TsuzukiCollection,
-        delta: Long,
-    ) = launchAction {
-        val ordered = currentCollections().map { it.collection }
-        val currentIndex = ordered.indexOfFirst { it.id == collection.id }
-        if (currentIndex < 0 || delta == 0L) return@launchAction
+    fun reorderCollections(orderedCollectionIds: List<String>) = launchAction {
+        val currentIds = currentCollections().map { it.collection.id }
+        if (orderedCollectionIds == currentIds) return@launchAction
 
-        val targetIndex = (currentIndex + delta)
-            .coerceIn(0L, ordered.lastIndex.toLong())
-            .toInt()
-        if (targetIndex == currentIndex) return@launchAction
-
-        val sortOrders = ordered.map(TsuzukiCollection::sortOrder).sorted()
-        val reordered = ordered.toMutableList().apply {
-            add(targetIndex, removeAt(currentIndex))
-        }
-        reordered.forEachIndexed { index, item ->
-            val targetSortOrder = sortOrders[index]
-            if (item.sortOrder != targetSortOrder) {
-                manager.reorderCollection(
-                    collectionId = item.id,
-                    sortOrder = targetSortOrder,
-                )
-            }
-        }
+        manager.reorderUserCollections(orderedCollectionIds)
     }
 
     fun createFolder(
