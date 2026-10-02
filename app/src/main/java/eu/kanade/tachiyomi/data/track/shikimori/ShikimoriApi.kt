@@ -432,7 +432,17 @@ class ShikimoriApi(
         )
 
         private fun String.graphQlString(): String =
-            """ + replace("\\", "\\\\").replace(""", "\\"") + """
+            buildString {
+                append('"')
+                this@graphQlString.forEach { char ->
+                    when (char) {
+                        '\\' -> append("\\\\")
+                        '"' -> append("\\"")
+                        else -> append(char)
+                    }
+                }
+                append('"')
+            }
 
         private fun requireCredential(value: String): String =
             value.trim().ifBlank { throw ShikimoriCredentialsMissing() }
