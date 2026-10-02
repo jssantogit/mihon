@@ -1375,6 +1375,73 @@ private fun CollectionFilterCapability.preferredScalarOperator(): QueryOperator 
     else -> operators.first()
 }
 
+private fun ListEditorState.simplePredicate(
+    field: QueryField,
+    negated: Boolean,
+): QueryExpression.Predicate? {
+    val terms = when (val query = currentQuery()) {
+        null -> emptyList()
+        is QueryExpression.All -> query.expressions
+        else -> listOf(query)
+    }
+    return terms.firstNotNullOfOrNull { term ->
+        when {
+            !negated && term is QueryExpression.Predicate && term.field == field -> term
+            negated && term is QueryExpression.Not -> {
+                (term.expression as? QueryExpression.Predicate)?.takeIf { it.field == field }
+            }
+            else -> null
+        }
+    }
+}
+
+private fun ListEditorState.replaceFieldTerm(
+    field: QueryField,
+    negated: Boolean,
+    predicate: QueryExpression.Predicate?,
+): ListEditorState {
+    var updated = this
+    updated = when (field) {
+        QueryField.STATUS -> if (!negated) updated.copy(status = null) else updated
+        QueryField.WORK_TYPE -> if (!negated) updated.copy(format = null) else updated
+        QueryField.GENRE -> if (negated) {
+            updated.copy(excludeGenre = "")
+        } else {
+            updated.copy(includeGenre = "")
+        }
+        QueryField.TAG -> if (negated) {
+            updated.copy(excludeTag = "")
+        } else {
+            updated.copy(includeTag = "")
+        }
+        QueryField.SCORE,
+        QueryField.RATING,
+        -> if (!negated) updated.copy(minScore = "") else updated
+        QueryField.CHAPTER_COUNT -> if (!negated) updated.copy(minChapters = "") else updated
+        QueryField.VOLUME_COUNT -> if (!negated) updated.copy(minVolumes = "") else updated
+        else -> updated
+    }
+
+    val remaining = updated.extraTerms.filterNot { term ->
+        term.matchesFieldPolarity(field = field, negated = negated)
+    }
+    val replacement = predicate?.let { if (negated) QueryExpression.Not(it) else it }
+
+    return updated.copy(
+        extraTerms = if (replacement == null) remaining else remaining + replacement,
+    )
+}
+
+private fun QueryExpression.matchesFieldPolarity(
+    field: QueryField,
+    negated: Boolean,
+): Boolean = when {
+    !negated && this is QueryExpression.Predicate -> this.field == field
+    negated && this is QueryExpression.Not ->
+        (expression as? QueryExpression.Predicate)?.field == field
+    else -> false
+}
+
 private fun ListEditorState.replaceExtraField(
     field: QueryField,
     expression: QueryExpression?,
