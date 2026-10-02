@@ -1,5 +1,6 @@
 package tachiyomi.data.tsuzuki.kitsu.client
 
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuGenreResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 
@@ -26,6 +27,8 @@ interface KitsuClient {
         genres: List<String> = emptyList(),
         subtype: String? = null,
     ): Result<KitsuMangaResponse>
+
+    suspend fun getGenres(query: String? = null): Result<KitsuGenreResponse>
 
     suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse>
 
