@@ -47,8 +47,13 @@ data object TsuzukiHomeTab : Tab {
                     ),
                 )
             },
-            onCollection = { collectionId ->
-                navigator.push(HomeCollectionScreen(collectionId))
+            onFolder = { collectionId, folderId ->
+                navigator.push(
+                    HomeFolderScreen(
+                        collectionId = collectionId,
+                        folderId = folderId,
+                    ),
+                )
             },
         )
 
