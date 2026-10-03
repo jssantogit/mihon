@@ -1,15 +1,20 @@
 package eu.kanade.presentation.tsuzuki.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -26,11 +31,11 @@ import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.tsuzuki.recordArtworkLoad
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
 import mihon.app.di.appGraph
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
-import tachiyomi.domain.tsuzuki.home.model.HomeRow
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.presentation.core.components.material.Scaffold
 
@@ -38,7 +43,7 @@ import tachiyomi.presentation.core.components.material.Scaffold
 fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
-    onFolder: (collectionId: String, folderId: String) -> Unit,
+    onCollection: (collectionId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -53,8 +58,7 @@ fun TsuzukiHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 32.dp),
         ) {
             state.continueReading.firstOrNull()?.let { hero ->
                 item(key = "hero") {
@@ -68,16 +72,11 @@ fun TsuzukiHomeScreen(
             state.sections.forEach { section ->
                 when (section) {
                     is HomeSection.CollectionSection -> {
-                        item(key = "collection_header_${section.collectionId}") {
-                            SectionHeader(section.title)
-                        }
-                        section.rows.forEach { row ->
-                            item(key = "collection_row_${section.collectionId}_${row.listId}") {
-                                ConfiguredHomeRow(
-                                    row = row,
-                                    onClick = { onFolder(section.collectionId, row.listId) },
-                                )
-                            }
+                        item(key = "collection_${section.collectionId}") {
+                            HomeCollectionSection(
+                                section = section,
+                                onClick = { onCollection(section.collectionId) },
+                            )
                         }
                     }
                 }
@@ -140,33 +139,31 @@ private fun HeroCard(
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(
-            start = 16.dp,
-            end = 16.dp,
-            top = 12.dp,
-            bottom = 4.dp,
-        ),
-    )
+private fun HomeCollectionSection(
+    section: HomeSection.CollectionSection,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 22.dp, bottom = 12.dp),
+    ) {
+        Text(
+            text = section.title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        CollectionCoverWindow(
+            items = section.previewItems,
+            onClick = onClick,
+        )
+    }
 }
 
 @Composable
-private fun SectionMessage(message: String) {
-    Text(
-        text = message,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun ConfiguredHomeRow(
-    row: HomeRow,
+private fun CollectionCoverWindow(
+    items: List<CatalogItem>,
     onClick: () -> Unit,
 ) {
     Card(
@@ -175,13 +172,52 @@ private fun ConfiguredHomeRow(
             .padding(horizontal = 16.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
         ),
+        shape = MaterialTheme.shapes.large,
     ) {
-        Text(
-            text = row.title,
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(16.dp),
-        )
+        LazyRow(
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            userScrollEnabled = false,
+        ) {
+            if (items.isEmpty()) {
+                items(COLLECTION_PREVIEW_SLOTS) {
+                    CollectionCoverPlaceholder()
+                }
+            } else {
+                items(
+                    items = items.take(COLLECTION_PREVIEW_SLOTS),
+                    key = { "${it.provider}:${it.providerId}" },
+                ) { item ->
+                    MangaCover.Book(
+                        data = item.coverUrl,
+                        contentDescription = null,
+                        modifier = Modifier.width(COLLECTION_PREVIEW_COVER_WIDTH),
+                    )
+                }
+                if (items.size < COLLECTION_PREVIEW_SLOTS) {
+                    items(COLLECTION_PREVIEW_SLOTS - items.size) {
+                        CollectionCoverPlaceholder()
+                    }
+                }
+            }
+        }
     }
 }
+
+@Composable
+private fun CollectionCoverPlaceholder() {
+    Box(
+        modifier = Modifier
+            .width(COLLECTION_PREVIEW_COVER_WIDTH)
+            .aspectRatio(2f / 3f)
+            .background(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f),
+                shape = MaterialTheme.shapes.small,
+            ),
+    )
+}
+
+private const val COLLECTION_PREVIEW_SLOTS = 4
+private val COLLECTION_PREVIEW_COVER_WIDTH = 78.dp
