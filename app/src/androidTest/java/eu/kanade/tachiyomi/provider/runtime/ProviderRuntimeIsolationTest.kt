@@ -51,6 +51,7 @@ class ProviderRuntimeIsolationTest {
 
             val runtime = requireNotNull(remote)
             assertNotEquals("provider runtime must use a distinct isolated UID", Process.myUid(), runtime.processUid())
+            assertNotEquals("provider runtime must run in a distinct process", Process.myPid(), runtime.processPid())
             assertEquals("ok:3", runtime.evaluate("1 + 2", 1_000L, 500L))
             assertEquals(
                 "error:TIMEOUT",
