@@ -141,7 +141,6 @@ object BangumiCollectionCapabilities : ProviderQueryCapabilities {
         label = label,
         directionMode = SortDirectionMode.FIXED_NATIVE,
     )
-
 }
 
 object BangumiCollectionCompiler {
