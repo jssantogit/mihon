@@ -52,7 +52,7 @@ class QuickJsAbiTest {
     @Test
     fun `compatibility API exposes JavaScript objects as Kotlin interfaces`() {
         QuickJs.create().use { runtime ->
-            runtime.evaluate("globalThis.greeter = { greet: (name) => 'Hi, ' + name };")
+            runtime.evaluate("void (globalThis.greeter = { greet: (name) => 'Hi, ' + name });")
             runtime.get("greeter", Greeter::class.java).greet("Tsuzuki") shouldBe "Hi, Tsuzuki"
         }
     }
