@@ -22,7 +22,6 @@ class GetConfiguredHomeSections(
 
     suspend fun execute(): List<HomeSection> {
         return store.getCollections()
-            .asSequence()
             .filter { it.origin == CollectionOrigin.USER }
             .sortedWith(compareBy({ it.sortOrder }, { it.id }))
             .map { collection ->
@@ -31,7 +30,7 @@ class GetConfiguredHomeSections(
                     title = collection.title,
                     folders = store.getFolders(collection.id)
                         .rootFolders()
-                        .map(CollectionFolder::asHomeTile),
+                        .map { it.asHomeTile() },
                 )
             }
             .toList()
@@ -85,7 +84,7 @@ class GetConfiguredHomeSections(
                 childFolders = folders
                     .filter { it.parentFolderId == folderId }
                     .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-                    .map(CollectionFolder::asHomeTile),
+                    .map { it.asHomeTile() },
                 lists = lists.sortedWith(compareBy({ it.sortOrder }, { it.id })),
             )
         }
@@ -100,7 +99,7 @@ class GetConfiguredHomeSections(
                 title = collection.title,
                 folders = folders
                     .rootFolders()
-                    .map(CollectionFolder::asHomeTile),
+                    .map { it.asHomeTile() },
             )
         }
     }
@@ -114,7 +113,7 @@ class GetConfiguredHomeSections(
                 title = collection.title,
                 folders = folders
                     .rootFolders()
-                    .map(CollectionFolder::asHomeTile),
+                    .map { it.asHomeTile() },
             )
         }
     }
