@@ -53,7 +53,7 @@ fun TsuzukiHomeScreen(
                 .fillMaxSize()
                 .padding(paddingValues),
             contentPadding = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
             state.continueReading.firstOrNull()?.let { hero ->
                 item(key = "hero") {
@@ -139,8 +139,10 @@ private fun CollectionHomeSection(
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = section.title,
@@ -152,8 +154,7 @@ private fun CollectionHomeSection(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clickable(onClick = onClick),
+                .padding(horizontal = 16.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
             ),
