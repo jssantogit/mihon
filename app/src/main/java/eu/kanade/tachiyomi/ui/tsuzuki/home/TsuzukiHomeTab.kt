@@ -16,7 +16,6 @@ import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionsScreen
 import eu.kanade.tachiyomi.ui.tsuzuki.detail.CanonicalTitleScreen
 
 data object TsuzukiHomeTab : Tab {
