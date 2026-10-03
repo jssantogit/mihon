@@ -18,67 +18,90 @@ import tachiyomi.domain.tsuzuki.integration.TrackingProvider
 class GetHomeHeroTest {
 
     @Test
-    fun `hero prefers the first trending item with a banner and never loads popular`() = runTest {
-        val coverOnly = CatalogItem(
-            provider = "kitsu",
-            providerId = "1",
-            title = "Cover only",
-            coverUrl = "https://example/cover.jpg",
+    fun `hero carousel returns four artwork candidates preferring banners and never loads popular`() = runTest {
+        val coverOne = item("1", coverUrl = "https://example/cover-1.jpg")
+        val bannerOne = item(
+            "2",
+            coverUrl = "https://example/cover-2.jpg",
+            bannerUrl = "https://example/banner-2.jpg",
         )
-        val banner = CatalogItem(
-            provider = "kitsu",
-            providerId = "2",
-            title = "Banner",
-            coverUrl = "https://example/banner-cover.jpg",
-            bannerUrl = "https://example/banner.jpg",
+        val bannerTwo = item(
+            "3",
+            coverUrl = "https://example/cover-3.jpg",
+            bannerUrl = "https://example/banner-3.jpg",
+        )
+        val coverTwo = item("4", coverUrl = "https://example/cover-4.jpg")
+        val bannerThree = item(
+            "5",
+            coverUrl = "https://example/cover-5.jpg",
+            bannerUrl = "https://example/banner-5.jpg",
         )
         val provider = FakeDiscoveryProvider(
-            Result.success(CatalogPage(listOf(coverOnly, banner), hasNextPage = false)),
+            Result.success(
+                CatalogPage(
+                    listOf(coverOne, bannerOne, bannerTwo, coverTwo, bannerThree),
+                    hasNextPage = false,
+                ),
+            ),
         )
         val interactor = GetHomeHero(registry(provider))
 
-        val hero = interactor.await(limit = 6)
+        val heroes = interactor.await(limit = 6, count = 4)
 
-        hero shouldBe banner
+        heroes.map(CatalogItem::providerId) shouldBe listOf("2", "3", "5", "1")
         provider.trendingCalls shouldBe 1
         provider.lastTrendingLimit shouldBe 6
         provider.popularCalls shouldBe 0
     }
 
     @Test
-    fun `hero falls back to the first trending item with cover artwork when banners are absent`() = runTest {
-        val noArtwork = CatalogItem(
-            provider = "kitsu",
-            providerId = "0",
-            title = "No artwork",
+    fun `hero carousel fills remaining slots with cover artwork when banners are scarce`() = runTest {
+        val noArtwork = item("0")
+        val coverOne = item("1", coverUrl = "https://example/cover-1.jpg")
+        val banner = item(
+            "2",
+            coverUrl = "https://example/cover-2.jpg",
+            bannerUrl = "https://example/banner-2.jpg",
         )
-        val coverOnly = CatalogItem(
-            provider = "kitsu",
-            providerId = "1",
-            title = "Cover only",
-            coverUrl = "https://example/cover.jpg",
-        )
+        val coverTwo = item("3", coverUrl = "https://example/cover-3.jpg")
         val provider = FakeDiscoveryProvider(
-            Result.success(CatalogPage(listOf(noArtwork, coverOnly), hasNextPage = false)),
+            Result.success(
+                CatalogPage(
+                    listOf(noArtwork, coverOne, banner, coverTwo),
+                    hasNextPage = false,
+                ),
+            ),
         )
         val interactor = GetHomeHero(registry(provider))
 
-        interactor.await() shouldBe coverOnly
+        interactor.await(count = 4).map(CatalogItem::providerId) shouldBe listOf("2", "1", "3")
     }
 
     @Test
-    fun `hero is absent when no discovery provider is enabled`() = runTest {
-        GetHomeHero(registry()).await() shouldBe null
+    fun `hero carousel is empty when no discovery provider is enabled`() = runTest {
+        GetHomeHero(registry()).await() shouldBe emptyList()
     }
 
     @Test
-    fun `hero is absent when trending fails`() = runTest {
+    fun `hero carousel is empty when trending fails`() = runTest {
         val provider = FakeDiscoveryProvider(
             Result.failure(IllegalStateException("offline")),
         )
 
-        GetHomeHero(registry(provider)).await() shouldBe null
+        GetHomeHero(registry(provider)).await() shouldBe emptyList()
     }
+
+    private fun item(
+        id: String,
+        coverUrl: String? = null,
+        bannerUrl: String? = null,
+    ) = CatalogItem(
+        provider = "kitsu",
+        providerId = id,
+        title = "Work $id",
+        coverUrl = coverUrl,
+        bannerUrl = bannerUrl,
+    )
 
     private fun registry(
         provider: DiscoveryProvider? = null,

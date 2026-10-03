@@ -1,5 +1,7 @@
 package eu.kanade.presentation.tsuzuki.home
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,10 +9,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,7 +25,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -32,11 +40,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import eu.kanade.presentation.components.AppBar
-import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.tsuzuki.recordArtworkLoad
 import eu.kanade.tachiyomi.ui.tsuzuki.home.TsuzukiHomeScreenState
+import kotlinx.coroutines.delay
 import mihon.app.di.appGraph
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
@@ -59,11 +66,7 @@ fun TsuzukiHomeScreen(
 ) {
     Scaffold(
         modifier = modifier,
-        topBar = {
-            AppBar(
-                titleContent = { AppBarTitle("Início") },
-            )
-        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
@@ -72,13 +75,17 @@ fun TsuzukiHomeScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            state.hero?.let { hero ->
+            if (state.heroes.isNotEmpty()) {
                 item(key = "home_hero") {
-                    HomeHero(
-                        item = hero,
-                        onRead = { onHeroRead(hero) },
-                        onDetails = { onHeroDetails(hero) },
+                    HomeHeroCarousel(
+                        items = state.heroes,
+                        onRead = onHeroRead,
+                        onDetails = onHeroDetails,
                     )
+                }
+            } else {
+                item(key = "home_header") {
+                    HomeHeader()
                 }
             }
 
@@ -110,8 +117,74 @@ fun TsuzukiHomeScreen(
 }
 
 @Composable
+private fun HomeHeader() {
+    Text(
+        text = "Início",
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    )
+}
+
+@Composable
+private fun HomeHeroCarousel(
+    items: List<CatalogItem>,
+    onRead: (CatalogItem) -> Unit,
+    onDetails: (CatalogItem) -> Unit,
+) {
+    var activeIndex by remember(items) { mutableIntStateOf(0) }
+
+    LaunchedEffect(items) {
+        activeIndex = 0
+        if (items.size <= 1) return@LaunchedEffect
+
+        while (true) {
+            delay(HERO_ROTATION_INTERVAL_MILLIS)
+            activeIndex = (activeIndex + 1) % items.size
+        }
+    }
+
+    val activeItem = items[activeIndex.coerceIn(items.indices)]
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(HERO_ASPECT_RATIO),
+    ) {
+        Crossfade(
+            targetState = activeItem,
+            animationSpec = tween(durationMillis = HERO_CROSSFADE_MILLIS),
+            modifier = Modifier.fillMaxSize(),
+        ) { item ->
+            HomeHero(
+                item = item,
+                activeIndex = activeIndex,
+                itemCount = items.size,
+                onRead = { onRead(item) },
+                onDetails = { onDetails(item) },
+            )
+        }
+
+        Text(
+            text = "Início",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Medium,
+            color = Color.White,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+        )
+    }
+}
+
+@Composable
 private fun HomeHero(
     item: CatalogItem,
+    activeIndex: Int,
+    itemCount: Int,
     onRead: () -> Unit,
     onDetails: () -> Unit,
 ) {
@@ -140,8 +213,7 @@ private fun HomeHero(
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(HERO_ASPECT_RATIO)
+            .fillMaxSize()
             .background(background),
     ) {
         AsyncImage(
@@ -156,9 +228,9 @@ private fun HomeHero(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0.0f to Color.Black.copy(alpha = 0.10f),
-                        0.48f to Color.Transparent,
-                        0.72f to Color.Black.copy(alpha = 0.46f),
+                        0.0f to Color.Black.copy(alpha = 0.18f),
+                        0.34f to Color.Transparent,
+                        0.70f to Color.Black.copy(alpha = 0.48f),
                         1.0f to background,
                     ),
                 ),
@@ -220,6 +292,17 @@ private fun HomeHero(
                 ) {
                     Text("Detalhes")
                 }
+            }
+
+            if (itemCount > 1) {
+                Text(
+                    text = (0 until itemCount).joinToString("  ") { index ->
+                        if (index == activeIndex) "●" else "•"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.76f),
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
             }
         }
     }
@@ -312,3 +395,5 @@ private fun CollectionHomeSection(
 }
 
 private const val HERO_ASPECT_RATIO = 0.78f
+private const val HERO_ROTATION_INTERVAL_MILLIS = 8_000L
+private const val HERO_CROSSFADE_MILLIS = 650

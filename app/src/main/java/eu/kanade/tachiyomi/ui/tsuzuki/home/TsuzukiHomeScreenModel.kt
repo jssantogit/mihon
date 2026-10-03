@@ -38,7 +38,7 @@ import kotlin.time.Clock
 
 @Immutable
 data class TsuzukiHomeScreenState(
-    val hero: CatalogItem? = null,
+    val heroes: List<CatalogItem> = emptyList(),
     val continueReading: List<HomeContinueReadingItem> = emptyList(),
     val sections: List<HomeSection> = emptyList(),
 )
@@ -67,14 +67,14 @@ class TsuzukiHomeScreenModel(
     val events = eventChannel.receiveAsFlow()
 
     private val importedLegacyProgressTitles = mutableSetOf<String>()
-    private val hero = MutableStateFlow<CatalogItem?>(null)
+    private val heroes = MutableStateFlow<List<CatalogItem>>(emptyList())
 
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
-        hero,
+        heroes,
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
         titleArtworkRepository.observeAll(),
-    ) { heroItem, continueReading, sections, artworkObservations ->
+    ) { heroItems, continueReading, sections, artworkObservations ->
         val artworkByTitle = artworkObservations.groupBy { it.canonicalTitleId }
         val enriched = continueReading.map { item ->
             val canonicalArtwork = resolveCanonicalArtwork(
@@ -101,7 +101,7 @@ class TsuzukiHomeScreenModel(
             )
         }
         TsuzukiHomeScreenState(
-            hero = heroItem,
+            heroes = heroItems,
             continueReading = enriched,
             sections = sections,
         )
@@ -113,12 +113,15 @@ class TsuzukiHomeScreenModel(
 
     init {
         viewModelScope.launch {
-            hero.value = try {
-                getHomeHero.await(limit = HOME_HERO_DISCOVERY_LIMIT)
+            heroes.value = try {
+                getHomeHero.await(
+                    limit = HOME_HERO_DISCOVERY_LIMIT,
+                    count = HOME_HERO_COUNT,
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                null
+                emptyList()
             }
         }
 
@@ -171,6 +174,7 @@ class TsuzukiHomeScreenModel(
     }
 
     private companion object {
-        const val HOME_HERO_DISCOVERY_LIMIT = 8
+        const val HOME_HERO_DISCOVERY_LIMIT = 12
+        const val HOME_HERO_COUNT = 4
     }
 }

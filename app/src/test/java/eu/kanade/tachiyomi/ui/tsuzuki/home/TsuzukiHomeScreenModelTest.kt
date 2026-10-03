@@ -67,16 +67,25 @@ class TsuzukiHomeScreenModelTest {
     }
 
     @Test
-    fun `Hero is loaded independently from Continue Reading`() = runTest(dispatcher) {
-        val hero = CatalogItem(
-            provider = "kitsu",
-            providerId = "hero-1",
-            title = "Hero work",
-            coverUrl = "https://example/hero-cover.jpg",
-            bannerUrl = "https://example/hero-banner.jpg",
+    fun `Hero carousel is loaded independently from Continue Reading`() = runTest(dispatcher) {
+        val heroes = listOf(
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "hero-1",
+                title = "Hero one",
+                coverUrl = "https://example/hero-cover-1.jpg",
+                bannerUrl = "https://example/hero-banner-1.jpg",
+            ),
+            CatalogItem(
+                provider = "kitsu",
+                providerId = "hero-2",
+                title = "Hero two",
+                coverUrl = "https://example/hero-cover-2.jpg",
+                bannerUrl = "https://example/hero-banner-2.jpg",
+            ),
         )
         val getHomeHero = mockk<GetHomeHero>()
-        coEvery { getHomeHero.await(any()) } returns hero
+        coEvery { getHomeHero.await(any(), any()) } returns heroes
         val model = createModel(
             continueReading = MutableStateFlow(emptyList()),
             sections = MutableStateFlow(emptyList()),
@@ -85,7 +94,7 @@ class TsuzukiHomeScreenModelTest {
 
         advanceUntilIdle()
 
-        model.state.value.hero shouldBe hero
+        model.state.value.heroes shouldBe heroes
         model.state.value.continueReading shouldBe emptyList()
     }
 
@@ -299,7 +308,7 @@ class TsuzukiHomeScreenModelTest {
 
     private fun defaultHomeHero(): GetHomeHero {
         return mockk<GetHomeHero>().also { interactor ->
-            coEvery { interactor.await(any()) } returns null
+            coEvery { interactor.await(any(), any()) } returns emptyList()
         }
     }
 
