@@ -12,7 +12,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 class CatalogPageCacheJsonCodecTest {
 
     @Test
-    fun `cache payload v1 round trips complete catalog pages`() {
+    fun `cache payload v2 round trips complete catalog pages`() {
         val page = CatalogPage(
             items = listOf(
                 CatalogItem(
@@ -56,7 +56,7 @@ class CatalogPageCacheJsonCodecTest {
             totalCount = 0,
         )
         val encoded = CatalogPageCacheJsonCodec.encode(page)
-            .replace("\"schemaVersion\":1", "\"schemaVersion\":2")
+            .replaceFirst("\"schemaVersion\":2", "\"schemaVersion\":3")
 
         shouldThrow<IllegalArgumentException> {
             CatalogPageCacheJsonCodec.decode(encoded)
