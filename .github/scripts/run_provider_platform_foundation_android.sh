@@ -28,15 +28,26 @@ if [[ -z "$runner" ]]; then
   exit 1
 fi
 
+dump_android_diagnostics() {
+  echo '--- provider foundation process snapshot ---'
+  adb shell ps -A | grep -E "${target_package}|provider_runtime" || true
+  echo '--- provider foundation relevant logcat ---'
+  adb logcat -d -v brief -t 400 |
+    grep -E 'AndroidRuntime|ActivityManager|ProviderRuntime|provider_runtime|app\.tsuzuki' |
+    tail -n 160 || true
+}
+
 run_test() {
   local test_name="$1"
   local output
   output="$(mktemp)"
   local exit_code=0
+  adb logcat -c || true
   timeout --foreground 180s adb shell am instrument -w -r -e class "$test_name" "$runner" > "$output" 2>&1 || exit_code=$?
   if (( exit_code != 0 )) || ! grep -Fq 'OK (1 test)' "$output"; then
     echo "PROVIDER_FOUNDATION|outcome=FAIL|test=${test_name##*#}|runnerExit=$exit_code"
     tail -n 80 "$output"
+    dump_android_diagnostics
     rm -f "$output"
     exit 1
   fi
