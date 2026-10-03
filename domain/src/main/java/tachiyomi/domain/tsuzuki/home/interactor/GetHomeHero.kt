@@ -5,6 +5,7 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.integration.IntegrationRegistry
 import kotlin.coroutines.cancellation.CancellationException
 
+/** Selects one lightweight provider-neutral Home highlight without enriching or executing Collections. */
 @Inject
 class GetHomeHero(
     private val integrationRegistry: IntegrationRegistry,
