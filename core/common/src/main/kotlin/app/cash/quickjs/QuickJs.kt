@@ -1,14 +1,11 @@
 package app.cash.quickjs
 
-import com.dokar.quickjs.binding.JsFunction
-import com.dokar.quickjs.binding.JsProperty
-import com.dokar.quickjs.binding.ObjectBinding
+import com.dokar.quickjs.binding.define
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.lang.reflect.InvocationHandler
-import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.Executors
@@ -53,7 +50,11 @@ class QuickJs private constructor() : Closeable {
         require(type.isInstance(value)) { "$value is not an instance of $type" }
         translateErrors {
             onJsThread {
-                defineBinding(name, InterfaceBinding(value, methods))
+                define(
+                    name = name,
+                    type = type,
+                    instance = value,
+                )
             }
         }
     }
@@ -120,38 +121,6 @@ private inline fun <T> translateErrors(block: () -> T): T = try {
     block()
 } catch (error: DokarQuickJsException) {
     throw QuickJsException(error.message ?: "JavaScript error")
-}
-
-private class InterfaceBinding(
-    private val target: Any,
-    private val methods: List<Method>,
-) : ObjectBinding {
-
-    override val properties: List<JsProperty> =
-        methods.map { JsProperty(it.name, configurable = false, writable = true, enumerable = true) }
-
-    override val functions: List<JsFunction> =
-        methods.map { JsFunction(it.name, isAsync = false) }
-
-    override fun getter(name: String): Any? = null
-
-    override fun setter(
-        name: String,
-        value: Any?,
-    ) = Unit
-
-    override fun invoke(
-        name: String,
-        args: Array<Any?>,
-    ): Any? {
-        val method = methods.firstOrNull { it.name == name }
-            ?: throw IllegalArgumentException("$name is not bound")
-        return try {
-            method.invoke(target, *args)
-        } catch (error: InvocationTargetException) {
-            throw error.cause ?: error
-        }
-    }
 }
 
 private class JsObjectHandler(
