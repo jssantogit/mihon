@@ -6,7 +6,9 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.SearchProvider
 
 class ShikimoriIntegrationProviderTest {
 
@@ -25,6 +27,8 @@ class ShikimoriIntegrationProviderTest {
             ),
         )
 
+        (provider as Any is SearchProvider) shouldBe true
+        (provider as Any is MetadataProvider) shouldBe true
         (provider as Any is RatingsProvider) shouldBe true
 
         val match = (provider as RatingsProvider).ratingFor(
@@ -61,7 +65,7 @@ class ShikimoriIntegrationProviderTest {
     @Test
     fun `shikimori rating gate enforces second and minute budgets`() = runTest {
         var now = 0L
-        val gate = ShikimoriRatingRequestGate(
+        val gate = ShikimoriRequestGate(
             nowMillis = { now },
             pause = { delayMillis -> now += delayMillis },
         )

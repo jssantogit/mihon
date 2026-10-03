@@ -7,10 +7,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -93,7 +95,10 @@ class ManageCollectionDefinitionsTest {
         duplicate.id shouldBe "copy-list"
         duplicate.origin shouldBe CollectionOrigin.USER
         duplicate.title shouldBe "Highest Rated Copy"
-        duplicate.sort shouldBe CatalogSort.RATING_DESC
+        duplicate.sort shouldBe CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        )
         duplicate.deletedAt shouldBe null
 
         val original = store.getList(
@@ -353,7 +358,7 @@ class ManageCollectionDefinitionsTest {
                 title = "User list",
                 providerId = "kitsu",
                 query = null,
-                sort = CatalogSort.POPULARITY_DESC,
+                sort = CollectionSortSelection.DEFAULT,
                 sortOrder = 10,
             )
         }
@@ -420,7 +425,7 @@ class ManageCollectionDefinitionsTest {
         title = "List $id",
         providerId = "kitsu",
         query = query,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         sortOrder = 0,
         origin = origin,
         createdAt = 1,

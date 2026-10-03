@@ -11,10 +11,10 @@ import tachiyomi.domain.tsuzuki.collections.execution.CollectionQueryProviderReg
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class CollectionQueryProviderRegistryImpl(
-    kitsuProvider: KitsuCollectionQueryProvider,
+    providers: Set<CollectionQueryProvider>,
 ) : CollectionQueryProviderRegistry {
 
-    private val providerList: List<CollectionQueryProvider> = listOf(kitsuProvider)
+    private val providerList: List<CollectionQueryProvider> = providers.sortedBy(CollectionQueryProvider::providerId)
 
     init {
         require(providerList.map(CollectionQueryProvider::providerId).distinct().size == providerList.size) {
@@ -26,4 +26,6 @@ class CollectionQueryProviderRegistryImpl(
         providerList.associateBy(CollectionQueryProvider::providerId)
 
     override fun get(providerId: String): CollectionQueryProvider? = providers[providerId]
+
+    override fun all(): List<CollectionQueryProvider> = providerList
 }

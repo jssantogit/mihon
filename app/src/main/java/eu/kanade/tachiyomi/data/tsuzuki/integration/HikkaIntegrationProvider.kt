@@ -6,22 +6,32 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import dev.zacsweers.metro.binding
 import eu.kanade.tachiyomi.data.track.TrackerManager
+import eu.kanade.tachiyomi.data.track.hikka.HikkaCollectionQuery
 import eu.kanade.tachiyomi.data.track.hikka.HikkaIntegrationApi
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKManga
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
+import tachiyomi.domain.tsuzuki.collections.execution.PageCatalogFetcher
+import tachiyomi.domain.tsuzuki.collections.execution.PageIndexOrigin
+import tachiyomi.domain.tsuzuki.collections.execution.PageOffsetNormalizer
 import tachiyomi.domain.tsuzuki.integration.IntegrationId
+import tachiyomi.domain.tsuzuki.integration.MetadataProvider
 import tachiyomi.domain.tsuzuki.integration.RatingsProvider
+import tachiyomi.domain.tsuzuki.integration.SearchProvider
 import tachiyomi.domain.tsuzuki.integration.model.CatalogRatingMatch
 import tachiyomi.domain.tsuzuki.integration.model.ExternalRating
 import tachiyomi.domain.tsuzuki.integration.model.matchRatingOnlyCandidate
 import kotlin.coroutines.cancellation.CancellationException
 
 @SingleIn(AppScope::class)
+@ContributesIntoSet(AppScope::class, binding = binding<SearchProvider>())
+@ContributesIntoSet(AppScope::class, binding = binding<MetadataProvider>())
 @ContributesIntoSet(AppScope::class, binding = binding<RatingsProvider>())
 class HikkaIntegrationProvider private constructor(
     private val api: HikkaIntegrationApi,
-) : RatingsProvider {
+) : SearchProvider, MetadataProvider, RatingsProvider {
 
     @Inject
     constructor(trackerManager: TrackerManager) : this(
@@ -29,6 +39,43 @@ class HikkaIntegrationProvider private constructor(
     )
 
     override val integrationId = IntegrationId("hikka")
+
+    override suspend fun search(query: CatalogQuery): Result<CatalogPage> {
+        val text = query.query?.trim().orEmpty()
+        if (text.isEmpty() || query.limit <= 0) {
+            return Result.success(CatalogPage(emptyList(), hasNextPage = false))
+        }
+
+        return PageOffsetNormalizer.load(
+            rawOffset = query.offset.coerceAtLeast(0),
+            limit = query.limit,
+            upstreamPageSize = HIKKA_PAGE_SIZE,
+            pageOrigin = PageIndexOrigin.ONE,
+            fetcher = PageCatalogFetcher { page, pageSize ->
+                capture {
+                    val response = api.collectionSearch(
+                        HikkaCollectionQuery(
+                            query = text,
+                            sort = DEFAULT_SEARCH_SORT,
+                            page = page,
+                            size = pageSize,
+                        ),
+                    )
+                    CatalogPage(
+                        items = response.items.map { manga -> manga.toCatalogItem() },
+                        hasNextPage = response.page < response.pages,
+                        totalCount = response.total,
+                    )
+                }
+            },
+        )
+    }
+
+    override suspend fun getDetails(externalId: String): Result<CatalogItem> = capture {
+        api.getMangaDetailsPublic(externalId)
+            ?.toCatalogItem()
+            ?: error("Hikka title not found: $externalId")
+    }
 
     override suspend fun ratings(externalId: String): Result<List<ExternalRating>> = capture {
         listOfNotNull(
@@ -66,35 +113,23 @@ class HikkaIntegrationProvider private constructor(
         candidate.toRatingMatch(verifiedIdentity = providerMapped != null)
     }
 
-    private fun HKManga.toCatalogItem(): CatalogItem {
-        val primaryTitle = titleUa?.takeIf(String::isNotBlank)
-            ?: titleEn?.takeIf(String::isNotBlank)
-            ?: titleOriginal
-        val alternateTitles = listOfNotNull(titleOriginal, titleEn, titleUa)
-            .filter(String::isNotBlank)
-            .distinct()
-
-        return CatalogItem(
-            provider = integrationId.value,
-            providerId = slug,
-            title = primaryTitle,
-            titles = alternateTitles
-                .mapIndexed { index, value -> "alternate_$index" to value }
-                .toMap(),
-            score = nativeScore
-                .takeIf { it > 0.0 && nativeScoredBy > 0 }
-                ?.let { value ->
-                    CatalogScore(
-                        provider = integrationId.value,
-                        value = value,
-                        maxValue = HIKKA_SCORE_MAX,
-                        voteCount = nativeScoredBy,
-                    )
-                },
-            externalIds = malId?.let { mapOf("mal" to it.toString()) }.orEmpty(),
-            startDate = year?.toString(),
-        )
-    }
+    private fun HKManga.toCatalogItem(): CatalogItem =
+        toTrack(HIKKA_TRACKER_ID)
+            .toIntegrationCatalogItem(integrationId.value)
+            .copy(
+                providerId = slug,
+                externalIds = malId?.let { mapOf("mal" to it.toString()) }.orEmpty(),
+                score = nativeScore
+                    .takeIf { it > 0.0 && nativeScoredBy > 0 }
+                    ?.let { value ->
+                        CatalogScore(
+                            provider = integrationId.value,
+                            value = value,
+                            maxValue = HIKKA_SCORE_MAX,
+                            voteCount = nativeScoredBy,
+                        )
+                    },
+            )
 
     private fun HKManga.toExternalRating(): ExternalRating? {
         val value = nativeScore.takeIf { it > 0.0 && nativeScoredBy > 0 } ?: return null
@@ -141,6 +176,9 @@ class HikkaIntegrationProvider private constructor(
 
     companion object {
         private const val HIKKA_SCORE_MAX = 10.0
+        private const val HIKKA_PAGE_SIZE = 50
+        private const val HIKKA_TRACKER_ID = 10L
+        private const val DEFAULT_SEARCH_SORT = "native_score:desc"
         private const val RATING_IDENTITY_SEARCH_LIMIT = 10
 
         internal fun forTest(api: HikkaIntegrationApi): HikkaIntegrationProvider =

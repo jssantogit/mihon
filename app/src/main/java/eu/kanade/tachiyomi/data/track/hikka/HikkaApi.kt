@@ -18,9 +18,14 @@ import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.jsonMime
 import eu.kanade.tachiyomi.network.parseAs
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -69,42 +74,104 @@ class HikkaApi(
     suspend fun searchManga(query: String): List<TrackSearch> =
         searchPublic(query).map { it.toTrack(trackerId) }
 
-    override suspend fun searchPublic(query: String): List<HKManga> {
+    override suspend fun lookupGenres(): List<Pair<String, String>> = withIOContext {
+        val element = with(json) {
+            client.newCall(GET("$BASE_API_URL/genres"))
+                .awaitSuccess()
+                .parseAs<JsonElement>()
+        }
+        element.lookupPairs(
+            labelKeys = listOf("name_ua", "name", "title", "label"),
+            valueKeys = listOf("slug", "name", "id"),
+        )
+    }
+
+    override suspend fun searchPublic(query: String): List<HKManga> =
+        collectionSearch(
+            HikkaCollectionQuery(
+                query = query,
+                sort = "score:desc",
+                page = 1,
+                size = 50,
+            ),
+        ).items
+
+    override suspend fun collectionSearch(query: HikkaCollectionQuery): HikkaCollectionPage {
         return withIOContext {
             val url = "$BASE_API_URL/manga".toUri().buildUpon()
-                .appendQueryParameter("page", "1")
-                .appendQueryParameter("size", "50")
+                .appendQueryParameter("page", query.page.toString())
+                .appendQueryParameter("size", query.size.toString())
                 .build()
 
             val payload = buildJsonObject {
-                put("media_type", buildJsonArray { })
-                put("status", buildJsonArray { })
-                put("only_translated", false)
-                put("magazines", buildJsonArray { })
-                put("genres", buildJsonArray { })
+                query.yearFrom?.let { from ->
+                    put(
+                        "years",
+                        buildJsonArray {
+                            add(from)
+                            add(query.yearTo ?: from)
+                        },
+                    )
+                }
+                put(
+                    "media_type",
+                    buildJsonArray {
+                        query.mediaTypes.forEach(::add)
+                    },
+                )
+                put(
+                    "status",
+                    buildJsonArray {
+                        query.statuses.forEach(::add)
+                    },
+                )
+                put("only_translated", query.onlyTranslated ?: false)
+                put(
+                    "magazines",
+                    buildJsonArray {
+                        query.magazines.forEach(::add)
+                    },
+                )
+                put(
+                    "genres",
+                    buildJsonArray {
+                        query.genres.forEach(::add)
+                    },
+                )
                 put(
                     "score",
                     buildJsonArray {
-                        add(0)
-                        add(10)
+                        add(query.malScoreFrom ?: 0.0)
+                        add(query.malScoreTo ?: 10.0)
                     },
                 )
-                put("query", query)
+                put(
+                    "native_score",
+                    buildJsonArray {
+                        add(query.nativeScoreFrom ?: 0.0)
+                        add(query.nativeScoreTo ?: 10.0)
+                    },
+                )
+                put("query", query.query.orEmpty())
                 put(
                     "sort",
                     buildJsonArray {
-                        add("score:desc")
-                        add("scored_by:desc")
+                        add(query.sort)
                     },
                 )
             }
 
-            with(json) {
+            val response = with(json) {
                 client.newCall(POST(url.toString(), body = payload.toString().toRequestBody(jsonMime)))
                     .awaitSuccess()
                     .parseAs<HKMangaPagination>()
-                    .list
             }
+            HikkaCollectionPage(
+                items = response.list,
+                page = response.pagination.page,
+                pages = response.pagination.pages,
+                total = response.pagination.total,
+            )
         }
     }
 
@@ -214,6 +281,35 @@ class HikkaApi(
 
     private fun requireClientSecret(): String =
         clientSecretProvider().trim().ifBlank { throw HikkaCredentialsMissing() }
+
+    private fun JsonElement.lookupPairs(
+        labelKeys: List<String>,
+        valueKeys: List<String>,
+    ): List<Pair<String, String>> {
+        val elements = when (this) {
+            is JsonArray -> this
+            is JsonObject -> values.firstOrNull { it is JsonArray } as? JsonArray ?: JsonArray(emptyList())
+            else -> JsonArray(emptyList())
+        }
+        return elements.mapNotNull { entry ->
+            when (entry) {
+                is JsonPrimitive ->
+                    entry.contentOrNull
+                        ?.takeIf(String::isNotBlank)
+                        ?.let { it to it }
+                is JsonObject -> {
+                    val label = labelKeys.asSequence()
+                        .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
+                        .firstOrNull(String::isNotBlank)
+                    val value = valueKeys.asSequence()
+                        .mapNotNull { key -> (entry[key] as? JsonPrimitive)?.contentOrNull }
+                        .firstOrNull(String::isNotBlank)
+                    if (label != null && value != null) label to value else null
+                }
+                else -> null
+            }
+        }.distinctBy { it.second }
+    }
 
     companion object {
         const val BASE_API_URL = "https://api.hikka.io"

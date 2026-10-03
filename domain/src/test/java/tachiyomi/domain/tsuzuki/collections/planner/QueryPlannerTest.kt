@@ -3,8 +3,14 @@ package tachiyomi.domain.tsuzuki.collections.planner
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -12,13 +18,24 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 class QueryPlannerTest {
 
-    private val fakeCapabilities = object : ProviderQueryCapabilities {
-        override val providerId: String = "fake"
-        override val supportsOffsetPaging: Boolean = true
-        override val maxPageSize: Int = 20
+    private val popularityDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.POPULARITY,
+        CollectionSortDirection.DESC,
+    )
+    private val ratingDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.RATING,
+        CollectionSortDirection.DESC,
+    )
+    private val updatedDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.UPDATED,
+        CollectionSortDirection.DESC,
+    )
 
-        override fun canPushSort(sort: CatalogSort): Boolean {
-            return sort == CatalogSort.POPULARITY_DESC || sort == CatalogSort.RATING_DESC
+    private val fakeCapabilities = object : ProviderQueryCapabilities {
+        override val descriptor: CollectionProviderDescriptor = descriptor("fake")
+
+        override fun canPushSort(sort: CollectionSortSelection): Boolean {
+            return sort == popularityDesc || sort == ratingDesc
         }
 
         override fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean {
@@ -44,10 +61,8 @@ class QueryPlannerTest {
     }
 
     private val predicateOnlyCapabilities = object : ProviderQueryCapabilities {
-        override val providerId: String = "predicate-only"
-        override val supportsOffsetPaging: Boolean = true
-        override val maxPageSize: Int = 20
-        override fun canPushSort(sort: CatalogSort): Boolean = sort == CatalogSort.POPULARITY_DESC
+        override val descriptor: CollectionProviderDescriptor = descriptor("predicate-only")
+        override fun canPushSort(sort: CollectionSortSelection): Boolean = sort == popularityDesc
 
         override fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean {
             return (field == QueryField.STATUS || field == QueryField.Custom("query")) &&
@@ -188,13 +203,13 @@ class QueryPlannerTest {
 
     @Test
     fun `unsupported global sort is explicit`() {
-        val supported = QueryPlanner.plan(pushableStatus, fakeCapabilities, CatalogSort.POPULARITY_DESC)
-        supported.sortPlan shouldBe SortPlan.RemoteExact(CatalogSort.POPULARITY_DESC)
+        val supported = QueryPlanner.plan(pushableStatus, fakeCapabilities, popularityDesc)
+        supported.sortPlan shouldBe SortPlan.RemoteExact(popularityDesc)
 
-        val unsupported = QueryPlanner.plan(pushableStatus, fakeCapabilities, CatalogSort.UPDATED_DESC)
+        val unsupported = QueryPlanner.plan(pushableStatus, fakeCapabilities, updatedDesc)
         val details = unsupported.sortPlan.shouldBeInstanceOf<SortPlan.UnsupportedForGlobalOrdering>()
-        details.requestedSort shouldBe CatalogSort.UPDATED_DESC
-        details.fallbackRemoteSort shouldBe CatalogSort.POPULARITY_DESC
+        details.requestedSort shouldBe updatedDesc
+        details.fallbackRemoteSort shouldBe popularityDesc
     }
 
     @Test
@@ -223,4 +238,16 @@ class QueryPlannerTest {
         val expression = QueryExpression.All(pushableStatus, nonPushableGenre)
         expression.toCanonicalString() shouldBe "ALL(status EQUALS \"ongoing\", genre EQUALS \"Action\")"
     }
+
+    private fun descriptor(providerId: String) = CollectionProviderDescriptor(
+        providerId = providerId,
+        displayName = providerId,
+        scope = CollectionProviderScope.GLOBAL,
+        filters = emptyList(),
+        sorts = emptyList(),
+        paging = CollectionPagingCapability(
+            mode = CollectionPagingMode.OFFSET,
+            maxPageSize = 20,
+        ),
+    )
 }

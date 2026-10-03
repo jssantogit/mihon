@@ -13,6 +13,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuGenreResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuSingleMangaResponse
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogError
@@ -82,6 +83,16 @@ class KitsuHttpClient(
         urlBuilder.addQueryParameter("page[limit]", limit.toString())
         urlBuilder.addQueryParameter("include", "mappings")
 
+        return executeRequest(urlBuilder.build())
+    }
+
+    override suspend fun getGenres(query: String?): Result<KitsuGenreResponse> {
+        val urlBuilder = baseUrl.newBuilder()
+            .addPathSegment("genres")
+            .addQueryParameter("page[limit]", "500")
+        query?.trim()?.takeIf(String::isNotBlank)?.let { value ->
+            urlBuilder.addQueryParameter("filter[name]", value)
+        }
         return executeRequest(urlBuilder.build())
     }
 

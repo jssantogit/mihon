@@ -13,7 +13,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.cache.CacheFreshness
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheKey
 import tachiyomi.domain.tsuzuki.collections.cache.CatalogCacheLookup
@@ -22,10 +21,18 @@ import tachiyomi.domain.tsuzuki.collections.cache.MemoryCatalogCache
 import tachiyomi.domain.tsuzuki.collections.cache.PersistentCatalogCacheStore
 import tachiyomi.domain.tsuzuki.collections.cache.classifyCacheWindow
 import tachiyomi.domain.tsuzuki.collections.cache.safeCacheDeadline
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
+import tachiyomi.domain.tsuzuki.collections.capability.ResidualScanPolicy
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -33,8 +40,20 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.CollectionQueryScheduler
+import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticEventName
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticEvent
+import tachiyomi.domain.tsuzuki.diagnostics.StructuredDiagnosticRecorder
 
 class ExecuteCollectionListTest {
+
+    private val popularityDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.POPULARITY,
+        CollectionSortDirection.DESC,
+    )
+    private val ratingDesc = CollectionSortSelection(
+        CollectionSortKey.Standard.RATING,
+        CollectionSortDirection.DESC,
+    )
 
     @Test
     fun `missing disabled and deleted definitions fail before provider execution`() = runTest {
@@ -68,10 +87,10 @@ class ExecuteCollectionListTest {
     @Test
     fun `unsupported global sort fails before provider fetch`() = runTest {
         val fixture = fixture()
-        fixture.store.putGraph(list(sort = CatalogSort.RATING_DESC))
+        fixture.store.putGraph(list(sort = ratingDesc))
 
         fixture.executor.execute(ExecuteCollectionListRequest("list")) shouldBe
-            ExecuteCollectionListResult.UnsupportedGlobalSort(CatalogSort.RATING_DESC)
+            ExecuteCollectionListResult.UnsupportedGlobalSort(ratingDesc)
         fixture.provider.calls shouldBe 0
     }
 
@@ -81,9 +100,9 @@ class ExecuteCollectionListTest {
         fixture.store.putGraph(
             list(
                 query = QueryExpression.Predicate(
-                    QueryField.AUTHOR,
+                    QueryField.IN_LIBRARY,
                     QueryOperator.EQUALS,
-                    QueryValue.of("Author"),
+                    QueryValue.of(true),
                 ),
             ),
         )
@@ -130,6 +149,127 @@ class ExecuteCollectionListTest {
     }
 
     @Test
+    fun `integrated execution exposes scan budget without pretending provider exhaustion`() = runTest {
+        val fixture = fixture(
+            dataset = listOf(
+                item("1", chapterCount = 101),
+                item("2", chapterCount = 2),
+                item("3", chapterCount = 3),
+                item("4", chapterCount = 102),
+            ),
+            maxProviderPageSize = 2,
+            scanPolicy = ResidualScanPolicy(
+                maxRawItemsPerLogicalPage = 100,
+                maxRemoteRequestsPerLogicalPage = 2,
+                maxElapsedMillis = 60_000,
+            ),
+        )
+        fixture.store.putGraph(
+            list(
+                query = QueryExpression.Predicate(
+                    QueryField.CHAPTER_COUNT,
+                    QueryOperator.GREATER_THAN,
+                    QueryValue.of(100),
+                ),
+            ),
+        )
+
+        val result = fixture.executor.execute(
+            ExecuteCollectionListRequest(
+                listId = "list",
+                pageSize = 2,
+                cachePolicy = CollectionExecutionCachePolicy(
+                    mode = CollectionCacheMode.NETWORK_ONLY,
+                ),
+            ),
+        ).shouldBeInstanceOf<ExecuteCollectionListResult.Page>()
+
+        result.page.items.map { it.providerId } shouldContainExactly listOf("1")
+        result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 3)
+        result.page.scanBudgetReason shouldBe ResidualScanBudgetReason.REMOTE_REQUESTS
+        fixture.provider.calls shouldBe 2
+    }
+
+    @Test
+    fun `draft execution reuses provider planner residual paging and cache contract`() = runTest {
+        val fixture = fixture(
+            dataset = listOf(
+                item("1", chapterCount = 1),
+                item("2", chapterCount = 101),
+                item("3", chapterCount = 102),
+            ),
+            maxProviderPageSize = 2,
+        )
+
+        val result = fixture.executor.executeDraft(
+            ExecuteCollectionDraftRequest(
+                draft = CollectionListDraftExecution(
+                    providerId = "fake",
+                    query = QueryExpression.Predicate(
+                        QueryField.CHAPTER_COUNT,
+                        QueryOperator.GREATER_THAN,
+                        QueryValue.of(100),
+                    ),
+                    sort = popularityDesc,
+                ),
+                pageSize = 2,
+                cachePolicy = CollectionExecutionCachePolicy(
+                    mode = CollectionCacheMode.NETWORK_ONLY,
+                ),
+            ),
+        ).shouldBeInstanceOf<ExecuteCollectionDraftResult.Page>()
+
+        result.page.items.map { it.providerId } shouldContainExactly listOf("2", "3")
+        fixture.provider.calls shouldBe 2
+        fixture.store.getList("list") shouldBe null
+    }
+
+    @Test
+    fun `draft execution fails explicitly for unavailable provider without persistence`() = runTest {
+        val fixture = fixture()
+
+        fixture.executor.executeDraft(
+            ExecuteCollectionDraftRequest(
+                draft = CollectionListDraftExecution(
+                    providerId = "missing",
+                    query = null,
+                    sort = popularityDesc,
+                ),
+            ),
+        ) shouldBe ExecuteCollectionDraftResult.ProviderUnavailable("missing")
+
+        fixture.provider.calls shouldBe 0
+    }
+
+    @Test
+    fun `collection execution emits bounded structured planning and completion diagnostics`() = runTest {
+        val recorder = RecordingDiagnosticRecorder()
+        val fixture = fixture(
+            dataset = listOf(item("1", chapterCount = 101)),
+            diagnosticRecorder = recorder,
+        )
+        fixture.store.putGraph(list())
+
+        fixture.executor.execute(
+            ExecuteCollectionListRequest(
+                listId = "list",
+                pageSize = 1,
+                cachePolicy = CollectionExecutionCachePolicy(mode = CollectionCacheMode.NETWORK_ONLY),
+            ),
+        ).shouldBeInstanceOf<ExecuteCollectionListResult.Page>()
+
+        recorder.events.map { it.name } shouldBe listOf(
+            DiagnosticEventName.WORKFLOW_STARTED,
+            DiagnosticEventName.COLLECTION_QUERY_PLANNED,
+            DiagnosticEventName.COLLECTION_EXECUTION_COMPLETED,
+        )
+        recorder.events.last().attributes["provider_id"] shouldBe
+            tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue.Text("fake")
+        recorder.events.last().attributes["item_count"] shouldBe
+            tachiyomi.domain.tsuzuki.diagnostics.DiagnosticAttributeValue.Number(1)
+    }
+
+    @Test
     fun `fresh memory cache avoids provider fetch`() = runTest {
         val fixture = fixture(now = 1_050)
         fixture.store.putGraph(list())
@@ -137,7 +277,7 @@ class ExecuteCollectionListTest {
         val key = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = popularityDesc,
             rawOffset = 0,
             pageSize = 1,
         )
@@ -168,7 +308,7 @@ class ExecuteCollectionListTest {
         val key = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = popularityDesc,
             rawOffset = 0,
             pageSize = 1,
         )
@@ -220,7 +360,7 @@ class ExecuteCollectionListTest {
         val key = CatalogCacheKey.fromExpression(
             providerId = "fake",
             expression = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = popularityDesc,
             rawOffset = 0,
             pageSize = 1,
         )
@@ -290,13 +430,16 @@ class ExecuteCollectionListTest {
         dataset: List<CatalogItem> = listOf(item("network")),
         now: Long = 1_000,
         maxProviderPageSize: Int = 20,
+        scanPolicy: ResidualScanPolicy = ResidualScanPolicy.DEFAULT,
         providerGate: CompletableDeferred<Unit>? = null,
         maxConcurrentPerProvider: Int = 2,
+        diagnosticRecorder: StructuredDiagnosticRecorder = RecordingDiagnosticRecorder(),
     ): Fixture {
         val store = FakeCollectionStore()
         val provider = FakeProvider(
             dataset = dataset,
             maxProviderPageSize = maxProviderPageSize,
+            scanPolicy = scanPolicy,
             gate = providerGate,
         )
         val persistentCache = FakePersistentCache()
@@ -310,6 +453,7 @@ class ExecuteCollectionListTest {
             persistentCache = persistentCache,
             resources = resources,
             clock = { now },
+            diagnosticRecorder = diagnosticRecorder,
         )
         return Fixture(
             store = store,
@@ -323,7 +467,7 @@ class ExecuteCollectionListTest {
     private fun list(
         providerId: String = "fake",
         query: QueryExpression? = null,
-        sort: CatalogSort = CatalogSort.POPULARITY_DESC,
+        sort: CollectionSortSelection = popularityDesc,
         enabled: Boolean = true,
         deletedAt: Long? = null,
     ): CollectionList = CollectionList(
@@ -372,11 +516,14 @@ class ExecuteCollectionListTest {
         override fun get(providerId: String): CollectionQueryProvider? {
             return provider.takeIf { it.providerId == providerId }
         }
+
+        override fun all(): List<CollectionQueryProvider> = listOf(provider)
     }
 
     private class FakeProvider(
         private val dataset: List<CatalogItem>,
         maxProviderPageSize: Int,
+        scanPolicy: ResidualScanPolicy,
         private val gate: CompletableDeferred<Unit>?,
     ) : CollectionQueryProvider {
         var calls = 0
@@ -384,9 +531,18 @@ class ExecuteCollectionListTest {
         override val providerId: String = "fake"
 
         override val capabilities: ProviderQueryCapabilities = object : ProviderQueryCapabilities {
-            override val providerId: String = "fake"
-            override val supportsOffsetPaging: Boolean = true
-            override val maxPageSize: Int = maxProviderPageSize
+            override val descriptor: CollectionProviderDescriptor = CollectionProviderDescriptor(
+                providerId = "fake",
+                displayName = "Fake",
+                scope = CollectionProviderScope.GLOBAL,
+                filters = emptyList(),
+                sorts = emptyList(),
+                paging = CollectionPagingCapability(
+                    mode = CollectionPagingMode.OFFSET,
+                    maxPageSize = maxProviderPageSize,
+                ),
+                scanPolicy = scanPolicy,
+            )
 
             override fun canPushPredicate(
                 field: QueryField,
@@ -394,14 +550,17 @@ class ExecuteCollectionListTest {
                 value: QueryValue,
             ): Boolean = false
 
-            override fun canPushSort(sort: CatalogSort): Boolean {
-                return sort == CatalogSort.POPULARITY_DESC
+            override fun canPushSort(sort: CollectionSortSelection): Boolean {
+                return sort == CollectionSortSelection(
+                    CollectionSortKey.Standard.POPULARITY,
+                    CollectionSortDirection.DESC,
+                )
             }
         }
 
         override suspend fun fetch(
             pushdownExpression: QueryExpression?,
-            sort: CatalogSort,
+            sort: CollectionSortSelection,
             offset: Int,
             limit: Int,
         ): Result<CatalogPage> {
@@ -431,6 +590,19 @@ class ExecuteCollectionListTest {
             maxConcurrentPerProvider = maxConcurrentPerProvider,
         )
         override val refreshCoordinator = CatalogRefreshCoordinator(scheduler)
+    }
+
+    private class RecordingDiagnosticRecorder : StructuredDiagnosticRecorder {
+        override val sessionId: String = "00000000-0000-0000-0000-000000000001"
+        val events = mutableListOf<StructuredDiagnosticEvent>()
+
+        override fun canonicalTitleReference(canonicalTitleId: String): String? = null
+
+        override fun mihonMangaReference(mihonMangaId: Long): String? = null
+
+        override fun record(event: StructuredDiagnosticEvent) {
+            events += event
+        }
     }
 
     private class FakePersistentCache : PersistentCatalogCacheStore {

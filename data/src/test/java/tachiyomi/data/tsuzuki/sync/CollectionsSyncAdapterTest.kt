@@ -6,10 +6,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -66,7 +68,7 @@ class CollectionsSyncAdapterTest {
         target.getFolder("folder-2")!!.parentFolderId shouldBe "folder-1"
         target.getList("list-1")!!.let { synced ->
             synced.providerId shouldBe "kitsu"
-            synced.sort shouldBe CatalogSort.POPULARITY_DESC
+            synced.sort shouldBe CollectionSortSelection.DEFAULT
             synced.query shouldBe QueryExpression.Predicate(
                 field = QueryField.STATUS,
                 operator = QueryOperator.EQUALS,
@@ -74,6 +76,74 @@ class CollectionsSyncAdapterTest {
             )
         }
         target.getCollection("system:discover") shouldBe null
+    }
+
+    @Test
+    fun `sync round trip preserves provider native sort key and direction semantics`() = runBlocking {
+        val source = FakeCollectionStore()
+        source.upsertCollection(collection("collection-1", "Favorites"))
+        source.upsertFolder(folder("folder-1", "collection-1", null, "Reading"))
+        source.upsertList(
+            list(
+                id = "list-1",
+                collectionId = "collection-1",
+                folderId = "folder-1",
+                query = null,
+            ).copy(
+                providerId = "mangaupdates",
+                sort = CollectionSortSelection(
+                    key = CollectionSortKey.Provider("mangaupdates", "month3_pos"),
+                    direction = null,
+                ),
+            ),
+        )
+
+        val exported = adapter(source).exportDocument()
+        val target = FakeCollectionStore()
+        adapter(target).applyDocument(exported)
+
+        target.getList("list-1")!!.sort shouldBe CollectionSortSelection(
+            key = CollectionSortKey.Provider("mangaupdates", "month3_pos"),
+            direction = null,
+        )
+    }
+
+    @Test
+    fun `sync decoder accepts legacy v1 CatalogSort names`() = runBlocking {
+        val source = FakeCollectionStore()
+        source.upsertCollection(collection("collection-1", "Favorites"))
+        source.upsertFolder(folder("folder-1", "collection-1", null, "Reading"))
+        source.upsertList(
+            list(
+                id = "list-1",
+                collectionId = "collection-1",
+                folderId = "folder-1",
+                query = null,
+            ),
+        )
+        val exported = adapter(source).exportDocument()
+        val legacy = exported.copy(
+            schemaVersion = 1,
+            records = exported.records.mapValues { (id, record) ->
+                if (id == listRecordId("list-1")) {
+                    record.copy(
+                        fields = kotlinx.serialization.json.buildJsonObject {
+                            record.fields.forEach { (key, value) ->
+                                if (key != "sortDirection") put(key, value)
+                            }
+                            put("sort", kotlinx.serialization.json.JsonPrimitive("POPULARITY_DESC"))
+                        },
+                    )
+                } else {
+                    record
+                }
+            },
+        )
+
+        val target = FakeCollectionStore()
+        adapter(target).applyDocument(legacy)
+
+        target.getList("list-1")!!.sort shouldBe CollectionSortSelection.DEFAULT
     }
 
     @Test
@@ -171,7 +241,7 @@ class CollectionsSyncAdapterTest {
         title = "Current",
         providerId = "kitsu",
         query = query,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         layoutType = "grid",
         sortOrder = 0L,
         enabled = true,

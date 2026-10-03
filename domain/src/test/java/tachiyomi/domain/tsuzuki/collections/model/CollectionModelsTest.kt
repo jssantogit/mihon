@@ -3,7 +3,6 @@ package tachiyomi.domain.tsuzuki.collections.model
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -59,7 +58,10 @@ class CollectionModelsTest {
             title = "Completed",
             providerId = "kitsu",
             query = query,
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
             layoutType = "grid",
             sortOrder = 2,
             enabled = true,

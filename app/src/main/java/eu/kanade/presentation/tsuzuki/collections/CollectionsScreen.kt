@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.tsuzuki.catalog.CatalogCompactCard
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListRuntimeState
@@ -57,10 +58,10 @@ import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
@@ -120,6 +121,19 @@ fun CollectionsScreen(
         EditorDialog.CreateCollection -> {
             CollectionEditorScreen(
                 graph = null,
+                providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
+                draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                onFilterLookup = { providerId, lookupId, query ->
+                    onAction(
+                        CollectionsAction.FilterLookupRequested(
+                            providerId = providerId,
+                            lookupId = lookupId,
+                            query = query,
+                        ),
+                    )
+                },
                 onAction = onAction,
                 onDelete = { deleteTarget = it },
                 onClose = { editor = null },
@@ -131,6 +145,19 @@ fun CollectionsScreen(
             editedCollectionGraph?.let { graph ->
                 CollectionEditorScreen(
                     graph = graph,
+                    providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                    providerCapabilities = readyState?.providerCapabilities.orEmpty(),
+                    draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                    filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                    onFilterLookup = { providerId, lookupId, query ->
+                        onAction(
+                            CollectionsAction.FilterLookupRequested(
+                                providerId = providerId,
+                                lookupId = lookupId,
+                                query = query,
+                            ),
+                        )
+                    },
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
                     onClose = { editor = null },
@@ -145,6 +172,19 @@ fun CollectionsScreen(
                 existing = null,
                 initialDraft = null,
                 onSubmitDraft = null,
+                providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
+                draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                onFilterLookup = { providerId, lookupId, query ->
+                    onAction(
+                        CollectionsAction.FilterLookupRequested(
+                            providerId = providerId,
+                            lookupId = lookupId,
+                            query = query,
+                        ),
+                    )
+                },
                 onAction = onAction,
                 onDelete = { deleteTarget = it },
                 onClose = { editor = null },
@@ -160,6 +200,19 @@ fun CollectionsScreen(
                     existing = model,
                     initialDraft = null,
                     onSubmitDraft = null,
+                    providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                    providerCapabilities = readyState?.providerCapabilities.orEmpty(),
+                    draftPreviewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                    filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                    onFilterLookup = { providerId, lookupId, query ->
+                        onAction(
+                            CollectionsAction.FilterLookupRequested(
+                                providerId = providerId,
+                                lookupId = lookupId,
+                                query = query,
+                            ),
+                        )
+                    },
                     onAction = onAction,
                     onDelete = { deleteTarget = it },
                     onClose = { editor = null },
@@ -171,6 +224,22 @@ fun CollectionsScreen(
             ListBuilderScreen(
                 title = "New List",
                 initial = ListEditorState.empty(),
+                providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
+                previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                onFilterLookup = { providerId, lookupId, query ->
+                    onAction(
+                        CollectionsAction.FilterLookupRequested(
+                            providerId = providerId,
+                            lookupId = lookupId,
+                            query = query,
+                        ),
+                    )
+                },
+                onPreviewDraft = { draft ->
+                    onAction(CollectionsAction.PreviewDraftChanged(draft))
+                },
                 onClose = { editor = null },
                 onConfirm = { draft ->
                     onAction(
@@ -190,6 +259,22 @@ fun CollectionsScreen(
             ListBuilderScreen(
                 title = "Edit List",
                 initial = ListEditorState.from(currentEditor.list),
+                providerDescriptors = readyState?.providerDescriptors.orEmpty(),
+                providerCapabilities = readyState?.providerCapabilities.orEmpty(),
+                previewState = readyState?.draftPreviewState ?: CollectionDraftPreviewState.Idle,
+                filterLookupStates = readyState?.filterLookupStates.orEmpty(),
+                onFilterLookup = { providerId, lookupId, query ->
+                    onAction(
+                        CollectionsAction.FilterLookupRequested(
+                            providerId = providerId,
+                            lookupId = lookupId,
+                            query = query,
+                        ),
+                    )
+                },
+                onPreviewDraft = { draft ->
+                    onAction(CollectionsAction.PreviewDraftChanged(draft))
+                },
                 onClose = { editor = null },
                 onConfirm = { draft ->
                     onAction(CollectionsAction.UpdateList(currentEditor.list, draft))
@@ -947,7 +1032,7 @@ private fun ListRow(
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(
-                        text = "${list.providerId} • ${list.sort.name}",
+                        text = "${list.providerId} • ${list.sort.cacheKey}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1081,7 +1166,7 @@ private fun ListRow(
 
 internal data class ListEditorState(
     val title: String,
-    val sort: CatalogSort,
+    val sort: CollectionSortSelection,
     val layoutType: String?,
     val providerId: String,
     val status: String?,
@@ -1093,13 +1178,24 @@ internal data class ListEditorState(
     val minScore: String,
     val minChapters: String,
     val minVolumes: String,
+    val extraTerms: List<QueryExpression>,
     val preservedQuery: QueryExpression?,
     val filtersEditable: Boolean,
 ) {
     fun toDraftOrNull(): CollectionListDraft? {
         if (title.isBlank()) return null
 
-        val query = if (!filtersEditable) {
+        return CollectionListDraft(
+            title = title.trim(),
+            query = currentQuery(),
+            sort = sort,
+            layoutType = layoutType,
+            providerId = providerId,
+        )
+    }
+
+    internal fun currentQuery(): QueryExpression? {
+        return if (!filtersEditable) {
             preservedQuery
         } else {
             val predicates = buildList<QueryExpression> {
@@ -1188,6 +1284,7 @@ internal data class ListEditorState(
                         ),
                     )
                 }
+                addAll(extraTerms)
             }
 
             when (predicates.size) {
@@ -1196,20 +1293,12 @@ internal data class ListEditorState(
                 else -> QueryExpression.All(predicates)
             }
         }
-
-        return CollectionListDraft(
-            title = title.trim(),
-            query = query,
-            sort = sort,
-            layoutType = layoutType,
-            providerId = providerId,
-        )
     }
 
     companion object {
         fun empty(): ListEditorState = ListEditorState(
             title = "",
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             layoutType = null,
             providerId = "kitsu",
             status = null,
@@ -1221,6 +1310,7 @@ internal data class ListEditorState(
             minScore = "",
             minChapters = "",
             minVolumes = "",
+            extraTerms = emptyList(),
             preservedQuery = null,
             filtersEditable = true,
         )
@@ -1241,6 +1331,7 @@ internal data class ListEditorState(
                 minScore = parsed?.minScore.orEmpty(),
                 minChapters = parsed?.minChapters.orEmpty(),
                 minVolumes = parsed?.minVolumes.orEmpty(),
+                extraTerms = parsed?.extraTerms.orEmpty(),
                 preservedQuery = if (parsed == null) list.query else null,
                 filtersEditable = parsed != null,
             )
@@ -1262,6 +1353,7 @@ internal data class ListEditorState(
                 minScore = parsed?.minScore.orEmpty(),
                 minChapters = parsed?.minChapters.orEmpty(),
                 minVolumes = parsed?.minVolumes.orEmpty(),
+                extraTerms = parsed?.extraTerms.orEmpty(),
                 preservedQuery = if (parsed == null) draft.query else null,
                 filtersEditable = parsed != null,
             )
@@ -1279,6 +1371,7 @@ private data class ParsedSimpleQuery(
     val minScore: String? = null,
     val minChapters: String? = null,
     val minVolumes: String? = null,
+    val extraTerms: List<QueryExpression> = emptyList(),
 )
 
 private data class ParsedSimpleTerm(
@@ -1313,8 +1406,13 @@ private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
 
     for (term in terms) {
         val predicate = term.predicate
-        if (!seen.add(predicate.field to term.negated)) return null
         val value = predicate.value
+        val repeatableExactGenre =
+            !term.negated &&
+                predicate.field == QueryField.GENRE &&
+                predicate.operator == QueryOperator.EQUALS &&
+                value is QueryValue.StringValue
+        if (!seen.add(predicate.field to term.negated) && !repeatableExactGenre) return null
 
         result = when {
             !term.negated &&
@@ -1371,7 +1469,15 @@ private fun parseSimpleQuery(expression: QueryExpression?): ParsedSimpleQuery? {
                 result.copy(minVolumes = value.value.toString())
             }
 
-            else -> return null
+            else -> {
+                result.copy(
+                    extraTerms = result.extraTerms + if (term.negated) {
+                        QueryExpression.Not(predicate)
+                    } else {
+                        predicate
+                    },
+                )
+            }
         }
     }
 
@@ -1406,11 +1512,3 @@ internal data class DeleteTarget(
 
 private const val COLLECTION_LIST_HEADER_COUNT = 1
 private const val COLLECTION_PREVIEW_FOLDER_COUNT = 3
-
-internal val SUPPORTED_SORTS = listOf(
-    CatalogSort.POPULARITY_DESC,
-    CatalogSort.POPULARITY_ASC,
-    CatalogSort.RATING_DESC,
-    CatalogSort.RATING_ASC,
-    CatalogSort.UPDATED_DESC,
-)

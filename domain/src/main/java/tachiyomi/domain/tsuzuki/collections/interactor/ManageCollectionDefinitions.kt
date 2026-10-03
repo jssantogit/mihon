@@ -2,10 +2,12 @@ package tachiyomi.domain.tsuzuki.collections.interactor
 
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.Flow
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
@@ -62,7 +64,10 @@ class ManageCollectionDefinitions internal constructor(
             collectionId = collection.id,
             folderId = folder.id,
             title = "Popular",
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Standard.POPULARITY,
+                CollectionSortDirection.DESC,
+            ),
             sortOrder = 0,
             now = now,
         )
@@ -71,7 +76,10 @@ class ManageCollectionDefinitions internal constructor(
             collectionId = collection.id,
             folderId = folder.id,
             title = "Highest Rated",
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
             sortOrder = 1,
             now = now,
         )
@@ -139,7 +147,7 @@ class ManageCollectionDefinitions internal constructor(
         title: String,
         providerId: String,
         query: QueryExpression?,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         sortOrder: Long,
         layoutType: String? = null,
     ): CollectionList {
@@ -546,7 +554,7 @@ class ManageCollectionDefinitions internal constructor(
         collectionId: String,
         folderId: String,
         title: String,
-        sort: CatalogSort,
+        sort: CollectionSortSelection,
         sortOrder: Long,
         now: Long,
     ) {

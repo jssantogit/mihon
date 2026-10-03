@@ -11,13 +11,19 @@ import eu.kanade.tachiyomi.data.track.shikimori.dto.SMUser
 import eu.kanade.tachiyomi.data.track.shikimori.dto.SMUserListResult
 import eu.kanade.tachiyomi.data.track.shikimori.dto.SMUserResult
 import eu.kanade.tachiyomi.network.DELETE
+import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.PUT
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.jsonMime
 import eu.kanade.tachiyomi.network.parseAs
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.FormBody
@@ -161,6 +167,108 @@ class ShikimoriApi(
                     .data.mangas
                     .map { it.toTrack(trackerId) }
             }
+        }
+    }
+
+    override suspend fun lookupGenres(): List<Pair<String, String>> =
+        lookupPairs("$API_URL/genres", listOf("russian", "name"), listOf("id"))
+
+    override suspend fun lookupPublishers(): List<Pair<String, String>> =
+        lookupPairs("$API_URL/publishers", listOf("name", "russian"), listOf("id"))
+
+    private suspend fun lookupPairs(
+        url: String,
+        labelKeys: List<String>,
+        valueKeys: List<String>,
+    ): List<Pair<String, String>> = withIOContext {
+        val element = with(json) {
+            publicClient.newCall(GET(url))
+                .awaitSuccess()
+                .parseAs<JsonElement>()
+        }
+        val elements = when (element) {
+            is JsonArray -> element
+            is JsonObject -> element.values.firstOrNull { it is JsonArray } as? JsonArray
+                ?: JsonArray(emptyList())
+            else -> JsonArray(emptyList())
+        }
+        elements.mapNotNull { entry ->
+            val objectValue = entry as? JsonObject ?: return@mapNotNull null
+            val label = labelKeys.asSequence()
+                .mapNotNull { key -> (objectValue[key] as? JsonPrimitive)?.contentOrNull }
+                .firstOrNull(String::isNotBlank)
+            val value = valueKeys.asSequence()
+                .mapNotNull { key -> (objectValue[key] as? JsonPrimitive)?.contentOrNull }
+                .firstOrNull(String::isNotBlank)
+            if (label != null && value != null) label to value else null
+        }.distinctBy { it.second }
+    }
+
+    override suspend fun collectionSearch(query: ShikimoriCollectionQuery): ShikimoriCollectionPage {
+        return withIOContext {
+            val arguments = buildList {
+                add("page: ${query.page}")
+                add("limit: ${query.limit}")
+                add("order: ${query.order}")
+                query.kind?.let { add("kind: ${it.graphQlString()}") }
+                query.status?.let { add("status: ${it.graphQlString()}") }
+                query.season?.let { add("season: ${it.graphQlString()}") }
+                query.score?.let { add("score: $it") }
+                query.genre?.let { add("genre: ${it.graphQlString()}") }
+                query.publisher?.let { add("publisher: ${it.graphQlString()}") }
+                query.franchise?.let { add("franchise: ${it.graphQlString()}") }
+                query.censored?.let { add("censored: $it") }
+                query.search?.takeIf(String::isNotBlank)?.let { add("search: ${it.graphQlString()}") }
+            }.joinToString()
+
+            val graphql = """
+                |{
+                    |mangas($arguments) {
+                        |id
+                        |name
+                        |chapters
+                        |kind
+                        |poster {
+                            |mainUrl
+                        |}
+                        |score
+                        |url
+                        |status
+                        |airedOn {
+                            |date
+                        |}
+                        |description
+                        |personRoles {
+                            |person {
+                                |name
+                            |}
+                            |rolesEn
+                        |}
+                    |}
+                |}
+            """.trimMargin()
+            val payload = buildJsonObject {
+                put("query", graphql)
+            }
+
+            val items = with(json) {
+                publicClient.newCall(
+                    POST(
+                        GRAPHQL_API_URL,
+                        body = payload.toString().toRequestBody(jsonMime),
+                    ),
+                )
+                    .awaitSuccess()
+                    .parseAs<SMSearchResult>()
+                    .data.mangas
+                    .map { it.toTrack(trackerId) }
+            }
+            ShikimoriCollectionPage(
+                items = items,
+                page = query.page,
+                limit = query.limit,
+                hasNextPage = items.size == query.limit,
+            )
         }
     }
 
@@ -362,6 +470,19 @@ class ShikimoriApi(
                 .add("refresh_token", token)
                 .build(),
         )
+
+        private fun String.graphQlString(): String =
+            buildString {
+                append('"')
+                this@graphQlString.forEach { char ->
+                    when (char) {
+                        '\\' -> append("\\\\")
+                        '"' -> append("\\\"")
+                        else -> append(char)
+                    }
+                }
+                append('"')
+            }
 
         private fun requireCredential(value: String): String =
             value.trim().ifBlank { throw ShikimoriCredentialsMissing() }

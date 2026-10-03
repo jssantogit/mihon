@@ -20,4 +20,4 @@ interface CollectionPortableCodec {
     fun decode(encoded: String): PortableCollectionsDocument
 }
 
-const val CURRENT_PORTABLE_COLLECTIONS_SCHEMA_VERSION: Int = 1
+const val CURRENT_PORTABLE_COLLECTIONS_SCHEMA_VERSION: Int = 2

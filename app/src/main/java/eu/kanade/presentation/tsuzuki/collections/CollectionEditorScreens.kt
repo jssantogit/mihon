@@ -35,6 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionDraftPreviewState
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFilterLookupKey
+import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFilterLookupState
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderDraft
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionFolderUiModel
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
@@ -47,6 +50,8 @@ import mihon.icons.materialsymbols.rounded.Edit
 import mihon.icons.materialsymbols.rounded.MoreVert
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import java.util.UUID
@@ -54,6 +59,11 @@ import java.util.UUID
 @Composable
 internal fun CollectionEditorScreen(
     graph: CollectionUiModel?,
+    providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
+    providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
+    draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState> = emptyMap(),
+    onFilterLookup: (String, String, String) -> Unit = { _, _, _ -> },
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onClose: () -> Unit,
@@ -76,6 +86,11 @@ internal fun CollectionEditorScreen(
                     parentFolderId = null,
                     existing = null,
                     initialDraft = null,
+                    providerDescriptors = providerDescriptors,
+                    providerCapabilities = providerCapabilities,
+                    draftPreviewState = draftPreviewState,
+                    filterLookupStates = filterLookupStates,
+                    onFilterLookup = onFilterLookup,
                     onSubmitDraft = { draft ->
                         draftFolders = draftFolders + DraftFolderEntry(
                             key = UUID.randomUUID().toString(),
@@ -99,6 +114,11 @@ internal fun CollectionEditorScreen(
                         parentFolderId = null,
                         existing = null,
                         initialDraft = entry.draft,
+                        providerDescriptors = providerDescriptors,
+                        providerCapabilities = providerCapabilities,
+                        draftPreviewState = draftPreviewState,
+                        filterLookupStates = filterLookupStates,
+                        onFilterLookup = onFilterLookup,
                         onSubmitDraft = { draft ->
                             draftFolders = draftFolders.map {
                                 if (it.key == route.key) it.copy(draft = draft) else it
@@ -123,6 +143,11 @@ internal fun CollectionEditorScreen(
                         existing = null,
                         initialDraft = null,
                         onSubmitDraft = null,
+                        providerDescriptors = providerDescriptors,
+                        providerCapabilities = providerCapabilities,
+                        draftPreviewState = draftPreviewState,
+                        filterLookupStates = filterLookupStates,
+                        onFilterLookup = onFilterLookup,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -141,6 +166,11 @@ internal fun CollectionEditorScreen(
                         existing = model,
                         initialDraft = null,
                         onSubmitDraft = null,
+                        providerDescriptors = providerDescriptors,
+                        providerCapabilities = providerCapabilities,
+                        draftPreviewState = draftPreviewState,
+                        filterLookupStates = filterLookupStates,
+                        onFilterLookup = onFilterLookup,
                         onAction = onAction,
                         onDelete = onDelete,
                         onClose = { folderEditor = null },
@@ -350,6 +380,11 @@ internal fun FolderEditorScreen(
     existing: CollectionFolderUiModel?,
     initialDraft: CollectionFolderDraft?,
     onSubmitDraft: ((CollectionFolderDraft) -> Unit)?,
+    providerDescriptors: List<CollectionProviderDescriptor> = emptyList(),
+    providerCapabilities: Map<String, ProviderQueryCapabilities> = emptyMap(),
+    draftPreviewState: CollectionDraftPreviewState = CollectionDraftPreviewState.Idle,
+    filterLookupStates: Map<CollectionFilterLookupKey, CollectionFilterLookupState> = emptyMap(),
+    onFilterLookup: (String, String, String) -> Unit = { _, _, _ -> },
     onAction: (CollectionsAction) -> Unit,
     onDelete: (DeleteTarget) -> Unit,
     onClose: () -> Unit,
@@ -386,6 +421,14 @@ internal fun FolderEditorScreen(
         ListBuilderScreen(
             title = if (target is FolderListEditorTarget.New) "New List" else "Edit List",
             initial = initial,
+            providerDescriptors = providerDescriptors,
+            providerCapabilities = providerCapabilities,
+            previewState = draftPreviewState,
+            filterLookupStates = filterLookupStates,
+            onFilterLookup = onFilterLookup,
+            onPreviewDraft = { draft ->
+                onAction(CollectionsAction.PreviewDraftChanged(draft))
+            },
             onClose = { listEditor = null },
             onConfirm = { draft ->
                 when (target) {
@@ -567,7 +610,7 @@ internal fun FolderEditorScreen(
                     ) { isDragging ->
                         EditorListCard(
                             title = list.title,
-                            subtitle = "${list.providerId} • ${list.sort.name}",
+                            subtitle = "${list.providerId} • ${list.sort.cacheKey}",
                             isDragging = isDragging,
                             reorderEnabled = reorderEnabled,
                             reorderHandleModifier = if (reorderEnabled) {
@@ -620,7 +663,7 @@ internal fun FolderEditorScreen(
                     ) { isDragging ->
                         EditorListCard(
                             title = draft.title,
-                            subtitle = "${draft.providerId} • ${draft.sort.name}",
+                            subtitle = "${draft.providerId} • ${draft.sort.cacheKey}",
                             isDragging = isDragging,
                             reorderEnabled = reorderEnabled,
                             reorderHandleModifier = if (reorderEnabled) {

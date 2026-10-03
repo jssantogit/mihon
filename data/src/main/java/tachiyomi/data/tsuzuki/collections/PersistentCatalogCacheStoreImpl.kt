@@ -28,7 +28,7 @@ class PersistentCatalogCacheStoreImpl(
             .getTsuzukiCatalogCache(
                 providerId = key.providerId,
                 queryKey = key.normalizedQueryKey,
-                sort = key.sort.name,
+                sort = key.sort.cacheKey,
                 rawOffset = key.rawOffset.toLong(),
                 pageSize = key.pageSize.toLong(),
                 mapper = { _, _, _, _, _, payloadJson, fetchedAt, expiresAt, staleUntil ->
@@ -80,7 +80,7 @@ class PersistentCatalogCacheStoreImpl(
         database.tsuzuki_catalog_cacheQueries.upsertTsuzukiCatalogCache(
             providerId = key.providerId,
             queryKey = key.normalizedQueryKey,
-            sort = key.sort.name,
+            sort = key.sort.cacheKey,
             rawOffset = key.rawOffset.toLong(),
             pageSize = key.pageSize.toLong(),
             payloadJson = CatalogPageCacheJsonCodec.encode(page),
@@ -94,7 +94,7 @@ class PersistentCatalogCacheStoreImpl(
         database.tsuzuki_catalog_cacheQueries.deleteTsuzukiCatalogCache(
             providerId = key.providerId,
             queryKey = key.normalizedQueryKey,
-            sort = key.sort.name,
+            sort = key.sort.cacheKey,
             rawOffset = key.rawOffset.toLong(),
             pageSize = key.pageSize.toLong(),
         )

@@ -70,14 +70,28 @@ data class ResidualPageCursor(
 data class LogicalCatalogPage(
     val items: List<CatalogItem>,
     val nextCursor: ResidualPageCursor?,
+    val scanBudgetReason: ResidualScanBudgetReason? = null,
 ) {
     val hasNextPage: Boolean
         get() = nextCursor != null
 }
 
+enum class ResidualScanBudgetReason {
+    RAW_ITEMS,
+    REMOTE_REQUESTS,
+    ELAPSED_TIME,
+}
+
 sealed interface ResidualPageResult {
     data class Success(
         val page: LogicalCatalogPage,
+    ) : ResidualPageResult
+
+    data class BudgetReached(
+        val page: LogicalCatalogPage,
+        val reason: ResidualScanBudgetReason,
+        val rawItemsScanned: Int,
+        val remoteRequests: Int,
     ) : ResidualPageResult
 
     data class UnsupportedResidual(

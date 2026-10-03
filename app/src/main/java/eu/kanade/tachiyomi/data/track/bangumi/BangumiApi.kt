@@ -80,31 +80,81 @@ class BangumiApi(
         }
     }
 
-    suspend fun search(search: String): List<TrackSearch> {
-        // This API is marked as experimental in the documentation
-        // but that has been the case since 2022 with few significant
-        // changes to the schema for this endpoint since
-        // "实验性 API， 本 schema 和实际的 API 行为都可能随时发生改动"
+    suspend fun search(search: String): List<TrackSearch> =
+        collectionSearch(
+            BangumiCollectionQuery(
+                keyword = search,
+                sort = "match",
+                offset = 0,
+                limit = 20,
+            ),
+        ).items.filter { it.publishing_type.equals("Manga", ignoreCase = true) }
+
+    suspend fun collectionSearch(query: BangumiCollectionQuery): BangumiCollectionPage {
+        // This API is marked experimental by Bangumi, but the current v0 schema documents
+        // the filter grammar used here. Keep request compilation in one place for Search
+        // and Collections so they cannot drift.
         return withIOContext {
-            val url = "$API_URL/v0/search/subjects?limit=20"
+            val url = "$API_URL/v0/search/subjects".toUri().buildUpon()
+                .appendQueryParameter("limit", query.limit.toString())
+                .appendQueryParameter("offset", query.offset.toString())
+                .build()
             val body = buildJsonObject {
-                put("keyword", search)
-                put("sort", "match")
+                put("keyword", query.keyword)
+                put("sort", query.sort)
                 putJsonObject("filter") {
                     putJsonArray("type") {
-                        add(1) // "Book" (书籍) type
+                        add(1) // Book
                     }
+                    if (query.tags.isNotEmpty()) {
+                        putJsonArray("tag") {
+                            query.tags.forEach(::add)
+                        }
+                    }
+                    if (query.metaTags.isNotEmpty()) {
+                        putJsonArray("meta_tags") {
+                            query.metaTags.forEach(::add)
+                        }
+                    }
+                    if (query.airDate.isNotEmpty()) {
+                        putJsonArray("air_date") {
+                            query.airDate.forEach(::add)
+                        }
+                    }
+                    if (query.rating.isNotEmpty()) {
+                        putJsonArray("rating") {
+                            query.rating.forEach(::add)
+                        }
+                    }
+                    if (query.ratingCount.isNotEmpty()) {
+                        putJsonArray("rating_count") {
+                            query.ratingCount.forEach(::add)
+                        }
+                    }
+                    if (query.rank.isNotEmpty()) {
+                        putJsonArray("rank") {
+                            query.rank.forEach(::add)
+                        }
+                    }
+                    query.nsfw?.let { put("nsfw", it) }
                 }
             }
                 .toString()
                 .toRequestBody()
             with(json) {
-                authClient.newCall(POST(url, body = body, headers = headersOf("Content-Type", APP_JSON)))
+                val response = authClient.newCall(
+                    POST(
+                        url.toString(),
+                        body = body,
+                        headers = headersOf("Content-Type", APP_JSON),
+                    ),
+                )
                     .awaitSuccess()
                     .parseAs<BGMSearchResult>()
-                    .data
-                    .filter { it.platform == null || it.platform == "漫画" }
-                    .map { it.toTrackSearch(trackerId) }
+                BangumiCollectionPage(
+                    items = response.data.map { it.toTrackSearch(trackerId) },
+                    total = response.total,
+                )
             }
         }
     }

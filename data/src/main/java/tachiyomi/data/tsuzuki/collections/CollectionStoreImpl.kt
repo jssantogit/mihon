@@ -9,10 +9,10 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 
@@ -194,7 +194,8 @@ class CollectionStoreImpl(
                 title = list.title,
                 providerId = list.providerId,
                 queryJson = list.query?.let(CollectionQueryJsonCodec::encode),
-                sort = list.sort.name,
+                sort = list.sort.stableKey,
+                sortDirection = list.sort.direction?.name,
                 layoutType = list.layoutType,
                 sortOrder = list.sortOrder,
                 enabled = list.enabled,
@@ -290,6 +291,7 @@ class CollectionStoreImpl(
         providerId: String,
         queryJson: String?,
         sort: String,
+        sortDirection: String?,
         layoutType: String?,
         sortOrder: Long,
         enabled: Boolean,
@@ -306,7 +308,7 @@ class CollectionStoreImpl(
         title = title,
         providerId = providerId,
         query = queryJson?.let(CollectionQueryJsonCodec::decode),
-        sort = CatalogSort.valueOf(sort),
+        sort = CollectionSortSelection.fromStorage(sort, sortDirection),
         layoutType = layoutType,
         sortOrder = sortOrder,
         enabled = enabled,

@@ -3,10 +3,12 @@ package tachiyomi.data.tsuzuki.collections
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.portable.PortableCollectionsDocument
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
@@ -19,7 +21,7 @@ class CollectionPortableJsonCodecTest {
     private val codec = CollectionPortableJsonCodec()
 
     @Test
-    fun `portable json v1 round trips collection folder list and query graph`() {
+    fun `portable json v2 round trips collection folder list sort and query graph`() {
         val collection = TsuzukiCollection(
             id = "collection",
             title = "My Collection",
@@ -71,7 +73,10 @@ class CollectionPortableJsonCodecTest {
                     ),
                 ),
             ),
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
             layoutType = "grid",
             sortOrder = 4,
             enabled = false,
@@ -117,6 +122,65 @@ class CollectionPortableJsonCodecTest {
     }
 
     @Test
+    fun `portable v1 legacy sort string remains readable`() {
+        val encoded = """
+            {
+              "schemaVersion": 1,
+              "collections": [
+                {
+                  "id": "collection",
+                  "title": "Legacy",
+                  "origin": "USER",
+                  "sortOrder": 0,
+                  "schemaVersion": 1,
+                  "revision": 0,
+                  "createdAt": 1,
+                  "updatedAt": 1
+                }
+              ],
+              "folders": [
+                {
+                  "id": "folder",
+                  "collectionId": "collection",
+                  "title": "Folder",
+                  "origin": "USER",
+                  "sortOrder": 0,
+                  "schemaVersion": 1,
+                  "revision": 0,
+                  "createdAt": 1,
+                  "updatedAt": 1
+                }
+              ],
+              "lists": [
+                {
+                  "id": "list",
+                  "collectionId": "collection",
+                  "folderId": "folder",
+                  "title": "Legacy rating",
+                  "providerId": "kitsu",
+                  "sort": "RATING_DESC",
+                  "sortOrder": 0,
+                  "enabled": true,
+                  "origin": "USER",
+                  "schemaVersion": 1,
+                  "revision": 0,
+                  "createdAt": 1,
+                  "updatedAt": 1
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val decoded = codec.decode(encoded)
+
+        decoded.schemaVersion shouldBe 1
+        decoded.lists.single().sort shouldBe CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        )
+    }
+
+    @Test
     fun `unsupported document schema version fails closed`() {
         val encoded = codec.encode(
             PortableCollectionsDocument(
@@ -124,7 +188,7 @@ class CollectionPortableJsonCodecTest {
                 folders = emptyList(),
                 lists = emptyList(),
             ),
-        ).replace("\"schemaVersion\": 1", "\"schemaVersion\": 2")
+        ).replaceFirst("\"schemaVersion\": 2", "\"schemaVersion\": 3")
 
         shouldThrow<IllegalArgumentException> {
             codec.decode(encoded)
@@ -170,7 +234,7 @@ class CollectionPortableJsonCodecTest {
         title = "List $id",
         providerId = "kitsu",
         query = query,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         sortOrder = sortOrder,
         origin = CollectionOrigin.USER,
         createdAt = 1,

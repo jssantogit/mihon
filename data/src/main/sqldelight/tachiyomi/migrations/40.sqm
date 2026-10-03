@@ -1,0 +1,27 @@
+ALTER TABLE tsuzuki_lists ADD COLUMN sort_direction TEXT;
+
+UPDATE tsuzuki_lists
+SET sort_direction = CASE sort
+    WHEN 'POPULARITY_DESC' THEN 'DESC'
+    WHEN 'POPULARITY_ASC' THEN 'ASC'
+    WHEN 'RATING_DESC' THEN 'DESC'
+    WHEN 'RATING_ASC' THEN 'ASC'
+    WHEN 'UPDATED_DESC' THEN 'DESC'
+    WHEN 'RELEVANCE' THEN NULL
+    ELSE sort_direction
+END;
+
+UPDATE tsuzuki_lists
+SET sort = CASE sort
+    WHEN 'POPULARITY_DESC' THEN 'standard.popularity'
+    WHEN 'POPULARITY_ASC' THEN 'standard.popularity'
+    WHEN 'RATING_DESC' THEN 'standard.rating'
+    WHEN 'RATING_ASC' THEN 'standard.rating'
+    WHEN 'UPDATED_DESC' THEN 'standard.updated'
+    WHEN 'RELEVANCE' THEN 'standard.relevance'
+    ELSE sort
+END;
+
+UPDATE tsuzuki_collections SET schema_version = 2 WHERE schema_version < 2;
+UPDATE tsuzuki_folders SET schema_version = 2 WHERE schema_version < 2;
+UPDATE tsuzuki_lists SET schema_version = 2 WHERE schema_version < 2;

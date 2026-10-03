@@ -1,6 +1,6 @@
 package tachiyomi.domain.tsuzuki.collections.capability
 
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -11,9 +11,21 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
  * sorting modes, and paging mechanisms can be pushed down to the remote service.
  */
 interface ProviderQueryCapabilities {
-    val providerId: String
+    val descriptor: CollectionProviderDescriptor
 
-    fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean
+    val providerId: String
+        get() = descriptor.providerId
+
+    fun canPushPredicate(
+        field: QueryField,
+        operator: QueryOperator,
+        value: QueryValue,
+    ): Boolean = descriptor.supports(
+        field = field,
+        operator = operator,
+        value = value,
+        executionMode = FilterExecutionMode.REMOTE_EXACT,
+    )
 
     /**
      * Returns true only when the provider can represent the complete expression with exact semantics.
@@ -34,9 +46,14 @@ interface ProviderQueryCapabilities {
         -> false
     }
 
-    fun canPushSort(sort: CatalogSort): Boolean
+    fun canPushSort(sort: CollectionSortSelection): Boolean = descriptor.supports(sort)
 
     val supportsOffsetPaging: Boolean
+        get() = descriptor.paging.mode == CollectionPagingMode.OFFSET
 
     val maxPageSize: Int?
+        get() = descriptor.paging.maxPageSize
+
+    val preferredPageSize: Int?
+        get() = descriptor.paging.preferredPageSize
 }

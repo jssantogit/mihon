@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import tachiyomi.data.tsuzuki.kitsu.client.KitsuClient
+import tachiyomi.data.tsuzuki.kitsu.dto.KitsuGenreResponse
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuImage
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaAttributes
 import tachiyomi.data.tsuzuki.kitsu.dto.KitsuMangaResource
@@ -294,6 +295,29 @@ class KitsuCatalogProviderTest {
     }
 
     @Test
+    fun `Kitsu projects user and favorite counts for residual Collections filters`() = runTest {
+        val resource = KitsuMangaResource(
+            id = "1",
+            type = "manga",
+            attributes = KitsuMangaAttributes(
+                canonicalTitle = "Title",
+                userCount = 42_000,
+                favoritesCount = 1_500,
+            ),
+        )
+        val provider = KitsuCatalogProvider(
+            FakeKitsuClient(
+                detailResult = Result.success(KitsuSingleMangaResponse(data = resource)),
+            ),
+        )
+
+        val item = provider.getDetails("1").getOrThrow()
+
+        item.popularity shouldBe 42_000L
+        item.favorites shouldBe 1_500L
+    }
+
+    @Test
     fun `cover and banner image extraction follows fallback cascade`() = runTest {
         val fakeClient = FakeKitsuClient()
         val provider = KitsuCatalogProvider(fakeClient)
@@ -450,6 +474,9 @@ class KitsuCatalogProviderTest {
             lastSearchSubtype = subtype
             return searchResult
         }
+
+        override suspend fun getGenres(query: String?): Result<KitsuGenreResponse> =
+            Result.success(KitsuGenreResponse())
 
         override suspend fun getTrendingManga(limit: Int): Result<KitsuMangaResponse> {
             lastTrendingLimit = limit

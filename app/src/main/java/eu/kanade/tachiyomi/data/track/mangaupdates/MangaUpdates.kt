@@ -11,6 +11,31 @@ import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import tachiyomi.i18n.MR
 import tachiyomi.domain.track.model.Track as DomainTrack
 
+data class MangaUpdatesCollectionQuery(
+    val search: String? = null,
+    val licensed: Boolean? = null,
+    val type: String? = null,
+    val category: String? = null,
+    val releaseFilter: String? = null,
+    val genre: String? = null,
+    val excludeGenre: String? = null,
+    val orderBy: String,
+    val page: Int,
+    val perPage: Int,
+) {
+    init {
+        require(page >= 1) { "MangaUpdates page must be one-based" }
+        require(perPage > 0) { "MangaUpdates perPage must be positive" }
+    }
+}
+
+data class MangaUpdatesCollectionPage(
+    val items: List<TrackSearch>,
+    val page: Int,
+    val perPage: Int,
+    val totalHits: Int,
+)
+
 interface MangaUpdatesIntegrationApi {
     suspend fun search(query: String): List<TrackSearch>
 
@@ -21,6 +46,19 @@ interface MangaUpdatesIntegrationApi {
     ): List<TrackSearch>
 
     suspend fun getMangaDetails(id: Long): TrackSearch
+
+    suspend fun lookupGenres(): List<Pair<String, String>> = emptyList()
+
+    suspend fun lookupCategories(query: String): List<Pair<String, String>> = emptyList()
+
+    suspend fun collectionSearch(
+        query: MangaUpdatesCollectionQuery,
+    ): MangaUpdatesCollectionPage = MangaUpdatesCollectionPage(
+        items = emptyList(),
+        page = query.page,
+        perPage = query.perPage,
+        totalHits = 0,
+    )
 }
 
 class MangaUpdates(id: Long) : BaseTracker(id, "MangaUpdates"), DeletableTracker {
@@ -67,6 +105,16 @@ class MangaUpdates(id: Long) : BaseTracker(id, "MangaUpdates"), DeletableTracker
         override suspend fun getMangaDetails(id: Long): TrackSearch =
             api.getSeriesDetails(id)?.toTrackSearch(this@MangaUpdates.id)
                 ?: error("MangaUpdates title not found: $id")
+
+        override suspend fun lookupGenres(): List<Pair<String, String>> =
+            api.lookupGenres()
+
+        override suspend fun lookupCategories(query: String): List<Pair<String, String>> =
+            api.lookupCategories(query)
+
+        override suspend fun collectionSearch(
+            query: MangaUpdatesCollectionQuery,
+        ): MangaUpdatesCollectionPage = api.collectionSearch(query, this@MangaUpdates.id)
     }
 
     override fun getLogo(): Int = R.drawable.brand_mangaupdates

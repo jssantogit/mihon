@@ -16,6 +16,8 @@ import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogScore
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.catalog.service.CatalogProvider
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
+import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 @Inject
 @SingleIn(AppScope::class)
@@ -66,6 +68,23 @@ class KitsuCatalogProvider(
             )
         }
     }
+
+    suspend fun lookupGenres(query: String?): Result<List<FilterOption>> =
+        client.getGenres(query).map { response ->
+            response.data
+                .mapNotNull { genre ->
+                    val value = genre.attributes.slug?.takeIf(String::isNotBlank)
+                        ?: genre.attributes.name.takeIf(String::isNotBlank)
+                        ?: return@mapNotNull null
+                    FilterOption(
+                        id = genre.id,
+                        label = genre.attributes.name,
+                        value = QueryValue.of(value),
+                    )
+                }
+                .distinctBy(FilterOption::id)
+                .sortedBy(FilterOption::label)
+        }
 
     override suspend fun getTrending(offset: Int, limit: Int): Result<CatalogPage> {
         return client.getTrendingManga(limit).mapCatalog { response ->
@@ -186,6 +205,8 @@ class KitsuCatalogProvider(
                 .toMap(),
             genres = emptyList(),
             tags = emptyList(),
+            popularity = attr.userCount?.toLong(),
+            favorites = attr.favoritesCount?.toLong(),
             startDate = attr.startDate,
             endDate = attr.endDate,
             chapterCount = attr.chapterCount,

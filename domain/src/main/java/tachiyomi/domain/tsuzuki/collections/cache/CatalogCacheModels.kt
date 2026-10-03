@@ -1,13 +1,13 @@
 package tachiyomi.domain.tsuzuki.collections.cache
 
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 
 data class CatalogCacheKey(
     val providerId: String,
     val normalizedQueryKey: String,
-    val sort: CatalogSort,
+    val sort: CollectionSortSelection,
     val rawOffset: Int,
     val pageSize: Int,
 ) {
@@ -24,7 +24,7 @@ data class CatalogCacheKey(
         fun fromExpression(
             providerId: String,
             expression: QueryExpression?,
-            sort: CatalogSort,
+            sort: CollectionSortSelection,
             rawOffset: Int,
             pageSize: Int,
         ): CatalogCacheKey = CatalogCacheKey(

@@ -1,7 +1,7 @@
 package tachiyomi.domain.tsuzuki.collections.planner
 
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryNormalizer
 
@@ -16,7 +16,7 @@ object QueryPlanner {
     fun plan(
         expression: QueryExpression?,
         capabilities: ProviderQueryCapabilities,
-        requestedSort: CatalogSort = CatalogSort.POPULARITY_DESC,
+        requestedSort: CollectionSortSelection = CollectionSortSelection.DEFAULT,
     ): QueryPlan {
         val sortPlan = planSort(requestedSort, capabilities)
 
@@ -38,13 +38,13 @@ object QueryPlanner {
         )
     }
 
-    private fun planSort(requestedSort: CatalogSort, capabilities: ProviderQueryCapabilities): SortPlan {
+    private fun planSort(requestedSort: CollectionSortSelection, capabilities: ProviderQueryCapabilities): SortPlan {
         return if (capabilities.canPushSort(requestedSort)) {
             SortPlan.RemoteExact(requestedSort)
         } else {
             SortPlan.UnsupportedForGlobalOrdering(
                 requestedSort = requestedSort,
-                fallbackRemoteSort = CatalogSort.POPULARITY_DESC,
+                fallbackRemoteSort = CollectionSortSelection.DEFAULT,
             )
         }
     }

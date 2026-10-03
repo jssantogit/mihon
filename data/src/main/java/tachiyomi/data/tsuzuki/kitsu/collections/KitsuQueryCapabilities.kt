@@ -3,8 +3,23 @@ package tachiyomi.data.tsuzuki.kitsu.collections
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemFormat
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItemStatus
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogQuery
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionFilterCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingCapability
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionPagingMode
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderDescriptor
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionProviderScope
+import tachiyomi.domain.tsuzuki.collections.capability.CollectionSortCapability
+import tachiyomi.domain.tsuzuki.collections.capability.FilterExecutionMode
+import tachiyomi.domain.tsuzuki.collections.capability.FilterOption
+import tachiyomi.domain.tsuzuki.collections.capability.FilterPlacement
+import tachiyomi.domain.tsuzuki.collections.capability.FilterValueSource
+import tachiyomi.domain.tsuzuki.collections.capability.MultiValueMode
 import tachiyomi.domain.tsuzuki.collections.capability.ProviderQueryCapabilities
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
+import tachiyomi.domain.tsuzuki.collections.model.SortDirectionMode
+import tachiyomi.domain.tsuzuki.collections.model.toLegacyCatalogSortOrNull
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -13,49 +28,177 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 /**
  * Exact Collections-query capabilities for the Kitsu catalog provider.
  *
- * Kitsu's manga search service supports exact filters for status, subtype and genre slugs. These
- * filters are safe to combine with AND semantics, so the Collections planner can push a conjunction
- * of those predicates while leaving unsupported predicates on the residual side.
+ * Kitsu's current Tsuzuki adapter pushes status, subtype and positive genre filters exactly. The
+ * descriptor is also the source of truth for which of those controls may be presented by a
+ * capability-driven List Builder.
  */
 object KitsuQueryCapabilities : ProviderQueryCapabilities {
-    override val providerId: String = "kitsu"
 
-    override val supportsOffsetPaging: Boolean = true
+    private val KITSU_FORMAT_VALUES = setOf(
+        CatalogItemFormat.MANGA.name,
+        CatalogItemFormat.NOVEL.name,
+        CatalogItemFormat.ONE_SHOT.name,
+        CatalogItemFormat.MANHWA.name,
+        CatalogItemFormat.MANHUA.name,
+        CatalogItemFormat.DOUJIN.name,
+    )
 
-    override val maxPageSize: Int = 20
+    override val descriptor: CollectionProviderDescriptor = CollectionProviderDescriptor(
+        providerId = "kitsu",
+        displayName = "Kitsu",
+        scope = CollectionProviderScope.GLOBAL,
+        filters = listOf(
+            CollectionFilterCapability(
+                id = "status",
+                field = QueryField.STATUS,
+                placement = FilterPlacement.QUICK,
+                operators = setOf(QueryOperator.EQUALS),
+                execution = setOf(FilterExecutionMode.REMOTE_EXACT),
+                valueSource = FilterValueSource.Static(
+                    listOf(
+                        FilterOption("ongoing", "Ongoing", QueryValue.of(CatalogItemStatus.ONGOING.name)),
+                        FilterOption("completed", "Completed", QueryValue.of(CatalogItemStatus.COMPLETED.name)),
+                    ),
+                ),
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+            CollectionFilterCapability(
+                id = "type",
+                field = QueryField.WORK_TYPE,
+                placement = FilterPlacement.QUICK,
+                operators = setOf(QueryOperator.EQUALS),
+                execution = setOf(FilterExecutionMode.REMOTE_EXACT),
+                valueSource = FilterValueSource.Static(
+                    KITSU_FORMAT_VALUES.map { value ->
+                        FilterOption(
+                            id = value.lowercase(),
+                            label = value.replace('_', ' ').lowercase()
+                                .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+                            value = QueryValue.of(value),
+                        )
+                    },
+                ),
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+            CollectionFilterCapability(
+                id = "genre",
+                field = QueryField.GENRE,
+                placement = FilterPlacement.QUICK,
+                operators = setOf(QueryOperator.EQUALS, QueryOperator.CONTAINS),
+                execution = setOf(FilterExecutionMode.REMOTE_EXACT),
+                valueSource = FilterValueSource.RemoteLookup("kitsu.genres"),
+                multiValueMode = MultiValueMode.ALL,
+            ),
+            CollectionFilterCapability(
+                id = "rating",
+                field = QueryField.SCORE,
+                placement = FilterPlacement.QUICK,
+                operators = setOf(
+                    QueryOperator.GREATER_OR_EQUAL,
+                    QueryOperator.LESS_OR_EQUAL,
+                    QueryOperator.BETWEEN,
+                ),
+                execution = setOf(FilterExecutionMode.RESIDUAL_EXACT),
+                valueSource = FilterValueSource.DecimalRange,
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+            CollectionFilterCapability(
+                id = "start_year",
+                field = QueryField.START_YEAR,
+                placement = FilterPlacement.ADVANCED,
+                operators = setOf(
+                    QueryOperator.GREATER_OR_EQUAL,
+                    QueryOperator.LESS_OR_EQUAL,
+                    QueryOperator.BETWEEN,
+                ),
+                execution = setOf(FilterExecutionMode.RESIDUAL_EXACT),
+                valueSource = FilterValueSource.IntegerRange,
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+            CollectionFilterCapability(
+                id = "chapter_count",
+                field = QueryField.CHAPTER_COUNT,
+                placement = FilterPlacement.ADVANCED,
+                operators = setOf(
+                    QueryOperator.GREATER_OR_EQUAL,
+                    QueryOperator.LESS_OR_EQUAL,
+                    QueryOperator.BETWEEN,
+                ),
+                execution = setOf(FilterExecutionMode.RESIDUAL_EXACT),
+                valueSource = FilterValueSource.IntegerRange,
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+            CollectionFilterCapability(
+                id = "volume_count",
+                field = QueryField.VOLUME_COUNT,
+                placement = FilterPlacement.ADVANCED,
+                operators = setOf(
+                    QueryOperator.GREATER_OR_EQUAL,
+                    QueryOperator.LESS_OR_EQUAL,
+                    QueryOperator.BETWEEN,
+                ),
+                execution = setOf(FilterExecutionMode.RESIDUAL_EXACT),
+                valueSource = FilterValueSource.IntegerRange,
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+            CollectionFilterCapability(
+                id = "popularity",
+                field = QueryField.POPULARITY,
+                placement = FilterPlacement.ADVANCED,
+                operators = setOf(
+                    QueryOperator.GREATER_OR_EQUAL,
+                    QueryOperator.LESS_OR_EQUAL,
+                    QueryOperator.BETWEEN,
+                ),
+                execution = setOf(FilterExecutionMode.RESIDUAL_EXACT),
+                valueSource = FilterValueSource.IntegerRange,
+                multiValueMode = MultiValueMode.SINGLE,
+            ),
+        ),
+        sorts = listOf(
+            CollectionSortCapability(
+                key = CollectionSortKey.Standard.POPULARITY,
+                label = "Popularity",
+                directionMode = SortDirectionMode.ASC_DESC,
+                defaultDirection = CollectionSortDirection.DESC,
+            ),
+            CollectionSortCapability(
+                key = CollectionSortKey.Standard.RATING,
+                label = "Rating",
+                directionMode = SortDirectionMode.ASC_DESC,
+                defaultDirection = CollectionSortDirection.DESC,
+            ),
+            CollectionSortCapability(
+                key = CollectionSortKey.Standard.UPDATED,
+                label = "Recently Updated",
+                directionMode = SortDirectionMode.DESC_ONLY,
+                defaultDirection = CollectionSortDirection.DESC,
+            ),
+        ),
+        paging = CollectionPagingCapability(
+            mode = CollectionPagingMode.OFFSET,
+            maxPageSize = 20,
+            preferredPageSize = 20,
+        ),
+    )
 
-    override fun canPushSort(sort: CatalogSort): Boolean = when (sort) {
-        CatalogSort.POPULARITY_DESC,
-        CatalogSort.POPULARITY_ASC,
-        CatalogSort.RATING_DESC,
-        CatalogSort.RATING_ASC,
-        CatalogSort.UPDATED_DESC,
-        -> true
-        CatalogSort.RELEVANCE -> false
-    }
-
-    override fun canPushPredicate(field: QueryField, operator: QueryOperator, value: QueryValue): Boolean {
-        val stringValue = value as? QueryValue.StringValue ?: return false
-        val normalized = stringValue.value.trim()
-        if (normalized.isEmpty()) return false
-
-        return when (field) {
-            QueryField.STATUS -> {
-                operator == QueryOperator.EQUALS &&
-                    normalized.uppercase() in KITSU_STATUS_VALUES
-            }
-
-            QueryField.WORK_TYPE -> {
-                operator == QueryOperator.EQUALS &&
-                    normalized.uppercase() in KITSU_FORMAT_VALUES
-            }
-
-            QueryField.GENRE -> {
-                operator in setOf(QueryOperator.EQUALS, QueryOperator.CONTAINS)
-            }
-
-            else -> false
+    override fun canPushPredicate(
+        field: QueryField,
+        operator: QueryOperator,
+        value: QueryValue,
+    ): Boolean {
+        val normalizedValue = when {
+            value is QueryValue.StringValue &&
+                (field == QueryField.STATUS || field == QueryField.WORK_TYPE) ->
+                QueryValue.of(value.value.uppercase())
+            else -> value
         }
+        return descriptor.supports(
+            field = field,
+            operator = operator,
+            value = normalizedValue,
+            executionMode = FilterExecutionMode.REMOTE_EXACT,
+        )
     }
 
     override fun canPushExpression(expression: QueryExpression): Boolean = when (expression) {
@@ -83,24 +226,10 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         is QueryExpression.Not,
         -> false
     }
-
-    private val KITSU_STATUS_VALUES = setOf(
-        CatalogItemStatus.ONGOING.name,
-        CatalogItemStatus.COMPLETED.name,
-    )
-
-    private val KITSU_FORMAT_VALUES = setOf(
-        CatalogItemFormat.MANGA.name,
-        CatalogItemFormat.NOVEL.name,
-        CatalogItemFormat.ONE_SHOT.name,
-        CatalogItemFormat.MANHWA.name,
-        CatalogItemFormat.MANHUA.name,
-        CatalogItemFormat.DOUJIN.name,
-    )
 }
 
 /**
- * Compiles only expressions that [KitsuQueryCapabilities] declares exactly representable.
+ * Compiles only expressions and sorts that [KitsuQueryCapabilities] declares exactly representable.
  *
  * Unsupported expressions fail closed instead of being ignored. The planner must retain those
  * expressions as residual work.
@@ -109,17 +238,21 @@ object KitsuQueryCompiler {
 
     fun compile(
         pushdownExpression: QueryExpression?,
-        sort: CatalogSort = CatalogSort.POPULARITY_DESC,
+        sort: CollectionSortSelection = CollectionSortSelection.DEFAULT,
         offset: Int = 0,
         limit: Int = 20,
     ): CatalogQuery {
         require(offset >= 0) { "Kitsu offset must be non-negative" }
-        require(limit in 1..KitsuQueryCapabilities.maxPageSize) {
+        require(limit in 1..KitsuQueryCapabilities.maxPageSize!!) {
             "Kitsu page limit must be between 1 and ${KitsuQueryCapabilities.maxPageSize}"
         }
         require(KitsuQueryCapabilities.canPushSort(sort)) {
             "Kitsu cannot guarantee exact remote ordering for $sort"
         }
+        val catalogSort = requireNotNull(sort.toLegacyCatalogSortOrNull()) {
+            "Kitsu Collection sort has no legacy catalog mapping: $sort"
+        }
+
         if (pushdownExpression != null) {
             require(KitsuQueryCapabilities.canPushExpression(pushdownExpression)) {
                 "Kitsu cannot compile Collections pushdown: ${pushdownExpression.toCanonicalString()}"
@@ -171,7 +304,7 @@ object KitsuQueryCompiler {
 
         return CatalogQuery(
             query = null,
-            sort = sort,
+            sort = catalogSort,
             genres = genres.distinct(),
             format = format,
             status = status,

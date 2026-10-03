@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogPage
+import tachiyomi.domain.tsuzuki.collections.capability.ResidualScanPolicy
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -153,6 +154,85 @@ class ResidualPaginatorTest {
     }
 
     @Test
+    fun `request budget returns partial page with continuation instead of pretending exhaustion`() = runTest {
+        var calls = 0
+        val result = ResidualPaginator.loadPage(
+            residualExpression = over100,
+            logicalPageSize = 2,
+            scanPolicy = ResidualScanPolicy(
+                maxRawItemsPerLogicalPage = 100,
+                maxRemoteRequestsPerLogicalPage = 2,
+                maxElapsedMillis = 60_000,
+            ),
+            fetcher = datasetFetcher(
+                item("1", 101),
+                item("2", 2),
+                item("3", 3),
+                item("4", 102),
+                onFetch = { _, _ -> calls++ },
+            ),
+        ).shouldBeInstanceOf<ResidualPageResult.BudgetReached>()
+
+        result.page.items.map { it.providerId } shouldContainExactly listOf("1")
+        result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 3)
+        result.reason shouldBe ResidualScanBudgetReason.REMOTE_REQUESTS
+        result.remoteRequests shouldBe 2
+        result.rawItemsScanned shouldBe 3
+        calls shouldBe 2
+    }
+
+    @Test
+    fun `raw item budget caps provider request and preserves exact continuation`() = runTest {
+        val calls = mutableListOf<Pair<Int, Int>>()
+        val result = ResidualPaginator.loadPage(
+            residualExpression = over100,
+            logicalPageSize = 2,
+            scanPolicy = ResidualScanPolicy(
+                maxRawItemsPerLogicalPage = 3,
+                maxRemoteRequestsPerLogicalPage = 10,
+                maxElapsedMillis = 60_000,
+            ),
+            fetcher = datasetFetcher(
+                item("1", 1),
+                item("2", 2),
+                item("3", 3),
+                item("4", 101),
+                onFetch = { offset, limit -> calls += offset to limit },
+            ),
+        ).shouldBeInstanceOf<ResidualPageResult.BudgetReached>()
+
+        calls shouldContainExactly listOf(0 to 2, 2 to 1)
+        result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 3)
+        result.reason shouldBe ResidualScanBudgetReason.RAW_ITEMS
+        result.rawItemsScanned shouldBe 3
+    }
+
+    @Test
+    fun `elapsed budget returns after completed fetch with resumable cursor`() = runTest {
+        val times = ArrayDeque(listOf(0L, 0L, 2_000L, 2_000L))
+        val result = ResidualPaginator.loadPage(
+            residualExpression = over100,
+            logicalPageSize = 2,
+            scanPolicy = ResidualScanPolicy(
+                maxRawItemsPerLogicalPage = 100,
+                maxRemoteRequestsPerLogicalPage = 10,
+                maxElapsedMillis = 1_000,
+            ),
+            clock = { times.removeFirst() },
+            fetcher = datasetFetcher(
+                item("1", 1),
+                item("2", 2),
+                item("3", 101),
+            ),
+        ).shouldBeInstanceOf<ResidualPageResult.BudgetReached>()
+
+        result.page.nextCursor shouldBe ResidualPageCursor(rawOffset = 2)
+        result.reason shouldBe ResidualScanBudgetReason.ELAPSED_TIME
+        result.remoteRequests shouldBe 1
+        result.rawItemsScanned shouldBe 2
+    }
+
+    @Test
     fun `empty provider page with hasNext true fails instead of looping`() = runTest {
         val result = ResidualPaginator.loadPage(
             residualExpression = over100,
@@ -251,9 +331,9 @@ class ResidualPaginatorTest {
     fun `unsupported residual semantics fail before provider fetch`() = runTest {
         var calls = 0
         val unsupported = QueryExpression.Predicate(
-            field = QueryField.AUTHOR,
+            field = QueryField.IN_LIBRARY,
             operator = QueryOperator.EQUALS,
-            value = QueryValue.of("Author"),
+            value = QueryValue.of(true),
         )
 
         val result = ResidualPaginator.loadPage(

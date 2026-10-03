@@ -3,9 +3,11 @@ package eu.kanade.presentation.tsuzuki.collections
 import eu.kanade.tachiyomi.ui.tsuzuki.collections.CollectionListDraft
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogSort
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortDirection
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortKey
+import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.query.QueryField
 import tachiyomi.domain.tsuzuki.collections.query.QueryOperator
@@ -54,14 +56,20 @@ class CollectionListEditorTest {
         val draft = CollectionListDraft(
             title = "Draft",
             query = query,
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
             layoutType = "list",
         )
 
         val editor = ListEditorState.fromDraft(draft)
 
         editor.title shouldBe "Draft"
-        editor.sort shouldBe CatalogSort.RATING_DESC
+        editor.sort shouldBe CollectionSortSelection(
+            CollectionSortKey.Standard.RATING,
+            CollectionSortDirection.DESC,
+        )
         editor.layoutType shouldBe "list"
         editor.status shouldBe "ONGOING"
         editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
@@ -72,7 +80,7 @@ class CollectionListEditorTest {
         val draft = CollectionListDraft(
             title = "Draft",
             query = null,
-            sort = CatalogSort.POPULARITY_DESC,
+            sort = CollectionSortSelection.DEFAULT,
             layoutType = null,
             providerId = "mangaupdates",
         )
@@ -101,6 +109,102 @@ class CollectionListEditorTest {
     }
 
     @Test
+    fun `provider custom simple predicate stays editable and round trips through extra terms`() {
+        val query = QueryExpression.Predicate(
+            QueryField.Custom("hikka.only_translated"),
+            QueryOperator.EQUALS,
+            QueryValue.of(true),
+        )
+        val draft = CollectionListDraft(
+            title = "Translated",
+            query = query,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "hikka",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(query)
+        editor.toDraftOrNull()!!.query shouldBe query
+    }
+
+    @Test
+    fun `simple standard field outside legacy controls stays editable as extra term`() {
+        val query = QueryExpression.Predicate(
+            QueryField.PUBLISHER,
+            QueryOperator.EQUALS,
+            QueryValue.of("Shueisha"),
+        )
+
+        val editor = ListEditorState.from(list(query))
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(query)
+        editor.toDraftOrNull()!!.query shouldBe query
+    }
+
+    @Test
+    fun `multiple exact genre predicates stay editable for Kitsu all semantics`() {
+        val query = QueryExpression.All(
+            QueryExpression.Predicate(
+                QueryField.GENRE,
+                QueryOperator.EQUALS,
+                QueryValue.of("Romance"),
+            ),
+            QueryExpression.Predicate(
+                QueryField.GENRE,
+                QueryOperator.EQUALS,
+                QueryValue.of("Drama"),
+            ),
+        )
+        val draft = CollectionListDraft(
+            title = "Kitsu genres",
+            query = query,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "kitsu",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe query.expressions
+        editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
+    }
+
+    @Test
+    fun `provider include exclude pair stays editable and round trips independently`() {
+        val include = QueryExpression.Predicate(
+            QueryField.PUBLISHER,
+            QueryOperator.EQUALS,
+            QueryValue.of("1"),
+        )
+        val exclude = QueryExpression.Not(
+            QueryExpression.Predicate(
+                QueryField.PUBLISHER,
+                QueryOperator.EQUALS,
+                QueryValue.of("4"),
+            ),
+        )
+        val query = QueryExpression.All(include, exclude)
+        val draft = CollectionListDraft(
+            title = "Publishers",
+            query = query,
+            sort = CollectionSortSelection.DEFAULT,
+            layoutType = null,
+            providerId = "shikimori",
+        )
+
+        val editor = ListEditorState.fromDraft(draft)
+
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(include, exclude)
+        editor.toDraftOrNull()!!.query!!.normalize() shouldBe query.normalize()
+    }
+
+    @Test
     fun `advanced any query is preserved exactly when visual editor cannot represent it`() {
         val query = QueryExpression.Any(
             QueryExpression.Predicate(
@@ -124,25 +228,32 @@ class CollectionListEditorTest {
         editor.preservedQuery shouldBe query
         editor.copy(
             title = "Renamed",
-            sort = CatalogSort.RATING_DESC,
+            sort = CollectionSortSelection(
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            ),
         ).toDraftOrNull()!!.let { draft ->
             draft.title shouldBe "Renamed"
-            draft.sort shouldBe CatalogSort.RATING_DESC
+            draft.sort shouldBe CollectionSortSelection(
+                CollectionSortKey.Standard.RATING,
+                CollectionSortDirection.DESC,
+            )
             draft.query shouldBe query
         }
     }
 
     @Test
-    fun `unsupported simple field is preserved instead of dropped`() {
+    fun `unfamiliar simple predicate remains editable without semantic rewrite`() {
         val query = QueryExpression.Predicate(
             QueryField.GENRE,
-            QueryOperator.EQUALS,
-            QueryValue.of("Action"),
+            QueryOperator.BETWEEN,
+            QueryValue.range(QueryValue.of("Action"), QueryValue.of("Drama")),
         )
 
         val editor = ListEditorState.from(list(query))
 
-        editor.filtersEditable shouldBe false
+        editor.filtersEditable shouldBe true
+        editor.extraTerms shouldBe listOf(query)
         editor.toDraftOrNull()!!.query shouldBe query
     }
 
@@ -153,7 +264,7 @@ class CollectionListEditorTest {
         title = "List",
         providerId = "kitsu",
         query = query,
-        sort = CatalogSort.POPULARITY_DESC,
+        sort = CollectionSortSelection.DEFAULT,
         sortOrder = 0,
         origin = CollectionOrigin.USER,
         createdAt = 1,
