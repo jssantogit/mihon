@@ -23,6 +23,7 @@ import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
 import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
+import tachiyomi.domain.tsuzuki.home.interactor.GetHomeHero
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
@@ -63,6 +64,29 @@ class TsuzukiHomeScreenModelTest {
 
         model.state.value.continueReading shouldBe emptyList()
         model.state.value.sections shouldBe emptyList()
+    }
+
+    @Test
+    fun `Hero is loaded independently from Continue Reading`() = runTest(dispatcher) {
+        val hero = CatalogItem(
+            provider = "kitsu",
+            providerId = "hero-1",
+            title = "Hero work",
+            coverUrl = "https://example/hero-cover.jpg",
+            bannerUrl = "https://example/hero-banner.jpg",
+        )
+        val getHomeHero = mockk<GetHomeHero>()
+        coEvery { getHomeHero.await(any()) } returns hero
+        val model = createModel(
+            continueReading = MutableStateFlow(emptyList()),
+            sections = MutableStateFlow(emptyList()),
+            homeHero = getHomeHero,
+        )
+
+        advanceUntilIdle()
+
+        model.state.value.hero shouldBe hero
+        model.state.value.continueReading shouldBe emptyList()
     }
 
     @Test
@@ -245,6 +269,7 @@ class TsuzukiHomeScreenModelTest {
         artworkRepository: TitleArtworkRepository = FakeTitleArtworkRepository(emptyList()),
         libraryItems: MutableStateFlow<List<CanonicalLibraryItem>> = MutableStateFlow(emptyList()),
         legacyImporter: ImportLegacyCanonicalProgress = mockk(relaxed = true),
+        homeHero: GetHomeHero = defaultHomeHero(),
     ): TsuzukiHomeScreenModel {
         val observeHome = mockk<ObserveHomeContinueReading>()
         every { observeHome.subscribe() } returns continueReading
@@ -261,6 +286,7 @@ class TsuzukiHomeScreenModelTest {
         return TsuzukiHomeScreenModel(
             observeHomeContinueReading = observeHome,
             getConfiguredHomeSections = configured,
+            getHomeHero = homeHero,
             visibilityRepository = visibility,
             observeCanonicalLibrary = observeLibrary,
             historyRepository = history,
@@ -269,6 +295,12 @@ class TsuzukiHomeScreenModelTest {
             resolveCanonicalSourceManga = sourceMangaResolver,
             titleArtworkRepository = artworkRepository,
         )
+    }
+
+    private fun defaultHomeHero(): GetHomeHero {
+        return mockk<GetHomeHero>().also { interactor ->
+            coEvery { interactor.await(any()) } returns null
+        }
     }
 
     private class FakeTitleArtworkRepository(

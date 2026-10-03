@@ -10,6 +10,7 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -24,6 +25,7 @@ import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.artwork.resolveCanonicalArtwork
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
+import tachiyomi.domain.tsuzuki.home.interactor.GetHomeHero
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
@@ -36,6 +38,7 @@ import kotlin.time.Clock
 
 @Immutable
 data class TsuzukiHomeScreenState(
+    val hero: CatalogItem? = null,
     val continueReading: List<HomeContinueReadingItem> = emptyList(),
     val sections: List<HomeSection> = emptyList(),
 )
@@ -50,6 +53,7 @@ sealed interface TsuzukiHomeEvent {
 class TsuzukiHomeScreenModel(
     observeHomeContinueReading: ObserveHomeContinueReading,
     getConfiguredHomeSections: GetConfiguredHomeSections,
+    private val getHomeHero: GetHomeHero,
     private val visibilityRepository: ContinueReadingVisibilityRepository,
     private val observeCanonicalLibrary: ObserveCanonicalLibrary,
     private val historyRepository: HistoryRepository,
@@ -63,12 +67,14 @@ class TsuzukiHomeScreenModel(
     val events = eventChannel.receiveAsFlow()
 
     private val importedLegacyProgressTitles = mutableSetOf<String>()
+    private val hero = MutableStateFlow<CatalogItem?>(null)
 
     val state: StateFlow<TsuzukiHomeScreenState> = combine(
+        hero,
         observeHomeContinueReading.subscribe(),
         getConfiguredHomeSections.subscribe(),
         titleArtworkRepository.observeAll(),
-    ) { continueReading, sections, artworkObservations ->
+    ) { heroItem, continueReading, sections, artworkObservations ->
         val artworkByTitle = artworkObservations.groupBy { it.canonicalTitleId }
         val enriched = continueReading.map { item ->
             val canonicalArtwork = resolveCanonicalArtwork(
@@ -95,6 +101,7 @@ class TsuzukiHomeScreenModel(
             )
         }
         TsuzukiHomeScreenState(
+            hero = heroItem,
             continueReading = enriched,
             sections = sections,
         )
@@ -105,6 +112,16 @@ class TsuzukiHomeScreenModel(
     )
 
     init {
+        viewModelScope.launch {
+            hero.value = try {
+                getHomeHero.await(limit = HOME_HERO_DISCOVERY_LIMIT)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                null
+            }
+        }
+
         viewModelScope.launch {
             combine(
                 observeCanonicalLibrary.subscribe(),
@@ -151,5 +168,9 @@ class TsuzukiHomeScreenModel(
                 // A failed catalog materialization must not destabilize Home.
             }
         }
+    }
+
+    private companion object {
+        const val HOME_HERO_DISCOVERY_LIMIT = 8
     }
 }

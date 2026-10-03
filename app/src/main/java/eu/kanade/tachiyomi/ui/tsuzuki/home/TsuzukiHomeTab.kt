@@ -39,6 +39,8 @@ data object TsuzukiHomeTab : Tab {
 
         TsuzukiHomeScreen(
             state = state,
+            onHeroRead = screenModel::openCatalogItem,
+            onHeroDetails = screenModel::openCatalogItem,
             onContinueReading = { item ->
                 context.startActivity(
                     ReaderActivity.newCanonicalIntent(
