@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
@@ -53,20 +54,26 @@ class GetConfiguredHomeSectionsTest {
     }
 
     @Test
-    fun `user collection exposes folders without executing lists on Home`() = runTest {
+    fun `user collection exposes a bounded cover preview from enabled Lists`() = runTest {
         val store = FakeCollectionStore().apply {
             addGraph(origin = CollectionOrigin.USER)
             lists["folder-1"] = listOf(
-                list(id = "enabled", enabled = true, sortOrder = 0),
-                list(id = "disabled", enabled = false, sortOrder = 1),
+                list(id = "disabled", enabled = false, sortOrder = 0),
+                list(id = "enabled", enabled = true, sortOrder = 1),
             )
         }
-        val calls = mutableListOf<String>()
+        val calls = mutableListOf<Pair<String, Int>>()
+        val previewItems = listOf(
+            CatalogItem(provider = "kitsu", providerId = "1", title = "One", coverUrl = "one"),
+            CatalogItem(provider = "kitsu", providerId = "2", title = "Two", coverUrl = "two"),
+            CatalogItem(provider = "kitsu", providerId = "3", title = "Three", coverUrl = "three"),
+            CatalogItem(provider = "kitsu", providerId = "4", title = "Four", coverUrl = "four"),
+        )
         val interactor = GetConfiguredHomeSections(
             store = store,
-            loader = HomeCollectionListLoader { listId, _ ->
-                calls += listId
-                HomeRowContent.Content(emptyList())
+            loader = HomeCollectionListLoader { listId, pageSize ->
+                calls += listId to pageSize
+                HomeRowContent.Content(previewItems)
             },
         )
 
@@ -76,18 +83,40 @@ class GetConfiguredHomeSectionsTest {
             HomeSection.CollectionSection(
                 collectionId = "collection-1",
                 title = "My Home",
-                rows = listOf(
-                    tachiyomi.domain.tsuzuki.home.model.HomeRow(
-                        listId = "folder-1",
-                        title = "Rows",
-                        providerId = "",
-                        layoutType = null,
-                        content = HomeRowContent.Content(emptyList()),
-                    ),
-                ),
+                previewItems = previewItems,
             ),
         )
-        calls shouldBe emptyList()
+        calls shouldBe listOf("enabled" to 4)
+    }
+
+    @Test
+    fun `collection preview falls through empty Lists but stays request bounded`() = runTest {
+        val store = FakeCollectionStore().apply {
+            addGraph(origin = CollectionOrigin.USER)
+            lists["folder-1"] = listOf(
+                list(id = "empty", enabled = true, sortOrder = 0),
+                list(id = "fallback", enabled = true, sortOrder = 1),
+                list(id = "never", enabled = true, sortOrder = 2),
+            )
+        }
+        val calls = mutableListOf<String>()
+        val interactor = GetConfiguredHomeSections(
+            store = store,
+            loader = HomeCollectionListLoader { listId, _ ->
+                calls += listId
+                when (listId) {
+                    "fallback" -> HomeRowContent.Content(
+                        listOf(CatalogItem(provider = "kitsu", providerId = "42", title = "Found")),
+                    )
+                    else -> HomeRowContent.Content(emptyList())
+                }
+            },
+        )
+
+        val section = interactor.execute().single() as HomeSection.CollectionSection
+
+        section.previewItems.map { it.providerId } shouldBe listOf("42")
+        calls shouldBe listOf("empty", "fallback", "never")
     }
 
     private class FakeCollectionStore : CollectionStore {
