@@ -14,10 +14,12 @@ import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionList
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionListRequest
 import tachiyomi.domain.tsuzuki.collections.execution.ExecuteCollectionListResult
 import tachiyomi.domain.tsuzuki.collections.execution.ResidualPageCursor
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
+import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.QuerySchedulePriority
-import tachiyomi.domain.tsuzuki.home.model.HomeRow
 import tachiyomi.domain.tsuzuki.home.model.HomeRowContent
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
 
@@ -40,20 +42,19 @@ class GetConfiguredHomeSections(
                 .filter { it.parentFolderId == null }
                 .sortedWith(compareBy({ it.sortOrder }, { it.id }))
 
-            val rows = folders.map { folder ->
-                HomeRow(
-                    listId = folder.id,
-                    title = folder.title,
-                    providerId = "",
-                    layoutType = null,
-                    content = HomeRowContent.Content(emptyList()),
-                )
-            }
+            val folderLists = folders
+                .take(MAX_PREVIEW_FOLDERS)
+                .map { folder ->
+                    folder to store.getLists(folder.id)
+                }
 
             sections += HomeSection.CollectionSection(
                 collectionId = collection.id,
                 title = collection.title,
-                rows = rows,
+                previewItems = loadPreview(
+                    folderLists = folderLists,
+                    pageSize = pageSize,
+                ),
             )
         }
         return sections
@@ -85,29 +86,85 @@ class GetConfiguredHomeSections(
         collection: tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection,
         pageSize: Int,
     ): Flow<HomeSection.CollectionSection> {
-        return store.observeFolders(collection.id).mapLatest { folders ->
-            val rows = folders
+        return store.observeFolders(collection.id).flatMapLatest { folders ->
+            val rootFolders = folders
                 .filter { it.parentFolderId == null }
                 .sortedWith(compareBy({ it.sortOrder }, { it.id }))
-                .map { folder ->
-                    HomeRow(
-                        listId = folder.id,
-                        title = folder.title,
-                        providerId = "",
-                        layoutType = null,
-                        content = HomeRowContent.Content(emptyList()),
+                .take(MAX_PREVIEW_FOLDERS)
+
+            if (rootFolders.isEmpty()) {
+                flowOf(
+                    HomeSection.CollectionSection(
+                        collectionId = collection.id,
+                        title = collection.title,
+                        previewItems = emptyList(),
+                    ),
+                )
+            } else {
+                combine(
+                    rootFolders.map { folder ->
+                        store.observeLists(folder.id).mapLatest { lists ->
+                            folder to lists
+                        }
+                    },
+                ) { folderLists ->
+                    HomeSection.CollectionSection(
+                        collectionId = collection.id,
+                        title = collection.title,
+                        previewItems = loadPreview(
+                            folderLists = folderLists.toList(),
+                            pageSize = pageSize,
+                        ),
                     )
                 }
-            HomeSection.CollectionSection(
-                collectionId = collection.id,
-                title = collection.title,
-                rows = rows,
-            )
+            }
         }
     }
 
+    private suspend fun loadPreview(
+        folderLists: List<Pair<CollectionFolder, List<CollectionList>>>,
+        pageSize: Int,
+    ): List<CatalogItem> {
+        val items = mutableListOf<CatalogItem>()
+        var attemptedLists = 0
+
+        for ((_, lists) in folderLists) {
+            val orderedLists = lists
+                .filter(CollectionList::enabled)
+                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+
+            for (list in orderedLists) {
+                if (items.size >= pageSize || attemptedLists >= MAX_PREVIEW_LISTS) break
+                attemptedLists += 1
+
+                val remaining = pageSize - items.size
+                val content = loader.load(
+                    listId = list.id,
+                    pageSize = remaining,
+                )
+                if (content is HomeRowContent.Content) {
+                    content.items.forEach { item ->
+                        if (items.none { existing ->
+                                existing.provider == item.provider &&
+                                    existing.providerId == item.providerId
+                            }
+                        ) {
+                            items += item
+                        }
+                    }
+                }
+            }
+
+            if (items.size >= pageSize || attemptedLists >= MAX_PREVIEW_LISTS) break
+        }
+
+        return items.take(pageSize)
+    }
+
     private companion object {
-        const val DEFAULT_PAGE_SIZE = 12
+        const val DEFAULT_PAGE_SIZE = 4
+        const val MAX_PREVIEW_FOLDERS = 4
+        const val MAX_PREVIEW_LISTS = 3
     }
 }
 
