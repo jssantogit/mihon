@@ -88,7 +88,7 @@ class TsuzukiHomeScreenModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                emptyList()
+                null
             }
             logcat {
                 "TsuzukiCover home title=${item.canonicalTitleId.take(8)} " +
@@ -121,7 +121,7 @@ class TsuzukiHomeScreenModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                null
+                emptyList()
             }
         }
 
