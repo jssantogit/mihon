@@ -21,6 +21,7 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.QuerySchedulePriority
 import tachiyomi.domain.tsuzuki.home.model.HomeCollectionBrowse
+import tachiyomi.domain.tsuzuki.home.model.HomeFolderBrowse
 import tachiyomi.domain.tsuzuki.home.model.HomeFolderPreview
 import tachiyomi.domain.tsuzuki.home.model.HomeRowContent
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
@@ -92,6 +93,36 @@ class GetConfiguredHomeSections(
         }
     }
 
+    fun subscribeFolder(
+        collectionId: String,
+        folderId: String,
+        pageSize: Int = DEFAULT_PREVIEW_PAGE_SIZE,
+    ): Flow<HomeFolderBrowse?> {
+        require(pageSize > 0) { "Folder preview page size must be positive" }
+
+        return store.observeFolders(collectionId).flatMapLatest { folders ->
+            val folder = folders.firstOrNull { it.id == folderId }
+                ?: return@flatMapLatest flowOf(null)
+            val children = folders
+                .filter { it.parentFolderId == folderId }
+                .sortedWith(compareBy({ it.sortOrder }, { it.id }))
+            val childPreviews = observeFolderPreviews(children, pageSize)
+
+            combine(
+                store.observeLists(folderId),
+                childPreviews,
+            ) { lists, previews ->
+                HomeFolderBrowse(
+                    collectionId = collectionId,
+                    folderId = folderId,
+                    title = folder.title,
+                    childFolders = previews,
+                    lists = lists.sortedWith(compareBy({ it.sortOrder }, { it.id })),
+                )
+            }
+        }
+    }
+
     private fun observeCollection(
         collection: tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection,
         pageSize: Int,
@@ -124,6 +155,30 @@ class GetConfiguredHomeSections(
                     )
                 },
             )
+        }
+    }
+
+    private fun observeFolderPreviews(
+        folders: List<CollectionFolder>,
+        pageSize: Int,
+    ): Flow<List<HomeFolderPreview>> {
+        if (folders.isEmpty()) return flowOf(emptyList())
+
+        return combine(
+            folders.map { folder ->
+                store.observeLists(folder.id).mapLatest { lists ->
+                    HomeFolderPreview(
+                        folderId = folder.id,
+                        title = folder.title,
+                        previewItems = loadPreview(
+                            lists = lists.sortedWith(compareBy({ it.sortOrder }, { it.id })),
+                            pageSize = pageSize,
+                        ),
+                    )
+                }
+            },
+        ) { previews ->
+            previews.toList()
         }
     }
 
