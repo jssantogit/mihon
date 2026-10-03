@@ -30,7 +30,6 @@ import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticSubsystem
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticTrace
 import tachiyomi.domain.tsuzuki.diagnostics.DiagnosticWorkflow
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
-import tachiyomi.domain.tsuzuki.home.model.HomeRow
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
 import tachiyomi.presentation.core.components.material.Scaffold
 
@@ -38,7 +37,7 @@ import tachiyomi.presentation.core.components.material.Scaffold
 fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
-    onFolder: (collectionId: String, folderId: String) -> Unit,
+    onCollection: (collectionId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -53,8 +52,8 @@ fun TsuzukiHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
             state.continueReading.firstOrNull()?.let { hero ->
                 item(key = "hero") {
@@ -68,16 +67,11 @@ fun TsuzukiHomeScreen(
             state.sections.forEach { section ->
                 when (section) {
                     is HomeSection.CollectionSection -> {
-                        item(key = "collection_header_${section.collectionId}") {
-                            SectionHeader(section.title)
-                        }
-                        section.rows.forEach { row ->
-                            item(key = "collection_row_${section.collectionId}_${row.listId}") {
-                                ConfiguredHomeRow(
-                                    row = row,
-                                    onClick = { onFolder(section.collectionId, row.listId) },
-                                )
-                            }
+                        item(key = "collection_${section.collectionId}") {
+                            CollectionHomeSection(
+                                section = section,
+                                onClick = { onCollection(section.collectionId) },
+                            )
                         }
                     }
                 }
@@ -140,48 +134,38 @@ private fun HeroCard(
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(
-            start = 16.dp,
-            end = 16.dp,
-            top = 12.dp,
-            bottom = 4.dp,
-        ),
-    )
-}
-
-@Composable
-private fun SectionMessage(message: String) {
-    Text(
-        text = message,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun ConfiguredHomeRow(
-    row: HomeRow,
+private fun CollectionHomeSection(
+    section: HomeSection.CollectionSection,
     onClick: () -> Unit,
 ) {
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = row.title,
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(16.dp),
+            text = section.title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            ),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            CoverPreviewStrip(
+                items = section.previewItems,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+            )
+        }
     }
 }

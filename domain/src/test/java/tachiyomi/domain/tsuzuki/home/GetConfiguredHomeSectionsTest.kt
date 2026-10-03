@@ -3,8 +3,10 @@ package tachiyomi.domain.tsuzuki.home
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
@@ -53,12 +55,61 @@ class GetConfiguredHomeSectionsTest {
     }
 
     @Test
-    fun `user collection exposes folders without executing lists on Home`() = runTest {
+    fun `user collection loads one bounded compact preview from the first enabled list`() = runTest {
         val store = FakeCollectionStore().apply {
             addGraph(origin = CollectionOrigin.USER)
             lists["folder-1"] = listOf(
-                list(id = "enabled", enabled = true, sortOrder = 0),
-                list(id = "disabled", enabled = false, sortOrder = 1),
+                list(id = "disabled", enabled = false, sortOrder = 0),
+                list(id = "enabled", enabled = true, sortOrder = 1),
+                list(id = "later", enabled = true, sortOrder = 2),
+            )
+        }
+        val calls = mutableListOf<Pair<String, Int>>()
+        val interactor = GetConfiguredHomeSections(
+            store = store,
+            loader = HomeCollectionListLoader { listId, pageSize ->
+                calls += listId to pageSize
+                HomeRowContent.Content(
+                    listOf(
+                        CatalogItem(
+                            provider = "kitsu",
+                            providerId = "preview-1",
+                            title = "Preview",
+                            coverUrl = "https://example/preview.jpg",
+                        ),
+                    ),
+                )
+            },
+        )
+
+        val sections = interactor.execute(pageSize = 4)
+
+        sections shouldBe listOf(
+            HomeSection.CollectionSection(
+                collectionId = "collection-1",
+                title = "My Home",
+                previewItems = listOf(
+                    CatalogItem(
+                        provider = "kitsu",
+                        providerId = "preview-1",
+                        title = "Preview",
+                        coverUrl = "https://example/preview.jpg",
+                    ),
+                ),
+            ),
+        )
+        calls shouldBe listOf("enabled" to 4)
+    }
+
+    @Test
+    fun `collection browse exposes root folders as independent compact preview sections`() = runTest {
+        val store = FakeCollectionStore().apply {
+            addGraph(origin = CollectionOrigin.USER)
+            addRootFolder(
+                id = "folder-2",
+                title = "Second",
+                sortOrder = 1,
+                listsForFolder = listOf(list(id = "second-list", enabled = true, sortOrder = 0, folderId = "folder-2")),
             )
         }
         val calls = mutableListOf<String>()
@@ -66,28 +117,31 @@ class GetConfiguredHomeSectionsTest {
             store = store,
             loader = HomeCollectionListLoader { listId, _ ->
                 calls += listId
-                HomeRowContent.Content(emptyList())
+                HomeRowContent.Content(
+                    listOf(
+                        CatalogItem(
+                            provider = "kitsu",
+                            providerId = listId,
+                            title = listId,
+                        ),
+                    ),
+                )
             },
         )
 
-        val sections = interactor.execute()
+        val browse = interactor.subscribeCollection("collection-1", pageSize = 4).first()
 
-        sections shouldBe listOf(
-            HomeSection.CollectionSection(
-                collectionId = "collection-1",
-                title = "My Home",
-                rows = listOf(
-                    tachiyomi.domain.tsuzuki.home.model.HomeRow(
-                        listId = "folder-1",
-                        title = "Rows",
-                        providerId = "",
-                        layoutType = null,
-                        content = HomeRowContent.Content(emptyList()),
-                    ),
-                ),
-            ),
+        browse?.collectionId shouldBe "collection-1"
+        browse?.title shouldBe "My Home"
+        browse?.folders?.map { it.folderId to it.title } shouldBe listOf(
+            "folder-1" to "Rows",
+            "folder-2" to "Second",
         )
-        calls shouldBe emptyList()
+        browse?.folders?.map { it.previewItems.map(CatalogItem::providerId) } shouldBe listOf(
+            listOf("list-1"),
+            listOf("second-list"),
+        )
+        calls shouldBe listOf("list-1", "second-list")
     }
 
     private class FakeCollectionStore : CollectionStore {
@@ -95,6 +149,26 @@ class GetConfiguredHomeSectionsTest {
         private val collectionFlow = MutableStateFlow<List<TsuzukiCollection>>(emptyList())
         private val folders = mutableMapOf<String, List<CollectionFolder>>()
         val lists = mutableMapOf<String, List<CollectionList>>()
+
+        fun addRootFolder(
+            id: String,
+            title: String,
+            sortOrder: Long,
+            listsForFolder: List<CollectionList>,
+        ) {
+            val collection = collections.single()
+            val folder = CollectionFolder(
+                id = id,
+                collectionId = collection.id,
+                title = title,
+                origin = collection.origin,
+                sortOrder = sortOrder,
+                createdAt = 1,
+                updatedAt = 1,
+            )
+            folders[collection.id] = folders[collection.id].orEmpty() + folder
+            lists[id] = listsForFolder
+        }
 
         fun addGraph(origin: CollectionOrigin) {
             val collection = TsuzukiCollection(
@@ -168,10 +242,11 @@ private fun list(
     id: String,
     enabled: Boolean,
     sortOrder: Long,
+    folderId: String = "folder-1",
 ) = CollectionList(
     id = id,
     collectionId = "collection-1",
-    folderId = "folder-1",
+    folderId = folderId,
     title = id,
     providerId = "kitsu",
     query = null,
