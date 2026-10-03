@@ -29,7 +29,7 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
 import tachiyomi.domain.tsuzuki.home.model.HomeCollectionBrowse
 import tachiyomi.domain.tsuzuki.home.model.HomeFolderBrowse
-import tachiyomi.domain.tsuzuki.home.model.HomeFolderPreview
+import tachiyomi.domain.tsuzuki.home.model.HomeFolderTile
 import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
 import tachiyomi.domain.tsuzuki.model.CanonicalTitle
@@ -56,14 +56,13 @@ class CollectionBrowseScreenModelTest {
             collectionId = "collection-1",
             title = "Minha coleção",
             folders = listOf(
-                HomeFolderPreview(
+                HomeFolderTile(
                     folderId = "folder-1",
                     title = "Romance",
-                    previewItems = listOf(item("preview-1")),
                 ),
             ),
         )
-        every { interactor.subscribeCollection("collection-1", 4) } returns
+        every { interactor.subscribeCollection("collection-1") } returns
             MutableStateFlow(projection)
 
         val model = CollectionBrowseScreenModel(interactor)
@@ -79,7 +78,7 @@ class CollectionBrowseScreenModelTest {
         val disabled = list("disabled", enabled = false, sortOrder = 0)
         val first = list("first", enabled = true, sortOrder = 1)
         val second = list("second", enabled = true, sortOrder = 2)
-        every { interactor.subscribeFolder("collection-1", "folder-1", 4) } returns
+        every { interactor.subscribeFolder("collection-1", "folder-1") } returns
             MutableStateFlow(
                 HomeFolderBrowse(
                     collectionId = "collection-1",
@@ -121,7 +120,7 @@ class CollectionBrowseScreenModelTest {
         val interactor = mockk<GetConfiguredHomeSections>()
         val first = list("first", enabled = true, sortOrder = 0)
         val second = list("second", enabled = true, sortOrder = 1)
-        every { interactor.subscribeFolder("collection-1", "folder-1", 4) } returns
+        every { interactor.subscribeFolder("collection-1", "folder-1") } returns
             MutableStateFlow(
                 HomeFolderBrowse(
                     collectionId = "collection-1",
@@ -167,7 +166,7 @@ class CollectionBrowseScreenModelTest {
     @Test
     fun `folder catalog item materializes canonical title before navigation`() = runTest(dispatcher) {
         val interactor = mockk<GetConfiguredHomeSections>()
-        every { interactor.subscribeFolder("collection-1", "folder-1", 4) } returns
+        every { interactor.subscribeFolder("collection-1", "folder-1") } returns
             MutableStateFlow(null)
 
         val catalogItem = item("work-1")
