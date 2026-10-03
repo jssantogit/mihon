@@ -9,6 +9,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
@@ -50,6 +52,7 @@ import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryExpression
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.collections.scheduler.QuerySchedulePriority
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
 
 @Immutable
 data class CollectionFolderUiModel(
@@ -209,6 +212,10 @@ sealed interface CollectionsTransferState {
     ) : CollectionsTransferState
 }
 
+sealed interface CollectionsEvent {
+    data class OpenCanonicalTitle(val canonicalTitleId: String) : CollectionsEvent
+}
+
 @Immutable
 sealed interface CollectionsScreenState {
     data object Loading : CollectionsScreenState
@@ -238,8 +245,12 @@ class CollectionsScreenModel(
     private val importCollections: ImportCollections,
     private val executeCollectionList: ExecuteCollectionList,
     private val executeCollectionDraft: ExecuteCollectionDraft,
+    private val materializeCanonicalTitleFromCatalog: MaterializeCanonicalTitleFromCatalog,
     private val providerRegistry: CollectionQueryProviderRegistry,
 ) : ViewModel() {
+
+    private val eventChannel = Channel<CollectionsEvent>(Channel.BUFFERED)
+    val events = eventChannel.receiveAsFlow()
 
     private val transferState = MutableStateFlow<CollectionsTransferState>(CollectionsTransferState.Idle)
     private val listRuntimeStates =
@@ -355,6 +366,19 @@ class CollectionsScreenModel(
                 lookupId = action.lookupId,
                 query = action.query,
             )
+        }
+    }
+
+    fun openCatalogItem(item: CatalogItem) {
+        viewModelScope.launch {
+            try {
+                val title = materializeCanonicalTitleFromCatalog.execute(item)
+                eventChannel.send(CollectionsEvent.OpenCanonicalTitle(title.id))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                // Browsing a Collection must remain stable when materialization fails.
+            }
         }
     }
 
