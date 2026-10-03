@@ -13,7 +13,7 @@ class QuickJsAbiTest {
     fun `matches extension-facing method ABI`() {
         QuickJs::class.java.declaredMethods
             .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
-            .map(Method::abiSignature)
+            .map { it.abiSignature() }
             .toSet() shouldBe
             setOf(
                 "create()",
@@ -69,7 +69,7 @@ class QuickJsAbiTest {
         QuickJsException::class.java.name shouldBe "app.cash.quickjs.QuickJsException"
         QuickJsException::class.java.superclass shouldBe RuntimeException::class.java
         QuickJsException::class.java.declaredConstructors
-            .map(Constructor<*>::abiSignature)
+            .map { it.abiSignature() }
             .toSet() shouldBe setOf("(String)", "(String,String)")
     }
 
