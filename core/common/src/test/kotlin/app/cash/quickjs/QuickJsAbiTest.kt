@@ -6,6 +6,7 @@ import java.io.Closeable
 import java.lang.reflect.Constructor
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import kotlin.test.assertFailsWith
 
 class QuickJsAbiTest {
 
@@ -60,10 +61,16 @@ class QuickJsAbiTest {
     }
 
     @Test
-    fun `compatibility API exposes JavaScript objects as Kotlin interfaces`() {
+    fun `compatibility get fails closed instead of proxying JavaScript objects`() {
         QuickJs.create().use { runtime ->
             runtime.evaluate("void (globalThis.greeter = { greet: (name) => 'Hi, ' + name });")
-            runtime.get("greeter", Greeter::class.java).greet("Tsuzuki") shouldBe "Hi, Tsuzuki"
+
+            val error = assertFailsWith<UnsupportedOperationException> {
+                runtime.get("greeter", Greeter::class.java)
+            }
+
+            error.message shouldBe
+                "Legacy QuickJs.get object proxies are not supported by the temporary compatibility shim"
         }
     }
 
