@@ -13,7 +13,7 @@ class QuickJsAbiTest {
     fun `matches extension-facing method ABI`() {
         QuickJs::class.java.declaredMethods
             .filter { Modifier.isPublic(it.modifiers) && !it.isSynthetic }
-            .map { it.abiSignature() }
+            .map { methodAbiSignature(it) }
             .toSet() shouldBe
             setOf(
                 "create()",
@@ -69,7 +69,7 @@ class QuickJsAbiTest {
         QuickJsException::class.java.name shouldBe "app.cash.quickjs.QuickJsException"
         QuickJsException::class.java.superclass shouldBe RuntimeException::class.java
         QuickJsException::class.java.declaredConstructors
-            .map { it.abiSignature() }
+            .map { constructorAbiSignature(it) }
             .toSet() shouldBe setOf("(String)", "(String,String)")
     }
 
@@ -77,17 +77,17 @@ class QuickJsAbiTest {
         fun greet(name: String): String
     }
 
-    private fun Method.abiSignature(): String =
-        "$name(${parameterTypes.joinToString(",") { it.abiName() }})"
+    private fun methodAbiSignature(method: Method): String =
+        "${method.name}(${method.parameterTypes.joinToString(",") { abiName(it) }})"
 
-    private fun Constructor<*>.abiSignature(): String =
-        "(${parameterTypes.joinToString(",") { it.abiName() }})"
+    private fun constructorAbiSignature(constructor: Constructor<*>): String =
+        "(${constructor.parameterTypes.joinToString(",") { abiName(it) }})"
 
-    private fun Class<*>.abiName(): String = when {
-        isArray -> "${componentType.abiName()}[]"
-        this == String::class.java -> "String"
-        this == Class::class.java -> "Class"
-        this == Any::class.java -> "Object"
-        else -> simpleName
+    private fun abiName(type: Class<*>): String = when {
+        type.isArray -> "${abiName(type.componentType)}[]"
+        type == String::class.java -> "String"
+        type == Class::class.java -> "Class"
+        type == Any::class.java -> "Object"
+        else -> type.simpleName
     }
 }
