@@ -1165,6 +1165,34 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `bare volume zero placeholders cannot create repeated canonical zero rows`() = runTest {
+        val fixture = fixture()
+        val placeholders = listOf(
+            fixture.addonEvidence(
+                id = "volume-one-zero",
+                rawLabel = "Vol. 1 Ch. 0",
+                externalKey = "source-volume-one-zero",
+                producerId = "source-one",
+                volume = 1,
+            ).copy(rawNumber = 0.0),
+            fixture.addonEvidence(
+                id = "volume-two-zero",
+                rawLabel = "Vol. 2 Ch. 0",
+                externalKey = "source-volume-two-zero",
+                producerId = "source-two",
+                volume = 2,
+            ).copy(rawNumber = 0.0),
+        )
+
+        fixture.reconciler.execute("title", placeholders)
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByCanonicalTitleId("title")
+            .map { it.mappedCanonicalChapterId }
+            .toSet() shouldBe setOf(null)
+    }
+
+    @Test
     fun `deleted fractional tombstone cannot create canonical mapping`() = runTest {
         val fixture = fixture()
         val deleted = fixture.addonEvidence(
