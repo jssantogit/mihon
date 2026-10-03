@@ -1,7 +1,5 @@
 package app.cash.quickjs
 
-import com.dokar.quickjs.QuickJs as DokarQuickJs
-import com.dokar.quickjs.QuickJsException as DokarQuickJsException
 import com.dokar.quickjs.binding.JsFunction
 import com.dokar.quickjs.binding.JsProperty
 import com.dokar.quickjs.binding.ObjectBinding
@@ -14,6 +12,8 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.Executors
+import com.dokar.quickjs.QuickJs as DokarQuickJs
+import com.dokar.quickjs.QuickJsException as DokarQuickJsException
 
 class QuickJs private constructor() : Closeable {
 
