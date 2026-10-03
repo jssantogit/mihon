@@ -178,7 +178,10 @@ class MihonChapterProbeProvider internal constructor(
                     val repository = checkNotNull(refreshSnapshots)
                     val scopeKey = ChapterRefreshSnapshot.bindingScope(binding.id)
                     val existing = repository.get(canonicalTitleId, scopeKey)
-                    if (existing?.fingerprint == fingerprint) {
+                    if (
+                        existing?.fingerprint == fingerprint &&
+                        existing.configurationFingerprint == providerConfigurationFingerprint
+                    ) {
                         unchangedBindingCount++
                         continue
                     }
@@ -297,6 +300,8 @@ class MihonChapterProbeProvider internal constructor(
         } else {
             append(allowedSourceIds.sorted().joinToString(","))
         }
+        append("|evidence-v")
+        append(CHAPTER_EVIDENCE_INTERPRETATION_VERSION)
     }
 
     private fun recordProbe(
@@ -383,5 +388,10 @@ class MihonChapterProbeProvider internal constructor(
     private companion object {
         const val MAX_CONCURRENT_INVENTORY_FETCHES = 4
         const val RELIABLE_CONFIDENCE = 0.95
+
+        // Bump when unchanged provider inventories must be reinterpreted by
+        // new canonical evidence rules. Existing binding snapshots from older
+        // versions then re-emit once and are rewritten with the new version.
+        const val CHAPTER_EVIDENCE_INTERPRETATION_VERSION = 2
     }
 }
