@@ -85,7 +85,7 @@ class CollectionsScreenModelTest {
         advanceUntilIdle()
 
         val ready = model.state.value as CollectionsScreenState.Ready
-        ready.providerDescriptors shouldBe descriptors
+        ready.providerDescriptors shouldBe descriptors.sortedBy(CollectionProviderDescriptor::displayName)
     }
 
     @Test
@@ -148,7 +148,7 @@ class CollectionsScreenModelTest {
         }
         val ready = model.state.value as CollectionsScreenState.Ready
         ready.filterLookupStates[
-            CollectionFilterLookupKey("shikimori", "shikimori.publishers")
+            CollectionFilterLookupKey("shikimori", "shikimori.publishers"),
         ] shouldBe CollectionFilterLookupState.Ready(
             query = "shou",
             options = listOf(FilterOption("1", "Shueisha", QueryValue.of("1"))),
