@@ -35,6 +35,16 @@ class QuickJsAbiTest {
     }
 
     @Test
+    fun `compatibility API preserves legacy array return shape`() {
+        val result = QuickJs.create().use { runtime ->
+            runtime.evaluate("['first', 'second']")
+        }
+
+        (result is Array<*>) shouldBe true
+        (result as Array<*>).toList() shouldBe listOf("first", "second")
+    }
+
+    @Test
     fun `compatibility API binds Kotlin interfaces into JavaScript`() {
         QuickJs.create().use { runtime ->
             runtime.set(
