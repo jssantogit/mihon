@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - tsuzuki/provider-platform-foundation-spike
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
