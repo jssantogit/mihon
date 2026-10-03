@@ -35,6 +35,29 @@ class QuickJsAbiTest {
     }
 
     @Test
+    fun `compatibility API binds Kotlin interfaces into JavaScript`() {
+        QuickJs.create().use { runtime ->
+            runtime.set(
+                "greeter",
+                Greeter::class.java,
+                object : Greeter {
+                    override fun greet(name: String): String = "Hello, $name"
+                },
+            )
+
+            runtime.evaluate("greeter.greet('Tsuzuki')") shouldBe "Hello, Tsuzuki"
+        }
+    }
+
+    @Test
+    fun `compatibility API exposes JavaScript objects as Kotlin interfaces`() {
+        QuickJs.create().use { runtime ->
+            runtime.evaluate("globalThis.greeter = { greet: (name) => 'Hi, ' + name };")
+            runtime.get("greeter", Greeter::class.java).greet("Tsuzuki") shouldBe "Hi, Tsuzuki"
+        }
+    }
+
+    @Test
     fun `keeps extension-facing class shape`() {
         Closeable::class.java.isAssignableFrom(QuickJs::class.java) shouldBe true
         Modifier.isFinal(QuickJs::class.java.modifiers) shouldBe true
@@ -48,6 +71,10 @@ class QuickJsAbiTest {
         QuickJsException::class.java.declaredConstructors
             .map(Constructor<*>::abiSignature)
             .toSet() shouldBe setOf("(String)", "(String,String)")
+    }
+
+    private interface Greeter {
+        fun greet(name: String): String
     }
 
     private fun Method.abiSignature(): String =
