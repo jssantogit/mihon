@@ -1165,6 +1165,64 @@ class ReconcileChapterEvidenceTest {
     }
 
     @Test
+    fun `bare volume zero placeholders cannot create repeated canonical zero rows`() = runTest {
+        val fixture = fixture()
+        val placeholders = listOf(
+            fixture.addonEvidence(
+                id = "volume-one-zero",
+                rawLabel = "Vol. 1 Ch. 0",
+                externalKey = "source-volume-one-zero",
+                producerId = "source-one",
+                volume = 1,
+            ).copy(rawNumber = 0.0),
+            fixture.addonEvidence(
+                id = "volume-two-zero",
+                rawLabel = "Vol. 2 Ch. 0",
+                externalKey = "source-volume-two-zero",
+                producerId = "source-two",
+                volume = 2,
+            ).copy(rawNumber = 0.0),
+        )
+
+        fixture.reconciler.execute("title", placeholders)
+
+        fixture.chapterRepository.getByCanonicalTitleId("title") shouldBe emptyList()
+        fixture.evidenceRepository.getByCanonicalTitleId("title")
+            .map { it.mappedCanonicalChapterId }
+            .toSet() shouldBe setOf(null)
+    }
+
+    @Test
+    fun `refresh detaches a previously persisted bare volume zero placeholder`() = runTest {
+        val fixture = fixture()
+        val historicalChapter = existingChapter("historical-volume-zero", volume = 1).copy(
+            displayNumber = "0",
+            baseNumber = 0,
+            confirmation = CanonicalChapterConfirmation.PROVISIONAL,
+        )
+        val observation = fixture.addonEvidence(
+            id = "volume-one-zero",
+            rawLabel = "Vol. 1 Ch. 0",
+            externalKey = "source-volume-one-zero",
+            volume = 1,
+        ).copy(rawNumber = 0.0)
+        fixture.chapterRepository.upsert(historicalChapter)
+        fixture.evidenceRepository.upsert(observation, historicalChapter.id)
+
+        fixture.reconciler.execute(
+            "title",
+            listOf(observation.copy(id = "refreshed-volume-one-zero", observedAt = 20L)),
+        )
+
+        fixture.evidenceRepository.getByProducerExternalKey(
+            producerKind = ProducerKind.ADDON,
+            producerId = "addon",
+            externalChapterKey = "source-volume-one-zero",
+        )?.mappedCanonicalChapterId shouldBe null
+        fixture.chapterRepository.getById(historicalChapter.id) shouldBe historicalChapter
+    }
+
+    @Test
     fun `deleted fractional tombstone cannot create canonical mapping`() = runTest {
         val fixture = fixture()
         val deleted = fixture.addonEvidence(

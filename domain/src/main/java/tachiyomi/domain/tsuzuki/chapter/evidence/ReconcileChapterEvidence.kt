@@ -311,7 +311,12 @@ class ReconcileChapterEvidence internal constructor(
             val numericHintConflicts = hasConflictingIntegerChapterHint(parsed, observation.rawNumber)
             val unsafeProvisionalEvidence = observation.producerKind == ProducerKind.ADDON &&
                 observation.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
-                isUnsafeProvisionalChapterEvidence(parsed, observation.rawLabel, observation.rawNumber)
+                isUnsafeProvisionalChapterEvidence(
+                    parsed,
+                    observation.rawLabel,
+                    observation.rawNumber,
+                    observation.volume,
+                )
             val identityEvidenceUnsafe = numericHintConflicts || unsafeProvisionalEvidence
             val parsedIdentityIsReliable = observation.confidence >= RELIABLE_CONFIDENCE &&
                 parsed.confidence >= RELIABLE_CONFIDENCE &&
@@ -613,7 +618,12 @@ class ReconcileChapterEvidence internal constructor(
         val parsed = parseCache.parse(evidence)
         val unsafeSourceEvidence = evidence.producerKind == ProducerKind.ADDON &&
             evidence.authority == ChapterEvidenceAuthority.ADDON_PROVISIONAL &&
-            isUnsafeProvisionalChapterEvidence(parsed, evidence.rawLabel, evidence.rawNumber)
+            isUnsafeProvisionalChapterEvidence(
+                parsed,
+                evidence.rawLabel,
+                evidence.rawNumber,
+                evidence.volume,
+            )
         return evidence.confidence >= RELIABLE_CONFIDENCE &&
             parsed.confidence >= RELIABLE_CONFIDENCE &&
             parsed.identity.isSpecific &&
