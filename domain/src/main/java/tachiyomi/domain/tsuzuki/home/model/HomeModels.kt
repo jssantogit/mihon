@@ -1,7 +1,6 @@
 package tachiyomi.domain.tsuzuki.home.model
 
 import tachiyomi.domain.manga.model.MangaCover
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 
 data class HomeContinueReadingItem(
@@ -20,33 +19,22 @@ data class HomeContinueReadingItem(
     }
 }
 
-sealed interface HomeRowContent {
-    data class Content(
-        val items: List<CatalogItem>,
-    ) : HomeRowContent
-
-    data class Unavailable(
-        val reason: String,
-    ) : HomeRowContent
-}
-
-data class HomeFolderPreview(
+data class HomeFolderTile(
     val folderId: String,
     val title: String,
-    val previewItems: List<CatalogItem>,
 )
 
 data class HomeCollectionBrowse(
     val collectionId: String,
     val title: String,
-    val folders: List<HomeFolderPreview>,
+    val folders: List<HomeFolderTile>,
 )
 
 data class HomeFolderBrowse(
     val collectionId: String,
     val folderId: String,
     val title: String,
-    val childFolders: List<HomeFolderPreview>,
+    val childFolders: List<HomeFolderTile>,
     val lists: List<CollectionList>,
 )
 
@@ -54,6 +42,6 @@ sealed interface HomeSection {
     data class CollectionSection(
         val collectionId: String,
         val title: String,
-        val previewItems: List<CatalogItem>,
+        val folders: List<HomeFolderTile>,
     ) : HomeSection
 }
