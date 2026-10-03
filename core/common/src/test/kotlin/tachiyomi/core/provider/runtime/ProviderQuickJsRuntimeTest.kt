@@ -1,13 +1,13 @@
 package tachiyomi.core.provider.runtime
 
 import io.kotest.matchers.shouldBe
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 
 class ProviderQuickJsRuntimeTest {
 
     @Test
-    fun `evaluates primitive JavaScript result`() = runTest {
+    fun `evaluates primitive JavaScript result`() = runBlocking {
         val runtime = ProviderQuickJsRuntime()
 
         runtime.evaluate("1 + 2") shouldBe
@@ -15,7 +15,7 @@ class ProviderQuickJsRuntimeTest {
     }
 
     @Test
-    fun `interrupts runaway JavaScript`() = runTest {
+    fun `interrupts runaway JavaScript`() = runBlocking {
         val runtime = ProviderQuickJsRuntime(
             limits = ProviderRuntimeLimits(
                 wallClockTimeoutMs = 100,
@@ -30,7 +30,7 @@ class ProviderQuickJsRuntimeTest {
     }
 
     @Test
-    fun `reports script errors without crashing host`() = runTest {
+    fun `reports script errors without crashing host`() = runBlocking {
         val runtime = ProviderQuickJsRuntime()
 
         runtime.evaluate("throw new Error('boom')") shouldBe
