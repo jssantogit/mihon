@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -41,6 +42,9 @@ import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
+import tachiyomi.domain.tsuzuki.interactor.MaterializeCanonicalTitleFromCatalog
+import tachiyomi.domain.tsuzuki.model.CanonicalIdentityState
+import tachiyomi.domain.tsuzuki.model.CanonicalTitle
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CollectionsScreenModelTest {
@@ -80,6 +84,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk(),
             executeCollectionDraft = mockk(),
+            materializeCanonicalTitleFromCatalog = mockk(relaxed = true),
             providerRegistry = registry,
         )
         advanceUntilIdle()
@@ -112,6 +117,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk(),
             executeCollectionDraft = mockk(),
+            materializeCanonicalTitleFromCatalog = mockk(relaxed = true),
             providerRegistry = registry,
         )
         advanceUntilIdle()
@@ -227,6 +233,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk<ExecuteCollectionList>(),
             executeCollectionDraft = mockk<ExecuteCollectionDraft>(),
+            materializeCanonicalTitleFromCatalog = mockk(relaxed = true),
             providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
@@ -301,6 +308,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk<ExecuteCollectionList>(),
             executeCollectionDraft = mockk<ExecuteCollectionDraft>(),
+            materializeCanonicalTitleFromCatalog = mockk(relaxed = true),
             providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
@@ -342,6 +350,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk(),
             executeCollectionDraft = executeDraft,
+            materializeCanonicalTitleFromCatalog = mockk(relaxed = true),
             providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
@@ -391,6 +400,7 @@ class CollectionsScreenModelTest {
             importCollections = mockk(),
             executeCollectionList = mockk(),
             executeCollectionDraft = executeDraft,
+            materializeCanonicalTitleFromCatalog = mockk(relaxed = true),
             providerRegistry = mockRegistry(),
         )
         advanceUntilIdle()
@@ -412,6 +422,42 @@ class CollectionsScreenModelTest {
         coVerify(exactly = 0) { executeDraft.execute(any()) }
         val ready = model.state.value as CollectionsScreenState.Ready
         ready.draftPreviewState shouldBe CollectionDraftPreviewState.Idle
+    }
+
+    @Test
+    fun `browser catalog item materializes canonical identity before navigation`() = runTest(dispatcher) {
+        val store = mockk<CollectionStore>()
+        every { store.observeCollections() } returns flowOf(emptyList())
+        val item = CatalogItem(
+            provider = "kitsu",
+            providerId = "123",
+            title = "Dandadan",
+        )
+        val materializer = mockk<MaterializeCanonicalTitleFromCatalog>()
+        coEvery { materializer.execute(item) } returns CanonicalTitle(
+            id = "canonical-dandadan",
+            displayTitle = "Dandadan",
+            identityState = CanonicalIdentityState.RESOLVED,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+
+        val model = CollectionsScreenModel(
+            store = store,
+            manager = mockk(),
+            exportCollections = mockk(),
+            importCollections = mockk(),
+            executeCollectionList = mockk(),
+            executeCollectionDraft = mockk(),
+            materializeCanonicalTitleFromCatalog = materializer,
+            providerRegistry = mockRegistry(),
+        )
+        advanceUntilIdle()
+
+        model.openCatalogItem(item)
+        advanceUntilIdle()
+
+        model.events.first() shouldBe CollectionsEvent.OpenCanonicalTitle("canonical-dandadan")
     }
 
     private fun mockRegistry(): CollectionQueryProviderRegistry {
