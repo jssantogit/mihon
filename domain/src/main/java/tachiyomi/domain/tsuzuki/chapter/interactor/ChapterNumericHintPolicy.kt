@@ -43,15 +43,18 @@ fun hasConflictingIntegerChapterHint(
  * parsed label and Mihon number happen to agree.
  *
  * Some providers expose deleted/tombstone rows as ordinary chapters. MangaDot-family
- * sources can also expose a titled zero row (for example, "Chapter 0: Tragedy") whose
- * provider number is zero while the pages belong to a positive chapter. Neither shape
- * is strong enough to become canonical identity or a Reader option without independent
- * evidence. Plain numeric zero/fractional chapters remain valid and test-covered.
+ * sources can also expose zero placeholders: titled synthetic rows (for example,
+ * "Chapter 0: Tragedy") and bare volume-scoped rows such as "Vol. 3 Ch. 0".
+ * The latter is emitted by some aggregate sources for volume-level content and must
+ * not become one canonical chapter zero per volume. Neither shape is strong enough
+ * to become canonical identity or a Reader option without independent evidence.
+ * Plain unqualified numeric zero/fractional chapters remain valid and test-covered.
  */
 fun isUnsafeProvisionalChapterEvidence(
     parsed: ParsedChapterLabel,
     rawLabel: String,
     rawNumberHint: Double?,
+    volume: Int? = null,
 ): Boolean {
     if (hasConflictingIntegerChapterHint(parsed, rawNumberHint)) return true
     if (rawLabel.contains(DELETED_TOMBSTONE, ignoreCase = true)) return true
@@ -67,12 +70,19 @@ fun isUnsafeProvisionalChapterEvidence(
     ) {
         return false
     }
-    return TITLED_ZERO_PLACEHOLDER.matches(rawLabel.trim())
+    val trimmedLabel = rawLabel.trim()
+    if (TITLED_ZERO_PLACEHOLDER.matches(trimmedLabel)) return true
+    return volume != null && BARE_VOLUME_ZERO_PLACEHOLDER.matches(trimmedLabel)
 }
 
 private const val DELETED_TOMBSTONE = "[DELETED]"
 private val TITLED_ZERO_PLACEHOLDER = Regex(
     pattern = "^(?:chapter|ch(?:apter)?|capitulo)\\s*\\.?\\s*0(?:\\.0+)?\\s*:\\s*\\S.*$",
+    option = RegexOption.IGNORE_CASE,
+)
+private val BARE_VOLUME_ZERO_PLACEHOLDER = Regex(
+    pattern = "^vol(?:ume)?\\.?\\s*\\d+\\s*(?:(?:[-:|/]\\s*)|\\s+)" +
+        "(?:ch(?:apter)?|cap[ií]tulo)\\s*\\.?\\s*0(?:\\.0+)?\\s*$",
     option = RegexOption.IGNORE_CASE,
 )
 
