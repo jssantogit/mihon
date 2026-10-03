@@ -41,6 +41,6 @@ sealed interface HomeSection {
     data class CollectionSection(
         val collectionId: String,
         val title: String,
-        val rows: List<HomeRow>,
+        val previewItems: List<CatalogItem>,
     ) : HomeSection
 }
