@@ -180,7 +180,6 @@ object MalCollectionCapabilities : ProviderQueryCapabilities {
         label = label,
         directionMode = SortDirectionMode.FIXED_NATIVE,
     )
-
 }
 
 @SingleIn(AppScope::class)
