@@ -1,12 +1,12 @@
 package app.cash.quickjs
 
 import io.kotest.matchers.shouldBe
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import java.io.Closeable
 import java.lang.reflect.Constructor
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import kotlin.test.assertFailsWith
 
 class QuickJsAbiTest {
 
@@ -65,7 +65,7 @@ class QuickJsAbiTest {
         QuickJs.create().use { runtime ->
             runtime.evaluate("void (globalThis.greeter = { greet: (name) => 'Hi, ' + name });")
 
-            val error = assertFailsWith<UnsupportedOperationException> {
+            val error = assertThrows(UnsupportedOperationException::class.java) {
                 runtime.get("greeter", Greeter::class.java)
             }
 
