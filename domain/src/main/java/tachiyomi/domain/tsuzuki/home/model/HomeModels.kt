@@ -29,18 +29,22 @@ sealed interface HomeRowContent {
     ) : HomeRowContent
 }
 
-data class HomeRow(
-    val listId: String,
+data class HomeFolderPreview(
+    val folderId: String,
     val title: String,
-    val providerId: String,
-    val layoutType: String?,
-    val content: HomeRowContent,
+    val previewItems: List<CatalogItem>,
+)
+
+data class HomeCollectionBrowse(
+    val collectionId: String,
+    val title: String,
+    val folders: List<HomeFolderPreview>,
 )
 
 sealed interface HomeSection {
     data class CollectionSection(
         val collectionId: String,
         val title: String,
-        val rows: List<HomeRow>,
+        val previewItems: List<CatalogItem>,
     ) : HomeSection
 }
