@@ -34,6 +34,16 @@ import tachiyomi.domain.tsuzuki.collections.query.QueryValue
 
 object BangumiCollectionCapabilities : ProviderQueryCapabilities {
 
+    private const val PROVIDER_ID = "bangumi"
+    private const val PAGE_SIZE = 50
+    private val RANGE_OPERATORS = setOf(
+        QueryOperator.GREATER_THAN,
+        QueryOperator.GREATER_OR_EQUAL,
+        QueryOperator.LESS_THAN,
+        QueryOperator.LESS_OR_EQUAL,
+        QueryOperator.BETWEEN,
+    )
+
     override val descriptor = CollectionProviderDescriptor(
         providerId = PROVIDER_ID,
         displayName = "Bangumi",
@@ -132,15 +142,6 @@ object BangumiCollectionCapabilities : ProviderQueryCapabilities {
         directionMode = SortDirectionMode.FIXED_NATIVE,
     )
 
-    private const val PROVIDER_ID = "bangumi"
-    private const val PAGE_SIZE = 50
-    private val RANGE_OPERATORS = setOf(
-        QueryOperator.GREATER_THAN,
-        QueryOperator.GREATER_OR_EQUAL,
-        QueryOperator.LESS_THAN,
-        QueryOperator.LESS_OR_EQUAL,
-        QueryOperator.BETWEEN,
-    )
 }
 
 object BangumiCollectionCompiler {
