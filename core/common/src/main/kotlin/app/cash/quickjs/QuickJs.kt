@@ -22,7 +22,7 @@ class QuickJs private constructor() : Closeable {
     @JvmOverloads
     fun evaluate(
         code: String,
-        fileName: String = defaultFileName,
+        fileName: String = DEFAULT_FILE_NAME,
     ): Any? = translateErrors {
         onJsThread {
             evaluate<Any?>(
@@ -103,7 +103,7 @@ class QuickJs private constructor() : Closeable {
     }
 
     companion object {
-        private const val defaultFileName = "?"
+        private const val DEFAULT_FILE_NAME = "?"
 
         private val dispatcher = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "tsuzuki-quickjs-compat").apply {
