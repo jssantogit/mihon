@@ -259,7 +259,7 @@ class DefaultHomeCollectionListLoader(
                 cachePolicy = CollectionExecutionCachePolicy(
                     mode = CollectionCacheMode.CACHE_FIRST,
                 ),
-                priority = QuerySchedulePriority.VISIBLE,
+                priority = QuerySchedulePriority.BACKGROUND,
             ),
         )
 
