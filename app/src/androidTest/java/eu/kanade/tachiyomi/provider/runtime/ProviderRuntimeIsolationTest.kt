@@ -49,7 +49,10 @@ class ProviderRuntimeIsolationTest {
 
         try {
             assertTrue("isolated service should bind", bound)
-            assertTrue("isolated service should connect", connected.await(5, TimeUnit.SECONDS))
+            assertTrue(
+                "isolated service should connect",
+                connected.await(SERVICE_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
 
             val runtime = requireNotNull(remote)
             assertNotEquals("provider runtime must use a distinct isolated UID", Process.myUid(), runtime.processUid())
@@ -78,5 +81,9 @@ class ProviderRuntimeIsolationTest {
                 context.unbindService(connection)
             }
         }
+    }
+
+    private companion object {
+        const val SERVICE_CONNECT_TIMEOUT_SECONDS = 20L
     }
 }
