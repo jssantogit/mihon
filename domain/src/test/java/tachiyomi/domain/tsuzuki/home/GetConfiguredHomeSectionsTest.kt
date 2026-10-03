@@ -6,11 +6,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.model.CollectionFolder
 import tachiyomi.domain.tsuzuki.collections.model.CollectionList
 import tachiyomi.domain.tsuzuki.collections.model.CollectionOrigin
 import tachiyomi.domain.tsuzuki.collections.model.CollectionSortSelection
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.collections.model.TsuzukiCollection
 import tachiyomi.domain.tsuzuki.collections.repository.CollectionStore
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
