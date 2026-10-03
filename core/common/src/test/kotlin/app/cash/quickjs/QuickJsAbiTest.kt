@@ -46,6 +46,17 @@ class QuickJsAbiTest {
     }
 
     @Test
+    fun `compatibility API executes bytecode compiled by another runtime`() {
+        val bytecode = QuickJs.create().use { runtime ->
+            runtime.compile("21 * 2", "compat.js")
+        }
+
+        QuickJs.create().use { runtime ->
+            runtime.execute(bytecode) shouldBe 42
+        }
+    }
+
+    @Test
     fun `compatibility API binds Kotlin interfaces into JavaScript`() {
         QuickJs.create().use { runtime ->
             runtime.set(
