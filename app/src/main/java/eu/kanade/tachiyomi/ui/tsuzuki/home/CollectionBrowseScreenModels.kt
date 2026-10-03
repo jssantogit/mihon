@@ -96,9 +96,6 @@ class CollectionBrowseScreenModel(
             this.collectionId.value = collectionId
         }
     }
-
-    private companion object {
-    }
 }
 
 @Immutable
