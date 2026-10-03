@@ -55,13 +55,11 @@ class GetConfiguredHomeSectionsTest {
     }
 
     @Test
-    fun `user collection loads one bounded compact preview from the first enabled list`() = runTest {
+    fun `user collection does not execute lists to build Home navigation`() = runTest {
         val store = FakeCollectionStore().apply {
             addGraph(origin = CollectionOrigin.USER)
             lists["folder-1"] = listOf(
-                list(id = "disabled", enabled = false, sortOrder = 0),
-                list(id = "enabled", enabled = true, sortOrder = 1),
-                list(id = "later", enabled = true, sortOrder = 2),
+                list(id = "enabled", enabled = true, sortOrder = 0),
             )
         }
         val calls = mutableListOf<Pair<String, Int>>()
@@ -88,17 +86,10 @@ class GetConfiguredHomeSectionsTest {
             HomeSection.CollectionSection(
                 collectionId = "collection-1",
                 title = "My Home",
-                previewItems = listOf(
-                    CatalogItem(
-                        provider = "kitsu",
-                        providerId = "preview-1",
-                        title = "Preview",
-                        coverUrl = "https://example/preview.jpg",
-                    ),
-                ),
+                previewItems = emptyList(),
             ),
         )
-        calls shouldBe listOf("enabled" to 4)
+        calls shouldBe emptyList()
     }
 
     @Test
