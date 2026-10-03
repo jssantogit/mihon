@@ -27,11 +27,11 @@ class QuickJs private constructor() : Closeable {
                 filename = fileName,
                 asModule = false,
             )
-        }
+        }.toLegacyQuickJsValue()
     }
 
     fun execute(bytecode: ByteArray): Any? = translateErrors {
-        onJsThread { evaluate<Any?>(bytecode) }
+        onJsThread { evaluate<Any?>(bytecode) }.toLegacyQuickJsValue()
     }
 
     fun compile(
@@ -149,6 +149,12 @@ private class JsObjectHandler(
             "globalThis[${globalName.toJsLiteral()}][${method.name.toJsLiteral()}]($arguments)"
         return quickJs.evaluate(call, "$globalName.${method.name}.js")
     }
+}
+
+private fun Any?.toLegacyQuickJsValue(): Any? = when (this) {
+    is List<*> -> map { it.toLegacyQuickJsValue() }.toTypedArray()
+    is Map<*, *> -> entries.associate { (key, value) -> key to value.toLegacyQuickJsValue() }
+    else -> this
 }
 
 private fun Any?.toJsLiteral(): String = when (this) {
