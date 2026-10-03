@@ -230,6 +230,12 @@
             android:foregroundServiceType="shortService" />
 
         <service
+            android:name=".provider.runtime.ProviderRuntimeService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":provider_runtime" />
+
+        <service
             android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
             android:enabled="false"
             android:exported="false">

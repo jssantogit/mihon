@@ -109,7 +109,8 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
-        if (!currentProcessName(base).endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
+        val process = currentProcessName(base)
+        if (!process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX) && !isProviderRuntimeProcess(process)) {
             GlobalExceptionHandler.initialize(base, CrashActivity::class.java)
         }
     }
@@ -121,6 +122,11 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
         val process = currentProcessName(this)
         if (process.endsWith(ERROR_HANDLER_PROCESS_SUFFIX)) {
             // CrashActivity must remain usable even when application-graph creation itself is what crashed.
+            return
+        }
+        if (isProviderRuntimeProcess(process)) {
+            // Provider scripts run in an isolated UID and deliberately do not initialize the
+            // application graph, network stack, persistence, WebView, jobs, or telemetry.
             return
         }
 
@@ -366,5 +372,13 @@ private fun currentProcessName(context: Context): String {
         ?: context.packageName
 }
 
+private fun isProviderRuntimeProcess(processName: String): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && Process.isIsolated()) {
+        return true
+    }
+    return processName.contains(PROVIDER_RUNTIME_PROCESS_MARKER)
+}
+
 private const val ACTION_DISABLE_INCOGNITO_MODE = "tachi.action.DISABLE_INCOGNITO_MODE"
 private const val ERROR_HANDLER_PROCESS_SUFFIX = ":error_handler"
+private const val PROVIDER_RUNTIME_PROCESS_MARKER = ":provider_runtime"

@@ -23,6 +23,7 @@ import tachiyomi.data.tsuzuki.CanonicalChapterRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalReadingRepositoryImpl
 import tachiyomi.data.tsuzuki.CanonicalTitleRepositoryImpl
 import tachiyomi.data.tsuzuki.chapter.ChapterEvidenceRepositoryImpl
+import tachiyomi.data.tsuzuki.chapter.ChapterRefreshSnapshotRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentBindingRepositoryImpl
 import tachiyomi.data.tsuzuki.content.ContentPreferenceRepositoryImpl
 import tachiyomi.data.tsuzuki.download.CanonicalDownloadRepositoryImpl
@@ -48,6 +49,7 @@ import tachiyomi.domain.tsuzuki.content.interactor.ResolveChapterContent
 import tachiyomi.domain.tsuzuki.content.interactor.ResolveContentBinding
 import tachiyomi.domain.tsuzuki.content.repository.ContentBindingRepository
 import tachiyomi.domain.tsuzuki.content.repository.ContentPreferenceRepository
+import tachiyomi.domain.tsuzuki.diagnostics.NoOpStructuredDiagnosticRecorder
 import tachiyomi.domain.tsuzuki.reader.interactor.PrepareCanonicalChapterForReader
 import tachiyomi.domain.tsuzuki.reader.model.CanonicalReaderPreferences
 import tachiyomi.domain.tsuzuki.repository.CanonicalTitleRepository
@@ -130,6 +132,7 @@ internal class ProductionMihonJourneyComposition(
     val contentBindingRepository: ContentBindingRepository = ContentBindingRepositoryImpl(database)
     val canonicalChapterRepository: CanonicalChapterRepository = CanonicalChapterRepositoryImpl(database)
     val chapterEvidenceRepository: ChapterEvidenceRepository = ChapterEvidenceRepositoryImpl(database)
+    private val chapterRefreshSnapshotRepository = ChapterRefreshSnapshotRepositoryImpl(database)
     private val contentPreferenceRepository: ContentPreferenceRepository = ContentPreferenceRepositoryImpl(database)
     val diagnostics = RecordingDiagnostics()
     private val observedSearches = mutableListOf<MihonJourneySearchObservation>()
@@ -189,6 +192,7 @@ internal class ProductionMihonJourneyComposition(
         chapterInventoryGateway = chapterInventoryGateway,
         chapterInventoryDiagnostics = diagnostics,
         sourceEligibilityRepository = sourceEligibilityRepository,
+        chapterRefreshSnapshotRepository = chapterRefreshSnapshotRepository,
     )
     val chapterProbeProvider: ChapterProbeProvider = providerFactory.chapterProbeProvider(addonId)
     private val chapterReconciliation = ReconcileChapterEvidence(
@@ -238,6 +242,7 @@ internal class ProductionMihonJourneyComposition(
             canonicalReaderGateway = MihonCanonicalReaderGateway(chapterRepository),
             canonicalDownloadRepository = CanonicalDownloadRepositoryImpl(database),
         ),
+        structuredDiagnostics = NoOpStructuredDiagnosticRecorder,
     )
 }
 
