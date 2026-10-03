@@ -23,6 +23,7 @@ import tachiyomi.domain.tsuzuki.artwork.model.TitleArtworkObservation
 import tachiyomi.domain.tsuzuki.artwork.repository.TitleArtworkRepository
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
 import tachiyomi.domain.tsuzuki.home.interactor.GetConfiguredHomeSections
+import tachiyomi.domain.tsuzuki.home.interactor.GetHomeHero
 import tachiyomi.domain.tsuzuki.home.interactor.ObserveHomeContinueReading
 import tachiyomi.domain.tsuzuki.home.model.HomeContinueReadingItem
 import tachiyomi.domain.tsuzuki.home.model.HomeSection
