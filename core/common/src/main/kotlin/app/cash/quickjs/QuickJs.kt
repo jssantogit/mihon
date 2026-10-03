@@ -5,9 +5,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.Closeable
-import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method
-import java.lang.reflect.Proxy
 import java.util.concurrent.Executors
 import com.dokar.quickjs.QuickJs as DokarQuickJs
 import com.dokar.quickjs.QuickJsException as DokarQuickJsException
@@ -46,7 +44,7 @@ class QuickJs private constructor() : Closeable {
         type: Class<T>,
         value: T,
     ) {
-        val methods = bindableMethods(name, type)
+        bindableMethods(name, type)
         require(type.isInstance(value)) { "$value is not an instance of $type" }
         translateErrors {
             onJsThread {
@@ -59,17 +57,14 @@ class QuickJs private constructor() : Closeable {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     fun <T : Any> get(
         name: String,
         type: Class<T>,
     ): T {
         bindableMethods(name, type)
-        return Proxy.newProxyInstance(
-            type.classLoader,
-            arrayOf(type),
-            JsObjectHandler(this, name),
-        ) as T
+        throw UnsupportedOperationException(
+            "Legacy QuickJs.get object proxies are not supported by the temporary compatibility shim",
+        )
     }
 
     override fun close() {
@@ -123,59 +118,8 @@ private inline fun <T> translateErrors(block: () -> T): T = try {
     throw QuickJsException(error.message ?: "JavaScript error")
 }
 
-private class JsObjectHandler(
-    private val quickJs: QuickJs,
-    private val globalName: String,
-) : InvocationHandler {
-
-    override fun invoke(
-        proxy: Any,
-        method: Method,
-        args: Array<out Any?>?,
-    ): Any? {
-        if (method.declaringClass == Any::class.java) {
-            return when (method.name) {
-                "toString" -> "QuickJsObject($globalName)"
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> proxy === args?.firstOrNull()
-                else -> throw UnsupportedOperationException(method.name)
-            }
-        }
-
-        val arguments = args.orEmpty().joinToString(",", prefix = "[", postfix = "]") {
-            it.toJsLiteral()
-        }
-        val call =
-            "globalThis[${globalName.toJsLiteral()}][${method.name.toJsLiteral()}]($arguments)"
-        return quickJs.evaluate(call, "$globalName.${method.name}.js")
-    }
-}
-
 private fun Any?.toLegacyQuickJsValue(): Any? = when (this) {
     is List<*> -> map { it.toLegacyQuickJsValue() }.toTypedArray()
     is Map<*, *> -> entries.associate { (key, value) -> key to value.toLegacyQuickJsValue() }
     else -> this
-}
-
-private fun Any?.toJsLiteral(): String = when (this) {
-    null -> "null"
-    is Boolean, is Number -> toString()
-    is Enum<*> -> toString().toJsString()
-    else -> toString().toJsString()
-}
-
-private fun String.toJsString(): String = buildString {
-    append('"')
-    forEach { char ->
-        when {
-            char == '"' -> append("\\\"")
-            char == '\\' -> append("\\\\")
-            char == '\n' -> append("\\n")
-            char == '\r' -> append("\\r")
-            char == '\t' -> append("\\t")
-            char < ' ' -> append("\\u").append(char.code.toString(16).padStart(4, '0'))
-            else -> append(char)
-        }
-    }
-    append('"')
 }
