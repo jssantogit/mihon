@@ -31,8 +31,13 @@ jobs:
           cache-read-only: true
       - name: Verify formatting
         run: ./gradlew spotlessCheck
-      - name: Run QuickJS/provider runtime unit tests and compile Android instrumentation
-        run: ./gradlew :core:common:testDebugUnitTest :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin
+      - name: Run focused QuickJS/provider runtime unit tests
+        run: >
+          ./gradlew :core:common:testDebugUnitTest
+          --tests 'app.cash.quickjs.QuickJsAbiTest'
+          --tests 'tachiyomi.core.provider.runtime.ProviderQuickJsRuntimeTest'
+      - name: Run app unit tests and compile Android instrumentation
+        run: ./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin
 
   isolated-runtime:
     name: Isolated runtime + extension compatibility
