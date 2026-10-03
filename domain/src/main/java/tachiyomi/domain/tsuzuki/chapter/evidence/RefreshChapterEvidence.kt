@@ -278,7 +278,7 @@ class RefreshChapterEvidence private constructor(
 
             val collections = coroutineScope {
                 val initialAddons = async {
-                    collectAddonEvidence(canonicalTitleId) { batch ->
+                    collectAddonEvidence(canonicalTitleId, forceRefresh = forceRefresh) { batch ->
                         reconcileStage(batch.evidence, batch.pendingSnapshots)
                     }
                 }
@@ -300,7 +300,7 @@ class RefreshChapterEvidence private constructor(
                     if (newBindings.isNotEmpty()) {
                         knownBindingIds += newBindings.map(ContentBinding::id)
                         addonEvidence = addonEvidence.merge(
-                            collectAddonEvidence(canonicalTitleId) { batch ->
+                            collectAddonEvidence(canonicalTitleId, forceRefresh = forceRefresh) { batch ->
                                 reconcileStage(batch.evidence, batch.pendingSnapshots)
                             },
                         )
@@ -327,7 +327,7 @@ class RefreshChapterEvidence private constructor(
                     if (newBindings.isEmpty()) break
                     knownBindingIds += newBindings.map(ContentBinding::id)
                     addonEvidence = addonEvidence.merge(
-                        collectAddonEvidence(canonicalTitleId) { batch ->
+                        collectAddonEvidence(canonicalTitleId, forceRefresh = forceRefresh) { batch ->
                             reconcileStage(batch.evidence, batch.pendingSnapshots)
                         },
                     )
@@ -533,6 +533,7 @@ class RefreshChapterEvidence private constructor(
 
     private suspend fun collectAddonEvidence(
         canonicalTitleId: String,
+        forceRefresh: Boolean = false,
         onBatch: suspend (AddonEvidenceCollection) -> Unit = {},
     ): AddonEvidenceCollection {
         val addonRegistry = addonRegistry ?: return AddonEvidenceCollection()
@@ -595,9 +596,13 @@ class RefreshChapterEvidence private constructor(
                                     return@withPermit AddonEvidenceCollection()
                                 }
 
-                                val refresh = if (provider is RefreshAwareChapterProbeProvider) {
+                                val refresh = if (provider is RefreshAwareChapterProbeProvider && !forceRefresh) {
                                     provider.probeRefresh(canonicalTitleId)
                                 } else {
+                                    // A user-forced refresh must re-run reconciliation even when the
+                                    // provider inventory bytes are unchanged. This is required after
+                                    // parser/reconciliation policy changes so stale canonical support
+                                    // can be detached instead of being hidden behind binding snapshots.
                                     provider.probe(canonicalTitleId).map { observations ->
                                         ChapterProbeRefresh(
                                             evidence = observations,

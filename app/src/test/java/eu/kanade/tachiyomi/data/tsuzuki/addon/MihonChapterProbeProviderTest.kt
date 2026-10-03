@@ -72,6 +72,52 @@ class MihonChapterProbeProviderTest {
     }
 
     @Test
+    fun `changed evidence interpretation re-emits unchanged inventory once`() = runTest {
+        val binding = binding()
+        val snapshots = object : ChapterRefreshSnapshotRepository {
+            private val values = linkedMapOf<Pair<String, String>, ChapterRefreshSnapshot>()
+
+            override suspend fun get(canonicalTitleId: String, scopeKey: String): ChapterRefreshSnapshot? =
+                values[canonicalTitleId to scopeKey]
+
+            override suspend fun upsertIfNewer(snapshot: ChapterRefreshSnapshot): ChapterRefreshSnapshot {
+                values[snapshot.canonicalTitleId to snapshot.scopeKey] = snapshot
+                return snapshot
+            }
+        }
+        val inventory = SourceChapterInventory(
+            sourceMappingId = binding.id,
+            sourceId = 7L,
+            canonicalTitleId = "title",
+            chapters = listOf(snapshot(binding.id, 7L, "/chapter/0", "Vol. 1 Ch. 0", 0.0)),
+            mihonMangaId = 99L,
+            language = "en",
+            sourceUrl = "/work",
+            fetchStartedAtMillis = 100L,
+        )
+        val provider = MihonChapterProbeProvider(
+            addonId = AddonId("mangadex"),
+            contentBindingRepository = FakeContentBindingRepository(listOf(binding)),
+            parser = ParseCanonicalChapterLabel(),
+            fetchInventory = { Result.success(inventory) },
+            refreshSnapshots = snapshots,
+        )
+
+        val first = provider.probeRefresh("title").getOrThrow()
+        val currentSnapshot = first.pendingSnapshots.single()
+        snapshots.upsertIfNewer(
+            currentSnapshot.copy(configurationFingerprint = "legacy-evidence-rules"),
+        )
+
+        val revalidated = provider.probeRefresh("title").getOrThrow()
+
+        revalidated.evidence.size shouldBe 1
+        revalidated.unchangedBindingCount shouldBe 0
+        revalidated.pendingSnapshots.single().configurationFingerprint shouldBe
+            provider.refreshConfigurationFingerprint()
+    }
+
+    @Test
     fun `targeted probe only requests the chosen enabled binding`() = runTest {
         val english = binding("binding-en")
         val portuguese = binding("binding-pt").copy(providerTitleKey = "8:/dandadan")

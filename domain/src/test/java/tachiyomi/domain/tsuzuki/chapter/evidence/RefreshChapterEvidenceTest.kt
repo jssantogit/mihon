@@ -22,7 +22,9 @@ import tachiyomi.core.common.preference.InMemoryPreferenceStore
 import tachiyomi.domain.tsuzuki.addon.AddonId
 import tachiyomi.domain.tsuzuki.addon.AddonRegistry
 import tachiyomi.domain.tsuzuki.addon.ChapterProbeProvider
+import tachiyomi.domain.tsuzuki.addon.ChapterProbeRefresh
 import tachiyomi.domain.tsuzuki.addon.ContentProvider
+import tachiyomi.domain.tsuzuki.addon.RefreshAwareChapterProbeProvider
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticEvent
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticOutcome
 import tachiyomi.domain.tsuzuki.chapter.diagnostics.ChapterInventoryDiagnosticReason
@@ -100,6 +102,95 @@ class RefreshChapterEvidenceTest {
 
         refresh.execute("canonical-title", forceRefresh = true).isSuccess shouldBe true
         providerCalls shouldBe 2
+    }
+
+    @Test
+    fun `forced refresh bypasses unchanged Add-on snapshot optimization`() = runTest {
+        val addonId = AddonId("snapshot-addon")
+        var incrementalCalls = 0
+        var fullCalls = 0
+        val observation = ChapterEvidence(
+            id = "snapshot-zero",
+            canonicalTitleId = "canonical-title",
+            producerKind = ProducerKind.ADDON,
+            producerId = addonId.value,
+            externalChapterKey = "7:/chapter/0",
+            rawLabel = "Vol. 1 Ch. 0",
+            rawNumber = 0.0,
+            volume = 1,
+            title = null,
+            observedAt = 10L,
+            confidence = 1.0,
+            authority = ChapterEvidenceAuthority.ADDON_PROVISIONAL,
+        )
+        val provider = object : RefreshAwareChapterProbeProvider {
+            override val addonId: AddonId = addonId
+
+            override suspend fun probe(canonicalTitleId: String): Result<List<ChapterEvidence>> {
+                fullCalls++
+                return Result.success(listOf(observation))
+            }
+
+            override suspend fun probeRefresh(canonicalTitleId: String): Result<ChapterProbeRefresh> {
+                incrementalCalls++
+                return Result.success(
+                    ChapterProbeRefresh(
+                        evidence = emptyList(),
+                        observedBindingCount = 1,
+                        observedChapterCount = 1,
+                        unchangedBindingCount = 1,
+                    ),
+                )
+            }
+
+            override suspend fun refreshConfigurationFingerprint(): String = "snapshot-addon|fixture"
+        }
+        val addons = object : AddonRegistry {
+            override fun contentProviders(): List<ContentProvider> = emptyList()
+            override fun chapterProbeProviders(): List<ChapterProbeProvider> = listOf(provider)
+        }
+        val resolver = mockk<ResolveContentBinding>()
+        coEvery {
+            resolver.existingBindingsForRefresh("canonical-title", addonId)
+        } returns Result.success(
+            listOf(
+                ContentBinding(
+                    id = "fixture-binding",
+                    canonicalTitleId = "canonical-title",
+                    addonId = addonId,
+                    providerTitleKey = "7:/fixture",
+                    matchConfidence = 1.0,
+                    verifiedByUser = true,
+                    availability = ContentBindingAvailability.AVAILABLE,
+                    runtimePayload = byteArrayOf(1),
+                    createdAt = 1L,
+                    updatedAt = 1L,
+                ),
+            ),
+        )
+        val chapters = FakeCanonicalChapterRepository()
+        val evidence = FakeChapterEvidenceRepository()
+        val refresh = RefreshChapterEvidence(
+            registry = registry(emptyList()),
+            reconcileChapterEvidence = ReconcileChapterEvidence(
+                parser = ParseCanonicalChapterLabel(),
+                canonicalChapterRepository = chapters,
+                evidenceRepository = evidence,
+            ),
+            addonRegistry = addons,
+            resolveContentBinding = resolver,
+            contentOptionCache = ContentOptionCache(),
+            diagnostics = NoOpChapterInventoryDiagnostics,
+        )
+
+        refresh.execute("canonical-title").isSuccess shouldBe true
+        incrementalCalls shouldBe 1
+        fullCalls shouldBe 0
+
+        refresh.execute("canonical-title", forceRefresh = true).isSuccess shouldBe true
+        incrementalCalls shouldBe 1
+        fullCalls shouldBe 1
+        evidence.getByCanonicalTitleId("canonical-title").single().mappedCanonicalChapterId shouldBe null
     }
 
     @Test
