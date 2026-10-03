@@ -1,56 +1,66 @@
 package eu.kanade.presentation.tsuzuki.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.manga.components.MangaCover
-import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
+import tachiyomi.domain.tsuzuki.home.model.HomeFolderTile
 
 @Composable
-internal fun CoverPreviewStrip(
-    items: List<CatalogItem>,
+internal fun FolderTile(
+    folder: HomeFolderTile,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    slotWidth: Dp = 88.dp,
-    slotCount: Int = 4,
-    showPlaceholders: Boolean = true,
+    width: Dp = 200.dp,
 ) {
-    val visible = items.take(slotCount)
-    LazyRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        userScrollEnabled = false,
-    ) {
-        items(
-            items = visible,
-            key = { item -> "${item.provider}:${item.providerId}" },
-        ) { item ->
-            MangaCover.Book(
-                data = item.coverUrl,
-                contentDescription = item.title,
-                modifier = Modifier.width(slotWidth),
-            )
-        }
+    val backgroundColor = remember(folder.folderId) {
+        folderTileColor(folder.folderId)
+    }
 
-        if (showPlaceholders) {
-            items((slotCount - visible.size).coerceAtLeast(0)) { index ->
-                Box(
-                    modifier = Modifier
-                        .width(slotWidth)
-                        .aspectRatio(MangaCover.Book.ratio)
-                        .clip(MaterialTheme.shapes.small)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                )
-            }
-        }
+    Column(
+        modifier = modifier
+            .width(width)
+            .clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(FOLDER_TILE_ASPECT_RATIO)
+                .clip(MaterialTheme.shapes.large)
+                .background(backgroundColor),
+        )
+
+        Text(
+            text = folder.title,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
+
+internal fun folderTileColor(folderId: String): Color {
+    val hue = Math.floorMod(folderId.hashCode(), 360).toFloat()
+    return Color.hsl(
+        hue = hue,
+        saturation = 0.34f,
+        lightness = 0.30f,
+    )
+}
+
+private const val FOLDER_TILE_ASPECT_RATIO = 16f / 9f

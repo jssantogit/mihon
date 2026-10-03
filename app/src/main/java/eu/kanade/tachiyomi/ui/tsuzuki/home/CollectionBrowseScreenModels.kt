@@ -68,7 +68,6 @@ class CollectionBrowseScreenModel(
             } else {
                 getConfiguredHomeSections.subscribeCollection(
                     collectionId = id,
-                    pageSize = PREVIEW_PAGE_SIZE,
                 ).map { collection ->
                     if (collection == null) {
                         CollectionBrowseScreenState.Missing
@@ -96,10 +95,6 @@ class CollectionBrowseScreenModel(
         if (this.collectionId.value != collectionId) {
             this.collectionId.value = collectionId
         }
-    }
-
-    private companion object {
-        const val PREVIEW_PAGE_SIZE = 4
     }
 }
 
@@ -184,7 +179,6 @@ class FolderCatalogScreenModel(
                 getConfiguredHomeSections.subscribeFolder(
                     collectionId = request.collectionId,
                     folderId = request.folderId,
-                    pageSize = PREVIEW_PAGE_SIZE,
                 ).map { folder ->
                     if (folder == null) {
                         FolderBrowseProjection.Missing

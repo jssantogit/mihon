@@ -10,8 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +38,7 @@ import tachiyomi.presentation.core.components.material.Scaffold
 fun TsuzukiHomeScreen(
     state: TsuzukiHomeScreenState,
     onContinueReading: (HomeContinueReadingItem) -> Unit,
-    onCollection: (collectionId: String) -> Unit,
+    onFolder: (collectionId: String, folderId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -52,8 +53,8 @@ fun TsuzukiHomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(32.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             state.continueReading.firstOrNull()?.let { hero ->
                 item(key = "hero") {
@@ -70,7 +71,9 @@ fun TsuzukiHomeScreen(
                         item(key = "collection_${section.collectionId}") {
                             CollectionHomeSection(
                                 section = section,
-                                onClick = { onCollection(section.collectionId) },
+                                onFolder = { folderId ->
+                                    onFolder(section.collectionId, folderId)
+                                },
                             )
                         }
                     }
@@ -136,36 +139,32 @@ private fun HeroCard(
 @Composable
 private fun CollectionHomeSection(
     section: HomeSection.CollectionSection,
-    onClick: () -> Unit,
+    onFolder: (folderId: String) -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
             text = section.title,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-            ),
-            shape = MaterialTheme.shapes.large,
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            CoverPreviewStrip(
-                items = section.previewItems,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            )
+            items(
+                items = section.folders,
+                key = { folder -> folder.folderId },
+            ) { folder ->
+                FolderTile(
+                    folder = folder,
+                    onClick = { onFolder(folder.folderId) },
+                )
+            }
         }
     }
 }
