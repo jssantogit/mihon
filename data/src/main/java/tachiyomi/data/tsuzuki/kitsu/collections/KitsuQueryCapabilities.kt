@@ -182,6 +182,25 @@ object KitsuQueryCapabilities : ProviderQueryCapabilities {
         ),
     )
 
+    override fun canPushPredicate(
+        field: QueryField,
+        operator: QueryOperator,
+        value: QueryValue,
+    ): Boolean {
+        val normalizedValue = when {
+            value is QueryValue.StringValue &&
+                (field == QueryField.STATUS || field == QueryField.WORK_TYPE) ->
+                QueryValue.of(value.value.uppercase())
+            else -> value
+        }
+        return descriptor.supports(
+            field = field,
+            operator = operator,
+            value = normalizedValue,
+            executionMode = FilterExecutionMode.REMOTE_EXACT,
+        )
+    }
+
     override fun canPushExpression(expression: QueryExpression): Boolean = when (expression) {
         is QueryExpression.Predicate -> canPushPredicate(
             field = expression.field,
