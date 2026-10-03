@@ -84,7 +84,7 @@ class QuickJsAbiTest {
         "(${constructor.parameterTypes.joinToString(",") { abiName(it) }})"
 
     private fun abiName(type: Class<*>): String = when {
-        type.isArray -> "${abiName(type.componentType)}[]"
+        type.isArray -> "${abiName(requireNotNull(type.componentType))}[]"
         type == String::class.java -> "String"
         type == Class::class.java -> "Class"
         type == Any::class.java -> "Object"
