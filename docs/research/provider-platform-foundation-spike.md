@@ -48,6 +48,8 @@ small typed DTOs/handles and must not send large HTML, images or archives over B
 
 ## Execution limits
 
+The effective Tsuzuki minimum SDK is API 26 (`gradle/mihon.versions.toml`), which is above the current minimums required by both QuickJS-kt and the jlibtorrent option evaluated for a later torrent spike.
+
 The runtime applies:
 
 - wall-clock timeout;
@@ -73,6 +75,7 @@ Android instrumentation proves:
 
 - provider runtime UID differs from the app UID;
 - provider runtime PID differs from the app PID;
+- the main app retains `INTERNET`, while the isolated provider UID is denied that permission;
 - normal JavaScript evaluates in the isolated process;
 - an infinite loop is interrupted;
 - a real immutable MangaFire APK fixture still loads and registers sources.
