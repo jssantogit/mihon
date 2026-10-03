@@ -46,6 +46,7 @@ class GetConfiguredHomeSections(
                 .sortedWith(compareBy({ it.sortOrder }, { it.id }))
             val lists = folders.flatMap { folder ->
                 store.getLists(folder.id)
+                    .sortedWith(compareBy({ it.sortOrder }, { it.id }))
             }
             sections += HomeSection.CollectionSection(
                 collectionId = collection.id,
@@ -212,8 +213,7 @@ class GetConfiguredHomeSections(
     ): List<tachiyomi.domain.tsuzuki.catalog.model.CatalogItem> {
         for (list in lists
             .asSequence()
-            .filter(CollectionList::enabled)
-            .sortedWith(compareBy({ it.sortOrder }, { it.id }))) {
+            .filter(CollectionList::enabled)) {
             val content = try {
                 loader.load(list.id, pageSize)
             } catch (error: CancellationException) {
