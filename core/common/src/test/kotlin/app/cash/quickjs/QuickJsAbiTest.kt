@@ -28,6 +28,13 @@ class QuickJsAbiTest {
     }
 
     @Test
+    fun `compatibility API still evaluates JavaScript`() {
+        QuickJs.create().use { runtime ->
+            runtime.evaluate("21 * 2") shouldBe 42
+        }
+    }
+
+    @Test
     fun `keeps extension-facing class shape`() {
         Closeable::class.java.isAssignableFrom(QuickJs::class.java) shouldBe true
         Modifier.isFinal(QuickJs::class.java.modifiers) shouldBe true
