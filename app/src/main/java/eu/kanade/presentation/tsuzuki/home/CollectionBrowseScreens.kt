@@ -32,7 +32,6 @@ import eu.kanade.tachiyomi.ui.tsuzuki.home.CollectionBrowseScreenState
 import eu.kanade.tachiyomi.ui.tsuzuki.home.FolderCatalogContent
 import eu.kanade.tachiyomi.ui.tsuzuki.home.FolderCatalogScreenState
 import tachiyomi.domain.tsuzuki.catalog.model.CatalogItem
-import tachiyomi.domain.tsuzuki.home.model.HomeFolderPreview
 import tachiyomi.presentation.core.components.material.Scaffold
 
 @Composable
@@ -75,7 +74,7 @@ fun CollectionBrowseScreen(
                     .padding(paddingValues),
             )
             is CollectionBrowseScreenState.Ready -> {
-                LazyColumn(
+                LazyRow(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues),
@@ -83,13 +82,13 @@ fun CollectionBrowseScreen(
                         horizontal = 16.dp,
                         vertical = 16.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(
                         items = state.collection.folders,
-                        key = HomeFolderPreview::folderId,
+                        key = { folder -> folder.folderId },
                     ) { folder ->
-                        FolderPreviewSection(
+                        FolderTile(
                             folder = folder,
                             onClick = { onFolder(folder.folderId) },
                         )
@@ -178,14 +177,22 @@ private fun FolderCatalogReady(
         ),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        items(
-            items = state.folder.childFolders,
-            key = HomeFolderPreview::folderId,
-        ) { child ->
-            FolderPreviewSection(
-                folder = child,
-                onClick = { onChildFolder(child.folderId) },
-            )
+        if (state.folder.childFolders.isNotEmpty()) {
+            item(key = "child_folders") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(
+                        items = state.folder.childFolders,
+                        key = { child -> child.folderId },
+                    ) { child ->
+                        FolderTile(
+                            folder = child,
+                            onClick = { onChildFolder(child.folderId) },
+                        )
+                    }
+                }
+            }
         }
 
         if (enabledLists.isNotEmpty()) {
@@ -293,42 +300,6 @@ private fun FolderCatalogReady(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun FolderPreviewSection(
-    folder: HomeFolderPreview,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = folder.title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "›",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        CoverPreviewStrip(
-            items = folder.previewItems,
-            modifier = Modifier.fillMaxWidth(),
-            slotWidth = 96.dp,
-        )
     }
 }
 
