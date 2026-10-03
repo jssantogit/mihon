@@ -89,7 +89,7 @@ class QuickJs private constructor() : Closeable {
         require(type.isInterface) { "Only interfaces can be bound. Received: $type" }
         require(type.interfaces.isEmpty()) { "$type must not extend other interfaces" }
 
-        val methods = type.methods.sortedBy(Method::getName)
+        val methods = type.methods.sortedBy { it.name }
         methods.groupBy(Method::getName).forEach { (methodName, overloads) ->
             require(overloads.size == 1) { "$methodName is overloaded in $type" }
         }
